@@ -341,7 +341,7 @@ class SystemController extends Controller
             $zoneColumns[] = 'updated_at';
 
             // Загружаем теплицы с зонами, фильтруя по доступным зонам
-            $greenhousesQuery = Greenhouse::query();
+            $greenhousesQuery = Greenhouse::query()->userVisible();
             if ($user !== null && ! $user->isAdmin()) {
                 $greenhousesQuery->whereIn('id', $accessibleGreenhouseIds ?: [0]);
             }

@@ -52,6 +52,8 @@ greenhouse_type_id BIGINT NULL FK -> greenhouse_types ON DELETE SET NULL
 coordinates JSONB
 description TEXT
 provisioning_token VARCHAR(64) UNIQUE NOT NULL  -- DEPRECATED / pending drop (legacy column; NOT a node bind mechanism)
+is_system BOOLEAN NOT NULL DEFAULT FALSE
+shared_weather_station_node_id BIGINT NULL FK -> nodes ON DELETE SET NULL
 created_at
 updated_at
 ```
@@ -61,6 +63,7 @@ updated_at
 - belongsTo greenhouse_types (optional)
 - hasMany zones
 - hasMany nodes (через zones или напрямую в будущем, если потребуется)
+- belongsTo DeviceNode as sharedWeatherStation (optional site-level weather node)
 
 Практика:
 
@@ -68,6 +71,8 @@ updated_at
 - В Backend/AI `greenhouse.uid` — основной внешний идентификатор теплицы.
 - Канонический справочник типа — `greenhouse_types`; `type` остаётся legacy-строкой.
 - `provisioning_token`: **deprecated, pending drop**. Колонка остаётся NOT NULL unique ради seeders/AE/e2e inserts; значение генерируется при create только для constraint, **скрыто в API** (`Greenhouse::$hidden`) и **не используется** для bind узлов (привязка только через UI).
+- `is_system=true` — служебные теплицы (не показывать в обычных списках). Зарезервирована системная теплица `uid='site'` + зона `uid='wx'` как MQTT-якорь для site-level метеостанций (DD-10, см. `GREENHOUSE_CLIMATE_CONTROL_PLAN.md`).
+- `shared_weather_station_node_id` — opt-in теплицы на общую метеостанцию площадки; AE climate tick читает outdoor sensors этого node независимо от `sensors.greenhouse_id` пользовательской теплицы.
 
 ---
 

@@ -12,7 +12,7 @@
  */
 import type { Greenhouse } from '@/types'
 import { normalizePaginatedList } from '@/utils/apiHelpers'
-import { apiDelete, apiGet, apiPost } from './_client'
+import { apiDelete, apiGet, apiPatch, apiPost } from './_client'
 
 export interface GreenhouseType {
   id: number
@@ -65,6 +65,15 @@ export const greenhousesApi = {
 
   getById(greenhouseId: number): Promise<Greenhouse> {
     return apiGet<Greenhouse>(`/greenhouses/${greenhouseId}`)
+  },
+
+  update(
+    greenhouseId: number,
+    payload: Partial<GreenhouseCreatePayload> & {
+      shared_weather_station_node_id?: number | null
+    },
+  ): Promise<Greenhouse> {
+    return apiPatch<Greenhouse>(`/greenhouses/${greenhouseId}`, payload)
   },
 
   /**

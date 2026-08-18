@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Helpers\ZoneAccessHelper;
 use App\Models\Greenhouse;
 use App\Models\GreenhouseType;
+use App\Services\SiteInfrastructureService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -24,14 +25,17 @@ class GreenhouseController extends Controller
 
         $accessibleGreenhouseIds = ZoneAccessHelper::getAccessibleGreenhouseIds($user);
 
-        $query = Greenhouse::query();
+        $query = Greenhouse::query()->userVisible();
 
         if (! $user->isAdmin()) {
             $query->whereIn('id', $accessibleGreenhouseIds ?: [0]);
         }
 
         $items = $query
-            ->with('greenhouseType:id,code,name,description')
+            ->with([
+                'greenhouseType:id,code,name,description',
+                'sharedWeatherStation:id,uid,name,type,status,zone_id',
+            ])
             ->latest('id')
             ->paginate(25);
 
@@ -109,6 +113,13 @@ class GreenhouseController extends Controller
             ], 401);
         }
 
+        if ($greenhouse->is_system) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Forbidden: system greenhouse is not accessible',
+            ], 403);
+        }
+
         // Проверяем доступ к теплице
         if (! ZoneAccessHelper::canAccessGreenhouse($user, $greenhouse)) {
             return response()->json([
@@ -117,7 +128,11 @@ class GreenhouseController extends Controller
             ], 403);
         }
 
-        $greenhouse->load('zones', 'greenhouseType:id,code,name,description');
+        $greenhouse->load(
+            'zones',
+            'greenhouseType:id,code,name,description',
+            'sharedWeatherStation:id,uid,name,type,status,zone_id'
+        );
 
         return response()->json(['status' => 'ok', 'data' => $greenhouse]);
     }
@@ -130,6 +145,13 @@ class GreenhouseController extends Controller
                 'status' => 'error',
                 'message' => 'Unauthorized',
             ], 401);
+        }
+
+        if ($greenhouse->is_system) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Forbidden: system greenhouse cannot be updated',
+            ], 403);
         }
 
         // Проверяем доступ к теплице
@@ -147,6 +169,11 @@ class GreenhouseController extends Controller
         if ($request->exists('greenhouse_type_id')) {
             $normalizedInput['greenhouse_type_id'] = $this->normalizeNullableForeignId($request->input('greenhouse_type_id'));
         }
+        if ($request->exists('shared_weather_station_node_id')) {
+            $normalizedInput['shared_weather_station_node_id'] = $this->normalizeNullableForeignId(
+                $request->input('shared_weather_station_node_id')
+            );
+        }
         if ($normalizedInput !== []) {
             $request->merge($normalizedInput);
         }
@@ -159,7 +186,20 @@ class GreenhouseController extends Controller
             'greenhouse_type_id' => ['nullable', 'integer', 'exists:greenhouse_types,id'],
             'coordinates' => ['nullable', 'array'],
             'description' => ['nullable', 'string'],
+            'shared_weather_station_node_id' => ['sometimes', 'nullable', 'integer', 'exists:nodes,id'],
         ]);
+
+        if (array_key_exists('shared_weather_station_node_id', $data)) {
+            try {
+                app(SiteInfrastructureService::class)
+                    ->assertSelectableWeatherStation($data['shared_weather_station_node_id']);
+            } catch (\DomainException $e) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => $e->getMessage(),
+                ], Response::HTTP_UNPROCESSABLE_ENTITY);
+            }
+        }
 
         if (array_key_exists('greenhouse_type_id', $data)) {
             if ($data['greenhouse_type_id']) {
@@ -184,7 +224,10 @@ class GreenhouseController extends Controller
 
         return response()->json([
             'status' => 'ok',
-            'data' => $greenhouse->load('greenhouseType:id,code,name,description'),
+            'data' => $greenhouse->load(
+                'greenhouseType:id,code,name,description',
+                'sharedWeatherStation:id,uid,name,type,status,zone_id'
+            ),
         ]);
     }
 
@@ -203,6 +246,13 @@ class GreenhouseController extends Controller
             return response()->json([
                 'status' => 'error',
                 'message' => 'Forbidden: Only administrators can delete greenhouses',
+            ], 403);
+        }
+
+        if ($greenhouse->is_system) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Forbidden: system greenhouse cannot be deleted',
             ], 403);
         }
 

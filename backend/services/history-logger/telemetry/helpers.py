@@ -103,6 +103,45 @@ def infer_sensor_type(metric_type: str) -> str:
     return "OTHER"
 
 
+_OUTSIDE_SENSOR_TYPES = frozenset(
+    {
+        "OUTSIDE_TEMP",
+        "OUTSIDE_HUMIDITY",
+        "OUTSIDE_PRESSURE",
+        "OUTSIDE_LIGHT",
+        "WIND_SPEED",
+        "WIND_DIRECTION",
+        "RAIN_DETECTED",
+    }
+)
+
+_OUTSIDE_CHANNEL_HINTS = frozenset(
+    {
+        "outside_temp",
+        "outside_humidity",
+        "outside_pressure",
+        "outside_light",
+        "outdoor_temp",
+        "outdoor_humidity",
+        "wind_speed",
+        "wind_direction",
+        "rain_detected",
+        "rain",
+    }
+)
+
+
+def infer_sensor_scope(metric_type: str, channel: Optional[str] = None) -> str:
+    """Map weather/outdoor metrics to sensors.scope=outside; everything else stays inside."""
+    sensor_type = infer_sensor_type(metric_type)
+    if sensor_type in _OUTSIDE_SENSOR_TYPES:
+        return "outside"
+    channel_norm = (channel or "").strip().lower()
+    if channel_norm in _OUTSIDE_CHANNEL_HINTS:
+        return "outside"
+    return "inside"
+
+
 def build_sensor_label(metric_type: str, channel: Optional[str], sensor_type: str) -> str:
     if channel:
         return channel

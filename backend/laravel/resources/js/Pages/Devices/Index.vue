@@ -80,6 +80,86 @@
         </div>
       </PageHeader>
 
+      <section
+        class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]/30 p-4 space-y-3"
+        data-testid="site-weather-stations-panel"
+      >
+        <div class="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h3 class="text-sm font-semibold text-[color:var(--text-primary)]">
+              Общие метеостанции
+            </h3>
+            <p class="mt-1 text-xs text-[color:var(--text-muted)]">
+              Независимые устройства площадки. Теплицы подключают их телеметрию в настройках климата.
+            </p>
+          </div>
+          <div
+            v-if="canConfigureDevices"
+            class="flex flex-wrap items-center gap-2"
+          >
+            <select
+              v-model="assignWeatherNodeId"
+              class="input-select min-w-[180px]"
+              data-testid="site-weather-assign-select"
+            >
+              <option :value="null">
+                Выберите climate-ноду
+              </option>
+              <option
+                v-for="node in assignableWeatherCandidates"
+                :key="node.id"
+                :value="node.id"
+              >
+                {{ node.name || node.uid }} ({{ node.uid }})
+              </option>
+            </select>
+            <Button
+              size="sm"
+              variant="outline"
+              :disabled="!assignWeatherNodeId || weatherStationBusy"
+              data-testid="site-weather-assign-button"
+              @click="assignSelectedWeatherStation"
+            >
+              Назначить
+            </Button>
+          </div>
+        </div>
+        <ul
+          v-if="siteWeatherStations.length"
+          class="space-y-2"
+        >
+          <li
+            v-for="station in siteWeatherStations"
+            :key="station.id"
+            class="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)] px-3 py-2 text-sm"
+          >
+            <div class="min-w-0">
+              <div class="font-medium text-[color:var(--text-primary)] truncate">
+                {{ station.name || station.uid }}
+              </div>
+              <div class="text-xs text-[color:var(--text-muted)]">
+                {{ station.uid }} · {{ station.status || 'unknown' }}
+              </div>
+            </div>
+            <Button
+              v-if="canConfigureDevices"
+              size="sm"
+              variant="ghost"
+              :disabled="weatherStationBusy"
+              @click="unassignWeatherStation(station.id)"
+            >
+              Снять
+            </Button>
+          </li>
+        </ul>
+        <p
+          v-else
+          class="text-xs text-[color:var(--text-dim)]"
+        >
+          Метеостанции ещё не назначены.
+        </p>
+      </section>
+
       <FilterBar>
         <div class="flex items-center gap-2 flex-1 sm:flex-none">
           <label class="text-sm text-[color:var(--text-muted)] shrink-0">Тип:</label>
@@ -207,7 +287,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, watch, onMounted, onUnmounted } from 'vue'
+import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
 import { Link, usePage } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Button from '@/Components/Button.vue'
@@ -220,6 +300,8 @@ import { useStoreEvents } from '@/composables/useStoreEvents'
 import { useFavorites } from '@/composables/useFavorites'
 import { useToast } from '@/composables/useToast'
 import { useUrlState } from '@/composables/useUrlState'
+import { api } from '@/services/api'
+import type { SiteWeatherStation } from '@/services/api/siteWeatherStations'
 import { translateDeviceType, translateStatus } from '@/utils/i18n'
 import type { Device } from '@/types'
 import { logger } from '@/utils/logger'
@@ -373,6 +455,7 @@ const resetDeviceChannels = (): void => {
 
 onMounted(() => {
   devicesStore.initFromProps(page.props)
+  void loadSiteWeatherStations()
   
   subscribeWithCleanup('device:updated', (device: Device) => {
     devicesStore.upsert(device)
@@ -442,6 +525,67 @@ const perPage = useUrlState<number>({
 
 const { isDeviceFavorite, toggleDeviceFavorite } = useFavorites()
 const allDevices = computed(() => (Array.isArray(devicesStore.allDevices) ? devicesStore.allDevices : []))
+
+const siteWeatherStations = ref<SiteWeatherStation[]>([])
+const assignWeatherNodeId = ref<number | null>(null)
+const weatherStationBusy = ref(false)
+
+const siteWeatherStationIds = computed(() => new Set(siteWeatherStations.value.map((s) => s.id)))
+
+const assignableWeatherCandidates = computed(() => {
+  return allDevices.value.filter((device) => {
+    if (String(device.type ?? '').toLowerCase() !== 'climate') {
+      return false
+    }
+    if (siteWeatherStationIds.value.has(device.id)) {
+      return false
+    }
+    return device.zone_id == null && (device as Device & { zone?: { id?: number } }).zone?.id == null
+  })
+})
+
+async function loadSiteWeatherStations(): Promise<void> {
+  try {
+    const stations = await api.siteWeatherStations.list()
+    siteWeatherStations.value = Array.isArray(stations) ? stations : []
+  } catch {
+    siteWeatherStations.value = []
+  }
+}
+
+async function assignSelectedWeatherStation(): Promise<void> {
+  if (!assignWeatherNodeId.value || weatherStationBusy.value) {
+    return
+  }
+  weatherStationBusy.value = true
+  try {
+    await api.siteWeatherStations.assign(assignWeatherNodeId.value)
+    assignWeatherNodeId.value = null
+    await loadSiteWeatherStations()
+    showToast('Метеостанция назначена.', 'success', TOAST_TIMEOUT.NORMAL)
+  } catch {
+    showToast('Не удалось назначить метеостанцию.', 'error', TOAST_TIMEOUT.NORMAL)
+  } finally {
+    weatherStationBusy.value = false
+  }
+}
+
+async function unassignWeatherStation(nodeId: number): Promise<void> {
+  if (weatherStationBusy.value) {
+    return
+  }
+  weatherStationBusy.value = true
+  try {
+    await api.siteWeatherStations.unassign(nodeId)
+    await loadSiteWeatherStations()
+    showToast('Метеостанция снята.', 'success', TOAST_TIMEOUT.NORMAL)
+  } catch {
+    showToast('Не удалось снять метеостанцию.', 'error', TOAST_TIMEOUT.NORMAL)
+  } finally {
+    weatherStationBusy.value = false
+  }
+}
+
 const totalDevices = computed(() => allDevices.value.length)
 const onlineDevices = computed(() => allDevices.value.filter((device) => device.status === 'online').length)
 const offlineDevices = computed(() => allDevices.value.filter((device) => device.status === 'offline').length)

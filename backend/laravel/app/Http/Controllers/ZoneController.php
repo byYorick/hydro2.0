@@ -65,6 +65,7 @@ class ZoneController extends Controller
 
         // Eager loading для предотвращения N+1 запросов
         $query = Zone::query()
+            ->whereHas('greenhouse', fn ($q) => $q->where('is_system', false))
             ->withCount('nodes') // Счетчик узлов
             ->with(['greenhouse:id,name', 'preset:id,name']); // Загружаем только нужные поля
 

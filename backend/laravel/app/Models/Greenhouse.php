@@ -22,6 +22,8 @@ class Greenhouse extends Model
         'greenhouse_type_id',
         'coordinates',
         'description',
+        'is_system',
+        'shared_weather_station_node_id',
     ];
 
     protected $hidden = [
@@ -31,11 +33,26 @@ class Greenhouse extends Model
 
     protected $casts = [
         'coordinates' => 'array',
+        'is_system' => 'boolean',
     ];
+
+    /**
+     * @param  \Illuminate\Database\Eloquent\Builder<Greenhouse>  $query
+     * @return \Illuminate\Database\Eloquent\Builder<Greenhouse>
+     */
+    public function scopeUserVisible($query)
+    {
+        return $query->where('is_system', false);
+    }
 
     public function zones(): HasMany
     {
         return $this->hasMany(Zone::class);
+    }
+
+    public function sharedWeatherStation(): BelongsTo
+    {
+        return $this->belongsTo(DeviceNode::class, 'shared_weather_station_node_id');
     }
 
     public function greenhouseType(): BelongsTo

@@ -1,8 +1,8 @@
 # GREENHOUSE_CLIMATE_CONTROL_PLAN.md
 # План реализации общего управления климатом теплицы
 
-**Версия:** 0.3-agent-ready  
-**Дата:** 2026-05-14  
+**Версия:** 0.4-agent-ready  
+**Дата:** 2026-08-02  
 **Статус:** Draft / agent-ready план; design decisions зафиксированы, перед кодом нужен Stage 1 spec sync
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
@@ -123,7 +123,7 @@ solution heating/cooling) не входят в V1 greenhouse climate.
 
 ## 3. Design Decisions Required Before Implementation
 
-Решения DD-1..DD-9 зафиксированы в таблице ниже; новая реализация должна им соответствовать.
+Решения DD-1..DD-10 зафиксированы в таблице ниже; новая реализация должна им соответствовать.
 
 | ID | Решение | Статус по умолчанию для плана |
 |---|---|---|
@@ -136,9 +136,10 @@ solution heating/cooling) не входят в V1 greenhouse climate.
 | DD-7 | Nodes type для метеостанции/приводов: новые `weather|vent` или существующие `climate|relay` + bindings | **Утверждено:** существующие `climate` / `relay` + `channel_bindings` с ролями из §6.2 |
 | DD-8 | Фактическая позиция actuator: нода публикует position telemetry или runtime доверяет actuator controller | **Утверждено:** V1 — **trust controller** + `last_sent_*` в state; если нода публикует позицию в телеметрии, runtime может обновлять фактическую позицию в будущем без breaking change |
 | DD-9 | Сегмент `{zone}` в MQTT для приводов, привязанных к теплице, но без «логической» зоны | **Утверждено:** узел **обязан** иметь непустой `nodes.zone_id` (anchor-зона в той же теплице); сегмент `{zone}` в топике = `zones.uid` этой зоны. Отдельный synthetic `zone_uid` в V1 не вводится. |
+| DD-10 | Общая метеостанция площадки: unbound в UI или per-greenhouse binding | **Утверждено:** site-level станция (`nodes.type=climate`) на скрытом транспортном якоре `greenhouses.uid=site` + `zones.uid=wx` (MQTT `hydro/site/wx/{node}/…`). В UI станция независима. Opt-in теплицы: `greenhouses.shared_weather_station_node_id` (nullable FK → `nodes`). AE outdoor читает sensors этого node (`scope=outside`); per-GH `weather_station_sensor` binding — legacy fallback. |
 
 Если решения нет, реализация должна остановиться на spec/update stage и зафиксировать blocker.
-На момент версии `0.3-agent-ready` все обязательные DD-1..DD-9 зафиксированы; новый
+На момент версии `0.4-agent-ready` все обязательные DD-1..DD-10 зафиксированы; новый
 blocker появляется только если связанная layer-spec противоречит этим решениям.
 
 ---

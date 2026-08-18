@@ -278,9 +278,11 @@
           <div class="xl:col-span-8">
             <GreenhouseClimateConfiguration
               v-model:enabled="greenhouseClimateEnabled"
+              v-model:shared-weather-station-node-id="sharedWeatherStationNodeId"
               :climate-form="climateForm"
               :bindings="greenhouseClimateBindings"
               :available-nodes="availableNodes"
+              :site-weather-stations="siteWeatherStations"
               :can-configure="canOperateGreenhouse"
               :applying="climateSubmitting"
               :show-apply-button="true"
@@ -534,6 +536,8 @@ const lastClimateSavedAt = ref<string | null>(null)
 const greenhouseClimateEnabled = ref(false)
 const availableNodes = ref<GreenhouseNodeOption[]>([])
 const managedGreenhouseNodes = ref<GreenhouseNodeOption[]>([])
+const siteWeatherStations = ref<Array<{ id: number; uid: string; name?: string | null; status?: string | null }>>([])
+const sharedWeatherStationNodeId = ref<number | null>(null)
 const greenhouseClimateBindings = reactive<GreenhouseClimateBindingsState>({
   climate_sensors: [],
   weather_station_sensors: [],
@@ -642,6 +646,16 @@ async function loadAvailableNodes(): Promise<void> {
   }
 }
 
+async function loadSiteWeatherStations(): Promise<void> {
+  try {
+    const stations = await api.siteWeatherStations.list()
+    siteWeatherStations.value = Array.isArray(stations) ? stations : []
+  } catch {
+    siteWeatherStations.value = []
+    showToast('Не удалось загрузить общие метеостанции.', 'warning', TOAST_TIMEOUT.NORMAL)
+  }
+}
+
 async function loadManagedGreenhouseNodes(): Promise<void> {
   try {
     const response = await api.nodes.list({
@@ -661,13 +675,17 @@ function unwrapNodesList(response: unknown): GreenhouseNodeOption[] {
 
 async function loadGreenhouseClimate(): Promise<void> {
   try {
+    const greenhouse = await api.greenhouses.getById(props.greenhouse.id)
+    const sharedId = (greenhouse as { shared_weather_station_node_id?: number | null })?.shared_weather_station_node_id
+    sharedWeatherStationNodeId.value = typeof sharedId === 'number' ? sharedId : null
+
     const document = await automationConfig.getDocument('greenhouse', props.greenhouse.id, GREENHOUSE_LOGIC_PROFILE_NAMESPACE)
     const payload = payloadFromGreenhouseLogicDocument(document)
     const entry = resolveGreenhouseProfileEntry(payload ?? null)
     const bindings = asRecord(payload?.bindings ?? null)
 
     greenhouseClimateBindings.climate_sensors = toNodeIdArray(bindings?.climate_sensors)
-    greenhouseClimateBindings.weather_station_sensors = toNodeIdArray(bindings?.weather_station_sensors)
+    greenhouseClimateBindings.weather_station_sensors = []
     greenhouseClimateBindings.vent_actuators = toNodeIdArray(bindings?.vent_actuators)
     greenhouseClimateBindings.fan_actuators = toNodeIdArray(bindings?.fan_actuators)
 
@@ -716,7 +734,7 @@ async function saveGreenhouseClimate(): Promise<void> {
       greenhouse_id: props.greenhouse.id,
       enabled: greenhouseClimateEnabled.value,
       climate_sensors: [...greenhouseClimateBindings.climate_sensors],
-      weather_station_sensors: [...greenhouseClimateBindings.weather_station_sensors],
+      weather_station_sensors: [],
       vent_actuators: [...greenhouseClimateBindings.vent_actuators],
       fan_actuators: [...greenhouseClimateBindings.fan_actuators],
     }
@@ -726,6 +744,9 @@ async function saveGreenhouseClimate(): Promise<void> {
     }
 
     await api.setupWizard.applyGreenhouseClimateBindings(bindingsPayload)
+    await api.greenhouses.update(props.greenhouse.id, {
+      shared_weather_station_node_id: sharedWeatherStationNodeId.value,
+    })
     const currentDocument = await automationConfig.getDocument('greenhouse', props.greenhouse.id, GREENHOUSE_LOGIC_PROFILE_NAMESPACE)
     const currentPayload = payloadFromGreenhouseLogicDocument(currentDocument)
     const response = await automationConfig.updateDocument('greenhouse', props.greenhouse.id, GREENHOUSE_LOGIC_PROFILE_NAMESPACE, {
@@ -897,6 +918,7 @@ onMounted(async () => {
   await Promise.all([
     loadAvailableNodes(),
     loadManagedGreenhouseNodes(),
+    loadSiteWeatherStations(),
     loadGreenhouseClimate(),
   ])
 })

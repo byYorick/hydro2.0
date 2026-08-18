@@ -334,6 +334,7 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist,enginee
 
         try {
             $greenhousesQuery = Greenhouse::query()
+                ->userVisible()
                 ->select(['id', 'uid', 'name', 'type', 'description', 'timezone', 'created_at']);
 
             if (! $user->isAdmin()) {

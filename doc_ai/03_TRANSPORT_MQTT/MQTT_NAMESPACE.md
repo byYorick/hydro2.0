@@ -41,6 +41,23 @@ hydro/{gh}/{zone}/{node}/{message_type}
 
 **Все сегменты строчные, без пробелов, с `-` или `_` по необходимости.**
 
+### 1.1. Reserved site infrastructure UIDs
+
+Паттерн топика **не меняется**. Для site-level устройств (общая метеостанция, DD-10) зарезервированы UID:
+
+| Сегмент | Значение | Назначение |
+|---|---|---|
+| `{gh}` | `site` | Служебная system-теплица (`greenhouses.is_system=true`) |
+| `{zone}` | `wx` | Служебная зона-якорь под `site` |
+
+Пример телеметрии метеостанции:
+
+```text
+hydro/site/wx/{node}/outside_temp/telemetry
+```
+
+В UI станция показывается как независимое site-устройство; opt-in теплиц — через `greenhouses.shared_weather_station_node_id`, не через exclusive `channel_bindings`.
+
 ---
 
 ## 2. Типы сообщений

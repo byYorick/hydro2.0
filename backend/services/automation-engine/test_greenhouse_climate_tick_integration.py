@@ -588,3 +588,164 @@ async def test_recover_stale_greenhouse_running_intent_requeues_pending() -> Non
         assert rows and rows[0]["status"] == "pending"
     finally:
         await _cleanup_greenhouse(greenhouse_id=greenhouse_id, zone_id=zone_id, sensor_ids=sensor_ids)
+
+
+@pytest.mark.asyncio
+async def test_sensor_snapshot_reads_shared_weather_station_node() -> None:
+    """Outdoor metrics come from greenhouses.shared_weather_station_node_id (site station)."""
+    from ae3lite.greenhouse_climate.run_tick import _sensor_snapshot
+
+    prefix = f"gh-shared-wx-{uuid.uuid4().hex[:10]}"
+    gh_uid = f"gh-{uuid.uuid4().hex[:18]}"
+    site_uid = "site"
+    wx_uid = "wx"
+    sensor_ids: list[int] = []
+    weather_node_id: int | None = None
+    greenhouse_id: int | None = None
+    zone_id: int | None = None
+
+    site_rows = await fetch("SELECT id FROM greenhouses WHERE uid = $1", site_uid)
+    if site_rows:
+        site_gh_id = int(site_rows[0]["id"])
+    else:
+        site_ins = await fetch(
+            """
+            INSERT INTO greenhouses (uid, name, timezone, provisioning_token, is_system, created_at, updated_at)
+            VALUES ($1, 'Site Infrastructure', 'UTC', $2, true, NOW(), NOW())
+            RETURNING id
+            """,
+            site_uid,
+            f"pt-{uuid.uuid4().hex[:24]}",
+        )
+        site_gh_id = int(site_ins[0]["id"])
+
+    wx_rows = await fetch("SELECT id FROM zones WHERE uid = $1", wx_uid)
+    if wx_rows:
+        wx_zone_id = int(wx_rows[0]["id"])
+    else:
+        wx_ins = await fetch(
+            """
+            INSERT INTO zones (greenhouse_id, name, uid, status, automation_runtime, created_at, updated_at)
+            VALUES ($1, 'Site Weather', $2, 'online', 'ae3', NOW(), NOW())
+            RETURNING id
+            """,
+            site_gh_id,
+            wx_uid,
+        )
+        wx_zone_id = int(wx_ins[0]["id"])
+
+    gh_rows = await fetch(
+        """
+        INSERT INTO greenhouses (uid, name, timezone, provisioning_token, created_at, updated_at)
+        VALUES ($1, $2, 'UTC', $3, NOW(), NOW())
+        RETURNING id
+        """,
+        gh_uid,
+        prefix,
+        f"pt-{uuid.uuid4().hex[:24]}",
+    )
+    greenhouse_id = int(gh_rows[0]["id"])
+
+    z_rows = await fetch(
+        """
+        INSERT INTO zones (greenhouse_id, name, uid, status, automation_runtime, created_at, updated_at)
+        VALUES ($1, $2, $3, 'online', 'ae3', NOW(), NOW())
+        RETURNING id
+        """,
+        greenhouse_id,
+        f"{prefix}-zone",
+        f"zn-{uuid.uuid4().hex[:18]}",
+    )
+    zone_id = int(z_rows[0]["id"])
+
+    wx_node_uid = f"nd-wx-{uuid.uuid4().hex[:12]}"
+    n_rows = await fetch(
+        """
+        INSERT INTO nodes (zone_id, uid, name, type, status, lifecycle_state, created_at, updated_at)
+        VALUES ($1, $2, $3, 'climate', 'online', 'ASSIGNED_TO_ZONE', NOW(), NOW())
+        RETURNING id
+        """,
+        wx_zone_id,
+        wx_node_uid,
+        f"{prefix}-weather",
+    )
+    weather_node_id = int(n_rows[0]["id"])
+    await execute(
+        "UPDATE greenhouses SET shared_weather_station_node_id = $1 WHERE id = $2",
+        weather_node_id,
+        greenhouse_id,
+    )
+
+    inside = await fetch(
+        """
+        INSERT INTO sensors (greenhouse_id, zone_id, node_id, scope, type, label, is_active, created_at, updated_at)
+        VALUES ($1, $2, NULL, 'inside', 'TEMPERATURE', 'temp_air', true, NOW(), NOW())
+        RETURNING id
+        """,
+        greenhouse_id,
+        zone_id,
+    )
+    inside_id = int(inside[0]["id"])
+    sensor_ids.append(inside_id)
+
+    outside = await fetch(
+        """
+        INSERT INTO sensors (greenhouse_id, zone_id, node_id, scope, type, label, is_active, created_at, updated_at)
+        VALUES ($1, $2, $3, 'outside', 'OUTSIDE_TEMP', 'outside_temp', true, NOW(), NOW())
+        RETURNING id
+        """,
+        site_gh_id,
+        wx_zone_id,
+        weather_node_id,
+    )
+    outside_id = int(outside[0]["id"])
+    sensor_ids.append(outside_id)
+
+    wind = await fetch(
+        """
+        INSERT INTO sensors (greenhouse_id, zone_id, node_id, scope, type, label, is_active, created_at, updated_at)
+        VALUES ($1, $2, $3, 'outside', 'WIND_SPEED', 'wind_speed', true, NOW(), NOW())
+        RETURNING id
+        """,
+        site_gh_id,
+        wx_zone_id,
+        weather_node_id,
+    )
+    wind_id = int(wind[0]["id"])
+    sensor_ids.append(wind_id)
+
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    await execute(
+        "INSERT INTO telemetry_last (sensor_id, last_value, last_ts, last_quality, updated_at) VALUES ($1, 24.0, $2, 'GOOD', NOW())",
+        inside_id,
+        now,
+    )
+    await execute(
+        "INSERT INTO telemetry_last (sensor_id, last_value, last_ts, last_quality, updated_at) VALUES ($1, 11.5, $2, 'GOOD', NOW())",
+        outside_id,
+        now,
+    )
+    await execute(
+        "INSERT INTO telemetry_last (sensor_id, last_value, last_ts, last_quality, updated_at) VALUES ($1, 3.2, $2, 'GOOD', NOW())",
+        wind_id,
+        now,
+    )
+
+    try:
+        snap = await _sensor_snapshot(greenhouse_id, freshness_sec=7200)
+        assert snap["inside_temp_median"] == 24.0
+        assert snap["outside_temp"] == 11.5
+        assert snap["wind_speed"] == 3.2
+        assert snap["weather_fresh"] is True
+        assert snap["shared_weather_station_node_id"] == weather_node_id
+    finally:
+        await execute("UPDATE greenhouses SET shared_weather_station_node_id = NULL WHERE id = $1", greenhouse_id)
+        for sid in sensor_ids:
+            await execute("DELETE FROM telemetry_last WHERE sensor_id = $1", sid)
+            await execute("DELETE FROM sensors WHERE id = $1", sid)
+        if weather_node_id is not None:
+            await execute("DELETE FROM nodes WHERE id = $1", weather_node_id)
+        if zone_id is not None:
+            await execute("DELETE FROM zones WHERE id = $1", zone_id)
+        if greenhouse_id is not None:
+            await execute("DELETE FROM greenhouses WHERE id = $1", greenhouse_id)

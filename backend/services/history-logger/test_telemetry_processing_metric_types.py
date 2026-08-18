@@ -1,6 +1,6 @@
 """Tests for telemetry_processing metric type mapping."""
 
-from telemetry.helpers import build_sensor_label, infer_sensor_type
+from telemetry.helpers import build_sensor_label, infer_sensor_scope, infer_sensor_type
 
 
 def test_infer_sensor_type_supports_soil_and_weather_metrics():
@@ -8,6 +8,15 @@ def test_infer_sensor_type_supports_soil_and_weather_metrics():
     assert infer_sensor_type("SOIL_TEMP") == "SOIL_TEMP"
     assert infer_sensor_type("WIND_SPEED") == "WIND_SPEED"
     assert infer_sensor_type("OUTSIDE_TEMP") == "OUTSIDE_TEMP"
+
+
+def test_infer_sensor_scope_marks_weather_metrics_outside():
+    assert infer_sensor_scope("OUTSIDE_TEMP") == "outside"
+    assert infer_sensor_scope("WIND_SPEED") == "outside"
+    assert infer_sensor_scope("RAIN_DETECTED", "rain_detected") == "outside"
+    assert infer_sensor_scope("TEMPERATURE", "outside_temp") == "outside"
+    assert infer_sensor_scope("TEMPERATURE", "temperature") == "inside"
+    assert infer_sensor_scope("HUMIDITY") == "inside"
 
 
 def test_tds_metric_maps_to_other_sensor_type_separate_from_ec():

@@ -105,6 +105,42 @@
             </div>
             <p class="mt-1 text-xs text-[color:var(--text-muted)]">
               Сначала выберите greenhouse climate nodes, затем сохраните профиль.
+              Общая метеостанция площадки выбирается отдельно и не привязывается к теплице.
+            </p>
+          </div>
+
+          <div class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]/30 p-3">
+            <div class="mb-2.5 text-xs font-semibold uppercase tracking-[0.12em] text-[color:var(--text-muted)]">
+              Общая метеостанция
+            </div>
+            <label
+              class="text-xs text-[color:var(--text-muted)]"
+              title="Разрешить climate tick брать outdoor-телеметрию с независимой site-level станции"
+            >
+              Использовать общую метеостанцию
+              <select
+                v-model="sharedWeatherStationSelect"
+                data-testid="greenhouse-shared-weather-station"
+                class="input-select mt-1 w-full"
+                :disabled="!canConfigure"
+              >
+                <option :value="null">
+                  Не использовать
+                </option>
+                <option
+                  v-for="station in siteWeatherStations"
+                  :key="station.id"
+                  :value="station.id"
+                >
+                  {{ station.name || station.uid }} ({{ station.uid }})
+                </option>
+              </select>
+            </label>
+            <p
+              v-if="siteWeatherStations.length === 0"
+              class="mt-2 text-[11px] text-[color:var(--text-dim)]"
+            >
+              Нет назначенных станций. Добавьте climate-ноду как метеостанцию на странице «Устройства».
             </p>
           </div>
 
@@ -649,16 +685,25 @@ interface GreenhouseClimateBindingsState {
   fan_actuators: number[]
 }
 
+interface SiteWeatherStationOption {
+  id: number
+  uid: string
+  name?: string | null
+  status?: string | null
+}
+
 type PanelId = 'bindings' | 'profile' | 'runtime' | 'vents' | 'weather' | 'orientation'
 
 const props = withDefaults(defineProps<{
   availableNodes?: SetupWizardNode[]
+  siteWeatherStations?: SiteWeatherStationOption[]
   canConfigure?: boolean
   applying?: boolean
   showApplyButton?: boolean
   applyLabel?: string
 }>(), {
   availableNodes: () => [],
+  siteWeatherStations: () => [],
   canConfigure: true,
   applying: false,
   showApplyButton: false,
@@ -668,6 +713,18 @@ const props = withDefaults(defineProps<{
 const enabled = defineModel<boolean>('enabled', { required: true })
 const climateForm = defineModel<ClimateFormState>('climateForm', { required: true })
 const bindings = defineModel<GreenhouseClimateBindingsState>('bindings', { required: true })
+const sharedWeatherStationNodeId = defineModel<number | null>('sharedWeatherStationNodeId', { default: null })
+
+const sharedWeatherStationSelect = computed({
+  get: () => sharedWeatherStationNodeId.value,
+  set: (value: number | string | null) => {
+    if (value === null || value === '' || value === 'null') {
+      sharedWeatherStationNodeId.value = null
+      return
+    }
+    sharedWeatherStationNodeId.value = Number(value)
+  },
+})
 
 defineEmits<{
   (e: 'apply'): void
@@ -867,17 +924,10 @@ const climateSensorCandidates = computed(() => {
   })
 })
 
-const weatherStationCandidates = computed(() => {
-  return props.availableNodes.filter((node) => {
-    const type = String(node.type ?? '').toLowerCase()
-    return type === 'weather' || matchesAnyChannel(node, ['outdoor_temp', 'outdoor_humidity', 'wind_speed', 'rain', 'pressure'])
-  })
-})
-
 const ventActuatorCandidates = computed(() => {
   return props.availableNodes.filter((node) => {
     const type = String(node.type ?? '').toLowerCase()
-    return type === 'climate' || matchesAnyChannel(node, ['vent_drive', 'vent_window_pct'])
+    return type === 'climate' || matchesAnyChannel(node, ['vent_drive', 'vent_window_pct', 'roof_vent_left', 'roof_vent_right'])
   })
 })
 
@@ -890,16 +940,15 @@ const fanActuatorCandidates = computed(() => {
 
 const bindingGroups = computed(() => [
   { key: 'climate_sensors' as const, label: 'Датчики климата', candidates: climateSensorCandidates.value },
-  { key: 'weather_station_sensors' as const, label: 'Метеостанция', candidates: weatherStationCandidates.value },
   { key: 'vent_actuators' as const, label: 'Форточки', candidates: ventActuatorCandidates.value },
   { key: 'fan_actuators' as const, label: 'Вентиляторы', candidates: fanActuatorCandidates.value },
 ])
 
 const selectedBindingsCount = computed(() => {
   return bindings.value.climate_sensors.length
-    + bindings.value.weather_station_sensors.length
     + bindings.value.vent_actuators.length
     + bindings.value.fan_actuators.length
+    + (sharedWeatherStationNodeId.value ? 1 : 0)
 })
 </script>
 

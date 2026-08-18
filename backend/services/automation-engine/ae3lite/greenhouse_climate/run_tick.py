@@ -323,8 +323,133 @@ def _weather_station_fresh(outside_fresh: Mapping[str, bool]) -> bool:
     return any(bool(outside_fresh.get(key)) for key in _CORE_OUTSIDE_WEATHER_KEYS)
 
 
-async def _sensor_snapshot(greenhouse_id: int, freshness_sec: int) -> dict[str, Any]:
+async def _load_shared_weather_station_node_id(greenhouse_id: int) -> int | None:
     rows = await fetch(
+        """
+        SELECT shared_weather_station_node_id
+        FROM greenhouses
+        WHERE id = $1
+        """,
+        greenhouse_id,
+    )
+    if not rows:
+        return None
+    raw = rows[0].get("shared_weather_station_node_id")
+    if raw is None:
+        return None
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def _accumulate_sensor_row(
+    row: Mapping[str, Any],
+    *,
+    freshness_sec: int,
+    now: datetime,
+    inside_temps: list[float],
+    inside_rhs: list[float],
+    inside_pressures: list[float],
+    outside_fresh: dict[str, bool],
+    outdoor_state: dict[str, Any],
+    allow_inside: bool,
+    allow_outside: bool,
+) -> bool:
+    """Apply one sensor row into aggregators. Returns whether inside climate was marked fresh."""
+    scope = str(row.get("scope") or "").lower()
+    st = str(row.get("type") or "")
+    label = str(row.get("label") or "").strip().lower()
+    val = row.get("last_value")
+    ts = row.get("last_ts") or row.get("telemetry_updated_at")
+    q = str(row.get("last_quality") or "").upper()
+
+    def _fresh(ts_value: Any) -> bool:
+        if ts_value is None or not isinstance(ts_value, datetime):
+            return False
+        if ts_value.tzinfo is None:
+            ts_value = ts_value.replace(tzinfo=timezone.utc)
+        return (now - ts_value).total_seconds() <= float(freshness_sec)
+
+    fresh = _fresh(ts) and q != "BAD"
+    if not fresh:
+        return False
+    fv = _as_float(val)
+    if fv is None:
+        return False
+
+    inside_marked = False
+    if allow_inside and scope == "inside" and (st == "TEMPERATURE" or label in {"temperature", "temp_air"}):
+        inside_temps.append(fv)
+        inside_marked = True
+    elif allow_inside and scope == "inside" and (st == "HUMIDITY" or label in {"humidity", "humidity_air"}):
+        inside_rhs.append(fv)
+        inside_marked = True
+    elif allow_inside and scope == "inside" and (st == "PRESSURE" or label == "pressure"):
+        inside_pressures.append(fv)
+    elif allow_outside and (
+        scope == "outside"
+        or st in _OUTSIDE_SENSOR_TYPES
+        or label in _OUTSIDE_CHANNEL_HINTS
+        or st in {"WIND_SPEED", "WIND_DIRECTION"}
+        or label in {"wind_speed", "wind_direction"}
+    ):
+        if st in {"TEMPERATURE", "OUTSIDE_TEMP"} or label in {"outside_temp", "outdoor_temp"}:
+            outdoor_state["outside_temp"] = fv
+            outside_fresh["outside_temp"] = True
+        elif st in {"HUMIDITY", "OUTSIDE_HUMIDITY"} or label in {"outside_humidity", "outdoor_humidity"}:
+            outdoor_state["outside_humidity"] = fv
+            outside_fresh["outside_humidity"] = True
+        elif st in {"PRESSURE", "OUTSIDE_PRESSURE"} or label in {"outside_pressure"}:
+            outdoor_state["outside_pressure"] = fv
+        elif st == "WIND_SPEED" or label == "wind_speed":
+            outdoor_state["wind_speed"] = fv
+            outside_fresh["wind_speed"] = True
+        elif st == "WIND_DIRECTION" or label == "wind_direction":
+            outdoor_state["wind_direction_deg"] = fv
+        elif st in {"LIGHT_INTENSITY", "OUTSIDE_LIGHT"} or label in {"outside_light", "light"}:
+            outdoor_state["outside_light_lux"] = fv
+            outside_fresh["outside_light"] = True
+        elif st in {"RAIN_DETECTED", "RAIN"} or label in {"rain_detected", "rain"}:
+            outdoor_state["rain_detected"] = _is_truthy_sensor_value(fv)
+            outside_fresh["rain_detected"] = True
+
+    return inside_marked
+
+
+_OUTSIDE_SENSOR_TYPES = frozenset(
+    {
+        "OUTSIDE_TEMP",
+        "OUTSIDE_HUMIDITY",
+        "OUTSIDE_PRESSURE",
+        "OUTSIDE_LIGHT",
+        "WIND_SPEED",
+        "WIND_DIRECTION",
+        "RAIN_DETECTED",
+    }
+)
+
+_OUTSIDE_CHANNEL_HINTS = frozenset(
+    {
+        "outside_temp",
+        "outside_humidity",
+        "outside_pressure",
+        "outside_light",
+        "outdoor_temp",
+        "outdoor_humidity",
+        "wind_speed",
+        "wind_direction",
+        "rain_detected",
+        "rain",
+    }
+)
+
+
+async def _sensor_snapshot(greenhouse_id: int, freshness_sec: int) -> dict[str, Any]:
+    shared_weather_node_id = await _load_shared_weather_station_node_id(greenhouse_id)
+
+    # Indoor always from the ticking greenhouse. Outdoor prefers shared site station.
+    inside_rows = await fetch(
         """
         SELECT s.scope::text AS scope,
                s.type::text AS type,
@@ -339,12 +464,37 @@ async def _sensor_snapshot(greenhouse_id: int, freshness_sec: int) -> dict[str, 
         """,
         greenhouse_id,
     )
+
+    outside_rows: list[Any] = []
+    if shared_weather_node_id is not None:
+        outside_rows = await fetch(
+            """
+            SELECT s.scope::text AS scope,
+                   s.type::text AS type,
+                   s.label,
+                   tl.last_value,
+                   tl.last_ts,
+                   tl.updated_at AS telemetry_updated_at,
+                   tl.last_quality::text AS last_quality
+            FROM sensors s
+            LEFT JOIN telemetry_last tl ON tl.sensor_id = s.id
+            WHERE s.node_id = $1 AND s.is_active IS TRUE
+            """,
+            shared_weather_node_id,
+        )
+    else:
+        outside_rows = [
+            row
+            for row in (inside_rows or [])
+            if str(row.get("scope") or "").lower() == "outside"
+            or str(row.get("type") or "") in _OUTSIDE_SENSOR_TYPES
+            or str(row.get("label") or "").strip().lower() in _OUTSIDE_CHANNEL_HINTS
+        ]
+
     now = datetime.now(timezone.utc)
     inside_temps: list[float] = []
     inside_rhs: list[float] = []
-    outside_temp = outside_rh = wind_speed = wind_dir = outside_lux = outside_pressure = None
     inside_pressures: list[float] = []
-    rain = False
     outside_fresh: dict[str, bool] = {
         "outside_temp": False,
         "outside_humidity": False,
@@ -352,60 +502,46 @@ async def _sensor_snapshot(greenhouse_id: int, freshness_sec: int) -> dict[str, 
         "rain_detected": False,
         "outside_light": False,
     }
+    outdoor_state: dict[str, Any] = {
+        "outside_temp": None,
+        "outside_humidity": None,
+        "outside_pressure": None,
+        "wind_speed": None,
+        "wind_direction_deg": None,
+        "rain_detected": False,
+        "outside_light_lux": None,
+    }
     inside_fresh = False
 
-    def _fresh(ts: Any) -> bool:
-        if ts is None:
-            return False
-        if not isinstance(ts, datetime):
-            return False
-        if ts.tzinfo is None:
-            ts = ts.replace(tzinfo=timezone.utc)
-        return (now - ts).total_seconds() <= float(freshness_sec)
+    for row in inside_rows or []:
+        if _accumulate_sensor_row(
+            row,
+            freshness_sec=freshness_sec,
+            now=now,
+            inside_temps=inside_temps,
+            inside_rhs=inside_rhs,
+            inside_pressures=inside_pressures,
+            outside_fresh=outside_fresh,
+            outdoor_state=outdoor_state,
+            allow_inside=True,
+            allow_outside=shared_weather_node_id is None,
+        ):
+            inside_fresh = True
 
-    for row in rows or []:
-        scope = str(row.get("scope") or "").lower()
-        st = str(row.get("type") or "")
-        label = str(row.get("label") or "").strip().lower()
-        val = row.get("last_value")
-        ts = row.get("last_ts") or row.get("telemetry_updated_at")
-        q = str(row.get("last_quality") or "").upper()
-        fresh = _fresh(ts) and q != "BAD"
-        if not fresh:
-            continue
-        fv = _as_float(val)
-        if fv is None:
-            continue
-        if scope == "inside" and (st == "TEMPERATURE" or label in {"temperature", "temp_air"}):
-            inside_temps.append(fv)
-            inside_fresh = inside_fresh or fresh
-        elif scope == "inside" and (st == "HUMIDITY" or label in {"humidity", "humidity_air"}):
-            inside_rhs.append(fv)
-            inside_fresh = inside_fresh or fresh
-        elif scope == "inside" and (st == "PRESSURE" or label == "pressure"):
-            inside_pressures.append(fv)
-        elif scope == "outside" and (st in {"TEMPERATURE", "OUTSIDE_TEMP"} or label == "outside_temp"):
-            outside_temp = fv
-            outside_fresh["outside_temp"] = True
-        elif scope == "outside" and (st in {"HUMIDITY", "OUTSIDE_HUMIDITY"} or label == "outside_humidity"):
-            outside_rh = fv
-            outside_fresh["outside_humidity"] = True
-        elif scope == "outside" and (st in {"PRESSURE", "OUTSIDE_PRESSURE"} or label == "outside_pressure"):
-            outside_pressure = fv
-        elif st == "WIND_SPEED" or label == "wind_speed":
-            wind_speed = fv
-            outside_fresh["wind_speed"] = True
-        elif st == "WIND_DIRECTION" or label == "wind_direction":
-            wind_dir = fv
-        elif scope == "outside" and (st == "LIGHT_INTENSITY" or label in {"outside_light", "light"}):
-            outside_lux = fv
-            outside_fresh["outside_light"] = True
-        elif scope == "outside" and st == "OUTSIDE_LIGHT":
-            outside_lux = fv
-            outside_fresh["outside_light"] = True
-        elif scope == "outside" and (st in {"RAIN_DETECTED", "RAIN"} or label in {"rain_detected", "rain"}):
-            rain = _is_truthy_sensor_value(fv)
-            outside_fresh["rain_detected"] = True
+    if shared_weather_node_id is not None:
+        for row in outside_rows or []:
+            _accumulate_sensor_row(
+                row,
+                freshness_sec=freshness_sec,
+                now=now,
+                inside_temps=inside_temps,
+                inside_rhs=inside_rhs,
+                inside_pressures=inside_pressures,
+                outside_fresh=outside_fresh,
+                outdoor_state=outdoor_state,
+                allow_inside=False,
+                allow_outside=True,
+            )
 
     it_med = float(median(inside_temps)) if inside_temps else None
     it_max = max(inside_temps) if inside_temps else None
@@ -427,16 +563,17 @@ async def _sensor_snapshot(greenhouse_id: int, freshness_sec: int) -> dict[str, 
         "inside_rh_min": irh_min,
         "inside_rh_spread": irh_spread,
         "inside_pressure_median": ip_med,
-        "outside_temp": outside_temp,
-        "outside_humidity": outside_rh,
-        "outside_pressure": outside_pressure,
-        "wind_speed": wind_speed,
-        "wind_direction_deg": wind_dir,
-        "rain_detected": rain,
-        "outside_light_lux": outside_lux,
+        "outside_temp": outdoor_state["outside_temp"],
+        "outside_humidity": outdoor_state["outside_humidity"],
+        "outside_pressure": outdoor_state["outside_pressure"],
+        "wind_speed": outdoor_state["wind_speed"],
+        "wind_direction_deg": outdoor_state["wind_direction_deg"],
+        "rain_detected": outdoor_state["rain_detected"],
+        "outside_light_lux": outdoor_state["outside_light_lux"],
         "weather_fresh": _weather_station_fresh(outside_fresh),
         "outside_fresh": outside_fresh,
         "inside_fresh": inside_fresh,
+        "shared_weather_station_node_id": shared_weather_node_id,
     }
 
 
