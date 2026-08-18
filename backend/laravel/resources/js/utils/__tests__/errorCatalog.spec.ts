@@ -82,6 +82,27 @@ describe('errorCatalog', () => {
     })).toBe('Наполнение раствором остановлено: нижний уровень раствора пропал после guard-delay, возможна утечка или неправильная гидравлика.')
   })
 
+  it('локализует recirc_dilute_blocked_solution_max из каталога', () => {
+    expect(resolveHumanErrorMessage({
+      code: 'recirc_dilute_blocked_solution_max',
+      message: 'Dilute blocked: solution_max already ON',
+    })).toBe('Бак раствора уже полный, поэтому автоматика не может разбавить раствор чистой водой и остановила рециркуляцию. Проверьте верхний датчик уровня и при необходимости слейте часть раствора.')
+  })
+
+  it('локализует ae3_water_baseline_invalid из каталога', () => {
+    expect(resolveHumanErrorMessage({
+      code: 'ae3_water_baseline_invalid',
+      message: 'Water baseline from another cycle is invalid',
+    })).toBe('Нет замера чистой воды текущего цикла подготовки — замер другого цикла использовать нельзя. Запустите подготовку заново, чтобы снять новые показания EC и pH чистой воды.')
+  })
+
+  it('локализует prepare_recirculation_attempt_limit_reached из каталога', () => {
+    expect(resolveHumanErrorMessage({
+      code: 'prepare_recirculation_attempt_limit_reached',
+      message: 'prepare_recirculation_max_attempts exhausted',
+    })).toBe('Раствор не удалось стабилизировать за допустимое число попыток рециркуляции. Проверьте бак раствора, рецепт и стартовые дозы — автоматика дальше не продолжит.')
+  })
+
   it('локализует ошибки recovery command gateway', () => {
     expect(resolveHumanErrorMessage({
       message: 'Task 41 has no ae_command for recovery',

@@ -1,9 +1,9 @@
 # ERROR_CODE_CATALOG.md
 # Канонический каталог кодов ошибок automation/runtime
 
-**Версия:** 1.6
-**Дата:** 2026-08-02
-**Статус:** Актуально (фаза 5: прошивки/MQTT command_response; фаза 4: UI fallback; solution_topup/solution_change runtime codes)
+**Версия:** 1.7
+**Дата:** 2026-08-18
+**Статус:** Актуально (фаза 5: прошивки/MQTT command_response; фаза 4: UI fallback; solution_topup/solution_change runtime codes; two-tank operator copy)
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 
@@ -191,6 +191,8 @@ make i18n-catalog-check   # включает audit_phase4_i18n_coverage.py
 | `irrigation_wait_ready_timeout` | `await_ready` | Зона не вышла в `workflow_phase='ready'` за `AE_IRRIGATION_WAIT_READY_SEC` | `Ожидание готовности зоны к поливу превысило лимит.` |
 | `emergency_stop_activated` | `ae3_failsafe` | E-stop активирован; AE3 fail-closed завершает stage (firmware не restore'ит актуаторы после отпускания) | `Аварийный стоп активен — автоматика остановлена до безопасного состояния.` |
 | `ae3_prepare_recirculation_max_attempts_missing` | `ae3_config` | В bundle коррекции для prepare-recirculation отсутствует обязательный `prepare_recirculation_max_attempts` (Phase 3.1 B-7 fail-closed) | `В конфигурации коррекции отсутствует обязательный параметр числа повторов prepare-recirculation.` |
+| `ae3_water_baseline_invalid` | `ae3_prepare` | Нет water baseline **этого** цикла подготовки (`zone_prepare_baselines` / `corr_*`); reuse baseline чужого task/цикла запрещён | `Нет замера чистой воды текущего цикла подготовки — замер другого цикла использовать нельзя. Запустите подготовку заново, чтобы снять новые показания EC и pH чистой воды.` |
+| `recirc_dilute_blocked_solution_max` | `prepare_recirc_*` (dilute) | Dilute-on-overshoot заблокирован: `solution_max` уже ON, чистую воду в бак раствора лить нельзя | `Бак раствора уже полный, поэтому автоматика не может разбавить раствор чистой водой и остановила рециркуляцию. Проверьте верхний датчик уровня и при необходимости слейте часть раствора.` |
 
 ## Таблица кодов AE3 ingress / task creation
 
@@ -258,7 +260,9 @@ Stage-terminal коды используются `WorkflowRouter._fail_task` д�
 | `solution_fill_source_empty_stop` | `solution_fill_*` | Источник раствора пуст. |
 | `solution_fill_timeout_stop` | `solution_fill_check` | Stage timeout / fail-closed по `no-effect`. |
 | `prepare_recirculation_solution_low_stop` | `prepare_recirc_*` | Раствор закончился (`solution_min`): stop recirc → `startup` (обычная подготовка). Не terminal fail. |
-| `prepare_recirculation_attempt_limit_reached` | `prepare_recirc_*` | Исчерпан `prepare_recirculation_max_attempts`. |
+| `prepare_recirculation_attempt_limit_reached` | `prepare_recirc_*` | Исчерпан `prepare_recirculation_max_attempts`. Оператору: раствор не удалось стабилизировать за допустимое число попыток рециркуляции — проверьте бак раствора, рецепт и стартовые дозы. |
+| `ae3_water_baseline_invalid` | `solution_fill` / `prepare_recirc_*` | Нет замера чистой воды **текущего** цикла подготовки; baseline чужого цикла использовать нельзя. |
+| `recirc_dilute_blocked_solution_max` | `prepare_recirc_*` (dilute) | Бак раствора уже полный (`solution_max`) — разбавление невозможно, AE3 остановил рециркуляцию fail-closed. |
 | `irrigation_decision_strategy_unknown` | `decision_gate` | Неизвестная irrigation strategy в конфиге. |
 
 ## Таблица кодов solution_change
