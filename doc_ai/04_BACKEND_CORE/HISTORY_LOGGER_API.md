@@ -3,7 +3,7 @@
 
 Документ описывает REST API endpoints history-logger сервиса — **единственной точки публикации команд в MQTT** в архитектуре hydro2.0.
 
-**Дата обновления:** 2026-08-02 (code-first audit: webhook HMAC/body, DLQ replay paths, `zone_id` required, health/ingest/metrics sync).
+**Дата обновления:** 2026-08-18 (`set_fault_mode` lease bypass только для `test_node`).
 
 **Связанные документы:**
 - `PYTHON_SERVICES_ARCH.md` — общая архитектура Python-сервисов
@@ -112,7 +112,7 @@ Content-Type: application/json
 - `source=automation-engine` (держатель lease);
 - read-only `state` / `test_sensor`;
 - fail-safe OFF (`set_relay`/`set_state` с `state=false|0`, `set_pwm` с duty ≤ 0);
-- diagnostic `set_fault_mode` (только `test_node`: seed уровней / pH / EC / E-Stop для realhw e2e, без актуаторов).
+- diagnostic `set_fault_mode` **только** для `test_node`. Достаточно одного надёжного признака: `nodes.uid` начинается с `nd-test-` (канон e2e/firmware virtual nodes: `nd-test-irrig-1`, `nd-test-ph-1`, …; их `nodes.type` = `irrig`/`ph`/`ec`, не `test_node`) **или** `LOWER(nodes.type)` ∈ {`test`, `test_node`}. Иначе при активной lease — `409` `ae3_zone_lease_held`. Без `node_uid`/`node_id` или если узел не найден в `nodes` — diagnostic не пропускается (fail-closed, проверяется lease как обычно). Realhw e2e seed уровней / pH / EC / E-Stop на `nd-test-*`, без актуаторов.
 Operator `FORCE_PH_CONTROL` / `FORCE_EC_CONTROL` / `FORCE_LIGHTING` / `FORCE_CLIMATE` и device-level `dose`/`run_pump`/`set_relay true` через Laravel при активной lease не публикуются. `FORCE_IRRIGATION` идёт в AE3 ingress (там свой `*_zone_busy`).
 
 Примечание:

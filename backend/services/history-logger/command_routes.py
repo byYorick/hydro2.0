@@ -245,6 +245,8 @@ async def _publish_command_core(
         cmd=req.cmd or "",
         params=req.params,
         source=command_source,
+        node_uid=node_uid,
+        node_id=node_id,
         fetch_fn=fetch,
     )
     effective_gh_uid = await resolve_effective_gh_uid(zone_id, req.greenhouse_uid)

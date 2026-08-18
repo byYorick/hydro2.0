@@ -748,8 +748,108 @@ async def test_lease_gate_allows_set_fault_mode_when_lease_held():
         cmd="set_fault_mode",
         params={"level_clean_max_override": True},
         source="e2e_runner",
+        node_uid="nd-test-irrig-1",
+        node_id=2,
         fetch_fn=_fetch,
     )
+
+
+@pytest.mark.asyncio
+async def test_lease_gate_allows_set_fault_mode_for_type_test_node_when_lease_held():
+    from commands.lease_gate import reject_if_zone_lease_held
+
+    async def _fetch(query, *_args, **_kwargs):
+        normalized = " ".join(str(query).split()).lower()
+        if "from nodes" in normalized:
+            return [{"uid": "nd-sim-ph-1", "type": "test_node"}]
+        raise AssertionError("lease lookup must be skipped for test_node set_fault_mode")
+
+    await reject_if_zone_lease_held(
+        zone_id=1,
+        cmd="set_fault_mode",
+        params={"level_clean_max_override": True},
+        source="e2e_runner",
+        node_uid="nd-sim-ph-1",
+        node_id=42,
+        fetch_fn=_fetch,
+    )
+
+
+@pytest.mark.asyncio
+async def test_lease_gate_rejects_set_fault_mode_on_regular_node_when_lease_held():
+    from fastapi import HTTPException
+    from commands.lease_gate import reject_if_zone_lease_held
+
+    async def _fetch(query, *_args, **_kwargs):
+        normalized = " ".join(str(query).split()).lower()
+        if "from nodes" in normalized:
+            return [{"uid": "nd-ph-1", "type": "ph"}]
+        if "from ae_zone_leases" in normalized:
+            return [{"ok": 1}]
+        return []
+
+    with pytest.raises(HTTPException) as exc_info:
+        await reject_if_zone_lease_held(
+            zone_id=1,
+            cmd="set_fault_mode",
+            params={"level_clean_max_override": True},
+            source="e2e_runner",
+            node_uid="nd-ph-1",
+            node_id=7,
+            fetch_fn=_fetch,
+        )
+    assert exc_info.value.status_code == 409
+    assert exc_info.value.detail["error"] == "ae3_zone_lease_held"
+
+
+@pytest.mark.asyncio
+async def test_lease_gate_rejects_set_fault_mode_without_node_identity_when_lease_held():
+    from fastapi import HTTPException
+    from commands.lease_gate import reject_if_zone_lease_held
+
+    async def _fetch(query, *_args, **_kwargs):
+        normalized = " ".join(str(query).split()).lower()
+        if "from ae_zone_leases" in normalized:
+            return [{"ok": 1}]
+        raise AssertionError("nodes lookup must not run without node identity")
+
+    with pytest.raises(HTTPException) as exc_info:
+        await reject_if_zone_lease_held(
+            zone_id=1,
+            cmd="set_fault_mode",
+            params={"level_clean_max_override": True},
+            source="e2e_runner",
+            fetch_fn=_fetch,
+        )
+    assert exc_info.value.status_code == 409
+    assert exc_info.value.detail["error"] == "ae3_zone_lease_held"
+
+
+@pytest.mark.asyncio
+async def test_lease_gate_rejects_set_fault_mode_when_node_missing_from_db():
+    from fastapi import HTTPException
+    from commands.lease_gate import reject_if_zone_lease_held
+
+    async def _fetch(query, *_args, **_kwargs):
+        normalized = " ".join(str(query).split()).lower()
+        if "from nodes" in normalized:
+            return []
+        if "from ae_zone_leases" in normalized:
+            return [{"ok": 1}]
+        return []
+
+    with pytest.raises(HTTPException) as exc_info:
+        await reject_if_zone_lease_held(
+            zone_id=1,
+            cmd="set_fault_mode",
+            params={"level_clean_max_override": True},
+            source="e2e_runner",
+            node_uid="nd-ph-missing",
+            node_id=99,
+            fetch_fn=_fetch,
+        )
+    assert exc_info.value.status_code == 409
+    assert exc_info.value.detail["error"] == "ae3_zone_lease_held"
 
 
 @pytest.mark.asyncio
