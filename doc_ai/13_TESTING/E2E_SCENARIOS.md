@@ -265,7 +265,10 @@
 **DoD:** missing actuator plan → AE3 fail-closed до MQTT (realhw)
 
 Канонический fail-closed на реальной test_node. Исторический
-`E61_fail_closed_corrections` удалён. Realhw matrix — `tests/e2e/README.md`.
+`E61_fail_closed_corrections` удалён.
+
+Полный realhw набор (AE3 two-tank + irrigation + calibration) и **инструкция для ИИ-агента**:
+[`REALHW_TEST_NODE_AGENT_GUIDE.md`](./REALHW_TEST_NODE_AGENT_GUIDE.md), каталог — `tests/e2e/README.md`.
 
 Дополнительно: категории `ae3lite/`, `scheduler/`, `workflow/`, `calibration/` — см. дерево `tests/e2e/scenarios/`.
 

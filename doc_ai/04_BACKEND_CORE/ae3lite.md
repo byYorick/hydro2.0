@@ -1128,11 +1128,13 @@ Sequential nutrient / two-tank realhw (источник: `tests/e2e/scenarios/ae
 - **Live:** `E106` (sequential Ca→pH pipeline), `E107`/`E109` (irrigation stop→ready,
   pH-only inline), `E112` (water-baseline + cumulative `T_*`),
   `E118` (live-short: `WATER_BASELINE_CAPTURED` + Ca-only fill on `pump_b`),
+  `E119` (live-short: Ca→pH→Mg + `PIPELINE_STEP_CHANGED`; stub YAML `E119_*_test_node` — pin рядом),
   `E120` (live-short: dilute-on-overshoot → `valve_clean_supply` + `RECIRC_DILUTE_*`)
-- **Contract stubs only** (`status: stub`, не в realhw suite): `E119`, `E121`
+- **Contract stubs only** (`status: stub`, не в realhw suite): `E121`
   (stub YAML `E120_*_test_node` остаётся pin-контрактом рядом с live `E120_*_realhw`)
-  (prepare pipeline / dilute / irrigation pH-only no recovery).
-  Live-фрагменты тех же инвариантов закрывают `E104`/`E106`/`E107`/`E109`/`E118`/`E120`.
+  (irrigation pH-only no recovery).
+  Live-фрагменты тех же инвариантов закрывают `E104`/`E106`/`E107`/`E109`/`E118`/`E119`/`E120`.
+  Запуск на железе: `doc_ai/13_TESTING/REALHW_TEST_NODE_AGENT_GUIDE.md`.
 
 ### 12.4 Правило тестирования по этапам
 
@@ -1170,7 +1172,7 @@ AE3-Lite `v1` считается готовым, когда выполнены �
     - `restart during waiting_command -> recovered`
     - `runtime switch denied while zone busy`
     - `start-climate-tick -> HL set_position -> snapshot в greenhouse_automation_state` (см. `GREENHOUSE_CLIMATE_CONTROL_PLAN.md`)
-    - sequential nutrient realhw live: `E106`, `E107`/`E109`, `E112`, `E118`, `E120`; stubs `E119`/`E121` (см. §12.3)
+    - sequential nutrient realhw live: `E106`, `E107`/`E109`, `E112`, `E118`, `E119`, `E120`; stub `E121` (см. §12.3)
 12. Каждый этап реализации был покрыт и проверен своими stage-level tests до перехода к следующему этапу.
 13. После завершения реализации покрыт и пройден полный обязательный `e2e`-набор.
 14. На staging выполнен как минимум один воспроизводимый rollout и один rollback.

@@ -307,6 +307,8 @@ Namespace по умолчанию `gh-test-1/zn-test-1` (`TEST_NODE_GH_UID` / `T
 
 Канон: [`doc_ai/02_HARDWARE_FIRMWARE/TEST_NODE_REAL_HW_PROD_READINESS_SPEC.md`](../../doc_ai/02_HARDWARE_FIRMWARE/TEST_NODE_REAL_HW_PROD_READINESS_SPEC.md) §7.2.1, [`TEST_NODE_TO_REAL_NODES_MAPPING_MATRIX.md`](../../doc_ai/02_HARDWARE_FIRMWARE/TEST_NODE_TO_REAL_NODES_MAPPING_MATRIX.md) §6.1.
 
+Запуск YAML E2E на этой прошивке (для ИИ-агента): [`doc_ai/13_TESTING/REALHW_TEST_NODE_AGENT_GUIDE.md`](../../doc_ai/13_TESTING/REALHW_TEST_NODE_AGENT_GUIDE.md), [`tests/e2e/AGENTS.md`](../../tests/e2e/AGENTS.md).
+
 ## Setup/preconfig режим
 
 Если в NVS нет валидных WiFi/MQTT настроек, прошивка автоматически запускает setup-портал:

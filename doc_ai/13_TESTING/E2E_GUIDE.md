@@ -2,17 +2,19 @@
 
 Руководство по написанию и запуску end-to-end тестов для системы Hydro 2.0.
 
-**Дата обновления:** 2026-08-02
+**Дата обновления:** 2026-08-18
 
 ## Три разных E2E suite (не смешивать)
 
 | Suite | Где | Команда | Порты / окружение |
 |-------|-----|---------|-------------------|
 | **Python workflow E2E** | `tests/e2e/` (корень репо) | `python -m runner.e2e_runner …` + `docker-compose.e2e.yml` | Laravel **8081**, PG **5433**, MQTT **1884**, Reverb **6002** |
+| **Realhw `test_node`** | та же `tests/e2e/`, **без** node-sim | `tests/e2e/run_automation_engine_real_hardware.sh --set=…` | те же порты + AE **9505**, HL **9302**; ESP32 на LAN → MQTT **1884** |
 | **Playwright (Laravel app)** | `backend/laravel/` → `playwright.config.ts` → обычно `tests/E2E/` | из `backend/laravel/`: `npm run e2e` / `npm run e2e:ci` | baseURL **8010** (`php artisan serve --port=8010`, см. `playwright.config.ts`) |
 | **Playwright browser smoke** | `backend/laravel/tests/e2e/browser/` | `npm run e2e:browser` | Отдельный `playwright.config.ts`; часто baseURL **8081** |
 
-Этот документ — про **Python workflow E2E** (`tests/e2e/`). Frontend Playwright — см. `doc_ai/07_FRONTEND/FRONTEND_TESTING.md`.
+Этот документ — про **Python workflow E2E** (`tests/e2e/`), в основном с node-sim.  
+**Физическая ESP32 `test_node`:** канон для ИИ — [`REALHW_TEST_NODE_AGENT_GUIDE.md`](./REALHW_TEST_NODE_AGENT_GUIDE.md) и [`tests/e2e/AGENTS.md`](../../tests/e2e/AGENTS.md). Frontend Playwright — см. `doc_ai/07_FRONTEND/FRONTEND_TESTING.md`.
 
 ### Realhw vs HIL lab
 
@@ -20,6 +22,10 @@
 |--------|---------|----------------|--------|
 | **Realhw / test_node YAML** | `tests/e2e/docker-compose.e2e.yml` | Laravel 8081, MQTT 1884, AE 9505, HL 9302 | `tests/e2e/run_automation_engine_real_hardware.sh --set=ae3lite\|full` |
 | **HIL ESP32 lab** | `infra/hil/docker-compose.hil.yml` | 8080 / 1883 / AE **9405** | `docker compose -f infra/hil/docker-compose.hil.yml --profile automation up -d` |
+
+Launcher realhw **запрещает node-sim** (stop `node-sim*`). Не путать с `./tools/testing/run_e2e.sh` (sim-suite на тех же e2e-портах).
+
+Перед прогоном на железе: нода на MQTT **1884** (`tests/e2e/scripts/retarget_test_node_mqtt.sh --e2e`), после работы вернуть **1883** (`--dev`). Подробности — в agent guide.
 
 ## Быстрый старт
 
@@ -661,5 +667,6 @@ cleanup:
 ## Дополнительные ресурсы
 
 - [TESTING_OVERVIEW.md](./TESTING_OVERVIEW.md) - Общий обзор тестирования
+- [REALHW_TEST_NODE_AGENT_GUIDE.md](./REALHW_TEST_NODE_AGENT_GUIDE.md) - запуск на физической `test_node` (для ИИ)
 - [NODE_SIM.md](./NODE_SIM.md) - Документация по симулятору узлов
 - [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) - Решение типовых проблем

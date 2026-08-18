@@ -547,6 +547,7 @@ Laravel scheduler-dispatch → REST → Automation-Engine → REST → History-L
 - `backend/laravel/docs/AGENTS.md` — подробные Laravel-правила (версии, Eloquent, Inertia, тесты, стиль).
 - `backend/services/AGENTS.md` — разделение Laravel scheduler-dispatch ↔ AE ↔ history-logger; запреты на прямой MQTT из AE/Laravel.
 - `backend/services/automation-engine/AGENT.md` — canonical AE3-Lite контракт, error codes, task FSM, команды для тестов.
+- `tests/e2e/AGENTS.md` — YAML E2E и realhw `test_node` (не Playwright, не HIL). Канон: `doc_ai/13_TESTING/REALHW_TEST_NODE_AGENT_GUIDE.md`.
 
 ### Документация — конвенции
 
@@ -711,12 +712,17 @@ make protocol-check
 
 ### E2E тесты
 
-Расположены в `tests/e2e/` — сквозное тестирование сценариев.
+Три разных контура — **не смешивать**:
+
+| Контур | Канон | Команда |
+|--------|-------|---------|
+| YAML + **физическая** `test_node` | `doc_ai/13_TESTING/REALHW_TEST_NODE_AGENT_GUIDE.md`, `tests/e2e/AGENTS.md` | `tests/e2e/run_automation_engine_real_hardware.sh --set=…` (MQTT **1884**, без node-sim) |
+| YAML + node-sim | `doc_ai/13_TESTING/E2E_GUIDE.md` | `./tools/testing/run_e2e.sh` |
+| Playwright UI | `doc_ai/07_FRONTEND/FRONTEND_TESTING.md` | из `backend/laravel/`: `npm run e2e` |
 
 Перед запуском E2E через ИИ-агента сначала обязательно выдать краткие рекомендации по запуску:
-- запускать сначала узкий таргет (конкретный spec или `--grep`), а не весь suite;
-- передавать в анализ только релевантный хвост ошибки, без полного лога;
-- включать trace/video/screenshots только для упавших тестов.
+- **Playwright:** узкий spec/`--grep`, хвост ошибки, trace/video только при падении.
+- **Realhw:** узкий `--set` или `E2E_SCENARIO_INCLUDE_REGEX`, не сразу `--set=full`; нода на **1884** (`retarget_test_node_mqtt.sh --e2e`); после прогона `--dev` (1883); в анализ — хвост лога, без полного dump.
 Только после этих рекомендаций выполнять сам запуск тестов.
 
 ## Мониторинг и наблюдаемость

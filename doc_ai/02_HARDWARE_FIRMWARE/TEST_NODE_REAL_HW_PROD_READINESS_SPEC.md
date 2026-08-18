@@ -1,7 +1,7 @@
 # TEST_NODE_REAL_HW_PROD_READINESS_SPEC.md
 # Спецификация test_node для доведения реальных нод до боевого режима
 
-**Версия:** 1.3  
+**Версия:** 1.4  
 **Дата обновления:** 2026-08-18
 **Статус:** Актуально (источник истины для `firmware/test_node`)
 
@@ -383,7 +383,7 @@ Transient-overlap правило для `pump_main`:
 Канонический launcher: `tests/e2e/run_automation_engine_real_hardware.sh`
 (`--set=ae3lite|smart_irrigation|inline_irrigation|calibration|full`).
 
-Two-tank core (`--set=ae3lite`, **14** сценариев):
+Two-tank core (`--set=ae3lite`, **15** сценариев):
 
 - `E100_ae3_two_tank_realhw_smoke` — быстрый smoke до `clean_fill_check`.
 - `E101_ae3_two_tank_realhw_setup_ready` — каноничный сценарий, который доводит two-tank систему до `workflow_phase=ready`; после этого полив разрешён.
@@ -398,11 +398,14 @@ Two-tank core (`--set=ae3lite`, **14** сценариев):
 - `E115_ae3_solution_change_operator_gate_realhw` — operator gate G1 (`await_operator_drain_confirm`).
 - `E116_ae3_estop_failsafe_events_realhw` — `estop_pressed` → `EMERGENCY_STOP_ACTIVATED`.
 - `E118_ae3_water_baseline_and_ca_fill_realhw` — water baseline + Ca fill.
+- `E119_ae3_prepare_pipeline_sequence_realhw` — live-short: Ca→pH→Mg (`pump_b` → pH → `pump_c`) + `PIPELINE_STEP_CHANGED` (не полный NPK+micro / T_full ready).
 - `E120_ae3_recirc_dilute_overshoot_realhw` — dilute overshoot path.
 
 Irrigation (`--set=smart_irrigation`): `E107`, `E108` (soil-moisture telemetry contract), `E109` (inline correction).
 Calibration (`--set=calibration`): `E110` create/cancel, `E111` `force_invalid`→`INVALID`, `E117` happy-path → `completed`.
-`full` = 14 + 3 + 3 = **20** сценариев.
+`full` = 15 + 3 + 3 = **21** сценарий.
+
+Запуск на железе для ИИ-агента: `doc_ai/13_TESTING/REALHW_TEST_NODE_AGENT_GUIDE.md`.
 
 Удалены как дубли/legacy (без потери покрытия):
 
@@ -646,6 +649,7 @@ Runtime wrapper поведения:
 ## 10. Связанные документы
 
 - `firmware/test_node/README.md`
+- `doc_ai/13_TESTING/REALHW_TEST_NODE_AGENT_GUIDE.md` — запуск YAML E2E на физической test_node
 - `doc_ai/02_HARDWARE_FIRMWARE/TEST_NODE_TO_REAL_NODES_MAPPING_MATRIX.md`
 - `doc_ai/03_TRANSPORT_MQTT/MQTT_NAMESPACE.md`
 - `doc_ai/03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md`

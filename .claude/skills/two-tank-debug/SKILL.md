@@ -78,6 +78,8 @@ PGPASSWORD="${PGPASSWORD:-hydro}" psql -h localhost -U hydro -d hydro_dev -w -c 
 
 Если таблица/колонки отличаются в окружении — смотри `zone_automation_tasks` / JSON `workflow`.  
 Если `status='waiting_command'` и нет недавних command responses — команда потерялась. Если `status='running'` > 5 мин — probable hang.
+
+**E2E realhw** (физическая `test_node`, compose `tests/e2e/`): БД **`hydro_e2e` на :5433**, не этот skill-контур `hydro_dev:5432`. Сначала `doc_ai/13_TESTING/REALHW_TEST_NODE_AGENT_GUIDE.md`.
 Если `current_stage` содержит `irrigation_recovery` — не канон; ожидается `irrigation_stop_to_ready` → `ready`.
 
 ## Шаг 4 — Water level sensors

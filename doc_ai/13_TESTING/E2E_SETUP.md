@@ -87,7 +87,7 @@ Acceptance criteria (commands):
 - `mqtt-bridge` - HTTP → MQTT мост
 - `telemetry-aggregator` - Агрегация телеметрии
 - `automation-engine` - Автоматизация (опционально)
-- `node-sim` - Эмулятор ноды
+- `node-sim` - Эмулятор ноды (**не** для realhw launcher — там только физическая `test_node`)
 
 #### Node Simulator (node-sim)
 - Поддержка `normal` и `temp` (preconfig) топиков
@@ -95,6 +95,15 @@ Acceptance criteria (commands):
 - Прием команд и ответы: `ACK` → terminal `DONE` (success) или `ERROR`/`INVALID`/`BUSY`/`NO_EFFECT`/`TIMEOUT` (fail)
 - Идемпотентность по `cmd_id` (LRU cache)
 - Режимы отказов: overcurrent, no_flow, duplicate response, delayed response
+
+#### Realhw / физическая test_node
+
+Не смешивать с `run_e2e.sh` (node-sim). Канон для ИИ-агента:
+
+- [`REALHW_TEST_NODE_AGENT_GUIDE.md`](./REALHW_TEST_NODE_AGENT_GUIDE.md)
+- [`tests/e2e/AGENTS.md`](../../tests/e2e/AGENTS.md)
+- команда: `tests/e2e/run_automation_engine_real_hardware.sh --set=ae3lite|full`
+- MQTT ноды: **1884** (`retarget_test_node_mqtt.sh --e2e`); после прогона вернуть **1883** (`--dev`)
 
 ### 6. Отчеты
 

@@ -2,6 +2,9 @@
 
 Полностью рабочий, воспроизводимый end-to-end тестовый контур с эмулятором нод и автоисправлением ошибок до состояния GREEN.
 
+**ИИ-агент:** локальные правила — [`AGENTS.md`](./AGENTS.md).  
+Запуск на физической ESP32 `test_node` — [`doc_ai/13_TESTING/REALHW_TEST_NODE_AGENT_GUIDE.md`](../../doc_ai/13_TESTING/REALHW_TEST_NODE_AGENT_GUIDE.md). Не смешивать с Playwright и `tools/testing/run_e2e.sh` (node-sim).
+
 ## Быстрый старт
 
 ### 1. Подготовка окружения
@@ -137,6 +140,10 @@ QUEUED → SENT → ACK → DONE/NO_EFFECT/ERROR/INVALID/BUSY/TIMEOUT
 ```
 
 ## Запуск на реальной ноде
+
+Канон для ИИ: [`AGENTS.md`](./AGENTS.md) и [`doc_ai/13_TESTING/REALHW_TEST_NODE_AGENT_GUIDE.md`](../../doc_ai/13_TESTING/REALHW_TEST_NODE_AGENT_GUIDE.md).
+
+Перед прогоном нода на MQTT **1884**; после — вернуть **1883**. Node-sim в этом контуре запрещён.
 
 Для прогона на реальной ESP32-ноде используйте:
 

@@ -245,4 +245,14 @@ Compatible-With:
 
 ---
 
+# 10. E2E на физической test_node
+
+Не путать Playwright, `tools/testing/run_e2e.sh` (node-sim) и HIL lab.
+
+Канон: `doc_ai/13_TESTING/REALHW_TEST_NODE_AGENT_GUIDE.md` + `tests/e2e/AGENTS.md`.
+
+Кратко: launcher `tests/e2e/run_automation_engine_real_hardware.sh`, MQTT **1884**, без node-sim, retarget `--e2e` / после `--dev`, узкий `--set` сначала.
+
+---
+
 # Конец файла AI_ASSISTANT_DEV_GUIDE.md

@@ -2,6 +2,8 @@
 
 Набор E2E сценариев для проверки критичных инвариантов пайплайна системы Hydro 2.0.
 
+Realhw на физической `test_node`: [`../AGENTS.md`](../AGENTS.md), канон [`doc_ai/13_TESTING/REALHW_TEST_NODE_AGENT_GUIDE.md`](../../../doc_ai/13_TESTING/REALHW_TEST_NODE_AGENT_GUIDE.md).
+
 ## Структура сценариев
 
 Каждый сценарий описывается в YAML формате и содержит:

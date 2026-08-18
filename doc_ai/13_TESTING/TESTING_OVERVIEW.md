@@ -99,7 +99,9 @@ python -m runner.e2e_runner scenarios/core/E01_bootstrap.yaml
 **Категории (подкаталоги `tests/e2e/scenarios/`):**
 - `core/`, `commands/`, `alerts/`, `snapshot/`, `infrastructure/`, `grow_cycle/`
 - `automation_engine/`, `ae3lite/`, `scheduler/`, `workflow/`, `calibration/`, `simulation/`
-- `chaos/` (+ realhw — см. `tests/e2e/README.md`)
+- `chaos/` (+ realhw — см. `REALHW_TEST_NODE_AGENT_GUIDE.md` и `tests/e2e/README.md`)
+
+**Физическая ESP32 `test_node`:** не `run_e2e.sh`. Канон — [`REALHW_TEST_NODE_AGENT_GUIDE.md`](./REALHW_TEST_NODE_AGENT_GUIDE.md).
 
 **DoD / выбранные сценарии:** `E2E_SCENARIOS.md` (не полный inventory всех YAML).
 
