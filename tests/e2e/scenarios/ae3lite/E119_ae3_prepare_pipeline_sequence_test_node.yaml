@@ -1,14 +1,15 @@
 # E119: stub — prepare_recirc sequential nutrient pipeline
-# Status: stub (contract-only; NOT in realhw suite).
+# Status: stub (contract-only keys; skip_live). Live companion:
+#   E119_ae3_prepare_pipeline_sequence_realhw.yaml (AE3LITE_SCENARIOS).
 # Canon order: Ca → pH → Mg → pH → NPK → pH → Micro → final pH.
-# Live interleaved Ca→pH observe: E106. Full multi-step pipeline realhw = live-only / TBD.
+# Live-short covers Ca→pH→Mg; full NPK+micro remains out of live-short scope.
 
 name: E119_ae3_prepare_pipeline_sequence_test_node
 status: stub
 description: |
   Contract stub for prepare_recirculation sequential nutrient pipeline ordering.
-  Documents interleaved component/pH gates and PIPELINE_STEP_CHANGED without a
-  full multi-hour realhw run of every step.
+  Documents interleaved component/pH gates and PIPELINE_STEP_CHANGED.
+  Live companion: E119_ae3_prepare_pipeline_sequence_realhw.yaml (Ca→pH→Mg live-short).
 
 actions:
   - step: set_stub_context

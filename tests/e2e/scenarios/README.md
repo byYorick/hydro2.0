@@ -52,9 +52,10 @@
 - `ae3lite/E112_ae3_per_phase_ec_target_realhw.yaml` — water-baseline + cumulative `T_*`
 - `ae3lite/E113_ae3_prepare_recirc_solution_low_to_setup_realhw.yaml` — solution_low → setup
 - `ae3lite/E118_ae3_water_baseline_and_ca_fill_realhw.yaml` — live-short: `WATER_BASELINE_CAPTURED` + Ca fill (`pump_b`), zero pH doses in fill-window
+- `ae3lite/E119_ae3_prepare_pipeline_sequence_realhw.yaml` — live-short: Ca→pH→Mg (`pump_b` → pH → `pump_c`) + `PIPELINE_STEP_CHANGED`
 - `ae3lite/E120_ae3_recirc_dilute_overshoot_realhw.yaml` — live-short: EC overshoot → `RECIRC_DILUTE_*` + `valve_clean_supply`
-- `ae3lite/E119`–`E121` stubs (+ `E120_*_test_node` stub) — sequential nutrient **contract stubs** (`status: stub`, `skip_live`):
-  - E119 — interleaved prepare pipeline + `PIPELINE_STEP_CHANGED`
+- `ae3lite/E119`–`E121` stubs (+ `E119_*_test_node` / `E120_*_test_node`) — sequential nutrient **contract stubs** (`status: stub`, `skip_live`):
+  - E119 stub — documents full Ca→…→Micro order; live-short = `E119_*_realhw.yaml`
   - E120 stub — documents dilute keys; live = `E120_*_realhw.yaml`
   - E121 — irrigation pH-only, stop→ready, forbid irrig_recirc/recovery
 
@@ -69,7 +70,7 @@
 Suite mapping:
 
 - `ae3lite_contract` → `ae3lite/E95..E99` + `E110` (node runtime events, sim)
-- `ae3lite_testnode_realhw_core` → `ae3lite/E100,E101×2,E103..E106,E112..E116,E118,E120` (14)
+- `ae3lite_testnode_realhw_core` → `ae3lite/E100,E101×2,E103..E106,E112..E116,E118,E119,E120` (15)
 - `ae3lite_testnode_realhw_irrigation` → `ae3lite/E107..E109`
 - `ae3lite_realhw` → core + irrigation
 - `calibration_realhw` → `calibration/E110,E111,E117`

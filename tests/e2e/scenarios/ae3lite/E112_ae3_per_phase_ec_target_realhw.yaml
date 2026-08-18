@@ -561,7 +561,8 @@ actions:
               max_ec_dose_ml: 30.0
               max_ph_dose_ml: 16.0
             recirc:
-              ec_overshoot_dilute_pct: 100
+              # Product default. Dilute-on-overshoot is E120; do not hide Ca-phase seeds with pct=100.
+              ec_overshoot_dilute_pct: 15
               dilute_pulse_sec: 10
               dilute_max_attempts: 3
               dilute_settle_sec: 30
@@ -1466,8 +1467,9 @@ actions:
     save: sensor_mode_cadence_row
     save: sensor_mode_cadence_row
 
-  # Keep solution_max=false so in-flow EC correction can run before fill completes.
-  - step: force_solution_tank_filling
+  # Fill path (canon): solution_max=false → seed ph≈7.0 ec=0.45 →
+  # WATER_BASELINE + pump_b Ca dose → then max=true. Do not seed T_full here.
+  - step: hold_solution_tank_filling_for_ca_dose
     type: ae_test_hook
     zone_id: ${zone_id}
     action: publish_command
@@ -1480,9 +1482,9 @@ actions:
         level_clean_max_override: true
         level_solution_min_override: true
         level_solution_max_override: false
-    save: force_solution_tank_filling_response
+    save: hold_solution_tank_filling_for_ca_dose_response
 
-  - step: wait_force_solution_tank_filling_done
+  - step: wait_hold_solution_tank_filling_for_ca_dose_done
     type: db.wait
     query: |
       SELECT id, cmd_id, status
@@ -1492,7 +1494,7 @@ actions:
       ORDER BY created_at DESC
       LIMIT 1
     params:
-      cmd_id: ${force_solution_tank_filling_response.data.cmd_id}
+      cmd_id: ${hold_solution_tank_filling_for_ca_dose_response.data.cmd_id}
     timeout: 20.0
     expected_rows: 1
 
@@ -1527,6 +1529,24 @@ actions:
       cmd_id: ${seed_solution_fill_sensor_baseline_response.data.cmd_id}
     timeout: 20.0
     expected_rows: 1
+
+  - step: wait_water_baseline_captured_event
+    type: db.wait
+    query: |
+      SELECT id, type, created_at,
+             COALESCE(details, payload_json) AS payload
+      FROM zone_events
+      WHERE zone_id = :zone_id
+        AND type = 'WATER_BASELINE_CAPTURED'
+        AND created_at >= :started_at
+      ORDER BY created_at DESC, id DESC
+      LIMIT 1
+    params:
+      zone_id: ${zone_id}
+      started_at: ${scenario_window.0.started_at}
+    timeout: 90.0
+    expected_rows: 1
+    save: water_baseline_event_row
 
   - step: wait_fill_ec_correction_command
     type: db.wait
@@ -1683,8 +1703,9 @@ actions:
       channel: storage_state
       cmd: set_fault_mode
       params:
+        # Below T_ca (water≈0.45 + budget*r_ca≈1.13) → pipeline step calcium / pump_b
         ph_value: 5.68
-        ec_value: 0.60
+        ec_value: 0.70
     save: seed_recirculation_sensor_values_response
 
   - step: wait_seed_recirculation_sensor_values_done
@@ -1734,7 +1755,7 @@ actions:
         AND ph.last_ts >= NOW() - INTERVAL '30 seconds'
         AND ec.last_ts >= NOW() - INTERVAL '30 seconds'
         AND ph.last_value BETWEEN 5.63 AND 5.73
-        AND ec.last_value BETWEEN 0.50 AND 0.70
+        AND ec.last_value BETWEEN 0.65 AND 0.75
       LIMIT 1
     params:
       ph_node_id: ${ph_node_id}
@@ -1853,6 +1874,9 @@ actions:
     expected_rows: 1
     save: task_not_failed_after_sequential_loop_row
 
+  # Live-band while task is still running (sensor mode on). T_full is OK
+  # here after Ca→pH; do NOT seed T_full during calcium/magnesium, and do
+  # NOT wait for completed after this seed mid-pipeline.
   - step: force_near_target_band_after_sequential_loop
     type: ae_test_hook
     zone_id: ${zone_id}

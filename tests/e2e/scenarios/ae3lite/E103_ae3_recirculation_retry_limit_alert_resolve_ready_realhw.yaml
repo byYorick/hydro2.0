@@ -1592,7 +1592,8 @@ actions:
             max_ec_dose_ml: 36.0
             max_ph_dose_ml: 16.0
           recirc:
-            ec_overshoot_dilute_pct: 100
+            # Second tank_recirc uses product default. Dilute-on-overshoot is E120.
+            ec_overshoot_dilute_pct: 15
             dilute_pulse_sec: 10
             dilute_max_attempts: 3
             dilute_settle_sec: 30
@@ -1944,6 +1945,35 @@ actions:
     \ status = 'DONE'\nORDER BY created_at DESC\nLIMIT 1\n"
   params:
     cmd_id: ${force_solution_tank_full_second_response.data.cmd_id}
+  timeout: 20.0
+  expected_rows: 1
+- step: seed_solution_fill_sensor_baseline_second
+  type: ae_test_hook
+  zone_id: ${zone_id}
+  action: publish_command
+  command:
+    node_uid: ${test_node_uid}
+    channel: storage_state
+    cmd: set_fault_mode
+    params:
+      level_clean_min_override: true
+      level_clean_max_override: true
+      level_solution_min_override: true
+      level_solution_max_override: false
+      ph_value: 7.0
+      ec_value: 0.45
+  save: seed_solution_fill_sensor_baseline_second_response
+- step: wait_seed_solution_fill_sensor_baseline_second_done
+  type: db.wait
+  query: |
+    SELECT id, cmd_id, status
+    FROM commands
+    WHERE cmd_id = :cmd_id
+      AND status = 'DONE'
+    ORDER BY created_at DESC
+    LIMIT 1
+  params:
+    cmd_id: ${seed_solution_fill_sensor_baseline_second_response.data.cmd_id}
   timeout: 20.0
   expected_rows: 1
 - step: wait_fill_ec_correction_command_second

@@ -150,6 +150,7 @@ AE3LITE_SCENARIOS=(
   "scenarios/ae3lite/E115_ae3_solution_change_operator_gate_realhw.yaml"
   "scenarios/ae3lite/E116_ae3_estop_failsafe_events_realhw.yaml"
   "scenarios/ae3lite/E118_ae3_water_baseline_and_ca_fill_realhw.yaml"
+  "scenarios/ae3lite/E119_ae3_prepare_pipeline_sequence_realhw.yaml"
   "scenarios/ae3lite/E120_ae3_recirc_dilute_overshoot_realhw.yaml"
 )
 SMART_IRRIGATION_SCENARIOS=(
@@ -1860,13 +1861,7 @@ prepare_real_hardware_node() {
   export TEST_NODE_UID TEST_WORKFLOW_NODE_UID TEST_PH_NODE_UID TEST_EC_NODE_UID TEST_SOIL_NODE_UID TEST_NODE_HW_ID TEST_NODE_ZONE_UID TEST_NODE_GH_UID
 
   echo "🧹 Удаляю ложные infra alerts после controlled node re-registration..."
-  db_query_line "
-    DELETE FROM alerts
-    WHERE code IN (
-      'infra_telemetry_node_not_found',
-      'infra_telemetry_sample_dropped_node_not_found'
-    );
-  " >/dev/null
+  cleanup_zone_harness_noise_alerts
 
   echo "🧩 Проверяю канонические actuator-каналы irrig-ноды (valve_drain и др.)..."
   local irrig_node_id
@@ -1901,6 +1896,49 @@ prepare_real_hardware_node() {
   return 0
 }
 
+# OPEN harness-noise alerts for the e2e zone (zn-test-1 / zone_id from context).
+# Not a global alerts wipe: zone-scoped codes plus NULL-zone infra/API noise
+# that never get zone_id (node_not_found after TRUNCATE, ae3_api_http_5xx).
+# biz_ae3_task_failed is zone-scoped only. E103/E105 wait for a failed task +
+# alert they create themselves; this helper runs before the next scenario starts,
+# so a leftover E103 alert cannot pollute the E104 alerts_open_total window.
+cleanup_zone_harness_noise_alerts() {
+  local zone_uid="${TEST_NODE_ZONE_UID:-zn-test-1}"
+  echo "🧹 Cleanup OPEN harness-noise alerts for zone_uid=$zone_uid"
+  db_query_line "
+    WITH z AS (
+      SELECT id FROM zones WHERE uid = '${zone_uid}' LIMIT 1
+    )
+    DELETE FROM alerts
+    WHERE (UPPER(COALESCE(status, '')) = 'ACTIVE'
+       OR LOWER(COALESCE(status, '')) = 'open')
+      AND (
+        (
+          zone_id IN (SELECT id FROM z)
+          AND code IN (
+            'infra_telemetry_invalid_timestamp',
+            'infra_telemetry_zone_not_found',
+            'infra_telemetry_node_not_found',
+            'infra_telemetry_sample_dropped_node_not_found',
+            'ae3_api_http_5xx',
+            'biz_flow_stop_failed_hardware_may_be_active',
+            'biz_ae3_task_failed'
+          )
+        )
+        OR (
+          zone_id IS NULL
+          AND code IN (
+            'infra_telemetry_invalid_timestamp',
+            'infra_telemetry_zone_not_found',
+            'infra_telemetry_node_not_found',
+            'infra_telemetry_sample_dropped_node_not_found',
+            'ae3_api_http_5xx'
+          )
+        )
+      );
+  " >/dev/null || true
+}
+
 echo "🚀 Запуск E2E на реальном железе (set=$SCENARIO_SET, scenarios=${#SCENARIOS[@]})"
 prepare_real_hardware_node
 echo "Node: gh=$TEST_NODE_GH_UID zone=$TEST_NODE_ZONE_UID node=$TEST_NODE_UID workflow_node=$TEST_WORKFLOW_NODE_UID ph_node=$TEST_PH_NODE_UID ec_node=$TEST_EC_NODE_UID soil_node=$TEST_SOIL_NODE_UID hw=$TEST_NODE_HW_ID"
@@ -1911,6 +1949,7 @@ CONTINUE_ON_FAILURE="${E2E_CONTINUE_ON_FAILURE:-0}"
 force_cleanup_zone_ae_runtime() {
   local zone_uid="${TEST_NODE_ZONE_UID:-zn-test-1}"
   echo "🧹 Between-scenario AE runtime cleanup for zone_uid=$zone_uid"
+  cleanup_zone_harness_noise_alerts
   if ! db_query_line "
     WITH z AS (
       SELECT id FROM zones WHERE uid = '${zone_uid}' LIMIT 1

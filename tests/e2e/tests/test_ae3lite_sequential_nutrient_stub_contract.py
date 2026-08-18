@@ -5,6 +5,10 @@ E118 graduated to live-short realhw:
 `E118_ae3_water_baseline_and_ca_fill_realhw.yaml` (see
 `test_ae3lite_water_baseline_ca_fill_realhw_contract.py`).
 
+E119 live companion (stub remains for contract keys):
+`E119_ae3_prepare_pipeline_sequence_realhw.yaml` (see
+`test_ae3lite_pipeline_sequence_realhw_contract.py`).
+
 E120 live companion (stub remains for contract keys):
 `E120_ae3_recirc_dilute_overshoot_realhw.yaml` (see
 `test_ae3lite_realhw_scenario_contract.py::TestAe3LiteDiluteOvershootRealHwScenarioContract`).
@@ -37,6 +41,7 @@ LIVE_E118 = E2E_ROOT / "scenarios" / "ae3lite" / "E118_ae3_water_baseline_and_ca
 LEGACY_E118_STUB = (
     E2E_ROOT / "scenarios" / "ae3lite" / "E118_ae3_water_baseline_and_ca_fill_test_node.yaml"
 )
+LIVE_E119 = E2E_ROOT / "scenarios" / "ae3lite" / "E119_ae3_prepare_pipeline_sequence_realhw.yaml"
 
 FORBIDDEN_SHARED = (
     "irrig_recirc",
@@ -103,6 +108,19 @@ class TestAe3LiteSequentialNutrientStubContract(unittest.TestCase):
         self.assertIn(LIVE_E118.name, suite_py)
         self.assertIn(LIVE_E118.name, launcher)
 
+    def test_e119_live_companion_in_realhw_stub_remains(self) -> None:
+        self.assertTrue(LIVE_E119.exists(), msg=f"E119 live missing: {LIVE_E119}")
+        self.assertTrue(STUBS["E119"].exists(), msg="E119 stub companion must remain")
+        data = yaml.safe_load(LIVE_E119.read_text(encoding="utf-8"))
+        self.assertEqual(data.get("name"), "E119_ae3_prepare_pipeline_sequence_realhw")
+        self.assertNotEqual(data.get("status"), "stub")
+        suite_py = (E2E_ROOT / "runner" / "suite.py").read_text(encoding="utf-8")
+        launcher = (E2E_ROOT / "run_automation_engine_real_hardware.sh").read_text(encoding="utf-8")
+        self.assertIn(LIVE_E119.name, suite_py)
+        self.assertIn(LIVE_E119.name, launcher)
+        self.assertNotIn(STUBS["E119"].name, suite_py)
+        self.assertNotIn(STUBS["E119"].name, launcher)
+
     def test_all_stubs_share_forbidden_canon(self) -> None:
         for key, path in STUBS.items():
             text = path.read_text(encoding="utf-8")
@@ -130,6 +148,7 @@ class TestAe3LiteSequentialNutrientStubContract(unittest.TestCase):
         )
         actuators = ctx.get("actuators") or {}
         self.assertEqual(actuators.get("calcium"), "pump_b")
+        self.assertEqual(actuators.get("magnesium"), "pump_c")
         self.assertEqual(actuators.get("npk"), "pump_a")
         self.assertIn("PIPELINE_STEP_CHANGED", ctx.get("expected_events") or [])
 

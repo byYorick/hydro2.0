@@ -8,12 +8,12 @@ import sys
 import unittest
 from pathlib import Path
 
-import yaml
-
 
 E2E_ROOT = Path(__file__).resolve().parents[1]
 if str(E2E_ROOT) not in sys.path:
     sys.path.insert(0, str(E2E_ROOT))
+
+from runner.scenario_loader import load_scenario_file
 
 SCENARIO_PATH = E2E_ROOT / "scenarios" / "ae3lite" / "E106_ae3_two_tank_realhw_piggyback_ec_ph_cycle.yaml"
 
@@ -21,8 +21,7 @@ SCENARIO_PATH = E2E_ROOT / "scenarios" / "ae3lite" / "E106_ae3_two_tank_realhw_p
 class TestAe3LitePiggybackScenarioContract(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        with SCENARIO_PATH.open("r", encoding="utf-8") as fh:
-            cls.scenario = yaml.safe_load(fh)
+        cls.scenario = load_scenario_file(SCENARIO_PATH)
 
     def _find_step(self, section: str, step_name: str) -> dict:
         for item in self.scenario.get(section, []):
@@ -111,7 +110,7 @@ class TestAe3LitePiggybackScenarioContract(unittest.TestCase):
         self.assertEqual(fill_dosing.get("dose_ph_down_channel"), "pump_acid")
 
         recirc = tank_recirc.get("recirc") or {}
-        self.assertEqual(recirc.get("ec_overshoot_dilute_pct"), 100)
+        self.assertEqual(recirc.get("ec_overshoot_dilute_pct"), 15)
         self.assertEqual(recirc.get("dilute_pulse_sec"), 10)
         self.assertEqual(recirc.get("dilute_max_attempts"), 3)
         self.assertEqual(recirc.get("dilute_settle_sec"), 30)
