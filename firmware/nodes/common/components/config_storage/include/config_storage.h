@@ -194,6 +194,18 @@ esp_err_t config_storage_validate(const char *json_config, size_t json_len,
 esp_err_t config_storage_reset_namespace(const char *gh_uid, const char *zone_uid);
 
 /**
+ * @brief Обновить mqtt.host/mqtt.port в NVS, сохранив Wi-Fi и остальные поля.
+ *
+ * Нужно для realhw e2e, когда test_node должен переключиться с dev MQTT (1883)
+ * на e2e-брокер (1884) без setup-портала и без полного NodeConfig save.
+ *
+ * @param host Новый MQTT host
+ * @param port Новый MQTT port (1..65535)
+ * @return esp_err_t ESP_OK при успехе
+ */
+esp_err_t config_storage_set_mqtt_broker(const char *host, uint16_t port);
+
+/**
  * @brief Полный сброс конфигурации в NVS (включая сетевые параметры).
  *
  * Удаляются все ключи в namespace node_config.

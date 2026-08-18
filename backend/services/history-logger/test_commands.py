@@ -737,6 +737,22 @@ async def test_lease_gate_allows_fail_safe_off_when_lease_held():
 
 
 @pytest.mark.asyncio
+async def test_lease_gate_allows_set_fault_mode_when_lease_held():
+    from commands.lease_gate import reject_if_zone_lease_held
+
+    async def _fetch(*_args, **_kwargs):
+        raise AssertionError("lease lookup must be skipped for set_fault_mode")
+
+    await reject_if_zone_lease_held(
+        zone_id=1,
+        cmd="set_fault_mode",
+        params={"level_clean_max_override": True},
+        source="e2e_runner",
+        fetch_fn=_fetch,
+    )
+
+
+@pytest.mark.asyncio
 async def test_publish_command_does_not_publish_without_per_node_secret_in_production(
     client, auth_headers, mock_mqtt_client, monkeypatch
 ):

@@ -949,6 +949,12 @@ actions:
         ec_target,
         ec_min,
         ec_max,
+        nutrient_mode,
+        nutrient_npk_ratio_pct,
+        nutrient_calcium_ratio_pct,
+        nutrient_magnesium_ratio_pct,
+        nutrient_micro_ratio_pct,
+        nutrient_solution_volume_l,
         irrigation_mode,
         irrigation_interval_sec,
         irrigation_duration_sec,
@@ -965,6 +971,12 @@ actions:
         2.33,
         2.30,
         2.38,
+        'ratio_ec_pid',
+        44.00,
+        36.00,
+        12.00,
+        8.00,
+        20.0,
         'SUBSTRATE',
         600,
         45,
@@ -1418,6 +1430,37 @@ actions:
       LIMIT 1
     params:
       cmd_id: ${force_solution_tank_full_response.data.cmd_id}
+    timeout: 20.0
+    expected_rows: 1
+
+  - step: seed_solution_fill_sensor_baseline
+    type: ae_test_hook
+    zone_id: ${zone_id}
+    action: publish_command
+    command:
+      node_uid: ${test_node_uid}
+      channel: storage_state
+      cmd: set_fault_mode
+      params:
+        level_clean_min_override: true
+        level_clean_max_override: true
+        level_solution_min_override: true
+        level_solution_max_override: false
+        ph_value: 7.0
+        ec_value: 0.45
+    save: seed_solution_fill_sensor_baseline_response
+
+  - step: wait_seed_solution_fill_sensor_baseline_done
+    type: db.wait
+    query: |
+      SELECT id, cmd_id, status
+      FROM commands
+      WHERE cmd_id = :cmd_id
+        AND status = 'DONE'
+      ORDER BY created_at DESC
+      LIMIT 1
+    params:
+      cmd_id: ${seed_solution_fill_sensor_baseline_response.data.cmd_id}
     timeout: 20.0
     expected_rows: 1
 

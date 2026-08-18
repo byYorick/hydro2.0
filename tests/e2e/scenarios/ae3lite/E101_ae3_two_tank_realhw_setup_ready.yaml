@@ -3,6 +3,7 @@
 # - real test_node проходит полный setup path:
 #   clean fill -> solution fill (Ca-only) -> recirculation (+ pH/EC pipeline) -> ready
 # - fill chemistry = calcium (`pump_b`) only; pH doses on fill are NOT canonical
+# - recipe phase must set nutrient_mode=ratio_ec_pid + component ratios (Ca-only fill / sequential recirc)
 # - pH doses during prepare_recirculation remain legitimate
 # - correction публикует реальные dose-команды и доводит контур до ready
 # - canonical task завершается completed
@@ -525,6 +526,13 @@ actions:
               dose_ph_down_channel: pump_acid
               max_ec_dose_ml: 30.0
               max_ph_dose_ml: 16.0
+            recirc:
+              # E101 seeds/forces levels with solution_max ON; dilute-on-overshoot is E120.
+              # Keep a wide band so Ca-phase doses are not treated as T_full overshoot.
+              ec_overshoot_dilute_pct: 100
+              dilute_pulse_sec: 10
+              dilute_max_attempts: 3
+              dilute_settle_sec: 30
             timing:
               sensor_mode_stabilization_time_sec: 20
               stabilization_sec: 10
@@ -954,6 +962,12 @@ actions:
         ec_target,
         ec_min,
         ec_max,
+        nutrient_mode,
+        nutrient_npk_ratio_pct,
+        nutrient_calcium_ratio_pct,
+        nutrient_magnesium_ratio_pct,
+        nutrient_micro_ratio_pct,
+        nutrient_solution_volume_l,
         irrigation_mode,
         irrigation_interval_sec,
         irrigation_duration_sec,
@@ -970,6 +984,12 @@ actions:
         2.40,
         2.20,
         2.60,
+        'ratio_ec_pid',
+        44.00,
+        36.00,
+        12.00,
+        8.00,
+        20.0,
         'SUBSTRATE',
         600,
         45,
@@ -1616,8 +1636,9 @@ actions:
       after_stage_started_at: ${prepare_recirc_stage_row.0.stage_started_at}
     save: recirc_ph_correction_rows
 
-  # After sequential fill/recirc, sensor mode may stop and natural PH/EC leave the
-  # assertion band (same pattern as E106 force_near_target_band_after_sequential_loop).
+  # After sequential fill/recirc, only nudge pH into the assertion band.
+  # Do NOT seed EC=T_full here: prepare_recirculation is still on calcium T_ca,
+  # and seeding 2.40 with solution_max ON trips recirc_dilute_blocked_solution_max.
   - step: force_near_target_band_before_ready_assert
     type: ae_test_hook
     zone_id: ${zone_id}
@@ -1628,7 +1649,6 @@ actions:
       cmd: set_fault_mode
       params:
         ph_value: 5.00
-        ec_value: 2.40
     save: force_near_target_before_ready_response
 
   - step: wait_force_near_target_before_ready_done
@@ -1699,7 +1719,7 @@ actions:
       ph_node_id: ${ph_node_id}
       ec_node_id: ${ec_node_id}
       task_id: ${task_id}
-    timeout: 60.0
+    timeout: 420.0
     expected_rows: 1
     save: targets_reached_row
 

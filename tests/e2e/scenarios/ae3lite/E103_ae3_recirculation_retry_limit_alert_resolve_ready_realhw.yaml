@@ -906,11 +906,14 @@ actions:
 - step: create_phase
   type: database_execute
   query: "INSERT INTO grow_cycle_phases (\n  grow_cycle_id,\n  phase_index,\n  name,\n\
-    \  ph_target,\n  ph_min,\n  ph_max,\n  ec_target,\n  ec_min,\n  ec_max,\n  irrigation_mode,\n\
+    \  ph_target,\n  ph_min,\n  ph_max,\n  ec_target,\n  ec_min,\n  ec_max,\n  nutrient_mode,\n\
+    \  nutrient_npk_ratio_pct,\n  nutrient_calcium_ratio_pct,\n  nutrient_magnesium_ratio_pct,\n\
+    \  nutrient_micro_ratio_pct,\n  nutrient_solution_volume_l,\n  irrigation_mode,\n\
     \  irrigation_interval_sec,\n  irrigation_duration_sec,\n  created_at,\n  updated_at\n\
     )\nVALUES (\n  :grow_cycle_id,\n  0,\n  'VEG',\n  CAST(:ph_target AS numeric),\n\
     \  CAST(:ph_min AS numeric),\n  CAST(:ph_max AS numeric),\n  CAST(:ec_target AS numeric),\n\
-    \  CAST(:ec_min AS numeric),\n  CAST(:ec_max AS numeric),\n  'SUBSTRATE',\n  600,\n\
+    \  CAST(:ec_min AS numeric),\n  CAST(:ec_max AS numeric),\n  'ratio_ec_pid',\n\
+    \  44.00,\n  36.00,\n  12.00,\n  8.00,\n  20.0,\n  'SUBSTRATE',\n  600,\n\
     \  45,\n  NOW(),\n  NOW()\n)\n"
   params:
     grow_cycle_id: ${grow_cycle_id}
@@ -1588,6 +1591,11 @@ actions:
             dose_ph_down_channel: pump_acid
             max_ec_dose_ml: 36.0
             max_ph_dose_ml: 16.0
+          recirc:
+            ec_overshoot_dilute_pct: 100
+            dilute_pulse_sec: 10
+            dilute_max_attempts: 3
+            dilute_settle_sec: 30
           timing:
             sensor_mode_stabilization_time_sec: 20
             stabilization_sec: 10
@@ -1781,11 +1789,14 @@ actions:
 - step: create_phase_second
   type: database_execute
   query: "INSERT INTO grow_cycle_phases (\n  grow_cycle_id,\n  phase_index,\n  name,\n\
-    \  ph_target,\n  ph_min,\n  ph_max,\n  ec_target,\n  ec_min,\n  ec_max,\n  irrigation_mode,\n\
+    \  ph_target,\n  ph_min,\n  ph_max,\n  ec_target,\n  ec_min,\n  ec_max,\n  nutrient_mode,\n\
+    \  nutrient_npk_ratio_pct,\n  nutrient_calcium_ratio_pct,\n  nutrient_magnesium_ratio_pct,\n\
+    \  nutrient_micro_ratio_pct,\n  nutrient_solution_volume_l,\n  irrigation_mode,\n\
     \  irrigation_interval_sec,\n  irrigation_duration_sec,\n  created_at,\n  updated_at\n\
     )\nVALUES (\n  :grow_cycle_id_2,\n  0,\n  'VEG',\n  CAST(:ph_target AS numeric),\n\
     \  CAST(:ph_min AS numeric),\n  CAST(:ph_max AS numeric),\n  CAST(:ec_target AS numeric),\n\
-    \  CAST(:ec_min AS numeric),\n  CAST(:ec_max AS numeric),\n  'SUBSTRATE',\n  600,\n  45,\n  NOW(),\n  NOW()\n\
+    \  CAST(:ec_min AS numeric),\n  CAST(:ec_max AS numeric),\n  'ratio_ec_pid',\n\
+    \  44.00,\n  36.00,\n  12.00,\n  8.00,\n  20.0,\n  'SUBSTRATE',\n  600,\n  45,\n  NOW(),\n  NOW()\n\
     )\n"
   params:
     grow_cycle_id_2: ${grow_cycle_id_2}
@@ -1995,7 +2006,7 @@ actions:
     channel: storage_state
     cmd: set_fault_mode
     params:
-      ec_value: 1.90
+      ec_value: 0.85
       ph_value: 5.35
   save: force_recirculation_low_targets_second_response
 - step: wait_force_recirculation_low_targets_second_done
@@ -2039,7 +2050,6 @@ actions:
     cmd: set_fault_mode
     params:
       ph_value: 5.10
-      ec_value: 2.32
   save: force_recirculation_near_target_second_response
 - step: wait_force_recirculation_near_target_second_done
   type: db.wait

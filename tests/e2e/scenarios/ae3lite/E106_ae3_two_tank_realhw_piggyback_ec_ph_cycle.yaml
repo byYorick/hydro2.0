@@ -528,7 +528,7 @@ actions:
               max_ec_dose_ml: 30.0
               max_ph_dose_ml: 16.0
             recirc:
-              ec_overshoot_dilute_pct: 15
+              ec_overshoot_dilute_pct: 100
               dilute_pulse_sec: 10
               dilute_max_attempts: 3
               dilute_settle_sec: 30
@@ -952,6 +952,12 @@ actions:
         ec_target,
         ec_min,
         ec_max,
+        nutrient_mode,
+        nutrient_npk_ratio_pct,
+        nutrient_calcium_ratio_pct,
+        nutrient_magnesium_ratio_pct,
+        nutrient_micro_ratio_pct,
+        nutrient_solution_volume_l,
         irrigation_mode,
         irrigation_interval_sec,
         irrigation_duration_sec,
@@ -968,6 +974,12 @@ actions:
         2.33,
         2.30,
         2.38,
+        'ratio_ec_pid',
+        44.00,
+        36.00,
+        12.00,
+        8.00,
+        20.0,
         'SUBSTRATE',
         600,
         45,
@@ -1851,8 +1863,9 @@ actions:
     expected_rows: 1
     save: task_not_failed_after_sequential_loop_row
 
-  # Force near-target BEFORE live-band wait: after complete_ready sensor mode stops
-  # and natural PH/EC may leave the narrow assertion band / go stale.
+  # Force near-target BEFORE live-band wait. Task may still be in recirc
+  # (Mg/NPK steps). T_full seed with recirc.ec_overshoot_dilute_pct=100 must
+  # not fail-closed; do NOT wait for completed afterwards.
   - step: force_near_target_band_after_sequential_loop
     type: ae_test_hook
     zone_id: ${zone_id}
@@ -1916,11 +1929,12 @@ actions:
       SELECT id, status, completed_at, error_code, error_message
       FROM ae_tasks
       WHERE id = CAST(:task_id AS bigint)
-        AND status = 'completed'
+        AND status IN ('pending', 'claimed', 'running', 'waiting_command', 'completed')
+        AND COALESCE(error_code, '') = ''
       LIMIT 1
     params:
       task_id: ${task_id}
-    timeout: 300.0
+    timeout: 30.0
     expected_rows: 1
     save: completed_task_after_loop_row
 

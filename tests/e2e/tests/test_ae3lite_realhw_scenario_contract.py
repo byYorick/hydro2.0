@@ -625,7 +625,7 @@ class TestAe3LiteHotReloadRealHwScenarioContract(unittest.TestCase):
         self.assertEqual(((tank_recirc.get("controllers") or {}).get("ec") or {}).get("max_dose_ml"), 30.0)
         self.assertEqual(((tank_recirc.get("controllers") or {}).get("ph") or {}).get("max_dose_ml"), 16.0)
         recirc = tank_recirc.get("recirc") or {}
-        self.assertEqual(recirc.get("ec_overshoot_dilute_pct"), 15)
+        self.assertEqual(recirc.get("ec_overshoot_dilute_pct"), 100)
         self.assertEqual(recirc.get("dilute_pulse_sec"), 10)
         self.assertEqual(recirc.get("dilute_max_attempts"), 3)
         self.assertEqual(recirc.get("dilute_settle_sec"), 30)

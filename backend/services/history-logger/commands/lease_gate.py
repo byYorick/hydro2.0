@@ -14,6 +14,8 @@ logger = logging.getLogger(__name__)
 
 _AE_SOURCE_PREFIX = "automation-engine"
 _READ_ONLY_CMDS = {"state", "test_sensor"}
+# test_node-only diagnostic: seed level/pH/EC/E-Stop without fighting AE3 actuators.
+_DIAGNOSTIC_CMDS = {"set_fault_mode"}
 
 FetchFn = Callable[..., Awaitable[Any]]
 
@@ -52,7 +54,12 @@ async def reject_if_zone_lease_held(
     fetch_fn: FetchFn | None = None,
 ) -> None:
     name = str(cmd or "").strip().lower()
-    if _is_ae_source(source) or name in _READ_ONLY_CMDS or is_fail_safe_off_command(name, params):
+    if (
+        _is_ae_source(source)
+        or name in _READ_ONLY_CMDS
+        or name in _DIAGNOSTIC_CMDS
+        or is_fail_safe_off_command(name, params)
+    ):
         return
 
     query_fetch = fetch_fn or default_fetch

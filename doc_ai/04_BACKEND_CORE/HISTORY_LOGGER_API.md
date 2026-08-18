@@ -111,7 +111,8 @@ Content-Type: application/json
 **AE3 lease gate:** если у `zone_id` есть активная запись в `ae_zone_leases` (`leased_until > now()`), HL отклоняет mutating ON-команды от источников, отличных от `automation-engine`, ответом `409` `ae3_zone_lease_held`. Разрешены:
 - `source=automation-engine` (держатель lease);
 - read-only `state` / `test_sensor`;
-- fail-safe OFF (`set_relay`/`set_state` с `state=false|0`, `set_pwm` с duty ≤ 0).
+- fail-safe OFF (`set_relay`/`set_state` с `state=false|0`, `set_pwm` с duty ≤ 0);
+- diagnostic `set_fault_mode` (только `test_node`: seed уровней / pH / EC / E-Stop для realhw e2e, без актуаторов).
 Operator `FORCE_PH_CONTROL` / `FORCE_EC_CONTROL` / `FORCE_LIGHTING` / `FORCE_CLIMATE` и device-level `dose`/`run_pump`/`set_relay true` через Laravel при активной lease не публикуются. `FORCE_IRRIGATION` идёт в AE3 ingress (там свой `*_zone_busy`).
 
 Примечание:

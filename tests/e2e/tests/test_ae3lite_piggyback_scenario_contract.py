@@ -111,7 +111,7 @@ class TestAe3LitePiggybackScenarioContract(unittest.TestCase):
         self.assertEqual(fill_dosing.get("dose_ph_down_channel"), "pump_acid")
 
         recirc = tank_recirc.get("recirc") or {}
-        self.assertEqual(recirc.get("ec_overshoot_dilute_pct"), 15)
+        self.assertEqual(recirc.get("ec_overshoot_dilute_pct"), 100)
         self.assertEqual(recirc.get("dilute_pulse_sec"), 10)
         self.assertEqual(recirc.get("dilute_max_attempts"), 3)
         self.assertEqual(recirc.get("dilute_settle_sec"), 30)

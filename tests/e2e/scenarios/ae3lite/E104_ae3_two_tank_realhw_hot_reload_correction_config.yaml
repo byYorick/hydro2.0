@@ -759,6 +759,12 @@ actions:
         ec_target,
         ec_min,
         ec_max,
+        nutrient_mode,
+        nutrient_npk_ratio_pct,
+        nutrient_calcium_ratio_pct,
+        nutrient_magnesium_ratio_pct,
+        nutrient_micro_ratio_pct,
+        nutrient_solution_volume_l,
         irrigation_mode,
         irrigation_interval_sec,
         irrigation_duration_sec,
@@ -775,6 +781,12 @@ actions:
         2.40,
         2.35,
         2.45,
+        'ratio_ec_pid',
+        44.00,
+        36.00,
+        12.00,
+        8.00,
+        20.0,
         'SUBSTRATE',
         600,
         45,
@@ -1197,7 +1209,84 @@ actions:
     timeout: 30.0
     expected_rows: 1
 
-  - step: force_solution_tank_full
+  - step: force_solution_tank_filling
+    type: ae_test_hook
+    zone_id: ${zone_id}
+    action: publish_command
+    command:
+      node_uid: ${test_node_uid}
+      channel: storage_state
+      cmd: set_fault_mode
+      params:
+        level_clean_min_override: true
+        level_clean_max_override: true
+        level_solution_min_override: true
+        level_solution_max_override: false
+    save: force_solution_tank_filling_response
+
+  - step: wait_force_solution_tank_filling_done
+    type: db.wait
+    query: |
+      SELECT id, cmd_id, status
+      FROM commands
+      WHERE cmd_id = :cmd_id
+        AND status = 'DONE'
+      ORDER BY created_at DESC
+      LIMIT 1
+    params:
+      cmd_id: ${force_solution_tank_filling_response.data.cmd_id}
+    timeout: 20.0
+    expected_rows: 1
+
+  - step: seed_solution_fill_sensor_baseline
+    type: ae_test_hook
+    zone_id: ${zone_id}
+    action: publish_command
+    command:
+      node_uid: ${test_node_uid}
+      channel: storage_state
+      cmd: set_fault_mode
+      params:
+        level_clean_min_override: true
+        level_clean_max_override: true
+        level_solution_min_override: true
+        level_solution_max_override: false
+        ph_value: 7.0
+        ec_value: 0.45
+    save: seed_solution_fill_sensor_baseline_response
+
+  - step: wait_seed_solution_fill_sensor_baseline_done
+    type: db.wait
+    query: |
+      SELECT id, cmd_id, status
+      FROM commands
+      WHERE cmd_id = :cmd_id
+        AND status = 'DONE'
+      ORDER BY created_at DESC
+      LIMIT 1
+    params:
+      cmd_id: ${seed_solution_fill_sensor_baseline_response.data.cmd_id}
+    timeout: 20.0
+    expected_rows: 1
+
+  - step: wait_fill_ec_correction_command
+    type: db.wait
+    query: |
+      SELECT id, channel, payload->>'cmd' AS cmd
+      FROM ae_commands
+      WHERE task_id = CAST(:task_id AS bigint)
+        AND publish_status = 'accepted'
+        AND channel = 'pump_b'
+        AND payload->>'cmd' = 'dose'
+      ORDER BY id DESC
+      LIMIT 1
+    params:
+      task_id: ${task_id}
+    timeout: 120.0
+    expected_rows: 1
+    save: fill_ec_correction_row
+
+  - step: complete_solution_fill_after_ec_correction
     type: ae_test_hook
     zone_id: ${zone_id}
     action: publish_command
@@ -1210,9 +1299,9 @@ actions:
         level_clean_max_override: true
         level_solution_min_override: true
         level_solution_max_override: true
-    save: force_solution_tank_full_response
+    save: complete_solution_fill_after_ec_correction_response
 
-  - step: wait_force_solution_tank_full_done
+  - step: wait_complete_solution_fill_after_ec_correction_done
     type: db.wait
     query: |
       SELECT id, cmd_id, status
@@ -1222,7 +1311,7 @@ actions:
       ORDER BY created_at DESC
       LIMIT 1
     params:
-      cmd_id: ${force_solution_tank_full_response.data.cmd_id}
+      cmd_id: ${complete_solution_fill_after_ec_correction_response.data.cmd_id}
     timeout: 20.0
     expected_rows: 1
 
@@ -1481,7 +1570,7 @@ actions:
               max_ec_dose_ml: 30.0
               max_ph_dose_ml: 16.0
             recirc:
-              ec_overshoot_dilute_pct: 15
+              ec_overshoot_dilute_pct: 100
               dilute_pulse_sec: 10
               dilute_max_attempts: 3
               dilute_settle_sec: 30
