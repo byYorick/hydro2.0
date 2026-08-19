@@ -1,6 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount } from '@vue/test-utils'
-import RoleBasedNavigation from '../RoleBasedNavigation.vue'
+import RoleBasedNavigation, {
+  getRoleNavigationGroups,
+  getRoleNavigationItems,
+} from '../RoleBasedNavigation.vue'
 // @ts-ignore
 import NavLink from '../NavLink.vue'
 
@@ -17,7 +20,7 @@ vi.mock('../NavLink.vue', () => ({
   }
 }))
 
-function mountForRole(role: string) {
+function mountForRole(role: string, collapsed = false) {
   mockPage.mockReturnValue({
     props: {
       auth: {
@@ -26,7 +29,9 @@ function mountForRole(role: string) {
     }
   })
 
-  return mount(RoleBasedNavigation)
+  return mount(RoleBasedNavigation, {
+    props: { collapsed },
+  })
 }
 
 function hrefs(wrapper: ReturnType<typeof mount>) {
@@ -35,6 +40,18 @@ function hrefs(wrapper: ReturnType<typeof mount>) {
 
 function labels(wrapper: ReturnType<typeof mount>) {
   return wrapper.findAllComponents(NavLink).map((link) => link.props('label'))
+}
+
+function groupLabels(wrapper: ReturnType<typeof mount>) {
+  return wrapper.findAll('[data-testid="nav-group-label"]').map((el) => el.text())
+}
+
+function itemHrefs(role: string) {
+  return getRoleNavigationItems(role).map((item) => item.href)
+}
+
+function groupHrefs(role: string) {
+  return getRoleNavigationGroups(role).flatMap((group) => group.items.map((item) => item.href))
 }
 
 describe('RoleBasedNavigation', () => {
@@ -46,6 +63,7 @@ describe('RoleBasedNavigation', () => {
     const wrapper = mountForRole('viewer')
 
     expect(labels(wrapper)).toEqual(['Обзор', 'Зоны', 'Тревоги', 'Настройки'])
+    expect(groupLabels(wrapper)).toEqual(['Работа'])
     expect(wrapper.text()).not.toContain('Рецепты')
     expect(wrapper.text()).not.toContain('Запуск')
     expect(wrapper.text()).not.toContain('Пользователи')
@@ -56,7 +74,7 @@ describe('RoleBasedNavigation', () => {
     expect(wrapper.text()).not.toContain('Здоровье системы')
   })
 
-  it('renders exactly five operator items in order', () => {
+  it('renders exactly five operator items in grouped desktop order', () => {
     const wrapper = mountForRole('operator')
 
     expect(hrefs(wrapper)).toEqual([
@@ -73,6 +91,7 @@ describe('RoleBasedNavigation', () => {
       'Справочник',
       'Профиль',
     ])
+    expect(groupLabels(wrapper)).toEqual(['Работа', 'Помощь'])
     expect(wrapper.text()).not.toContain('Рецепты')
     expect(wrapper.text()).not.toContain('Узлы')
     expect(wrapper.text()).not.toContain('Устройства')
@@ -80,36 +99,49 @@ describe('RoleBasedNavigation', () => {
     expect(wrapper.text()).not.toContain('Сервисы')
     expect(wrapper.text()).not.toContain('Запуск')
     expect(wrapper.text()).not.toContain('Аналитика')
+    expect(wrapper.text()).not.toContain('Культуры')
   })
 
-  it('renders agronomist items without devices or system tools', () => {
+  it('renders agronomist desktop groups with plants and nutrients in help', () => {
     const wrapper = mountForRole('agronomist')
 
     expect(hrefs(wrapper)).toEqual([
       '/',
       '/zones',
-      '/recipes',
-      '/analytics',
       '/alerts',
       '/launch',
+      '/recipes',
+      '/analytics',
       '/documentation/fertigation',
+      '/plants',
+      '/nutrients',
     ])
     expect(labels(wrapper)).toEqual([
       'Обзор',
       'Зоны',
-      'Рецепты',
-      'Аналитика',
       'Тревоги',
       'Запуск',
+      'Рецепты',
+      'Аналитика',
       'Справочник',
+      'Культуры',
+      'Удобрения',
     ])
+    expect(groupLabels(wrapper)).toEqual(['Работа', 'Объекты', 'Справочники'])
     expect(wrapper.text()).not.toContain('Узлы')
     expect(wrapper.text()).not.toContain('Устройства')
     expect(wrapper.text()).not.toContain('Здоровье системы')
     expect(wrapper.text()).not.toContain('Логи')
     expect(wrapper.text()).not.toContain('Аудит')
     expect(wrapper.text()).not.toContain('Пользователи')
-    expect(wrapper.text()).not.toContain('Культуры')
+  })
+
+  it('hides group titles when collapsed', () => {
+    const wrapper = mountForRole('agronomist', true)
+
+    expect(groupLabels(wrapper)).toEqual([])
+    expect(hrefs(wrapper)).toContain('/plants')
+    expect(hrefs(wrapper)).toContain('/nutrients')
   })
 
   it('renders engineer items with nodes first', () => {
@@ -124,6 +156,7 @@ describe('RoleBasedNavigation', () => {
       '/logs',
     ])
     expect(labels(wrapper)[0]).toBe('Узлы')
+    expect(groupLabels(wrapper)).toEqual(['Работа', 'Система'])
     expect(wrapper.text()).toContain('Обзор')
     expect(wrapper.text()).toContain('Здоровье системы')
     expect(wrapper.text()).not.toContain('Рецепты')
@@ -139,14 +172,15 @@ describe('RoleBasedNavigation', () => {
     expect(hrefs(wrapper)).toEqual([
       '/',
       '/alerts',
+      '/zones',
       '/monitoring',
       '/users',
       '/audit',
-      '/zones',
       '/devices',
       '/settings',
     ])
     expect(labels(wrapper)[0]).toBe('Система')
+    expect(groupLabels(wrapper)).toEqual(['Работа', 'Система'])
     expect(wrapper.text()).toContain('Пользователи')
     expect(wrapper.text()).not.toContain('Операторы')
     expect(wrapper.text()).toContain('Журнал')
@@ -164,5 +198,29 @@ describe('RoleBasedNavigation', () => {
     const navLinks = wrapper.findAllComponents(NavLink)
 
     expect(navLinks.length).toBeGreaterThan(0)
+  })
+
+  it('keeps agronomist mobile items without plants and nutrients', () => {
+    expect(itemHrefs('agronomist')).toEqual([
+      '/',
+      '/zones',
+      '/recipes',
+      '/analytics',
+      '/alerts',
+      '/launch',
+      '/documentation/fertigation',
+    ])
+    expect(itemHrefs('agronomist')).not.toContain('/plants')
+    expect(itemHrefs('agronomist')).not.toContain('/nutrients')
+    expect(groupHrefs('agronomist')).toContain('/plants')
+    expect(groupHrefs('agronomist')).toContain('/nutrients')
+  })
+
+  it('returns only non-empty navigation groups', () => {
+    for (const role of ['operator', 'agronomist', 'engineer', 'admin', 'viewer']) {
+      const groups = getRoleNavigationGroups(role)
+      expect(groups.length).toBeGreaterThan(0)
+      expect(groups.every((group) => group.items.length > 0)).toBe(true)
+    }
   })
 })

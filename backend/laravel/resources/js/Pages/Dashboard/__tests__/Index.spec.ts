@@ -180,6 +180,8 @@ describe('Dashboard/Index.vue', () => {
     const wrapper = mountDashboard('operator')
 
     expect(wrapper.text()).not.toContain('Запустить цикл')
+    expect(wrapper.text()).not.toContain('операционный центр')
+    expect(wrapper.text()).toContain('смена')
     expect(wrapper.text()).toContain('Сегодня')
     expect(wrapper.text()).toContain('Сегодня действий не требуется')
     expect(wrapper.find('[data-testid="dashboard-shift-empty"]').exists()).toBe(true)

@@ -50,12 +50,22 @@
         @preset-cleared="onPresetCleared"
       />
     </template>
+    <ConfirmModal
+      :open="confirmOpen"
+      :title="confirmTitle"
+      :message="confirmMessage"
+      confirm-variant="danger"
+      @close="closeConfirm"
+      @confirm="acceptConfirm"
+    />
   </section>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref, toRaw, watch } from 'vue';
 import AutomationHub from '@/Components/Launch/Automation/AutomationHub.vue';
+import ConfirmModal from '@/Components/ConfirmModal.vue';
+import { useConfirmDialog } from '@/composables/useConfirmDialog';
 import { api } from '@/services/api';
 import { useToast } from '@/composables/useToast';
 import {
@@ -126,6 +136,7 @@ const emit = defineEmits<{
 }>();
 
 const { showToast } = useToast();
+const { open: confirmOpen, title: confirmTitle, message: confirmMessage, ask, close: closeConfirm, confirm: acceptConfirm } = useConfirmDialog();
 
 const state = reactive<AutomationProfile>(structuredClone(automationProfileDefaults));
 
@@ -709,13 +720,10 @@ async function onBindNode(nodeId: number) {
     }
     if (node && needsRebindConfirm(node) && node.zone_id !== props.zoneId) {
         const label = node.uid || node.name || `Node #${node.id}`;
-        const ok = typeof window === 'undefined'
-            || window.confirm(
-                `Нода "${label}" уже привязана к другой зоне. Перепривязать? Текущая привязка будет сброшена до подтверждения config_report.`,
-            );
-        if (!ok) {
-            return;
-        }
+        if (!(await ask(
+            `Нода "${label}" уже привязана к другой зоне. Перепривязать? Текущая привязка будет сброшена до подтверждения config_report.`,
+            'Перепривязать ноду?',
+        ))) return;
     }
     bindingFailedNodeIds.value = new Set(
         [...bindingFailedNodeIds.value].filter((id) => id !== nodeId),

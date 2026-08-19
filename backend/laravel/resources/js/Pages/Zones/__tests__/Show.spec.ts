@@ -961,4 +961,22 @@ describe('Zones/Show.vue', () => {
     expect(tablist.text()).toContain('Процесс')
     expect(wrapper.text()).toContain('Automation')
   })
+
+  it('показывает «Обзор» среди основных вкладок админа, дефолт — Тревоги', () => {
+    usePageMockInstance.props.auth.user.role = 'admin'
+    const wrapper = mount(ZonesShow)
+    const tablist = wrapper.get('[role="tablist"]')
+
+    expect(tablist.text()).toContain('Обзор')
+    expect(tablist.text()).toContain('Тревоги')
+    expect(tablist.text()).toContain('Узлы')
+    expect(tablist.text()).toContain('Журнал')
+    expect(tablist.text()).not.toContain('Раствор')
+    expect(wrapper.find('[data-testid="zone-more-tab-cycle"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="zone-more-tab-automation"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="zone-more-tab-scheduler"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="zone-more-tab-telemetry"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('pH выше нормы')
+    expect(wrapper.text()).not.toContain('Цикл выращивания')
+  })
 })

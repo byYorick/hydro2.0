@@ -3,6 +3,13 @@ import type { UserRole } from '@/types/User'
 
 export type DashboardView = 'operations' | 'agronomy' | 'engineering' | 'admin'
 
+export const DASHBOARD_HERO_EYEBROW: Record<DashboardView, string> = {
+  operations: 'смена',
+  agronomy: 'агрономия',
+  engineering: 'инженерия',
+  admin: 'система',
+}
+
 export const DASHBOARD_HERO_TITLE: Record<DashboardView, string> = {
   operations: 'Сегодня',
   agronomy: 'Обзор культур',

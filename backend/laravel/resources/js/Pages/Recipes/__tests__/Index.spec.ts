@@ -272,6 +272,18 @@ describe('Recipes/Index.vue', () => {
     expect(wrapper.text()).not.toContain('Среднее фаз')
     expect(wrapper.text()).not.toContain('Суммарно фаз')
     expect(wrapper.text()).not.toContain('По фильтру')
+    expect(wrapper.text()).not.toContain('Всего рецептов')
+    expect(wrapper.find('.ui-kpi-grid').exists()).toBe(false)
+  })
+
+  it('показывает ссылки на справочники культур и удобрений', () => {
+    const wrapper = mount(RecipesIndex)
+
+    const links = wrapper.findAllComponents({ name: 'Link' })
+    expect(links.some((link) => link.props('href') === '/plants')).toBe(true)
+    expect(links.some((link) => link.props('href') === '/nutrients')).toBe(true)
+    expect(wrapper.text()).toContain('Культуры')
+    expect(wrapper.text()).toContain('Удобрения')
   })
 
   it('показывает колонку культуры и ищет по ней', async () => {
@@ -286,5 +298,15 @@ describe('Recipes/Index.vue', () => {
 
     expect(wrapper.text()).toContain('Lettuce Recipe')
     expect(wrapper.text()).not.toContain('Basil Recipe')
+  })
+
+  it('даёт вторичные ссылки на культуры и удобрения', () => {
+    const wrapper = mount(RecipesIndex)
+    const links = wrapper.findAllComponents({ name: 'Link' })
+    const hrefs = links.map((link) => link.props('href'))
+
+    expect(wrapper.text()).toContain('Справочники')
+    expect(hrefs).toContain('/plants')
+    expect(hrefs).toContain('/nutrients')
   })
 })

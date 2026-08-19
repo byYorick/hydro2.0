@@ -106,8 +106,12 @@ vi.mock('@/stores/zones', () => ({
   }),
 }))
 
+const pageProps = vi.hoisted(() => ({
+  auth: { user: { role: 'admin' } },
+}))
+
 vi.mock('@inertiajs/vue3', () => ({
-  usePage: () => ({ props: { zones: sampleZones } }),
+  usePage: () => ({ props: { zones: sampleZones, ...pageProps } }),
   router: {
     reload: vi.fn(),
   },
@@ -153,6 +157,7 @@ const mountZones = () =>
 describe('Zones/Index.vue', () => {
   beforeEach(() => {
     initFromPropsMock.mockClear()
+    pageProps.auth.user.role = 'admin'
     if (typeof window !== 'undefined') {
       window.history.replaceState({}, '', '/')
     }
@@ -211,5 +216,29 @@ describe('Zones/Index.vue', () => {
     await input.setValue('салат')
     await wrapper.vm.$nextTick()
     expect(wrapper.vm.filteredZones.map((z: { name: string }) => z.name)).toEqual(['Alpha'])
+  })
+
+  it('у operator скрывает колонку «Теплица», оставляя культуру, фазу, статус, pH и EC', () => {
+    pageProps.auth.user.role = 'operator'
+    const wrapper = mountZones()
+    const text = wrapper.text()
+    const columnKeys = wrapper.vm.columns.map((column: { key: string }) => column.key)
+
+    expect(text).not.toContain('Теплица')
+    expect(columnKeys).not.toContain('greenhouse')
+    expect(text).toContain('Культура')
+    expect(text).toContain('Фаза')
+    expect(text).toContain('Статус')
+    expect(text).toContain('pH')
+    expect(text).toContain('EC')
+  })
+
+  it('у admin показывает колонку «Теплица»', () => {
+    pageProps.auth.user.role = 'admin'
+    const wrapper = mountZones()
+    const columnKeys = wrapper.vm.columns.map((column: { key: string }) => column.key)
+
+    expect(wrapper.text()).toContain('Теплица')
+    expect(columnKeys).toContain('greenhouse')
   })
 })

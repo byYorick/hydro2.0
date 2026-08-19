@@ -24,12 +24,12 @@
             2. Насосы
           </div>
           <div class="mt-1">
-            После этого откалибруйте дозирующие насосы. Runtime bounds остаются в расширенных настройках pump calibration wizard и нужны только для нестандартных зон.
+            После этого откалибруйте дозирующие насосы. Пределы насоса остаются в расширенных настройках мастера калибровки и нужны только для нестандартных зон.
           </div>
         </div>
         <div class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] p-3 text-xs text-[color:var(--text-dim)]">
           <div class="font-medium text-[color:var(--text-primary)]">
-            3. Process и PID
+            3. Процесс и PID
           </div>
           <div class="mt-1">
             {{ processAndPidHint }}

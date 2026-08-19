@@ -239,6 +239,7 @@ import { useStoreEvents } from '@/composables/useStoreEvents'
 import { useBatchUpdates } from '@/composables/useOptimizedUpdates'
 import { useFavorites } from '@/composables/useFavorites'
 import { useUrlState } from '@/composables/useUrlState'
+import { useRole } from '@/composables/useRole'
 import { translateStatus } from '@/utils/i18n'
 import type { Zone } from '@/types'
 
@@ -363,6 +364,7 @@ const perPage = useUrlState<number>({
 })
 
 const { isZoneFavorite, toggleZoneFavorite } = useFavorites()
+const { isOperator } = useRole()
 
 // Оптимизируем фильтрацию: мемоизируем нижний регистр запроса
 const queryLower = computed(() => query.value.toLowerCase())
@@ -436,49 +438,57 @@ function zoneSearchHaystack(zone: Zone): string {
     .toLowerCase()
 }
 
-const columns: DataTableColumn<Zone>[] = [
-  {
-    key: 'name',
-    label: 'Название',
-    headerClass: 'min-w-[200px] max-w-[300px]',
-    class: 'min-w-[200px] max-w-[300px]',
-  },
-  { key: 'status', label: 'Статус', headerClass: 'min-w-[120px]', class: 'min-w-[120px]' },
-  {
-    key: 'crop',
-    label: 'Культура',
-    headerClass: 'min-w-[120px] max-w-[180px]',
-    class: 'min-w-[120px] max-w-[180px]',
-  },
-  {
-    key: 'phase',
-    label: 'Фаза',
-    headerClass: 'min-w-[120px] max-w-[180px]',
-    class: 'min-w-[120px] max-w-[180px]',
-  },
-  {
-    key: 'greenhouse',
-    label: 'Теплица',
-    headerClass: 'min-w-[120px] max-w-[200px]',
-    class: 'min-w-[120px] max-w-[200px]',
-  },
-  { key: 'ph', label: 'pH', headerClass: 'min-w-[60px]', class: 'min-w-[60px]' },
-  { key: 'ec', label: 'EC', headerClass: 'min-w-[60px]', class: 'min-w-[60px]' },
-  {
-    key: 'temperature',
-    label: 'Температура',
-    headerClass: 'min-w-[100px]',
-    class: 'min-w-[100px]',
-    align: 'center',
-  },
-  {
-    key: 'actions',
-    label: 'Действия',
-    headerClass: 'min-w-[120px]',
-    class: 'min-w-[120px]',
-    align: 'center',
-  },
-]
+const columns = computed<DataTableColumn<Zone>[]>(() => {
+  const all: DataTableColumn<Zone>[] = [
+    {
+      key: 'name',
+      label: 'Название',
+      headerClass: 'min-w-[200px] max-w-[300px]',
+      class: 'min-w-[200px] max-w-[300px]',
+    },
+    { key: 'status', label: 'Статус', headerClass: 'min-w-[120px]', class: 'min-w-[120px]' },
+    {
+      key: 'crop',
+      label: 'Культура',
+      headerClass: 'min-w-[120px] max-w-[180px]',
+      class: 'min-w-[120px] max-w-[180px]',
+    },
+    {
+      key: 'phase',
+      label: 'Фаза',
+      headerClass: 'min-w-[120px] max-w-[180px]',
+      class: 'min-w-[120px] max-w-[180px]',
+    },
+    {
+      key: 'greenhouse',
+      label: 'Теплица',
+      headerClass: 'min-w-[120px] max-w-[200px]',
+      class: 'min-w-[120px] max-w-[200px]',
+    },
+    { key: 'ph', label: 'pH', headerClass: 'min-w-[60px]', class: 'min-w-[60px]' },
+    { key: 'ec', label: 'EC', headerClass: 'min-w-[60px]', class: 'min-w-[60px]' },
+    {
+      key: 'temperature',
+      label: 'Температура',
+      headerClass: 'min-w-[100px]',
+      class: 'min-w-[100px]',
+      align: 'center',
+    },
+    {
+      key: 'actions',
+      label: 'Действия',
+      headerClass: 'min-w-[120px]',
+      class: 'min-w-[120px]',
+      align: 'center',
+    },
+  ]
+
+  if (isOperator.value) {
+    return all.filter((column) => column.key !== 'greenhouse')
+  }
+
+  return all
+})
 
 // Сбрасываем на первую страницу при изменении фильтров
 watch([status, query, showOnlyFavorites], () => {

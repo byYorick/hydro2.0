@@ -132,12 +132,12 @@ const ZONE_TAB_LAYOUT_BY_ROLE: Record<UserRole, ZoneTabLayout> = {
   admin: {
     defaultTab: 'alerts',
     primary: [
+      tab('cycle', 'Обзор'),
       tab('alerts', 'Тревоги'),
       tab('devices'),
       tab('events', 'Журнал'),
     ],
     more: [
-      tab('cycle'),
       tab('automation', 'Раствор'),
       tab('scheduler'),
       tab('telemetry'),

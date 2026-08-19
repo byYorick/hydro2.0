@@ -6,7 +6,7 @@
           <div class="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
             <div class="min-w-0 space-y-1.5">
               <p class="text-[11px] uppercase tracking-[0.28em] text-[color:var(--text-muted)]">
-                операционный центр
+                {{ DASHBOARD_HERO_EYEBROW[dashboardView] }}
               </p>
               <h1 class="text-2xl font-semibold tracking-tight text-[color:var(--text-primary)]">
                 {{ heroTitle }}
@@ -403,6 +403,7 @@ import EngineeringIssuesPanel from './EngineeringIssuesPanel.vue'
 import AdminHealthPanel from './AdminHealthPanel.vue'
 import {
   DASHBOARD_CONTEXT_TITLE,
+  DASHBOARD_HERO_EYEBROW,
   DASHBOARD_HERO_SUBTITLE,
   DASHBOARD_HERO_TITLE,
   buildEngineeringIssues,

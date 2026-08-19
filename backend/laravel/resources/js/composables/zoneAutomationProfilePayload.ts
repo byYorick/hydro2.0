@@ -166,7 +166,7 @@ export function validateGreenhouseClimateForm(climateForm: ZoneAutomationForms['
     return 'Макс. шаг форточек (max_step_pct) должен быть от 1 до 100%.'
   }
   if ((climateForm.positionDeadbandPercent ?? 0) > climateForm.maxVentStepPct) {
-    return 'Deadband форточек не может быть больше max_step_pct.'
+    return 'Мёртвая зона форточек не может быть больше max_step_pct.'
   }
   if (climateForm.dayTemp < 10 || climateForm.dayTemp > 35 || climateForm.nightTemp < 10 || climateForm.nightTemp > 35) {
     return 'Температуры день/ночь должны быть в диапазоне 10–35 °C.'

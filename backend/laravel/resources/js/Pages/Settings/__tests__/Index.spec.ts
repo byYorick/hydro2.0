@@ -104,6 +104,13 @@ const pageUser = vi.hoisted(() => ({
   },
 }))
 
+vi.mock('@/Pages/Profile/Partials/UpdatePasswordForm.vue', () => ({
+  default: {
+    name: 'UpdatePasswordForm',
+    template: '<section data-testid="settings-update-password"><h2>Изменение пароля</h2></section>',
+  },
+}))
+
 vi.mock('@inertiajs/vue3', () => ({
   Link: {
     name: 'Link',
@@ -288,8 +295,10 @@ describe('Settings/Index.vue', () => {
       await flushPromises()
 
       expect(tabLabels(wrapper)).not.toContain('Параметры движка')
+      expect(tabLabels(wrapper)).not.toContain('Настройки системы')
       expect(wrapper.find('[data-testid="settings-automation-engine-card"]').exists()).toBe(false)
       expect(wrapper.find('[data-testid="settings-alert-policies-card"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="settings-system-authority-card"]').exists()).toBe(false)
       expect(wrapper.find('[data-testid="settings-automation-engine-reset"]').exists()).toBe(false)
       expect(wrapper.find('[data-testid="settings-alert-policy-reset"]').exists()).toBe(false)
       expect(wrapper.text()).not.toContain('Политики алертов')
@@ -314,6 +323,31 @@ describe('Settings/Index.vue', () => {
       expect(getDocumentMock).toHaveBeenCalledWith('system', 0, 'system.alert_policies')
     },
   )
+
+  it('admin видит вкладку «Настройки системы», старт остаётся «Мой профиль»', async () => {
+    const wrapper = mountSettings('admin')
+
+    await flushPromises()
+
+    expect(tabLabels(wrapper)).toContain('Настройки системы')
+    expect(wrapper.find('[data-testid="settings-system-authority-card"]').exists()).toBe(true)
+    expect(wrapper.find('[role="tab"][aria-selected="true"]').text()).toBe('Мой профиль')
+    expect(wrapper.get('[data-testid="settings-section-profile"]').isVisible()).toBe(true)
+    expect(wrapper.get('[data-testid="settings-system-authority-card"]').isVisible()).toBe(false)
+    expect(wrapper.get('[data-testid="settings-theme-toggle"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="settings-update-password"]').exists()).toBe(true)
+  })
+
+  it('engineer не видит вкладку «Настройки системы»', async () => {
+    const wrapper = mountSettings('engineer')
+
+    await flushPromises()
+
+    expect(tabLabels(wrapper)).toContain('Параметры движка')
+    expect(tabLabels(wrapper)).not.toContain('Настройки системы')
+    expect(wrapper.find('[data-testid="settings-system-authority-card"]').exists()).toBe(false)
+    expect(wrapper.find('[role="tab"][aria-selected="true"]').text()).toBe('Мой профиль')
+  })
 
   it('сохраняет и сбрасывает runtime overrides через authority document endpoints', async () => {
     const wrapper = mountSettings('admin')

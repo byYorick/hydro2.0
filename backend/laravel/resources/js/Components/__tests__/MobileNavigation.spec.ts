@@ -68,6 +68,8 @@ describe('MobileNavigation', () => {
         '/documentation/fertigation',
         '/settings',
       ])
+      expect(hrefs(wrapper)).not.toContain('/plants')
+      expect(hrefs(wrapper)).not.toContain('/nutrients')
       expect(wrapper.text()).toContain('Сегодня')
       expect(wrapper.text()).toContain('Справочник')
       expect(wrapper.text()).toContain('Профиль')
@@ -75,6 +77,7 @@ describe('MobileNavigation', () => {
       expect(wrapper.text()).not.toContain('Узлы')
       expect(wrapper.text()).not.toContain('Аналитика')
       expect(wrapper.text()).not.toContain('Логи')
+      expect(wrapper.text()).not.toContain('Культуры')
     })
 
     it('для agronomist показывает рецепты и скрывает устройства', () => {
@@ -89,9 +92,13 @@ describe('MobileNavigation', () => {
         '/launch',
         '/documentation/fertigation',
       ])
+      expect(hrefs(wrapper)).not.toContain('/plants')
+      expect(hrefs(wrapper)).not.toContain('/nutrients')
       expect(wrapper.text()).toContain('Рецепты')
       expect(wrapper.text()).toContain('Справочник')
       expect(wrapper.text()).not.toContain('Узлы')
+      expect(wrapper.text()).not.toContain('Культуры')
+      expect(wrapper.text()).not.toContain('Удобрения')
     })
 
     it('для engineer ставит узлы первым пунктом', () => {

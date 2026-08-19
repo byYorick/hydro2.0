@@ -1121,7 +1121,7 @@ function buildControllerFieldTexts(kind: 'ph' | 'ec'): Record<string, LocalizedC
       description: `Дифференциальный коэффициент ${contourLabel}. Смягчает резкие изменения и помогает заранее тормозить correction при быстром движении ${metricLabel} к цели.`,
     },
     [`${basePath}.deadband`]: {
-      label: 'Deadband',
+      label: 'Мёртвая зона',
       description: `Мёртвая зона вокруг target ${metricLabel}. Пока отклонение меньше этого порога, runtime не считает, что нужна новая ${doseLabel}.`,
     },
     [`${basePath}.max_dose_ml`]: {

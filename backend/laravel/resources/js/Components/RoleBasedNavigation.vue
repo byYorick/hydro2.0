@@ -1,13 +1,27 @@
 <template>
-  <nav class="space-y-0.5">
-    <NavLink
-      v-for="item in visibleItems"
-      :key="item.href"
-      :href="item.href"
-      :label="item.label"
-      :icon="item.icon"
-      :collapsed="collapsed"
-    />
+  <nav class="flex flex-col gap-3">
+    <div
+      v-for="group in visibleGroups"
+      :key="group.id"
+      class="flex flex-col gap-0.5"
+      :data-nav-group="group.id"
+    >
+      <p
+        v-if="!collapsed"
+        class="px-3 pt-1 pb-0.5 text-[11px] uppercase tracking-[0.18em] text-[color:var(--text-dim)]"
+        data-testid="nav-group-label"
+      >
+        {{ group.label }}
+      </p>
+      <NavLink
+        v-for="item in group.items"
+        :key="item.href"
+        :href="item.href"
+        :label="item.label"
+        :icon="item.icon"
+        :collapsed="collapsed"
+      />
+    </div>
   </nav>
 </template>
 
@@ -16,6 +30,12 @@ export interface RoleNavItem {
   href: string
   label: string
   icon: string
+}
+
+export interface RoleNavGroup {
+  id: string
+  label: string
+  items: RoleNavItem[]
 }
 
 const ICONS = {
@@ -46,41 +66,93 @@ function navItem(href: string, label: string, icon: string): RoleNavItem {
   return { href, label, icon }
 }
 
+function navGroup(id: string, label: string, items: RoleNavItem[]): RoleNavGroup {
+  return { id, label, items }
+}
+
+function catalog(role: string) {
+  return {
+    home: navItem('/', homeNavLabel(role), ICONS.home),
+    zones: navItem('/zones', 'Зоны', ICONS.zones),
+    alerts: navItem('/alerts', 'Тревоги', ICONS.alerts),
+    settings: navItem(
+      '/settings',
+      role === 'operator' ? 'Профиль' : 'Настройки',
+      ICONS.settings,
+    ),
+    recipes: navItem('/recipes', 'Рецепты', ICONS.recipes),
+    analytics: navItem('/analytics', 'Аналитика', ICONS.analytics),
+    launch: navItem('/launch', 'Запуск', ICONS.launch),
+    docs: navItem('/documentation/fertigation', 'Справочник', ICONS.docs),
+    plants: navItem('/plants', 'Культуры', ICONS.recipes),
+    nutrients: navItem('/nutrients', 'Удобрения', ICONS.docs),
+    devices: navItem('/devices', 'Узлы', ICONS.devices),
+    monitoring: navItem('/monitoring', 'Здоровье системы', ICONS.monitoring),
+    logs: navItem('/logs', 'Логи', ICONS.logs),
+    journal: navItem('/audit', 'Журнал', ICONS.audit),
+    users: navItem('/users', 'Пользователи', ICONS.users),
+  }
+}
+
 export function homeNavLabel(role: string): string {
   return HOME_LABELS[role] ?? 'Обзор'
 }
 
-export function getRoleNavigationItems(role: string): RoleNavItem[] {
-  const home = navItem('/', homeNavLabel(role), ICONS.home)
-  const zones = navItem('/zones', 'Зоны', ICONS.zones)
-  const alerts = navItem('/alerts', 'Тревоги', ICONS.alerts)
-  const settings = navItem(
-    '/settings',
-    role === 'operator' ? 'Профиль' : 'Настройки',
-    ICONS.settings,
-  )
-  const recipes = navItem('/recipes', 'Рецепты', ICONS.recipes)
-  const analytics = navItem('/analytics', 'Аналитика', ICONS.analytics)
-  const launch = navItem('/launch', 'Запуск', ICONS.launch)
-  const docs = navItem('/documentation/fertigation', 'Справочник', ICONS.docs)
-  const devices = navItem('/devices', 'Узлы', ICONS.devices)
-  const monitoring = navItem('/monitoring', 'Здоровье системы', ICONS.monitoring)
-  const logs = navItem('/logs', 'Логи', ICONS.logs)
-  const journal = navItem('/audit', 'Журнал', ICONS.audit)
-  const users = navItem('/users', 'Пользователи', ICONS.users)
+export function getRoleNavigationGroups(role: string): RoleNavGroup[] {
+  const items = catalog(role)
+  let groups: RoleNavGroup[]
 
   switch (role) {
     case 'operator':
-      return [home, zones, alerts, docs, settings]
+      groups = [
+        navGroup('work', 'Работа', [items.home, items.zones, items.alerts]),
+        navGroup('help', 'Помощь', [items.docs, items.settings]),
+      ]
+      break
     case 'agronomist':
-      return [home, zones, recipes, analytics, alerts, launch, docs]
+      groups = [
+        navGroup('work', 'Работа', [items.home, items.zones, items.alerts, items.launch]),
+        navGroup('objects', 'Объекты', [items.recipes, items.analytics]),
+        navGroup('help', 'Справочники', [items.docs, items.plants, items.nutrients]),
+      ]
+      break
     case 'engineer':
-      return [devices, home, zones, alerts, monitoring, logs]
+      groups = [
+        navGroup('work', 'Работа', [items.devices, items.home, items.zones, items.alerts]),
+        navGroup('system', 'Система', [items.monitoring, items.logs]),
+      ]
+      break
     case 'admin':
-      return [home, alerts, monitoring, users, journal, zones, devices, settings]
+      groups = [
+        navGroup('work', 'Работа', [items.home, items.alerts, items.zones]),
+        navGroup('system', 'Система', [items.monitoring, items.users, items.journal, items.devices, items.settings]),
+      ]
+      break
     case 'viewer':
     default:
-      return [home, zones, alerts, settings]
+      groups = [
+        navGroup('work', 'Работа', [items.home, items.zones, items.alerts, items.settings]),
+      ]
+  }
+
+  return groups.filter((group) => group.items.length > 0)
+}
+
+export function getRoleNavigationItems(role: string): RoleNavItem[] {
+  const items = catalog(role)
+
+  switch (role) {
+    case 'operator':
+      return [items.home, items.zones, items.alerts, items.docs, items.settings]
+    case 'agronomist':
+      return [items.home, items.zones, items.recipes, items.analytics, items.alerts, items.launch, items.docs]
+    case 'engineer':
+      return [items.devices, items.home, items.zones, items.alerts, items.monitoring, items.logs]
+    case 'admin':
+      return [items.home, items.alerts, items.monitoring, items.users, items.journal, items.zones, items.devices, items.settings]
+    case 'viewer':
+    default:
+      return [items.home, items.zones, items.alerts, items.settings]
   }
 }
 </script>
@@ -94,5 +166,5 @@ defineProps<{ collapsed?: boolean }>()
 
 const page = usePage()
 const role = computed(() => (page.props.auth as { user?: { role?: string } })?.user?.role || 'viewer')
-const visibleItems = computed(() => getRoleNavigationItems(role.value))
+const visibleGroups = computed(() => getRoleNavigationGroups(role.value))
 </script>

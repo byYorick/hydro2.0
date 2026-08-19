@@ -295,9 +295,6 @@ describe('AttachNodesModal.vue', () => {
   })
 
   it('просит confirm при rebind pending/assigned lifecycle', async () => {
-    const confirmMock = vi.fn(() => false)
-    vi.stubGlobal('confirm', confirmMock)
-
     axiosGetMock.mockResolvedValue({
       data: {
         data: [
@@ -330,7 +327,7 @@ describe('AttachNodesModal.vue', () => {
     await attachButton!.trigger('click')
     await flushPromises()
 
-    expect(confirmMock).toHaveBeenCalled()
+    expect(wrapper.text()).toContain('Перепривязать уже назначенные узлы')
     expect(axiosPatchMock).not.toHaveBeenCalled()
   })
 

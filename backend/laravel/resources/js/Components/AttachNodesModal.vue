@@ -89,12 +89,22 @@
       </Button>
     </template>
   </Modal>
+  <ConfirmModal
+    :open="confirmOpen"
+    :title="confirmTitle"
+    :message="confirmMessage"
+    confirm-variant="danger"
+    @close="closeConfirm"
+    @confirm="acceptConfirm"
+  />
 </template>
 
 <script setup lang="ts">
 import { ref, watch, onMounted } from 'vue'
 import Modal from './Modal.vue'
 import Button from './Button.vue'
+import ConfirmModal from './ConfirmModal.vue'
+import { useConfirmDialog } from '@/composables/useConfirmDialog'
 import { logger } from '@/utils/logger'
 import { api } from '@/services/api'
 import { useToast } from '@/composables/useToast'
@@ -108,6 +118,7 @@ import { extractHumanErrorMessage } from '@/utils/errorMessage'
 import type { Device } from '@/types'
 
 const { showToast } = useToast()
+const { open: confirmOpen, title: confirmTitle, message: confirmMessage, ask, close: closeConfirm, confirm: acceptConfirm } = useConfirmDialog()
 
 interface Props {
   show: boolean
@@ -173,13 +184,10 @@ async function onAttach() {
   const rebindNodes = selected.filter((n) => needsRebindConfirm(n))
   if (rebindNodes.length > 0) {
     const labels = rebindNodes.map((n) => n.uid || n.name || `#${n.id}`).join(', ')
-    const ok = typeof window === 'undefined'
-      || window.confirm(
-        `Перепривязать уже назначенные узлы (${labels})? Текущая привязка будет сброшена до подтверждения config_report.`
-      )
-    if (!ok) {
-      return
-    }
+    if (!(await ask(
+      `Перепривязать уже назначенные узлы (${labels})? Текущая привязка будет сброшена до подтверждения config_report.`,
+      'Перепривязать узлы?',
+    ))) return
   }
 
   attaching.value = true

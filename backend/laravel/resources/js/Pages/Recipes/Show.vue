@@ -8,6 +8,23 @@
         <div class="text-xs text-[color:var(--text-muted)]">
           {{ recipe.description || 'Без описания' }} · Фаз: {{ recipe.phases?.length || 0 }}
         </div>
+        <div class="mt-1 flex items-center gap-3 text-xs">
+          <span class="text-[11px] uppercase tracking-[0.18em] text-[color:var(--text-dim)]">
+            Справочники
+          </span>
+          <Link
+            href="/plants"
+            class="text-[color:var(--accent-cyan)] hover:underline"
+          >
+            Культуры
+          </Link>
+          <Link
+            href="/nutrients"
+            class="text-[color:var(--accent-cyan)] hover:underline"
+          >
+            Удобрения
+          </Link>
+        </div>
       </div>
       <div class="flex gap-2">
         <Button

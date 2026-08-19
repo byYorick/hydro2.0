@@ -12,6 +12,23 @@
           <p class="text-sm text-[color:var(--text-muted)]">
             Управление рецептами выращивания и фазами для автоматических циклов.
           </p>
+          <div class="mt-2 flex items-center gap-3 text-sm">
+            <span class="text-[11px] uppercase tracking-[0.18em] text-[color:var(--text-dim)]">
+              Справочники
+            </span>
+            <Link
+              href="/plants"
+              class="text-[color:var(--accent-cyan)] hover:underline"
+            >
+              Культуры
+            </Link>
+            <Link
+              href="/nutrients"
+              class="text-[color:var(--accent-cyan)] hover:underline"
+            >
+              Удобрения
+            </Link>
+          </div>
         </div>
         <Link
           v-if="canEditRecipes"
@@ -37,19 +54,6 @@
             Новый рецепт
           </Button>
         </Link>
-      </div>
-      <div class="ui-kpi-grid grid-cols-2">
-        <div class="ui-kpi-card">
-          <div class="ui-kpi-label">
-            Всего рецептов
-          </div>
-          <div class="ui-kpi-value">
-            {{ totalRecipes }}
-          </div>
-          <div class="ui-kpi-hint">
-            В базе конфигураций
-          </div>
-        </div>
       </div>
     </section>
     <div class="mb-3 flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2">
@@ -188,8 +192,6 @@ const filtered = computed(() => {
       || cropLabel(recipe).toLowerCase().includes(q)
   })
 })
-
-const totalRecipes = computed(() => all.value.length)
 
 function clampCurrentPage(total: number): number {
   const maxPage = Math.ceil(total / perPage.value) || 1

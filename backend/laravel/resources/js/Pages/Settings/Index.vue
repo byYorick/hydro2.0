@@ -58,7 +58,7 @@
             class="settings-kpi-chip"
             title="Снимок scheduler / engine"
           >
-            <span class="settings-kpi-chip__label">Runtime AE</span>
+            <span class="settings-kpi-chip__label">Снимок AE</span>
             <span class="settings-kpi-chip__value settings-kpi-chip__value--sm">{{ automationEngineSettingsGeneratedAtLabel }}</span>
           </div>
           <div
@@ -85,42 +85,13 @@
         </div>
 
         <div class="space-y-4 min-w-0">
-          <SettingsSectionShell
+          <SettingsProfilePanel
             v-show="activeSection === 'profile'"
-            title="Мой профиль"
-            description="Основные данные вашей учётной записи. Редактирование имени и email — через администратора."
-            icon="👤"
-            test-id="settings-section-profile"
-          >
-            <dl class="grid gap-3 sm:grid-cols-2">
-              <div class="settings-field-card">
-                <dt class="settings-field-card__label">
-                  Имя
-                </dt>
-                <dd class="mt-2 text-sm font-medium text-[color:var(--text-primary)]">
-                  {{ currentUser?.name }}
-                </dd>
-              </div>
-              <div class="settings-field-card">
-                <dt class="settings-field-card__label">
-                  Email
-                </dt>
-                <dd class="mt-2 text-sm font-medium text-[color:var(--text-primary)] break-all">
-                  {{ currentUser?.email }}
-                </dd>
-              </div>
-              <div class="settings-field-card sm:col-span-2">
-                <dt class="settings-field-card__label">
-                  Роль в системе
-                </dt>
-                <dd class="mt-2">
-                  <Badge :variant="roleBadgeVariant">
-                    {{ translateRole(currentUser?.role) }}
-                  </Badge>
-                </dd>
-              </div>
-            </dl>
-          </SettingsSectionShell>
+            :name="currentUser?.name"
+            :email="currentUser?.email"
+            :role-label="translateRole(currentUser?.role)"
+            :role-badge-variant="roleBadgeVariant"
+          />
 
           <SettingsSectionShell
             v-show="activeSection === 'notifications'"
@@ -361,25 +332,12 @@
                 </div>
               </div>
             </SettingsSectionShell>
-
-            <SettingsSectionShell
-              v-show="activeSection === 'automation'"
-              title="Системные настройки автоматики"
-              description="Калибровки, дефолты автоматики, шаблоны команд и пороги observability — отдельная страница authority."
-              icon="📊"
-              test-id="settings-system-authority-card"
-            >
-              <Link href="/system/settings">
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  data-testid="settings-open-system-authority"
-                >
-                  Открыть системные настройки →
-                </Button>
-              </Link>
-            </SettingsSectionShell>
           </template>
+
+          <SettingsSystemAuthorityCard
+            v-if="canManageSystem"
+            v-show="activeSection === 'system'"
+          />
 
         </div>
       </div>
@@ -401,10 +359,12 @@
 
 <script setup>
 import { computed, reactive, ref, watch, onMounted } from 'vue'
-import { Link, usePage } from '@inertiajs/vue3'
+import { usePage } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import SettingsSectionShell from '@/Components/Settings/SettingsSectionShell.vue'
 import SettingsFieldCard from '@/Components/Settings/SettingsFieldCard.vue'
+import SettingsProfilePanel from '@/Components/Settings/SettingsProfilePanel.vue'
+import SettingsSystemAuthorityCard from '@/Components/Settings/SettingsSystemAuthorityCard.vue'
 import Tabs from '@/Components/Tabs.vue'
 import Button from '@/Components/Button.vue'
 import Badge from '@/Components/Badge.vue'
@@ -420,7 +380,7 @@ import { TOAST_TIMEOUT } from '@/constants/timeouts'
 
 const page = usePage()
 const currentUser = computed(() => page.props.auth?.user)
-const { canEditAutomationEngineSettings } = useRole()
+const { canEditAutomationEngineSettings, canManageSystem } = useRole()
 
 const profileInitial = computed(() => {
   const name = String(currentUser.value?.name || '?').trim()
@@ -438,10 +398,12 @@ const sectionCatalog = [
   { id: 'profile', label: 'Мой профиль', hint: 'Имя, email, роль', icon: '👤' },
   { id: 'notifications', label: 'Уведомления', hint: 'Тосты и алерты', icon: '🔔' },
   { id: 'automation', label: 'Параметры движка', hint: 'AE3 и runtime', icon: '⚙️', requiresAutomation: true },
+  { id: 'system', label: 'Настройки системы', hint: 'Authority платформы', icon: '📊', requiresSystem: true },
 ]
 
 const visibleSections = computed(() => sectionCatalog.filter((section) => {
   if (section.requiresAutomation && !canEditAutomationEngineSettings.value) return false
+  if (section.requiresSystem && !canManageSystem.value) return false
   return true
 }))
 

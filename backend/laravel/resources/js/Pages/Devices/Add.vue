@@ -275,6 +275,14 @@
         </div>
       </Card>
     </div>
+    <ConfirmModal
+      :open="confirmOpen"
+      :title="confirmTitle"
+      :message="confirmMessage"
+      confirm-variant="danger"
+      @close="closeConfirm"
+      @confirm="acceptConfirm"
+    />
   </AppLayout>
 </template>
 
@@ -284,6 +292,8 @@ import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
 import Button from '@/Components/Button.vue'
 import Badge from '@/Components/Badge.vue'
+import ConfirmModal from '@/Components/ConfirmModal.vue'
+import { useConfirmDialog } from '@/composables/useConfirmDialog'
 import { logger } from '@/utils/logger'
 import { useNodeLifecycle } from '@/composables/useNodeLifecycle'
 import { useErrorHandler } from '@/composables/useErrorHandler'
@@ -297,6 +307,7 @@ import type { Device, Greenhouse, Zone } from '@/types'
 const { showToast } = useToast()
 const { loading, startLoading, stopLoading } = useLoading<boolean>(false)
 const { canConfigureDevices } = useRole()
+const { open: confirmOpen, title: confirmTitle, message: confirmMessage, ask, close: closeConfirm, confirm: acceptConfirm } = useConfirmDialog()
 
 // Инициализация composables для lifecycle
 const {
@@ -465,13 +476,10 @@ async function assignNode(node: any) {
 
   if (needsRebindConfirm(node)) {
     const label = node.name || node.uid || `Node #${node.id}`
-    const ok = typeof window === 'undefined'
-      || window.confirm(
-        `Нода "${label}" уже привязана. Перепривязать к другой зоне? Текущая привязка будет сброшена до подтверждения config_report.`
-      )
-    if (!ok) {
-      return
-    }
+    if (!(await ask(
+      `Нода "${label}" уже привязана. Перепривязать к другой зоне? Текущая привязка будет сброшена до подтверждения config_report.`,
+      'Перепривязать ноду?',
+    ))) return
   }
 
   assigning[node.id] = true
@@ -577,12 +585,7 @@ async function deleteNode(node: Device): Promise<void> {
   if (!node?.id) return
 
   const label = node.name || node.uid || `Node #${node.id}`
-  if (typeof window !== 'undefined') {
-    const ok = window.confirm(`Удалить ноду "${label}"? Это действие нельзя отменить.`)
-    if (!ok) {
-      return
-    }
-  }
+  if (!(await ask(`Удалить ноду "${label}"? Это действие нельзя отменить.`, 'Удалить ноду?'))) return
 
   deleting[node.id] = true
   try {

@@ -181,6 +181,14 @@
         </div>
       </form>
     </Card>
+    <ConfirmModal
+      :open="confirmOpen"
+      :title="confirmTitle"
+      :message="confirmMessage"
+      confirm-variant="danger"
+      @close="closeConfirm"
+      @confirm="acceptConfirm"
+    />
   </AppLayout>
 </template>
 
@@ -190,6 +198,8 @@ import { Link, router, usePage } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
 import Button from '@/Components/Button.vue'
+import ConfirmModal from '@/Components/ConfirmModal.vue'
+import { useConfirmDialog } from '@/composables/useConfirmDialog'
 import { api } from '@/services/api'
 import { useToast } from '@/composables/useToast'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
@@ -206,6 +216,7 @@ const nutrient = computed(() => (page.props.nutrient || null) as NutrientProduct
 const isEditMode = computed(() => Boolean(nutrient.value?.id))
 
 const { showToast } = useToast()
+const { open: confirmOpen, title: confirmTitle, message: confirmMessage, ask, close: closeConfirm, confirm: acceptConfirm } = useConfirmDialog()
 
 const loading = ref(false)
 const errors = reactive<Record<string, string>>({})
@@ -297,9 +308,7 @@ async function onDelete(): Promise<void> {
     return
   }
 
-  if (!window.confirm('Удалить удобрение?')) {
-    return
-  }
+  if (!(await ask('Удалить удобрение?', 'Удалить удобрение?'))) return
 
   resetErrors()
   loading.value = true

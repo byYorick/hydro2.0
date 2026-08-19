@@ -188,7 +188,6 @@ describe('Devices/Add.vue', () => {
   })
 
   it('deletes a node after confirmation', async () => {
-    vi.stubGlobal('confirm', vi.fn(() => true))
     apiDeleteMock.mockResolvedValue({ data: { status: 'ok' } })
 
     const wrapper = mount(DevicesAdd)
@@ -198,6 +197,12 @@ describe('Devices/Add.vue', () => {
     expect(deleteButton.exists()).toBe(true)
 
     await deleteButton.trigger('click')
+    await flushPromises()
+
+    expect(apiDeleteMock).not.toHaveBeenCalled()
+    const confirmBtn = wrapper.findAll('button').find((btn) => btn.text() === 'Подтвердить')
+    expect(confirmBtn).toBeTruthy()
+    await confirmBtn!.trigger('click')
     await flushPromises()
 
     expect(apiDeleteMock).toHaveBeenCalledWith('/api/nodes/1', undefined)

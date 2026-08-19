@@ -264,12 +264,22 @@
         </div>
       </transition>
     </Teleport>
+    <ConfirmModal
+      :open="confirmOpen"
+      :title="confirmTitle"
+      :message="confirmMessage"
+      confirm-variant="danger"
+      @close="closeConfirm"
+      @confirm="acceptConfirm"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import Button from '@/Components/Button.vue'
+import ConfirmModal from '@/Components/ConfirmModal.vue'
+import { useConfirmDialog } from '@/composables/useConfirmDialog'
 import { Chip, Field, Stat } from '@/Components/Shared/Primitives'
 import Ic from '@/Components/Icons/Ic.vue'
 import {
@@ -552,6 +562,7 @@ const historyLoading = ref(true)
 const saving = ref(false)
 const presetSwitching = ref(false)
 const historyOpen = ref(false)
+const { open: confirmOpen, title: confirmTitle, message: confirmMessage, ask, close: closeConfirm, confirm: acceptConfirm } = useConfirmDialog()
 const activeMode = ref<ProcessCalibrationMode>('solution_fill')
 const calibrations = ref<Record<ProcessCalibrationMode, ZoneProcessCalibration | null>>({
   generic: null,
@@ -758,11 +769,8 @@ function hydrateForm(mode: ProcessCalibrationMode): void {
   validationErrors.value = {}
 }
 
-function selectMode(mode: ProcessCalibrationMode): void {
-  if (isDirty.value) {
-    const proceed = window.confirm('Несохранённые изменения будут потеряны. Продолжить?')
-    if (!proceed) return
-  }
+async function selectMode(mode: ProcessCalibrationMode): Promise<void> {
+  if (isDirty.value && !(await ask('Несохранённые изменения будут потеряны. Продолжить?', 'Несохранённые изменения'))) return
   activeMode.value = mode
   hydrateForm(mode)
 }

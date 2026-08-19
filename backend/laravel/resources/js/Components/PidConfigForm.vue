@@ -113,7 +113,7 @@
         type="button"
         data-testid="pid-config-type-ph"
         :class="tabClass('ph')"
-        @click="selectedType = 'ph'"
+        @click="selectType('ph')"
       >
         <span>Контур pH</span>
         <Chip
@@ -133,7 +133,7 @@
         type="button"
         data-testid="pid-config-type-ec"
         :class="tabClass('ec')"
-        @click="selectedType = 'ec'"
+        @click="selectType('ec')"
       >
         <span>Контур EC</span>
         <Chip
@@ -466,11 +466,21 @@
       />
     </div>
   </form>
+  <ConfirmModal
+    :open="confirmOpen"
+    :title="confirmTitle"
+    :message="confirmMessage"
+    confirm-variant="danger"
+    @close="closeConfirm"
+    @confirm="acceptConfirm"
+  />
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import Button from '@/Components/Button.vue'
+import ConfirmModal from '@/Components/ConfirmModal.vue'
+import { useConfirmDialog } from '@/composables/useConfirmDialog'
 import { Chip, Field, Stat } from '@/Components/Shared/Primitives'
 import Ic from '@/Components/Icons/Ic.vue'
 import { resolveRecipePhasePidTargets, type RecipePhasePidTargets } from '@/composables/recipePhasePidTargets'
@@ -559,6 +569,7 @@ const DEFAULT_CONFIGS: Record<'ph' | 'ec', PidConfig> = {
 }
 
 const selectedType = ref<'ph' | 'ec'>('ph')
+const { open: confirmOpen, title: confirmTitle, message: confirmMessage, ask, close: closeConfirm, confirm: acceptConfirm } = useConfirmDialog()
 const confirmed = ref(false)
 const showAdvanced = ref(false)
 const presetSwitching = ref(false)
@@ -837,14 +848,13 @@ function onReset() {
   void loadConfig()
 }
 
-watch(selectedType, (next, prev) => {
-  if (isDirty.value && prev && next !== prev) {
-    const proceed = window.confirm('Несохранённые изменения будут потеряны. Продолжить?')
-    if (!proceed) {
-      selectedType.value = prev
-      return
-    }
-  }
+async function selectType(next: 'ph' | 'ec'): Promise<void> {
+  if (next === selectedType.value) return
+  if (isDirty.value && !(await ask('Несохранённые изменения будут потеряны. Продолжить?', 'Несохранённые изменения'))) return
+  selectedType.value = next
+}
+
+watch(selectedType, () => {
   void loadConfig()
 })
 

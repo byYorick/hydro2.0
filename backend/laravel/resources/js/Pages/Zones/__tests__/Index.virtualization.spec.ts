@@ -166,6 +166,8 @@ describe('Zones Index - Table Contract', () => {
     expect(columns.map((column: { key: string }) => column.key)).toEqual([
       'name',
       'status',
+      'crop',
+      'phase',
       'greenhouse',
       'ph',
       'ec',
