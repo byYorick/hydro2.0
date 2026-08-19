@@ -1,7 +1,7 @@
 <template>
   <div
     class="flex flex-wrap gap-1"
-    role="tablist"
+    :role="listRole"
     :aria-label="ariaLabel"
   >
     <button
@@ -9,8 +9,9 @@
       :key="tab.id"
       ref="tabRefs"
       type="button"
-      role="tab"
-      :aria-selected="tab.id === modelValue"
+      :role="isTablist ? 'tab' : undefined"
+      :aria-selected="isTablist ? tab.id === modelValue : undefined"
+      :aria-pressed="isTablist ? undefined : tab.id === modelValue"
       :aria-disabled="tab.disabled || undefined"
       :tabindex="tab.id === modelValue ? 0 : -1"
       :data-testid="tab.testId"
@@ -49,11 +50,19 @@ interface Props {
   modelValue: string
   tabs: TabItem[]
   ariaLabel?: string
+  /**
+   * `tablist` — корневые вкладки страницы.
+   * `group` — вложенный переключатель секций без второго tablist (a11y).
+   */
+  listRole?: 'tablist' | 'group'
 }
 
 const props = withDefaults(defineProps<Props>(), {
-  ariaLabel: 'Tabs',
+  ariaLabel: 'Вкладки',
+  listRole: 'tablist',
 })
+
+const isTablist = props.listRole === 'tablist'
 
 const emit = defineEmits<{ (e: 'update:modelValue', value: string): void }>()
 

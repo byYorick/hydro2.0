@@ -27,4 +27,23 @@ class BoostBrowserLogsTest extends TestCase
             'count' => 1,
         ]);
     }
+
+    public function test_boost_browser_logs_uses_configured_browser_channel(): void
+    {
+        $this->assertNotNull(config('logging.channels.browser'));
+
+        $response = $this->postJson('/_boost/browser-logs', [
+            'logs' => [
+                [
+                    'type' => 'error',
+                    'timestamp' => now()->toIso8601String(),
+                    'data' => ['browser channel ok'],
+                    'url' => 'http://localhost:8080/zones/83',
+                    'userAgent' => 'PHPUnit',
+                ],
+            ],
+        ]);
+
+        $response->assertOk()->assertJson(['status' => 'ok', 'count' => 1]);
+    }
 }

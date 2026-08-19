@@ -87,6 +87,12 @@
                 Фаз
               </th>
               <th class="text-left px-3 py-2 font-semibold border-b border-[color:var(--border-muted)]">
+                Длительность
+              </th>
+              <th class="text-left px-3 py-2 font-semibold border-b border-[color:var(--border-muted)]">
+                Структура фаз
+              </th>
+              <th class="text-left px-3 py-2 font-semibold border-b border-[color:var(--border-muted)]">
                 Действия
               </th>
             </tr>
@@ -119,6 +125,12 @@
               <td class="px-3 py-2 text-xs text-[color:var(--text-muted)]">
                 {{ row.phasesCount }}
               </td>
+              <td class="px-3 py-2 text-xs text-[color:var(--text-muted)]">
+                {{ row.durationLabel }}
+              </td>
+              <td class="px-3 py-2">
+                <RecipeMiniTimeline :phases="row.phasesPreview" />
+              </td>
               <td class="px-3 py-2">
                 <Link :href="`/recipes/${row.id}`">
                   <Button
@@ -132,7 +144,7 @@
             </tr>
             <tr v-if="!rows.length">
               <td
-                colspan="6"
+                colspan="8"
                 class="px-3 py-6 text-sm text-[color:var(--text-dim)] text-center"
               >
                 {{ all.length === 0 ? 'Рецепты не найдены' : 'Нет рецептов по текущему фильтру' }}
@@ -156,7 +168,9 @@ import { Link, usePage } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Button from '@/Components/Button.vue'
 import Pagination from '@/Components/Pagination.vue'
+import RecipeMiniTimeline from '@/Components/Recipes/RecipeMiniTimeline.vue'
 import { useRole } from '@/composables/useRole'
+import { formatDurationHours } from '@/utils/recipeVisualization'
 import type { Recipe } from '@/types'
 
 const page = usePage<{ recipes?: Recipe[] }>()
@@ -230,6 +244,8 @@ const rows = computed(() => {
     versionLabel: versionLabel(recipe),
     zonesLabel: zonesLabel(recipe),
     phasesCount: recipe.phases_count || 0,
+    durationLabel: formatDurationHours(recipe.total_duration_hours ?? null),
+    phasesPreview: recipe.phases_preview ?? [],
   }))
 })
 
@@ -265,6 +281,11 @@ th:nth-child(5),
 td:nth-child(5) {
   min-width: 80px;
   text-align: center;
+}
+
+th:nth-child(7),
+td:nth-child(7) {
+  min-width: 120px;
 }
 
 th:last-child,

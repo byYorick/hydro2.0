@@ -100,6 +100,30 @@ class ServiceLogApiTest extends TestCase
         $this->assertEquals('automation-engine', $data[0]['service']);
     }
 
+    public function test_excludes_services_when_passed_as_csv_query_string(): void
+    {
+        $visible = SystemLog::create([
+            'level' => 'info',
+            'message' => 'Automation Engine log',
+            'context' => ['service' => 'automation-engine'],
+            'created_at' => Carbon::now(),
+        ]);
+
+        SystemLog::create([
+            'level' => 'error',
+            'message' => 'History Logger log',
+            'context' => ['service' => 'history-logger'],
+            'created_at' => Carbon::now(),
+        ]);
+
+        $response = $this->getJson('/api/logs/service?exclude_services=history-logger,history-locker');
+
+        $response->assertStatus(200);
+        $data = $response->json('data');
+        $this->assertCount(1, $data);
+        $this->assertEquals($visible->id, $data[0]['id']);
+    }
+
     public function test_forbids_access_for_viewer_role(): void
     {
         $viewer = User::factory()->create(['role' => 'viewer']);

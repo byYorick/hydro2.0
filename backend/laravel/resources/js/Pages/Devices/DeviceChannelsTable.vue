@@ -4,16 +4,16 @@
       <thead class="bg-[color:var(--bg-elevated)] text-[color:var(--text-muted)]">
         <tr>
           <th class="px-3 py-2 text-left font-medium border-b border-[color:var(--border-muted)]">
-            Channel
+            Канал
           </th>
           <th class="px-3 py-2 text-left font-medium border-b border-[color:var(--border-muted)]">
-            Type
+            Тип
           </th>
           <th class="px-3 py-2 text-left font-medium border-b border-[color:var(--border-muted)]">
-            Config
+            Конфиг
           </th>
           <th class="px-3 py-2 text-left font-medium border-b border-[color:var(--border-muted)]">
-            Actions
+            Действия
           </th>
         </tr>
       </thead>
@@ -59,7 +59,7 @@
                 variant="secondary" 
                 @click="$emit('test', channel.channel || channel.name, channel.type)"
               >
-                Test
+                Тест
               </Button>
             </div>
           </td>
@@ -142,7 +142,7 @@ function isPumpOrValve(channel) {
 
 // Получение названия кнопки теста в зависимости от типа ноды и канала
 function getTestButtonLabel(channelName, channelType) {
-  if (!channelName) return 'Test'
+  if (!channelName) return 'Тест'
   const name = (channelName + '').toLowerCase()
   const nodeType = ((props.nodeType || '') + '').toLowerCase()
   
@@ -178,7 +178,7 @@ function getTestButtonLabel(channelName, channelType) {
     return 'Тест клапана'
   }
   
-  return 'Test'
+  return 'Тест'
 }
 
 function renderConfig(channel) {

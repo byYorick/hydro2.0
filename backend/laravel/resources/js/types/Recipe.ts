@@ -16,12 +16,32 @@ export interface RecipePhaseTargets {
   }
   temp_air?: number
   humidity_air?: number
+  solution_temp?: {
+    target?: number | null
+    min?: number | null
+    max?: number | null
+  }
   light_hours?: number
   irrigation_interval_sec?: number
   irrigation_duration_sec?: number
   irrigation?: Record<string, unknown>
+  mist?: {
+    mode?: string | null
+    interval_sec?: number | null
+    duration_sec?: number | null
+  }
   lighting?: Record<string, unknown>
   climate?: Record<string, unknown>
+}
+
+/**
+ * Краткая карточка продукта удобрения, приложенная к фазе
+ */
+export interface RecipePhaseNutrientProduct {
+  id: number
+  manufacturer?: string | null
+  name?: string | null
+  component?: string | null
 }
 
 export interface NutrientProduct {
@@ -58,6 +78,26 @@ export interface RecipePhaseExtensions {
       } | null
     } | null
   } | null
+  agronomy?: {
+    critical_controls?: string | null
+    risk_focus?: string | null
+    [key: string]: unknown
+  } | null
+  lighting?: {
+    ppfd?: number | null
+    spectrum?: string | null
+    [key: string]: unknown
+  } | null
+  temp_air_min?: number | null
+  temp_air_max?: number | null
+  humidity_min?: number | null
+  humidity_max?: number | null
+  co2_min?: number | null
+  co2_max?: number | null
+  dli_min?: number | null
+  dli_max?: number | null
+  vpd_target_kpa?: number | null
+  [key: string]: unknown
 }
 
 /**
@@ -94,6 +134,18 @@ export interface RecipePhase {
   irrigation_duration_sec?: number | null
   irrigation_system_type?: string | null
   substrate_type?: string | null
+  mist_mode?: string | null
+  mist_interval_sec?: number | null
+  mist_duration_sec?: number | null
+  co2_target?: number | null
+  solution_temp_target?: number | null
+  solution_temp_min?: number | null
+  solution_temp_max?: number | null
+  progress_model?: string | null
+  phase_advance_strategy?: string | null
+  base_temp_c?: number | null
+  target_gdd?: number | null
+  dli_target?: number | null
   nutrient_program_code?: string | null
   nutrient_mode?: 'ratio_ec_pid' | 'delta_ec_by_k' | 'dose_ml_l_only' | null
   nutrient_ec_dosing_mode?: 'sequential' | 'parallel' | null
@@ -109,6 +161,10 @@ export interface RecipePhase {
   nutrient_calcium_product_id?: number | null
   nutrient_magnesium_product_id?: number | null
   nutrient_micro_product_id?: number | null
+  npk_product?: RecipePhaseNutrientProduct | null
+  calcium_product?: RecipePhaseNutrientProduct | null
+  magnesium_product?: RecipePhaseNutrientProduct | null
+  micro_product?: RecipePhaseNutrientProduct | null
   nutrient_dose_delay_sec?: number | null
   nutrient_ec_stop_tolerance?: number | string | null
   nutrient_solution_volume_l?: number | string | null
@@ -121,12 +177,21 @@ export interface RecipePhase {
 /**
  * Модель рецепта
  */
+export interface RecipePhasePreview {
+  phase_index: number
+  name?: string | null
+  duration_hours?: number | null
+}
+
 export interface Recipe {
   id: number
   name: string
   description?: string
+  metadata?: Record<string, unknown> | null
   phases?: RecipePhase[]
   phases_count?: number
+  total_duration_hours?: number | null
+  phases_preview?: RecipePhasePreview[]
   latest_published_revision_id?: number | null
   latest_draft_revision_id?: number | null
   draft_revision_id?: number | null

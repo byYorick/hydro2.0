@@ -423,9 +423,22 @@ const summarizeContext = (context?: Record<string, any> | null) => {
     .join(', ')
 }
 
-async function fetchLogs(page = 1) {
-  loading.value = true
-  error.value = ''
+function httpStatus(err: unknown): number | undefined {
+  if (!err || typeof err !== 'object' || !('response' in err)) return undefined
+  return (err as { response?: { status?: number } }).response?.status
+}
+
+const LOGS_LOAD_ERRORS: Record<number, string> = {
+  403: 'Недостаточно прав для просмотра логов сервисов.',
+  422: 'Некорректные фильтры журнала. Сбросьте фильтры и попробуйте снова.',
+  429: 'Слишком много запросов к журналу. Подождите несколько секунд и обновите страницу.',
+}
+
+async function fetchLogs(page = 1, options: { silent?: boolean } = {}) {
+  if (!options.silent) {
+    loading.value = true
+    error.value = ''
+  }
   meta.page = page
 
   try {
@@ -445,11 +458,17 @@ async function fetchLogs(page = 1) {
     const parsed = normalizeLogsResponse(response)
     logs.value = parsed.logs
     updateMeta(parsed.meta, logs.value.length)
+    error.value = ''
   } catch (err) {
-    logger.error('Failed to load service logs', { err })
-    error.value = 'Не удалось загрузить логи. Попробуйте обновить страницу.'
+    const status = httpStatus(err)
+    if (options.silent) {
+      logger.debug('Service logs poll skipped', { status, err })
+      return
+    }
+    logger.error('Failed to load service logs', { status, err })
+    error.value = (status && LOGS_LOAD_ERRORS[status]) || 'Не удалось загрузить логи. Попробуйте обновить страницу.'
   } finally {
-    loading.value = false
+    if (!options.silent) loading.value = false
   }
 }
 
@@ -512,7 +531,7 @@ function startPolling() {
 
   pollInterval = setInterval(() => {
     if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
-    fetchLogs(meta.page)
+    fetchLogs(meta.page, { silent: true })
   }, POLL_INTERVAL_MS)
 
   if (typeof window !== 'undefined') {

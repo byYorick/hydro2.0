@@ -54,4 +54,23 @@ describe('Tabs.vue', () => {
 
     expect(wrapper.emitted('update:modelValue')).toBeFalsy()
   })
+
+  it('renders nested section switcher as a group, not a second tablist', () => {
+    const wrapper = mount(Tabs, {
+      props: {
+        modelValue: 'solution',
+        listRole: 'group',
+        ariaLabel: 'Разделы вкладки автоматики',
+        tabs: [
+          { id: 'solution', label: 'Раствор' },
+          { id: 'actions', label: 'Действия' },
+        ],
+      },
+    })
+
+    expect(wrapper.get('[role="group"]').attributes('aria-label')).toBe('Разделы вкладки автоматики')
+    expect(wrapper.find('[role="tablist"]').exists()).toBe(false)
+    expect(wrapper.find('[role="tab"]').exists()).toBe(false)
+    expect(wrapper.get('button[aria-pressed="true"]').text()).toBe('Раствор')
+  })
 })

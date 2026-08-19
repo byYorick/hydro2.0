@@ -79,8 +79,8 @@ const { form, submit: submitForm } = useInertiaForm<LoginFormData>(
     showSuccessToast: false,
     showErrorToast: true,
     errorMessage: 'Неверный email или пароль. Проверьте правильность введенных данных.',
-    preserveUrl: true,
-    preserveState: true,
+    preserveUrl: false,
+    preserveState: false,
   }
 )
 

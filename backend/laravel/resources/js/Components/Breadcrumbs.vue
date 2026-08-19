@@ -64,12 +64,28 @@ const props = withDefaults(defineProps<Props>(), {
 
 const page = usePage()
 
+const SKIP_PATH_PARTS = new Set(['login', 'register', 'forgot-password', 'reset-password'])
+
+function pathnameFromPageUrl(url: string): string {
+  const withoutHash = url.split('#')[0] ?? url
+  const pathname = withoutHash.split('?')[0] ?? withoutHash
+  return pathname.startsWith('/') ? pathname : `/${pathname}`
+}
+
+function decodePathPart(part: string): string {
+  try {
+    return decodeURIComponent(part)
+  } catch {
+    return part
+  }
+}
+
 // Автоматическая генерация breadcrumbs на основе URL
 const autoItems = computed(() => {
   if (!props.autoGenerate) return []
-  
-  const url = page.url
-  const pathParts = url.split('/').filter(Boolean)
+
+  const pathname = pathnameFromPageUrl(String(page.url || '/'))
+  const pathParts = pathname.split('/').filter(Boolean).map(decodePathPart)
   
   const role = (page.props.auth as { user?: { role?: string } })?.user?.role || 'viewer'
   const homeLabels: Record<string, string> = {
@@ -104,8 +120,12 @@ const autoItems = computed(() => {
   
   let currentPath = ''
   pathParts.forEach((part) => {
+    if (SKIP_PATH_PARTS.has(part.toLowerCase())) {
+      return
+    }
+
     currentPath += `/${part}`
-    
+
     // Пропускаем числовые ID (детальные страницы)
     if (/^\d+$/.test(part)) {
       // Пытаемся получить имя из props страницы

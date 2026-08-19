@@ -63,7 +63,7 @@ setup('authenticate', async ({ page }) => {
   // Отправляем форму
   await page.click('[data-testid="login-submit"]');
   
-  // Ждем появления признаков авторизации (URL может остаться /login из-за preserveUrl)
+  // Ждём признаки авторизации (после входа URL должен стать `/`)
   let authenticated = false;
 
   for (let i = 0; i < 20; i++) {

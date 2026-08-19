@@ -2,9 +2,9 @@
   <AppLayout>
     <div class="flex items-center justify-between mb-3">
       <div>
-        <div class="text-lg font-semibold">
+        <h1 class="text-lg font-semibold">
           {{ recipe.name }}
-        </div>
+        </h1>
         <div class="text-xs text-[color:var(--text-muted)]">
           {{ recipe.description || 'Без описания' }} · Фаз: {{ recipe.phases?.length || 0 }}
         </div>
@@ -53,122 +53,118 @@
       </div>
     </div>
 
-    <div class="grid grid-cols-1 xl:grid-cols-3 gap-3">
-      <Card class="xl:col-span-2">
-        <div class="text-sm font-semibold mb-2">
-          Фазы
-        </div>
-        <ul class="text-sm text-[color:var(--text-muted)] space-y-2">
-          <li
-            v-for="(p, i) in sortedPhases"
-            :key="p.id || i"
-            class="pb-2 border-b last:border-b-0 border-[color:var(--border-muted)]"
-          >
-            <div>
-              {{ p.phase_index + 1 }}. {{ p.name }} —
-              {{ formatDuration(p.duration_hours) }} —
-              <span v-if="p.targets?.ph">pH {{ p.targets.ph.min || '-' }}–{{ p.targets.ph.max || '-' }}</span>
-              <span v-if="p.targets?.ec">, EC {{ p.targets.ec.min || '-' }}–{{ p.targets.ec.max || '-' }}</span>
-            </div>
-            <div class="text-xs text-[color:var(--text-dim)] mt-1">
-              <span v-if="p.lighting_photoperiod_hours || p.targets?.light_hours">
-                Свет {{ p.lighting_photoperiod_hours ?? p.targets?.light_hours }} ч
-              </span>
-              <span v-if="p.irrigation_interval_sec || p.targets?.irrigation_interval_sec">
-                · Полив {{ p.irrigation_interval_sec ?? p.targets?.irrigation_interval_sec }} сек
-              </span>
-            </div>
+    <div
+      v-if="phaseVisuals.length === 0"
+      class="rounded-xl border border-dashed border-[color:var(--border-muted)] px-4 py-8 text-center text-sm text-[color:var(--text-dim)]"
+    >
+      У рецепта пока нет фаз — добавьте их в редакторе.
+    </div>
 
-            <details
-              v-if="hasNutrition(p)"
-              class="text-xs text-[color:var(--text-dim)] mt-1"
-              data-testid="recipe-nutrition-details"
-            >
-              <summary class="cursor-pointer text-[color:var(--text-muted)]">
-                Питание и PID
-              </summary>
-              <div class="mt-1 space-y-0.5">
-                <div>
-                  Программа: {{ p.nutrient_program_code || '-' }}
-                </div>
-                <div>
-                  Режим: {{ p.nutrient_mode || 'ratio_ec_pid' }}
-                  <span v-if="p.nutrient_solution_volume_l">
-                    · Объём: {{ formatNumber(p.nutrient_solution_volume_l) }} л
-                  </span>
-                </div>
-                <div>
-                  NPK: {{ formatNumber(p.nutrient_npk_ratio_pct) }}% / {{ formatNumber(p.nutrient_npk_dose_ml_l) }} мл/л / {{ resolveProductLabel(p.npk_product, p.nutrient_npk_product_id) }}
-                </div>
-                <div>
-                  Кальций: {{ formatNumber(p.nutrient_calcium_ratio_pct) }}% / {{ formatNumber(p.nutrient_calcium_dose_ml_l) }} мл/л / {{ resolveProductLabel(p.calcium_product, p.nutrient_calcium_product_id) }}
-                </div>
-                <div>
-                  Магний: {{ formatNumber(p.nutrient_magnesium_ratio_pct) }}% / {{ formatNumber(p.nutrient_magnesium_dose_ml_l) }} мл/л / {{ resolveProductLabel(p.magnesium_product, p.nutrient_magnesium_product_id) }}
-                </div>
-                <div>
-                  Микро: {{ formatNumber(p.nutrient_micro_ratio_pct) }}% / {{ formatNumber(p.nutrient_micro_dose_ml_l) }} мл/л / {{ resolveProductLabel(p.micro_product, p.nutrient_micro_product_id) }}
-                </div>
-                <div>
-                  Пауза доз: {{ formatNumber(p.nutrient_dose_delay_sec) }} сек, EC stop tolerance: {{ formatNumber(p.nutrient_ec_stop_tolerance) }}
-                </div>
-              </div>
-            </details>
-          </li>
-        </ul>
+    <div
+      v-else
+      class="space-y-3"
+    >
+      <Card class="space-y-4">
+        <RecipeSummaryStats
+          :summary="summary"
+          :crop-label="cropLabel"
+          :status-label="statusLabel"
+          :active-zones="activeZonesCount"
+        />
+        <RecipePhaseTimeline
+          :phases="phaseVisuals"
+          :active-key="activePhaseKey"
+          @select="focusPhase"
+        />
       </Card>
-      <Card>
-        <div class="text-sm font-semibold mb-2">
-          Сводка по фазам
+
+      <Card class="space-y-3">
+        <div class="text-sm font-semibold">
+          Профиль параметров по фазам
         </div>
-        <div class="space-y-2 text-sm text-[color:var(--text-muted)]">
-          <div>
-            Температура: {{ summary.temperature }}
-          </div>
-          <div>
-            Влажность: {{ summary.humidity }}
-          </div>
-          <div>
-            Свет: {{ summary.lighting }}
-          </div>
-          <div>
-            Полив: {{ summary.irrigation }}
-          </div>
-        </div>
+        <RecipePhaseChartsPanel :phases="phaseVisuals" />
       </Card>
-      <Card>
-        <div class="text-sm font-semibold mb-2">
-          Используется в зонах
+
+      <div class="grid grid-cols-1 gap-3 xl:grid-cols-3">
+        <div class="space-y-3 xl:col-span-2">
+          <div class="text-sm font-semibold">
+            Фазы
+          </div>
+          <RecipePhaseCard
+            v-for="phase in phaseVisuals"
+            :id="phaseElementId(phase.key)"
+            :key="phase.key"
+            :phase="phase"
+            :highlighted="phase.key === activePhaseKey"
+          />
         </div>
-        <div
-          v-if="activeUsageLoading"
-          class="text-sm text-[color:var(--text-dim)]"
-        >
-          Загрузка…
-        </div>
-        <ul
-          v-else-if="activeUsage && activeUsage.count > 0"
-          class="text-sm text-[color:var(--text-muted)] space-y-1"
-          data-testid="recipe-used-in-zones"
-        >
-          <li
-            v-for="item in activeUsage.active_cycles"
-            :key="item.cycle_id"
-          >
-            <Link
-              :href="`/zones/${item.zone_id}`"
-              class="text-[color:var(--accent-cyan)] hover:underline"
+
+        <div class="space-y-3">
+          <Card>
+            <div class="text-sm font-semibold mb-2">
+              Используется в зонах
+            </div>
+            <div
+              v-if="activeUsageLoading"
+              class="text-sm text-[color:var(--text-dim)]"
             >
-              {{ item.zone_name || `Зона #${item.zone_id}` }}
-            </Link>
-          </li>
-        </ul>
-        <div
-          v-else
-          class="text-sm text-[color:var(--text-dim)]"
-        >
-          Нет активных зон
+              Загрузка…
+            </div>
+            <ul
+              v-else-if="activeUsage && activeUsage.count > 0"
+              class="text-sm text-[color:var(--text-muted)] space-y-1"
+              data-testid="recipe-used-in-zones"
+            >
+              <li
+                v-for="item in activeUsage.active_cycles"
+                :key="item.cycle_id"
+              >
+                <Link
+                  :href="`/zones/${item.zone_id}`"
+                  class="text-[color:var(--accent-cyan)] hover:underline"
+                >
+                  {{ item.zone_name || `Зона #${item.zone_id}` }}
+                </Link>
+              </li>
+            </ul>
+            <div
+              v-else
+              class="text-sm text-[color:var(--text-dim)]"
+            >
+              Нет активных зон
+            </div>
+          </Card>
+
+          <Card v-if="phaseModes.length > 0">
+            <div class="text-sm font-semibold mb-2">
+              Режимы фаз
+            </div>
+            <ul class="space-y-2 text-xs text-[color:var(--text-muted)]">
+              <li
+                v-for="mode in phaseModes"
+                :key="`mode-${mode.key}`"
+                class="border-b border-[color:var(--border-muted)] pb-2 last:border-b-0 last:pb-0"
+              >
+                <div class="text-[color:var(--text-primary)]">
+                  {{ mode.title }}
+                </div>
+                <div
+                  v-for="line in mode.lines"
+                  :key="line"
+                >
+                  {{ line }}
+                </div>
+              </li>
+            </ul>
+          </Card>
         </div>
+      </div>
+
+      <Card class="space-y-2">
+        <div class="text-sm font-semibold">
+          Сводная таблица фаз
+        </div>
+        <RecipePhasesSummary :phases="sortedPhases" />
       </Card>
     </div>
   </AppLayout>
@@ -180,42 +176,25 @@ import { Link, router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
 import Button from '@/Components/Button.vue'
+import RecipePhaseCard from '@/Components/Recipes/RecipePhaseCard.vue'
+import RecipePhaseChartsPanel from '@/Components/Recipes/RecipePhaseChartsPanel.vue'
+import RecipePhaseTimeline from '@/Components/Recipes/RecipePhaseTimeline.vue'
+import RecipeSummaryStats from '@/Components/Recipes/RecipeSummaryStats.vue'
+import RecipePhasesSummary from '@/Components/Launch/RecipePhasesSummary.vue'
 import { usePageProps } from '@/composables/usePageProps'
 import { useRole } from '@/composables/useRole'
 import { useToast } from '@/composables/useToast'
 import { api } from '@/services/api'
 import type { RecipeActiveUsage } from '@/services/api/recipes'
 import { extractHumanErrorMessage } from '@/utils/errorMessage'
+import {
+  buildRecipePhaseVisuals,
+  irrigationModeLabel,
+  irrigationSystemLabel,
+  progressModelLabel,
+  summarizeRecipePhases,
+} from '@/utils/recipeVisualization'
 import type { Recipe, RecipePhase } from '@/types'
-
-interface NutrientProductSummary {
-  id: number
-  manufacturer?: string
-  name?: string
-}
-
-interface RecipePhaseWithNutrition extends RecipePhase {
-  nutrient_program_code?: string | null
-  nutrient_npk_ratio_pct?: number | string | null
-  nutrient_calcium_ratio_pct?: number | string | null
-  nutrient_magnesium_ratio_pct?: number | string | null
-  nutrient_micro_ratio_pct?: number | string | null
-  nutrient_npk_dose_ml_l?: number | string | null
-  nutrient_calcium_dose_ml_l?: number | string | null
-  nutrient_magnesium_dose_ml_l?: number | string | null
-  nutrient_micro_dose_ml_l?: number | string | null
-  nutrient_npk_product_id?: number | null
-  nutrient_calcium_product_id?: number | null
-  nutrient_magnesium_product_id?: number | null
-  nutrient_micro_product_id?: number | null
-  nutrient_dose_delay_sec?: number | null
-  nutrient_ec_stop_tolerance?: number | string | null
-  nutrient_solution_volume_l?: number | string | null
-  npk_product?: NutrientProductSummary | null
-  calcium_product?: NutrientProductSummary | null
-  magnesium_product?: NutrientProductSummary | null
-  micro_product?: NutrientProductSummary | null
-}
 
 interface PageProps {
   recipe?: Recipe
@@ -229,6 +208,7 @@ const { showToast } = useToast()
 const copying = ref(false)
 const activeUsage = ref<RecipeActiveUsage | null>(null)
 const activeUsageLoading = ref(false)
+const activePhaseKey = ref<string | null>(null)
 
 async function loadActiveUsage(): Promise<void> {
   const recipeId = recipe.value.id
@@ -299,85 +279,58 @@ async function duplicateRecipe(): Promise<void> {
   }
 }
 
-const sortedPhases = computed<RecipePhaseWithNutrition[]>(() => {
-  const phases = (recipe.value.phases || []) as RecipePhaseWithNutrition[]
+const sortedPhases = computed<RecipePhase[]>(() => {
+  const phases = recipe.value.phases || []
   return [...phases].sort((a, b) => (a.phase_index || 0) - (b.phase_index || 0))
 })
 
-const summary = computed(() => {
-  const phases = sortedPhases.value
-  const formatRange = (values: Array<number | null | undefined>, suffix: string): string => {
-    const normalized = values
-      .map((value) => (value === null || value === undefined ? null : Number(value)))
-      .filter((value): value is number => Number.isFinite(value))
-    if (normalized.length === 0) {
-      return '-'
-    }
-    const min = Math.min(...normalized)
-    const max = Math.max(...normalized)
-    return min === max ? `${min}${suffix}` : `${min}–${max}${suffix}`
-  }
+const phaseVisuals = computed(() => buildRecipePhaseVisuals(sortedPhases.value))
+const summary = computed(() => summarizeRecipePhases(phaseVisuals.value))
 
-  return {
-    temperature: formatRange(phases.map((phase) => phase.temp_air_target ?? phase.targets?.temp_air), '°C'),
-    humidity: formatRange(phases.map((phase) => phase.humidity_target ?? phase.targets?.humidity_air), '%'),
-    lighting: formatRange(phases.map((phase) => phase.lighting_photoperiod_hours ?? phase.targets?.light_hours), ' ч'),
-    irrigation: formatRange(phases.map((phase) => phase.irrigation_interval_sec ?? phase.targets?.irrigation_interval_sec), ' сек'),
-  }
+const cropLabel = computed(() => {
+  const names = (recipe.value.plants ?? []).map((plant) => plant.name).filter(Boolean)
+  return names.length > 0 ? names.join(', ') : null
 })
 
-function formatDuration(hours: number | null | undefined): string {
-  if (!hours) return '-'
-  if (hours < 24) return `${hours} ч`
-  const days = Math.floor(hours / 24)
-  const remainder = hours % 24
-  if (remainder === 0) return `${days} дн`
-  return `${days} дн ${remainder} ч`
+const statusLabel = computed(() =>
+  recipe.value.latest_published_revision_id ? 'Опубликован' : 'Черновик',
+)
+
+const activeZonesCount = computed(() =>
+  typeof recipe.value.active_zones_count === 'number' ? recipe.value.active_zones_count : null,
+)
+
+const phaseModes = computed(() =>
+  phaseVisuals.value
+    .map((phase) => {
+      const lines: string[] = []
+      if (phase.irrigation.mode || phase.irrigation.systemType) {
+        lines.push(
+          `${irrigationModeLabel(phase.irrigation.mode)} · ${irrigationSystemLabel(phase.irrigation.systemType)}`,
+        )
+      }
+      if (phase.progressModel) {
+        lines.push(`Переход: ${progressModelLabel(phase.progressModel)}`)
+      }
+
+      return {
+        key: phase.key,
+        title: `${phase.position + 1}. ${phase.name}`,
+        lines,
+      }
+    })
+    .filter((mode) => mode.lines.length > 0),
+)
+
+function phaseElementId(key: string): string {
+  return `recipe-phase-${key}`
 }
 
-function formatNumber(value: number | string | null | undefined): string {
-  if (value === null || value === undefined || value === '') {
-    return '-'
+function focusPhase(key: string): void {
+  activePhaseKey.value = key
+  const element = typeof document === 'undefined' ? null : document.getElementById(phaseElementId(key))
+  if (element && typeof element.scrollIntoView === 'function') {
+    element.scrollIntoView({ behavior: 'smooth', block: 'center' })
   }
-
-  return String(value)
-}
-
-function resolveProductLabel(
-  product: NutrientProductSummary | null | undefined,
-  fallbackId: number | null | undefined,
-): string {
-  if (product?.manufacturer || product?.name) {
-    return `${product?.manufacturer || '-'} · ${product?.name || '-'}`
-  }
-
-  if (fallbackId) {
-    return `ID ${fallbackId}`
-  }
-
-  return '-'
-}
-
-function hasNutrition(phase: RecipePhaseWithNutrition): boolean {
-  const hasValue = (value: unknown): boolean => value !== null && value !== undefined && value !== ''
-
-  return Boolean(
-    phase.nutrient_program_code
-      || hasValue(phase.nutrient_npk_ratio_pct)
-      || hasValue(phase.nutrient_calcium_ratio_pct)
-      || hasValue(phase.nutrient_magnesium_ratio_pct)
-      || hasValue(phase.nutrient_micro_ratio_pct)
-      || hasValue(phase.nutrient_npk_dose_ml_l)
-      || hasValue(phase.nutrient_calcium_dose_ml_l)
-      || hasValue(phase.nutrient_magnesium_dose_ml_l)
-      || hasValue(phase.nutrient_micro_dose_ml_l)
-      || hasValue(phase.nutrient_npk_product_id)
-      || hasValue(phase.nutrient_calcium_product_id)
-      || hasValue(phase.nutrient_magnesium_product_id)
-      || hasValue(phase.nutrient_micro_product_id)
-      || hasValue(phase.nutrient_dose_delay_sec)
-      || hasValue(phase.nutrient_ec_stop_tolerance)
-      || hasValue(phase.nutrient_solution_volume_l)
-  )
 }
 </script>

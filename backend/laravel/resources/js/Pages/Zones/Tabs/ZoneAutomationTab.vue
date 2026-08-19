@@ -16,6 +16,7 @@
       <Tabs
         :model-value="activeInnerSection"
         :tabs="innerSectionTabs"
+        list-role="group"
         aria-label="Разделы вкладки автоматики"
         @update:model-value="onInnerSectionSelect"
       />

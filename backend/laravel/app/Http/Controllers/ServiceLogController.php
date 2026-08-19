@@ -15,6 +15,17 @@ class ServiceLogController extends Controller
      */
     public function index(Request $request): JsonResponse
     {
+        $excludeServices = $request->input('exclude_services', []);
+        if (is_string($excludeServices)) {
+            $excludeServices = $excludeServices === ''
+                ? []
+                : (preg_split('/\s*,\s*/', $excludeServices) ?: []);
+        }
+        if (! is_array($excludeServices)) {
+            $excludeServices = [];
+        }
+        $request->merge(['exclude_services' => array_values($excludeServices)]);
+
         $validated = $request->validate([
             'service' => ['nullable', 'string', 'max:64'],
             'exclude_services' => ['nullable', 'array'],

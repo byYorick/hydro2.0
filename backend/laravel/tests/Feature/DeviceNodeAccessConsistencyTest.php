@@ -26,6 +26,28 @@ class DeviceNodeAccessConsistencyTest extends TestCase
         $response->assertForbidden();
     }
 
+    public function test_engineer_can_open_assigned_device_show_page(): void
+    {
+        $user = User::factory()->create(['role' => 'engineer']);
+        $zone = Zone::factory()->create();
+        $node = DeviceNode::factory()->create(['zone_id' => $zone->id]);
+        $user->zones()->syncWithoutDetaching([$zone->id]);
+
+        $response = $this->actingAs($user)->get("/devices/{$node->id}");
+
+        $response->assertOk();
+    }
+
+    public function test_engineer_can_open_unassigned_device_show_page(): void
+    {
+        $user = User::factory()->create(['role' => 'engineer']);
+        $node = DeviceNode::factory()->create(['zone_id' => null]);
+
+        $response = $this->actingAs($user)->get("/devices/{$node->id}");
+
+        $response->assertOk();
+    }
+
     public function test_node_command_endpoint_denies_access_to_inaccessible_node(): void
     {
         $user = User::factory()->create(['role' => 'operator']);

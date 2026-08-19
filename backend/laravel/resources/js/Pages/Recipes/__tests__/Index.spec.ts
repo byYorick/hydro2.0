@@ -39,6 +39,11 @@ const sampleRecipesData = vi.hoisted(() => [
       name: 'Lettuce Recipe',
       description: 'Recipe for growing lettuce',
       phases_count: 3,
+      total_duration_hours: 432,
+      phases_preview: [
+        { phase_index: 0, name: 'Проращивание', duration_hours: 96 },
+        { phase_index: 1, name: 'Вегетация', duration_hours: 336 },
+      ],
       plants: [{ id: 1, name: 'Салат' }],
       latest_published_revision_id: 11,
       active_zones_count: 2,
@@ -71,6 +76,11 @@ const resetSampleRecipesData = vi.hoisted(() => () => {
       name: 'Lettuce Recipe',
       description: 'Recipe for growing lettuce',
       phases_count: 3,
+      total_duration_hours: 432,
+      phases_preview: [
+        { phase_index: 0, name: 'Проращивание', duration_hours: 96 },
+        { phase_index: 1, name: 'Вегетация', duration_hours: 336 },
+      ],
       plants: [{ id: 1, name: 'Салат' }],
       latest_published_revision_id: 11,
       active_zones_count: 2,
@@ -151,6 +161,21 @@ describe('Recipes/Index.vue', () => {
     const wrapper = mount(RecipesIndex)
     
     expect(wrapper.text()).toContain('Без описания')
+  })
+
+  it('отображает суммарную длительность рецепта', () => {
+    const wrapper = mount(RecipesIndex)
+
+    expect(wrapper.text()).toContain('Длительность')
+    expect(wrapper.text()).toContain('18 дн')
+  })
+
+  it('рисует мини-таймлайн для рецепта с превью фаз', () => {
+    const wrapper = mount(RecipesIndex)
+
+    const timelines = wrapper.findAll('[data-testid="recipe-mini-timeline"]')
+    expect(timelines).toHaveLength(1)
+    expect(timelines[0].findAll('span')).toHaveLength(2)
   })
 
   it('отображает поле поиска', () => {

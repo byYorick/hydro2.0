@@ -54,7 +54,7 @@ backend/laravel/resources/js/Pages/Devices/Show.vue|1252
 backend/laravel/resources/js/Pages/Greenhouses/Show.vue|787
 backend/laravel/resources/js/Pages/Settings/Index.vue|757
 backend/laravel/resources/js/Pages/Zones/__tests__/Show.websocket.spec.ts|853
-backend/laravel/resources/js/Pages/Zones/Tabs/ZoneAutomationTab.vue|806
+backend/laravel/resources/js/Pages/Zones/Tabs/ZoneAutomationTab.vue|807
 backend/laravel/resources/js/Pages/Zones/Tabs/__tests__/ZoneSchedulerTab.spec.ts|502
 backend/laravel/resources/js/composables/__tests__/zoneAutomationTargetsParserEdge.spec.ts|503
 backend/laravel/resources/js/composables/recipeEditorShared.ts|555

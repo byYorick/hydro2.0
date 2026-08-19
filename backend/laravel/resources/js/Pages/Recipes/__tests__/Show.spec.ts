@@ -140,7 +140,7 @@ describe('Recipes/Show.vue', () => {
   it('отображает название рецепта', () => {
     const wrapper = mount(RecipesShow)
     
-    expect(wrapper.text()).toContain('Test Recipe')
+    expect(wrapper.get('h1').text()).toBe('Test Recipe')
   })
 
   it('отображает описание рецепта', () => {
@@ -184,37 +184,61 @@ describe('Recipes/Show.vue', () => {
   it('отображает цели pH для фаз', () => {
     const wrapper = mount(RecipesShow)
     
-    // Компонент показывает pH 5.5–6 и pH 5.6–6.2 (без .0 если не нужно)
-    expect(wrapper.text()).toContain('pH 5.5–6')
-    expect(wrapper.text()).toContain('pH 5.6–6.2')
+    expect(wrapper.text()).toContain('5.5–6')
+    expect(wrapper.text()).toContain('5.6–6.2')
   })
 
   it('отображает цели EC для фаз', () => {
     const wrapper = mount(RecipesShow)
-    
-    // Компонент показывает EC 1–1.4 и EC 1.4–1.8 (без .0 если не нужно)
-    expect(wrapper.text()).toContain('EC 1–1.4')
-    expect(wrapper.text()).toContain('EC 1.4–1.8')
+
+    expect(wrapper.text()).toContain('1–1.4')
+    expect(wrapper.text()).toContain('1.4–1.8')
   })
 
   it('отображает параметры питания для фаз', () => {
     const wrapper = mount(RecipesShow)
 
-    expect(wrapper.find('[data-testid="recipe-nutrition-details"]').exists()).toBe(true)
-    expect(wrapper.text()).toContain('Питание и PID')
+    expect(wrapper.find('[data-testid="recipe-nutrition-bar"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('Питание')
     expect(wrapper.text()).toContain('Программа: YARAREGA_CALCINIT_HAIFA_MICRO_V1')
-    expect(wrapper.text()).toContain('NPK: 44% / 0.55 мл/л / Yara · YaraRega Water-Soluble NPK')
-    expect(wrapper.text()).toContain('Кальций: 44% / 0.55 мл/л / Yara · YaraLiva Calcinit')
-    expect(wrapper.text()).toContain('Микро: 12% / 0.09 мл/л / Haifa · Micro Hydroponic Mix')
-    expect(wrapper.text()).toContain('Пауза доз: 12 сек, EC stop tolerance: 0.07')
+    expect(wrapper.text()).toContain('Yara · YaraRega Water-Soluble NPK')
+    expect(wrapper.text()).toContain('Yara · YaraLiva Calcinit')
+    expect(wrapper.text()).toContain('Haifa · Micro Hydroponic Mix')
+    expect(wrapper.text()).toContain('Пауза доз: 12 с')
+    expect(wrapper.text()).toContain('EC stop tolerance: 0.07')
   })
 
-  it('отображает цели по умолчанию', () => {
+  it('показывает прочерк в сводке, когда климатические цели не заданы', () => {
     const wrapper = mount(RecipesShow)
-    
-    expect(wrapper.text()).toContain('Температура: -')
-    expect(wrapper.text()).toContain('Влажность: -')
-    expect(wrapper.text()).toContain('Свет: -')
+
+    const stats = wrapper.find('[data-testid="recipe-summary-stats"]')
+    expect(stats.exists()).toBe(true)
+    expect(stats.text()).toContain('Температура—')
+    expect(stats.text()).toContain('Влажность—')
+  })
+
+  it('строит таймлайн фаз с накопительными днями', () => {
+    const wrapper = mount(RecipesShow)
+
+    const timeline = wrapper.find('[data-testid="recipe-phase-timeline"]')
+    expect(timeline.exists()).toBe(true)
+    expect(timeline.findAll('button')).toHaveLength(2)
+    expect(wrapper.text()).toContain('дни 0–7')
+    expect(wrapper.text()).toContain('дни 7–21')
+  })
+
+  it('строит графики pH и EC по фазам', () => {
+    const wrapper = mount(RecipesShow)
+
+    expect(wrapper.find('[data-testid="recipe-charts-panel"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="recipe-chart-ph"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="recipe-chart-ec"]').exists()).toBe(true)
+  })
+
+  it('рендерит карточку на каждую фазу', () => {
+    const wrapper = mount(RecipesShow)
+
+    expect(wrapper.findAll('[data-testid="recipe-phase-card"]')).toHaveLength(2)
   })
 
   it('отображает кнопку редактирования', () => {

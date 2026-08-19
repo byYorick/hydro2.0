@@ -113,6 +113,20 @@ class ZoneAccessHelperTest extends TestCase
         $this->assertTrue(ZoneAccessHelper::canAccessNode($user, $unassignedNode));
     }
 
+    public function test_engineer_can_access_unassigned_nodes_without_zone_assignment(): void
+    {
+        $user = User::factory()->create(['role' => 'engineer']);
+        $unassignedNode = DeviceNode::factory()->create([
+            'zone_id' => null,
+            'status' => 'online',
+        ]);
+
+        $nodeIds = ZoneAccessHelper::getAccessibleNodeIds($user);
+
+        $this->assertContains($unassignedNode->id, $nodeIds);
+        $this->assertTrue(ZoneAccessHelper::canAccessNode($user, $unassignedNode));
+    }
+
     public function test_greenhouse_scope_allows_agronomist_without_assignment(): void
     {
         $user = User::factory()->create(['role' => 'agronomist']);

@@ -2,6 +2,7 @@
 
 namespace App\Support\Recipes;
 
+use App\Models\NutrientProduct;
 use App\Models\RecipeRevisionPhase;
 
 class RecipePhasePresenter
@@ -45,10 +46,20 @@ class RecipePhasePresenter
             'lighting_photoperiod_hours' => $phase->lighting_photoperiod_hours,
             'lighting_start_time' => $phase->lighting_start_time?->format('H:i:s'),
             'irrigation_mode' => $phase->irrigation_mode,
+            'irrigation_system_type' => $phase->irrigation_system_type ?? (is_string($systemType) ? $systemType : null),
+            'substrate_type' => $phase->substrate_type,
             'irrigation_interval_sec' => $phase->irrigation_interval_sec,
             'irrigation_duration_sec' => $phase->irrigation_duration_sec,
+            'mist_interval_sec' => $phase->mist_interval_sec,
+            'mist_duration_sec' => $phase->mist_duration_sec,
+            'mist_mode' => $phase->mist_mode,
+            'solution_temp_target' => $phase->solution_temp_target !== null ? (float) $phase->solution_temp_target : null,
+            'solution_temp_min' => $phase->solution_temp_min !== null ? (float) $phase->solution_temp_min : null,
+            'solution_temp_max' => $phase->solution_temp_max !== null ? (float) $phase->solution_temp_max : null,
+            'day_night_enabled' => (bool) $phase->day_night_enabled,
             'nutrient_program_code' => $phase->nutrient_program_code,
             'nutrient_mode' => $phase->nutrient_mode,
+            'nutrient_ec_dosing_mode' => $phase->nutrient_ec_dosing_mode,
             'nutrient_npk_ratio_pct' => $phase->nutrient_npk_ratio_pct !== null ? (float) $phase->nutrient_npk_ratio_pct : null,
             'nutrient_calcium_ratio_pct' => $phase->nutrient_calcium_ratio_pct !== null ? (float) $phase->nutrient_calcium_ratio_pct : null,
             'nutrient_magnesium_ratio_pct' => $phase->nutrient_magnesium_ratio_pct !== null ? (float) $phase->nutrient_magnesium_ratio_pct : null,
@@ -61,10 +72,15 @@ class RecipePhasePresenter
             'nutrient_calcium_product_id' => $phase->nutrient_calcium_product_id,
             'nutrient_magnesium_product_id' => $phase->nutrient_magnesium_product_id,
             'nutrient_micro_product_id' => $phase->nutrient_micro_product_id,
+            'npk_product' => $this->presentProduct($phase, 'npkProduct'),
+            'calcium_product' => $this->presentProduct($phase, 'calciumProduct'),
+            'magnesium_product' => $this->presentProduct($phase, 'magnesiumProduct'),
+            'micro_product' => $this->presentProduct($phase, 'microProduct'),
             'nutrient_dose_delay_sec' => $phase->nutrient_dose_delay_sec,
             'nutrient_ec_stop_tolerance' => $phase->nutrient_ec_stop_tolerance !== null ? (float) $phase->nutrient_ec_stop_tolerance : null,
             'nutrient_solution_volume_l' => $phase->nutrient_solution_volume_l !== null ? (float) $phase->nutrient_solution_volume_l : null,
             'progress_model' => $phase->progress_model,
+            'phase_advance_strategy' => $phase->phase_advance_strategy,
             'co2_target' => $phase->co2_target,
             'base_temp_c' => $phase->base_temp_c !== null ? (float) $phase->base_temp_c : null,
             'target_gdd' => $phase->target_gdd !== null ? (float) $phase->target_gdd : null,
@@ -83,14 +99,46 @@ class RecipePhasePresenter
                 ],
                 'temp_air' => $phase->temp_air_target !== null ? (float) $phase->temp_air_target : null,
                 'humidity_air' => $phase->humidity_target !== null ? (float) $phase->humidity_target : null,
+                'solution_temp' => [
+                    'target' => $phase->solution_temp_target !== null ? (float) $phase->solution_temp_target : null,
+                    'min' => $phase->solution_temp_min !== null ? (float) $phase->solution_temp_min : null,
+                    'max' => $phase->solution_temp_max !== null ? (float) $phase->solution_temp_max : null,
+                ],
                 'light_hours' => $phase->lighting_photoperiod_hours,
                 'irrigation_interval_sec' => $phase->irrigation_interval_sec,
                 'irrigation_duration_sec' => $phase->irrigation_duration_sec,
                 'irrigation' => [
                     'mode' => $phase->irrigation_mode,
-                    'system_type' => is_string($systemType) ? $systemType : null,
+                    'system_type' => $phase->irrigation_system_type ?? (is_string($systemType) ? $systemType : null),
+                ],
+                'mist' => [
+                    'mode' => $phase->mist_mode,
+                    'interval_sec' => $phase->mist_interval_sec,
+                    'duration_sec' => $phase->mist_duration_sec,
                 ],
             ],
+        ];
+    }
+
+    /**
+     * @return array{id: int, manufacturer: string|null, name: string|null, component: string|null}|null
+     */
+    private function presentProduct(RecipeRevisionPhase $phase, string $relation): ?array
+    {
+        if (! $phase->relationLoaded($relation)) {
+            return null;
+        }
+
+        $product = $phase->getRelation($relation);
+        if (! $product instanceof NutrientProduct) {
+            return null;
+        }
+
+        return [
+            'id' => $product->id,
+            'manufacturer' => $product->manufacturer,
+            'name' => $product->name,
+            'component' => $product->component,
         ];
     }
 }

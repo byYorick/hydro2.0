@@ -13,7 +13,8 @@ export interface LogsListParams {
   to?: string
   page?: number
   per_page?: number
-  [key: string]: string | number | undefined
+  exclude_services?: string[]
+  [key: string]: string | number | string[] | undefined
 }
 
 /**
@@ -23,6 +24,6 @@ export interface LogsListParams {
  */
 export const logsApi = {
   list(params: LogsListParams = {}): Promise<unknown> {
-    return apiGet<unknown>('/logs/service', { params })
+    return apiGet<unknown>('/logs/service', { params, skipErrorToast: true })
   },
 }

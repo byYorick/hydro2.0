@@ -22,12 +22,12 @@ class ZoneAccessHelper
     private static bool $strictDataUnavailableLogged = false;
 
     /**
-     * Агроном и админ могут видеть узлы без привязки к зоне,
-     * чтобы завершать provisioning/attach flow в UI.
+     * Админ, агроном и инженер могут видеть узлы без привязки к зоне,
+     * чтобы завершать provisioning/attach и диагностику железа в UI.
      */
     public static function canViewUnassignedNodes(User $user): bool
     {
-        return $user->isAdmin() || $user->role === 'agronomist';
+        return $user->isAdmin() || in_array($user->role, ['agronomist', 'engineer'], true);
     }
 
     /**

@@ -2,6 +2,7 @@
 
 namespace Tests\Unit\Helpers;
 
+use App\Models\NutrientProduct;
 use App\Models\RecipeRevisionPhase;
 use App\Support\Recipes\RecipePhasePayloadNormalizer;
 use App\Support\Recipes\RecipePhasePresenter;
@@ -84,5 +85,64 @@ class RecipePhaseSupportTest extends TestCase
         $this->assertSame('drip', data_get($presented, 'targets.irrigation.system_type'));
         $this->assertEquals(23.0, data_get($presented, 'extensions.day_night.temperature.day'));
         $this->assertEquals(21.0, data_get($presented, 'extensions.day_night.temperature.night'));
+    }
+
+    public function test_presenter_exposes_mist_solution_and_system_fields(): void
+    {
+        $presenter = new RecipePhasePresenter(new RecipePhasePayloadNormalizer);
+
+        $phase = new RecipeRevisionPhase([
+            'phase_index' => 1,
+            'name' => 'GERMINATION',
+            'duration_hours' => 96,
+            'mist_interval_sec' => 600,
+            'mist_duration_sec' => 15,
+            'mist_mode' => 'SPRAY',
+            'solution_temp_target' => 20.0,
+            'solution_temp_min' => 18.0,
+            'solution_temp_max' => 22.0,
+            'irrigation_system_type' => 'nft',
+            'substrate_type' => 'coco',
+            'day_night_enabled' => true,
+            'nutrient_ec_dosing_mode' => 'parallel',
+            'phase_advance_strategy' => 'time',
+        ]);
+
+        $presented = $presenter->present($phase);
+
+        $this->assertSame(600, $presented['mist_interval_sec']);
+        $this->assertSame(15, $presented['mist_duration_sec']);
+        $this->assertSame('SPRAY', $presented['mist_mode']);
+        $this->assertSame(20.0, $presented['solution_temp_target']);
+        $this->assertSame(18.0, data_get($presented, 'targets.solution_temp.min'));
+        $this->assertSame(22.0, data_get($presented, 'targets.solution_temp.max'));
+        $this->assertSame('nft', $presented['irrigation_system_type']);
+        $this->assertSame('nft', data_get($presented, 'targets.irrigation.system_type'));
+        $this->assertSame('coco', $presented['substrate_type']);
+        $this->assertTrue($presented['day_night_enabled']);
+        $this->assertSame('parallel', $presented['nutrient_ec_dosing_mode']);
+        $this->assertSame('time', $presented['phase_advance_strategy']);
+    }
+
+    public function test_presenter_includes_loaded_nutrient_products(): void
+    {
+        $presenter = new RecipePhasePresenter(new RecipePhasePayloadNormalizer);
+
+        $phase = new RecipeRevisionPhase([
+            'phase_index' => 0,
+            'name' => 'VEG',
+            'nutrient_npk_product_id' => 7,
+        ]);
+        $phase->setRelation('npkProduct', new NutrientProduct([
+            'manufacturer' => 'Yara',
+            'name' => 'YaraRega',
+            'component' => 'npk',
+        ]));
+
+        $presented = $presenter->present($phase);
+
+        $this->assertSame('Yara', data_get($presented, 'npk_product.manufacturer'));
+        $this->assertSame('YaraRega', data_get($presented, 'npk_product.name'));
+        $this->assertNull($presented['calcium_product']);
     }
 }

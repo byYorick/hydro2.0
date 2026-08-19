@@ -148,4 +148,22 @@ describe('Logs/Index.vue', () => {
 
     wrapper.unmount()
   })
+
+  it('показывает понятную ошибку при 403', async () => {
+    logsListMock.mockRejectedValueOnce({
+      response: { status: 403, data: { message: 'Forbidden' } },
+    })
+
+    const wrapper = mount(LogsIndex, {
+      props: {
+        serviceOptions,
+      },
+    })
+
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Недостаточно прав для просмотра логов сервисов.')
+
+    wrapper.unmount()
+  })
 })

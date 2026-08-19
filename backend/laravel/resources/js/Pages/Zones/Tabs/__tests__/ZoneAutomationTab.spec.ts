@@ -738,6 +738,8 @@ describe('ZoneAutomationTab.vue', () => {
     await flushPromises()
 
     expect(wrapper.get('h1').text()).toBe('Действия')
+    expect(wrapper.get('[data-testid="automation-inner-tabs"]').find('[role="group"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="automation-inner-tabs"]').find('[role="tablist"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="automation-section-actions"]').exists()).toBe(true)
     expect(wrapper.findAll('button').some((btn) => btn.text() === 'Запустить полив')).toBe(true)
     expect(wrapper.find('[data-testid="automation-section-solution"]').exists()).toBe(false)

@@ -2,9 +2,9 @@
   <AppLayout>
     <div class="flex flex-col gap-3 mb-3 lg:flex-row lg:items-start lg:justify-between">
       <div class="min-w-0">
-        <div class="text-lg font-semibold">
+        <h1 class="text-lg font-semibold">
           {{ device.uid || device.name || device.id }}
-        </div>
+        </h1>
         <div class="text-xs text-[color:var(--text-muted)]">
           <span v-if="linkedZoneId">
             <Link

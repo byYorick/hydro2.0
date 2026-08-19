@@ -581,6 +581,7 @@ describe('Devices/Show.vue', () => {
 
   it('показывает каналы и метаданные раньше калибровки и графиков', () => {
     const wrapper = mount(DevicesShow)
+    expect(wrapper.get('h1').text()).toContain('node-ph-1')
     expect(wrapper.text()).toContain('Каналы')
     expect(wrapper.text()).not.toContain('Channels')
     const ids = ['device-meta', 'device-channels', 'device-ph-calibration', 'device-charts', 'device-nodeconfig']

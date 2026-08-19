@@ -102,11 +102,17 @@ Route::match(['GET', 'POST'], '/_boost/browser-logs', function (\Illuminate\Http
                 $context['user_id'] = auth()->id();
             }
 
-            $logger->write(
-                level: $level,
-                message: $message !== '' ? $message : '[empty]',
-                context: $context
-            );
+            try {
+                $logger->log(
+                    $level,
+                    $message !== '' ? $message : '[empty]',
+                    $context
+                );
+            } catch (\Throwable $writeError) {
+                \Log::debug('Browser log write failed', [
+                    'error' => $writeError->getMessage(),
+                ]);
+            }
         }
 
         return response()->json(['status' => 'ok', 'count' => count($validated['logs'])], 200);
