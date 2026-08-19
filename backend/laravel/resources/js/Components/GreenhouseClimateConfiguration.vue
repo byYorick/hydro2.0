@@ -467,10 +467,10 @@
         >
           <div>
             <div class="text-sm font-semibold text-[color:var(--text-primary)]">
-              Runtime и безопасность
+              Работа и безопасность
             </div>
             <p class="mt-1 text-xs text-[color:var(--text-muted)]">
-              Интервалы команд, deadband и аварийные позиции.
+              Интервалы команд, мёртвая зона и аварийные позиции.
             </p>
           </div>
           <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
@@ -504,7 +504,7 @@
               Позиции форточек день/ночь
             </div>
             <p class="mt-1 text-xs text-[color:var(--text-muted)]">
-              Базовые позиции, cold guard и пороги полного открытия.
+              Базовые позиции, защита от холода и пороги полного открытия.
             </p>
           </div>
           <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
@@ -633,7 +633,7 @@
               class="text-xs text-[color:var(--text-muted)]"
               :title="fieldHelp('climate.manualEmergencyOverrideEnabled')"
             >
-              Emergency override
+              Аварийное переопределение
               <select
                 v-model="climateForm.manualEmergencyOverrideEnabled"
                 class="input-select mt-1 w-full"
@@ -656,7 +656,7 @@
         class="flex flex-col gap-2 border-t border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]/40 px-4 py-3 sm:flex-row sm:items-center sm:justify-between md:px-5"
       >
         <p class="text-xs text-[color:var(--text-muted)]">
-          Сохраняются profile и bindings. Runtime dispatcher климата пока в разработке.
+          Сохраняются profile и bindings. Диспетчер климата в рантайме пока в разработке.
         </p>
         <button
           type="button"
@@ -735,7 +735,7 @@ const activePanel = ref<PanelId>('bindings')
 const panels: Array<{ id: PanelId; label: string }> = [
   { id: 'bindings', label: 'Привязка' },
   { id: 'profile', label: 'Профиль' },
-  { id: 'runtime', label: 'Runtime' },
+  { id: 'runtime', label: 'Работа' },
   { id: 'vents', label: 'Форточки' },
   { id: 'weather', label: 'Погода' },
   { id: 'orientation', label: 'Ориентация' },
@@ -774,8 +774,8 @@ const FIELD_HELP: Record<string, string> = {
   'climate.rhFullOpenDeltaPercent': 'Превышение влажности, при котором запрос вентиляции доходит до 100%.',
   'climate.insideTempSpreadAlertC': 'Порог разброса температуры между внутренними датчиками.',
   'climate.insideRhSpreadAlertPercent': 'Порог разброса влажности между внутренними датчиками.',
-  'climate.coldGuardMarginC': 'Запас cold guard относительно нижней границы температуры.',
-  'climate.coldGuardMaxOpenPercent': 'Максимум открытия при активном cold guard.',
+  'climate.coldGuardMarginC': 'Запас защиты от холода относительно нижней границы температуры.',
+  'climate.coldGuardMaxOpenPercent': 'Максимум открытия при активной защите от холода.',
   'climate.outsideHotterGain': 'Коэффициент снижения вентиляции, когда снаружи горячее.',
   'climate.outsideWetterGain': 'Коэффициент снижения вентиляции, когда снаружи влажнее.',
   'climate.outsideTempMin': 'Нижний порог внешней температуры, ниже которого форточки и внешнее проветривание ограничиваются.',
@@ -798,7 +798,7 @@ const FIELD_HELP: Record<string, string> = {
   'climate.targetPolicy': 'Источник целевых temp/RH: greenhouse targets, primary zone или strictest по активным зонам.',
   'climate.primaryZoneId': 'ID основной зоны для target_policy=primary_zone.',
   'climate.manualOverrideEnabled': 'Разрешает оператору временно переводить greenhouse climate в ручной override без отключения профиля.',
-  'climate.manualEmergencyOverrideEnabled': 'Разрешает аварийный manual override сверх обычного TTL.',
+  'climate.manualEmergencyOverrideEnabled': 'Разрешает аварийное ручное переопределение сверх обычного TTL.',
 }
 
 function fieldHelp(key: string): string {
@@ -866,8 +866,8 @@ const ventPositionFields: NumericField[] = [
   { key: 'rhFullOpenDeltaPercent', label: 'Дельта полного открытия по влажности (%)', helpKey: 'climate.rhFullOpenDeltaPercent', fallback: 20, min: 1, max: 100 },
   { key: 'insideTempSpreadAlertC', label: 'Алерт разброса внутренней температуры (°C)', helpKey: 'climate.insideTempSpreadAlertC', fallback: 4, min: 0, max: 30, step: 0.1 },
   { key: 'insideRhSpreadAlertPercent', label: 'Алерт разброса внутренней влажности (%)', helpKey: 'climate.insideRhSpreadAlertPercent', fallback: 15, min: 0, max: 100 },
-  { key: 'coldGuardMarginC', label: 'Запас cold guard (°C)', helpKey: 'climate.coldGuardMarginC', fallback: 1, min: 0, max: 20, step: 0.1 },
-  { key: 'coldGuardMaxOpenPercent', label: 'Макс. открытие cold guard (%)', helpKey: 'climate.coldGuardMaxOpenPercent', fallback: 10, min: 0, max: 100 },
+  { key: 'coldGuardMarginC', label: 'Запас защиты от холода (°C)', helpKey: 'climate.coldGuardMarginC', fallback: 1, min: 0, max: 20, step: 0.1 },
+  { key: 'coldGuardMaxOpenPercent', label: 'Макс. открытие защиты от холода (%)', helpKey: 'climate.coldGuardMaxOpenPercent', fallback: 10, min: 0, max: 100 },
 ]
 
 const weatherFields: NumericField[] = [

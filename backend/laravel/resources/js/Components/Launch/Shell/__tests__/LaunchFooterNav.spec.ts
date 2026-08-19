@@ -98,4 +98,18 @@ describe('LaunchFooterNav', () => {
     await open.trigger('click')
     expect(w.emitted('show-blockers')).toBeTruthy()
   })
+
+  it('enables Назад and shows Дальше on an off-path advanced step', () => {
+    const w = mount(LaunchFooterNav, {
+      props: {
+        active: -1,
+        total: 2,
+        completion: ['todo', 'todo'] as StepCompletion[],
+      },
+    })
+    const back = w.findAll('button').find((b) => b.text() === 'Назад')!
+    expect(back.attributes('disabled')).toBeUndefined()
+    expect(w.text()).toContain('доп.')
+    expect(w.findAll('button').find((b) => b.text().includes('Дальше'))).toBeTruthy()
+  })
 })

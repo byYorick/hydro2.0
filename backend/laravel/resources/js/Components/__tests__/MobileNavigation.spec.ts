@@ -87,8 +87,10 @@ describe('MobileNavigation', () => {
         '/analytics',
         '/alerts',
         '/launch',
+        '/documentation/fertigation',
       ])
       expect(wrapper.text()).toContain('Рецепты')
+      expect(wrapper.text()).toContain('Справочник')
       expect(wrapper.text()).not.toContain('Узлы')
     })
 

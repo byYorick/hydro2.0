@@ -361,6 +361,34 @@
         @close="showEditWizard = false"
         @apply="onApplyFromWizard"
       />
+
+      <ConfirmModal
+        :open="controlModeDialog.open"
+        :title="controlModeDialog.title"
+        :message="controlModeDialog.message"
+        :confirm-text="controlModeDialog.confirmText"
+        confirm-variant="danger"
+        :confirm-disabled="controlModeDialog.requireReason && controlModeReason.trim() === ''"
+        @close="cancelControlModeDialog"
+        @confirm="confirmControlModeDialog"
+      >
+        <div class="space-y-3">
+          <p class="text-sm text-[color:var(--text-muted)]">
+            {{ controlModeDialog.message }}
+          </p>
+          <label
+            v-if="controlModeDialog.askReason"
+            class="block text-sm text-[color:var(--text-primary)]"
+          >
+            Причина
+            <textarea
+              v-model="controlModeReason"
+              class="input-field mt-1 w-full min-h-[80px]"
+              data-testid="control-mode-reason"
+            />
+          </label>
+        </div>
+      </ConfirmModal>
     </template>
   </div>
 </template>
@@ -382,6 +410,7 @@ import Badge from '@/Components/Badge.vue'
 import Button from '@/Components/Button.vue'
 import Tabs from '@/Components/Tabs.vue'
 import ZoneAutomationEditWizard from '@/Pages/Zones/Tabs/ZoneAutomationEditWizard.vue'
+import ConfirmModal from '@/Components/ConfirmModal.vue'
 import { useRole } from '@/composables/useRole'
 import { useUrlState } from '@/composables/useUrlState'
 import { useAutomationCommandTemplates } from '@/composables/useAutomationCommandTemplates'
@@ -689,11 +718,45 @@ async function onApplyFromWizard(payload: ZoneAutomationWizardApplyPayload): Pro
   }
 }
 
-async function onControlModeSelect(mode: 'auto' | 'semi' | 'manual'): Promise<void> {
+type PendingControlMode = 'auto' | 'semi' | 'manual'
+
+const controlModeReason = ref('')
+const controlModeDialog = ref({
+  open: false,
+  mode: 'manual' as PendingControlMode,
+  askReason: false,
+  requireReason: false,
+  title: '',
+  message: '',
+  confirmText: 'Продолжить',
+})
+
+function cancelControlModeDialog(): void {
+  controlModeDialog.value.open = false
+  controlModeReason.value = ''
+}
+
+async function confirmControlModeDialog(): Promise<void> {
+  const dialog = controlModeDialog.value
+  const reason = controlModeReason.value.trim()
+  if (dialog.requireReason && reason === '') {
+    showToast('Оператор обязан указать причину аварийного перехода в manual.', 'error')
+    return
+  }
+
+  pendingControlModeValue.value = dialog.mode
+  try {
+    await setAutomationControlMode(dialog.mode, dialog.askReason ? reason : undefined)
+    cancelControlModeDialog()
+  } finally {
+    pendingControlModeValue.value = null
+  }
+}
+
+async function onControlModeSelect(mode: PendingControlMode): Promise<void> {
   if (mode === automationControlMode.value || automationControlModeSaving.value) return
 
   const currentMode = automationControlMode.value
-  let reason: string | undefined
 
   if (!isControlModeTransitionAllowed(currentUserRole.value, currentMode, mode)) {
     showToast(
@@ -705,41 +768,37 @@ async function onControlModeSelect(mode: 'auto' | 'semi' | 'manual'): Promise<vo
   }
 
   if (mode === 'manual' && (currentMode === 'auto' || currentMode === 'semi')) {
-    const confirmMessage =
-      'Переход в manual прервёт активную задачу автоматики (полив / заполнение / рециркуляцию). ' +
-      'Оборудование будет остановлено, задача помечена failed. Продолжить?'
-    if (typeof window !== 'undefined' && !window.confirm(confirmMessage)) {
-      return
+    controlModeReason.value = ''
+    controlModeDialog.value = {
+      open: true,
+      mode,
+      askReason: true,
+      requireReason: currentUserRole.value === 'operator',
+      title: 'Перейти в ручной режим?',
+      message:
+        'Переход в manual прервёт активную задачу автоматики (полив / заполнение / рециркуляцию). Оборудование будет остановлено, задача помечена failed.',
+      confirmText: 'Перейти в manual',
     }
-    const reasonPrompt =
-      currentUserRole.value === 'operator'
-        ? 'Укажите причину аварийного перехода в manual (обязательно):'
-        : 'Причина перехода в manual (необязательно):'
-    const reasonInput = typeof window !== 'undefined'
-      ? window.prompt(reasonPrompt, '')
-      : null
-    if (reasonInput === null) {
-      return
-    }
-    reason = reasonInput.trim()
-    if (currentUserRole.value === 'operator' && reason === '') {
-      showToast('Оператор обязан указать причину аварийного перехода в manual.', 'error')
-      return
-    }
+    return
   }
 
   if ((mode === 'auto' || mode === 'semi') && currentMode === 'manual') {
-    const confirmMessage =
-      `Возврат в ${mode} запустит автоматическую проверку состояния оборудования. ` +
-      'Убедитесь что hardware в согласованном состоянии. Продолжить?'
-    if (typeof window !== 'undefined' && !window.confirm(confirmMessage)) {
-      return
+    controlModeReason.value = ''
+    controlModeDialog.value = {
+      open: true,
+      mode,
+      askReason: false,
+      requireReason: false,
+      title: `Вернуться в ${mode}?`,
+      message: `Возврат в ${mode} запустит автоматическую проверку состояния оборудования. Убедитесь что hardware в согласованном состоянии.`,
+      confirmText: `Вернуться в ${mode}`,
     }
+    return
   }
 
   pendingControlModeValue.value = mode
   try {
-    await setAutomationControlMode(mode, reason)
+    await setAutomationControlMode(mode)
   } finally {
     pendingControlModeValue.value = null
   }

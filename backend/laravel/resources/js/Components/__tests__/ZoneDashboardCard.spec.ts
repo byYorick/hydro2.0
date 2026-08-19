@@ -148,7 +148,7 @@ describe('ZoneDashboardCard', () => {
 
     const status = wrapper.find('[data-testid="zone-card-current-status"]')
     expect(status.exists()).toBe(true)
-    expect(status.text()).toContain('ОК')
+    expect(status.text()).toContain('В норме')
     expect(wrapper.findAll('.badge').length).toBeLessThanOrEqual(2)
     expect(wrapper.findAll('.badge').some((badge) => badge.text().includes('Готов'))).toBe(false)
     expect(wrapper.findAll('.badge').some((badge) => badge.text().includes('Авария'))).toBe(false)
@@ -204,11 +204,11 @@ describe('ZoneDashboardCard', () => {
     for (const metric of metricBars) {
       expect(metric.props('offline')).toBe(true)
     }
-    expect(wrapper.text()).toContain('НЕТ СВЯЗИ')
-    expect(wrapper.text()).not.toContain('ВНЕ НОРМЫ')
+    expect(wrapper.text()).toContain('Нет связи')
+    expect(wrapper.text()).not.toContain('Вне нормы')
   })
 
-  it('показывает «НЕТ ДАННЫХ» при unknown telemetryHealth без алертов', () => {
+  it('показывает «Нет данных» при unknown telemetryHealth без алертов', () => {
     const wrapper = mount(ZoneDashboardCard, {
       props: {
         zone: makeZone({
@@ -228,7 +228,7 @@ describe('ZoneDashboardCard', () => {
       },
     })
 
-    expect(wrapper.text()).toContain('НЕТ ДАННЫХ')
+    expect(wrapper.text()).toContain('Нет данных')
     expect(wrapper.text()).not.toContain('OK')
   })
 

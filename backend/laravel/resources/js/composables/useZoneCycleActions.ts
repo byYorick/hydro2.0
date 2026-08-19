@@ -206,7 +206,7 @@ export function useZoneCycleActions({
 
     setLoading('cycleHarvest', true)
     try {
-      if (!parsedKg.empty) {
+      if (parsedKg.empty === false) {
         if (!zoneId.value) {
           showToast('Не удалось сохранить урожай: зона неизвестна', 'error', TOAST_TIMEOUT.NORMAL)
           return

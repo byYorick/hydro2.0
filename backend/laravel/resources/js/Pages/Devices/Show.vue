@@ -13,7 +13,7 @@
             >Зона: {{ linkedZoneName }}</Link>
           </span>
           <span v-else>Зона: -</span>
-          · Тип: {{ device.type || '-' }}
+          · Тип: {{ translateDeviceType(device.type) || '-' }}
           <span v-if="device.fw_version"> · Прошивка: {{ device.fw_version }}</span>
         </div>
       </div>
@@ -26,13 +26,33 @@
             v-if="device.lifecycle_state"
             :lifecycle-state="device.lifecycle_state"
           />
-          <Button
-            size="sm"
-            variant="secondary"
-            @click="onRestart"
+          <details
+            v-if="canConfigureDevices"
+            class="relative"
+            data-testid="device-dangerous-actions"
           >
-            Перезапустить
-          </Button>
+            <summary class="list-none cursor-pointer inline-flex items-center h-8 px-3 text-xs rounded-md border border-[color:var(--border-muted)] text-[color:var(--text-muted)] hover:text-[color:var(--text-primary)] hover:border-[color:var(--border-strong)]">
+              Опасные действия
+            </summary>
+            <div class="absolute right-0 z-10 mt-1 min-w-[12rem] rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] p-2 shadow-[var(--shadow-card)] space-y-1">
+              <Button
+                size="sm"
+                variant="secondary"
+                class="w-full justify-start"
+                @click="onRestart"
+              >
+                Перезапустить
+              </Button>
+              <button
+                v-if="device.zone_id"
+                :disabled="detaching"
+                class="w-full inline-flex items-center justify-start rounded-md font-medium h-8 px-3 text-xs bg-[color:var(--badge-danger-bg)] text-[color:var(--badge-danger-text)] border border-[color:var(--badge-danger-border)] disabled:opacity-50"
+                @click="detachNode"
+              >
+                {{ detaching ? 'Отвязка...' : 'Отвязать' }}
+              </button>
+            </div>
+          </details>
         </div>
       </div>
     </div>
@@ -41,6 +61,7 @@
     <Card
       v-if="hasZoneAssignment"
       class="mb-3"
+      data-testid="device-zone-health"
     >
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-3">
@@ -92,35 +113,13 @@
               Перейти к зоне →
             </Button>
           </Link>
-          <button 
-            v-if="device.zone_id"
-            :disabled="detaching"
-            class="inline-flex items-center justify-center rounded-md font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-[color:var(--accent-red)]/50 h-8 px-3 text-xs bg-[color:var(--badge-danger-bg)] text-[color:var(--badge-danger-text)] border border-[color:var(--badge-danger-border)] hover:border-[color:var(--accent-red)] disabled:opacity-50 disabled:cursor-not-allowed"
-            @click="detachNode"
-          >
-            <svg
-              v-if="!detaching"
-              class="w-4 h-4 mr-2"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M6 18L18 6M6 6l12 12"
-              />
-            </svg>
-            <span v-if="detaching">Отвязка...</span>
-            <span v-else>Отвязать от зоны</span>
-          </button>
         </div>
       </div>
     </Card>
     <Card
       v-else
       class="mb-3 border-[color:var(--badge-warning-border)] bg-[color:var(--badge-warning-bg)]"
+      data-testid="device-zone-health"
     >
       <div class="flex items-center gap-2 text-[color:var(--badge-warning-text)]">
         <svg
@@ -146,25 +145,115 @@
       </div>
     </Card>
 
-    <!-- Калибровка pH: тот же drawer, что Launch → калибровка → сенсоры -->
+    <Card
+      class="mb-3"
+      data-testid="device-meta"
+    >
+      <div class="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <div class="text-sm font-semibold text-[color:var(--text-primary)]">
+            Метаданные ноды
+          </div>
+          <div class="text-xs text-[color:var(--text-dim)]">
+            Связь, прошивка, привязка к зоне и runtime-показатели
+          </div>
+        </div>
+        <Link
+          v-if="linkedZoneId"
+          :href="`/zones/${linkedZoneId}`"
+          class="w-fit rounded-full border border-[color:var(--badge-info-border)] bg-[color:var(--badge-info-bg)] px-2 py-1 text-xs text-[color:var(--badge-info-text)] hover:border-[color:var(--accent-cyan)]"
+        >
+          <span class="opacity-80">Привязка:</span>
+          <span class="font-medium"> {{ linkedZoneName }}</span>
+        </Link>
+        <span
+          v-else
+          class="w-fit rounded-full border border-[color:var(--badge-warning-border)] bg-[color:var(--badge-warning-bg)] px-2 py-1 text-xs text-[color:var(--badge-warning-text)]"
+        >
+          Привязка: нет зоны
+        </span>
+      </div>
+      <dl class="grid grid-cols-2 gap-2 text-xs sm:grid-cols-3 lg:grid-cols-5">
+        <div
+          v-for="item in nodeMetaItems"
+          :key="item.label"
+          class="rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-muted)] px-3 py-2"
+        >
+          <dt class="text-[11px] text-[color:var(--text-dim)]">
+            {{ item.label }}:
+          </dt>
+          <dd class="truncate font-medium text-[color:var(--text-primary)]">
+            {{ item.value }}
+          </dd>
+        </div>
+      </dl>
+    </Card>
+
+    <Card
+      class="mb-3"
+      data-testid="device-channels"
+    >
+      <div class="flex items-center justify-between gap-2 mb-2">
+        <div>
+          <div class="text-sm font-semibold">
+            Каналы
+          </div>
+          <div class="text-xs text-[color:var(--text-dim)]">
+            <span v-if="configLoading">Обновляем конфиг...</span>
+            <span v-else>Текущий конфиг ноды (read-only)</span>
+            <span
+              v-if="configError"
+              class="text-[color:var(--accent-amber)] ml-2"
+            >{{ configError }}</span>
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            :disabled="configLoading"
+            @click="loadNodeConfig"
+          >
+            {{ configLoading ? 'Обновление...' : 'Обновить' }}
+          </Button>
+        </div>
+      </div>
+      <DeviceChannelsTable
+        :channels="displayChannels"
+        :node-type="device.type"
+        :testing-channels="testingChannels"
+        @test="onTestPump"
+      />
+    </Card>
+
     <Card
       v-if="showPhSensorCalibrationSection"
       class="mb-3"
+      data-testid="device-ph-calibration"
     >
       <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div class="min-w-0 space-y-1">
           <div class="text-sm font-semibold text-[color:var(--text-primary)]">
             Калибровка pH
           </div>
-          <p class="text-xs text-[color:var(--text-muted)]">
+          <p
+            v-if="canDiagnose"
+            class="text-xs text-[color:var(--text-muted)]"
+          >
             Двухточечная калибровка буферами; offset/slope хранятся в AE3. Тот же поток, что в
             <Link
               :href="`/launch/${linkedZoneId}`"
               class="text-[color:var(--accent-cyan)] hover:underline"
             >
-              Launch
+              мастере запуска
             </Link>
             → калибровка сенсоров.
+          </p>
+          <p
+            v-else
+            class="text-xs text-[color:var(--text-muted)]"
+          >
+            Двухточечная калибровка буферами. Запускается тот же мастер, что при запуске цикла.
           </p>
           <div
             v-if="sensorCalibStatusLoading"
@@ -192,10 +281,10 @@
             >
               <span class="font-mono text-[color:var(--text-muted)]">{{ it.channel_uid }}</span>
               <Badge :variant="phCalibrationStatusVariant(it.calibration_status)">
-                {{ it.calibration_status }}
+                {{ phCalibrationStatusLabel(it.calibration_status) }}
               </Badge>
               <span
-                v-if="it.last_calibrated_at"
+                v-if="canDiagnose && it.last_calibrated_at"
                 class="text-[color:var(--text-dim)]"
               >
                 {{ formatCalibrationDate(it.last_calibrated_at) }}
@@ -215,7 +304,7 @@
             v-if="!canCalibratePhSensors"
             class="text-[11px] text-[color:var(--text-dim)]"
           >
-            Запуск калибровки — роли operator / agronomist / engineer / admin.
+            Недостаточно прав для запуска калибровки.
           </p>
         </div>
         <div class="flex shrink-0 gap-2">
@@ -242,10 +331,10 @@
       @session-finished="onPhSensorCalibrationSessionFinished"
     />
 
-    <!-- Графики телеметрии: прочие сенсоры по одному; уровни воды — один общий график -->
     <div
       v-if="sensorChannels.length > 0"
       class="mb-3 space-y-3"
+      data-testid="device-charts"
     >
       <template
         v-for="(channel, index) in nonWaterSensorChannels"
@@ -274,120 +363,49 @@
       </Card>
     </div>
 
-    <div class="grid grid-cols-1 xl:grid-cols-3 gap-3">
-      <Card class="xl:col-span-2">
-        <div class="flex items-center justify-between gap-2 mb-2">
-          <div>
-            <div class="text-sm font-semibold">
-              Channels
-            </div>
-            <div class="text-xs text-[color:var(--text-dim)]">
-              <span v-if="configLoading">Обновляем конфиг...</span>
-              <span v-else>Текущий конфиг ноды (read-only)</span>
-              <span
-                v-if="configError"
-                class="text-[color:var(--accent-amber)] ml-2"
-              >{{ configError }}</span>
-            </div>
+    <Card
+      v-if="canDiagnose"
+      class="mb-3"
+      data-testid="device-nodeconfig"
+    >
+      <div class="flex items-center justify-between mb-2">
+        <div>
+          <div class="text-sm font-semibold">
+            NodeConfig
           </div>
-          <div class="flex items-center gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              :disabled="configLoading"
-              @click="loadNodeConfig"
-            >
-              {{ configLoading ? 'Обновление...' : 'Обновить' }}
-            </Button>
+          <div class="text-[11px] text-[color:var(--text-dim)]">
+            Конфиг присылается нодой через config_report и хранится на сервере.
           </div>
         </div>
-        <DeviceChannelsTable 
-          :channels="displayChannels" 
-          :node-type="device.type"
-          :testing-channels="testingChannels"
-          @test="onTestPump" 
-        />
-      </Card>
-      <Card class="xl:col-span-3">
-        <div class="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <div class="text-sm font-semibold text-[color:var(--text-primary)]">
-              Метаданные ноды
-            </div>
-            <div class="text-xs text-[color:var(--text-dim)]">
-              Связь, прошивка, привязка к зоне и runtime-показатели
-            </div>
-          </div>
-          <Link
-            v-if="linkedZoneId"
-            :href="`/zones/${linkedZoneId}`"
-            class="w-fit rounded-full border border-[color:var(--badge-info-border)] bg-[color:var(--badge-info-bg)] px-2 py-1 text-xs text-[color:var(--badge-info-text)] hover:border-[color:var(--accent-cyan)]"
-          >
-            <span class="opacity-80">Привязка:</span>
-            <span class="font-medium"> {{ linkedZoneName }}</span>
-          </Link>
-          <span
-            v-else
-            class="w-fit rounded-full border border-[color:var(--badge-warning-border)] bg-[color:var(--badge-warning-bg)] px-2 py-1 text-xs text-[color:var(--badge-warning-text)]"
-          >
-            Привязка: нет зоны
-          </span>
-        </div>
-        <dl class="grid grid-cols-2 gap-2 text-xs sm:grid-cols-3 lg:grid-cols-5">
+        <div class="flex items-center gap-2">
           <div
-            v-for="item in nodeMetaItems"
-            :key="item.label"
-            class="rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-muted)] px-3 py-2"
+            v-if="configLoading"
+            class="text-[11px] text-[color:var(--text-dim)]"
           >
-            <dt class="text-[11px] text-[color:var(--text-dim)]">
-              {{ item.label }}:
-            </dt>
-            <dd class="truncate font-medium text-[color:var(--text-primary)]">
-              {{ item.value }}
-            </dd>
+            Загрузка...
           </div>
-        </dl>
-      </Card>
-      <Card>
-        <div class="flex items-center justify-between mb-2">
-          <div>
-            <div class="text-sm font-semibold">
-              NodeConfig
-            </div>
-            <div class="text-[11px] text-[color:var(--text-dim)]">
-              Конфиг присылается нодой через config_report и хранится на сервере.
-            </div>
-          </div>
-          <div class="flex items-center gap-2">
-            <div
-              v-if="configLoading"
-              class="text-[11px] text-[color:var(--text-dim)]"
-            >
-              Загрузка...
-            </div>
-            <Button
-              size="sm"
-              variant="outline"
-              @click="nodeConfigExpanded = !nodeConfigExpanded"
-            >
-              {{ nodeConfigExpanded ? 'Скрыть' : 'Показать' }}
-            </Button>
-          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            @click="nodeConfigExpanded = !nodeConfigExpanded"
+          >
+            {{ nodeConfigExpanded ? 'Скрыть' : 'Показать' }}
+          </Button>
         </div>
-        <div
-          v-if="!nodeConfigExpanded"
-          class="rounded-md border border-[color:var(--border-muted)] bg-[color:var(--bg-muted)] px-3 py-2 text-xs text-[color:var(--text-dim)]"
-        >
-          JSON скрыт, чтобы не занимать экран.
-        </div>
-        <!-- eslint-disable-next-line vue/no-v-html -- highlightJson sanitizes input via escapeHtml() (см. функцию ниже) -->
-        <pre
-          v-else
-          class="node-config-json max-h-[32rem] overflow-auto rounded-md border border-[color:var(--border-muted)] bg-[color:var(--bg-muted)] p-3 text-xs leading-relaxed text-[color:var(--text-muted)]"
-          v-html="highlightedNodeConfig"
-        ></pre>
-      </Card>
-    </div>
+      </div>
+      <div
+        v-if="!nodeConfigExpanded"
+        class="rounded-md border border-[color:var(--border-muted)] bg-[color:var(--bg-muted)] px-3 py-2 text-xs text-[color:var(--text-dim)]"
+      >
+        JSON скрыт, чтобы не занимать экран.
+      </div>
+      <!-- eslint-disable-next-line vue/no-v-html -- highlightJson sanitizes input via escapeHtml() (см. функцию ниже) -->
+      <pre
+        v-else
+        class="node-config-json max-h-[32rem] overflow-auto rounded-md border border-[color:var(--border-muted)] bg-[color:var(--bg-muted)] p-3 text-xs leading-relaxed text-[color:var(--text-muted)]"
+        v-html="highlightedNodeConfig"
+      ></pre>
+    </Card>
 
     <ConfirmModal
       :open="detachModalOpen"
@@ -427,7 +445,9 @@ import { useDeviceCommandActions } from '@/composables/useDeviceCommandActions'
 import type { Device, DeviceChannel } from '@/types'
 import type { SensorCalibrationOverview, SensorCalibrationSessionOutcome } from '@/types/SensorCalibration'
 import { formatPendingBindAge } from '@/composables/useNodeLifecycle'
-import { translateStatus } from '@/utils/i18n'
+import { translateStatus, translateDeviceType } from '@/utils/i18n'
+import { formatTime } from '@/utils/formatTime'
+import { useRole } from '@/composables/useRole'
 
 interface PageProps {
   device?: Device
@@ -436,6 +456,7 @@ interface PageProps {
 }
 
 const page = usePage<PageProps>()
+const { canConfigureDevices, canCalibrateSensors, canDiagnose } = useRole()
 const device = computed(() => (page.props.device || {}) as Device)
 const channels = computed(() => (device.value.channels || []) as DeviceChannel[])
 const linkedZoneId = computed<number | null>(() => {
@@ -526,7 +547,7 @@ const nodeMetaItems = computed<NodeMetaItem[]>(() => {
   const items: NodeMetaItem[] = [
     { label: 'Node ID', value: String(device.value.id ?? '-') },
     { label: 'UID', value: String(device.value.uid || '-') },
-    { label: 'Тип', value: String(device.value.type || '-') },
+    { label: 'Тип', value: translateDeviceType(String(device.value.type || '-')) },
   ]
 
   if (device.value.fw_version) {
@@ -546,9 +567,9 @@ const nodeMetaItems = computed<NodeMetaItem[]>(() => {
   if (heartbeat) {
     items.push({ label: 'Heartbeat', value: heartbeat })
   }
-  const lastSeen = formatNodeDate(device.value.last_seen_at)
-  if (lastSeen) {
-    items.push({ label: 'Last seen', value: lastSeen })
+  const lastSeenRaw = device.value.last_seen_at
+  if (lastSeenRaw) {
+    items.push({ label: 'Последняя связь', value: formatTime(lastSeenRaw) || formatNodeDate(lastSeenRaw) || '-' })
   }
   if (typeof device.value.rssi === 'number' && Number.isFinite(device.value.rssi)) {
     items.push({ label: 'RSSI', value: `${device.value.rssi} dBm` })
@@ -565,10 +586,18 @@ const nodeMetaItems = computed<NodeMetaItem[]>(() => {
   return items
 })
 
-const userRole = computed(() => page.props.auth?.user?.role ?? 'viewer')
-const canCalibratePhSensors = computed(() =>
-  ['operator', 'admin', 'agronomist', 'engineer'].includes(userRole.value),
-)
+const canCalibratePhSensors = canCalibrateSensors
+
+function phCalibrationStatusLabel(
+  status: SensorCalibrationOverview['calibration_status'],
+): string {
+  if (canDiagnose.value) {
+    return status
+  }
+  if (status === 'ok') return 'Калиброван'
+  if (status === 'warning') return 'Нужна проверка'
+  return 'Нужна калибровка'
+}
 
 const isPhNodeDevice = computed(() => {
   const t = String(device.value.type || '').toLowerCase()

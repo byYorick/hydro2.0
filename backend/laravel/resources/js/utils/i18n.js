@@ -441,12 +441,42 @@ export function translateStrategy(strategy) {
  * @returns {string} Переведенный тип устройства
  */
 export function translateDeviceType(type) {
+  if (typeof type !== 'string' || type.length === 0) {
+    return type ?? '-'
+  }
+  const key = type.toLowerCase().replace(/-/g, '_')
   const translations = {
     'sensor': 'Датчик',
     'actuator': 'Актуатор',
     'controller': 'Контроллер',
+    'ph': 'pH',
+    'ph_node': 'pH',
+    'ec': 'EC',
+    'ec_node': 'EC',
+    'pump': 'Насос',
+    'pump_node': 'Насос',
+    'climate': 'Климат',
+    'climate_node': 'Климат',
+    'light': 'Свет',
+    'light_node': 'Свет',
+    'relay': 'Реле',
+    'relay_node': 'Реле',
+    'irrig': 'Полив',
+    'irrigation': 'Полив',
+    'storage_irrigation': 'Полив',
+    'storage_irrigation_node': 'Полив',
+    'test_node': 'Тестовый узел',
   }
-  return translations[type] || type
+  if (translations[key]) {
+    return translations[key]
+  }
+  if (key.endsWith('_node')) {
+    const base = key.slice(0, -5)
+    if (translations[base]) {
+      return translations[base]
+    }
+  }
+  return type
 }
 
 const ALERT_SOURCE_TRANSLATIONS = {

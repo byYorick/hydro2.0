@@ -73,7 +73,7 @@ export function getRoleNavigationItems(role: string): RoleNavItem[] {
     case 'operator':
       return [home, zones, alerts, docs, settings]
     case 'agronomist':
-      return [home, zones, recipes, analytics, alerts, launch]
+      return [home, zones, recipes, analytics, alerts, launch, docs]
     case 'engineer':
       return [devices, home, zones, alerts, monitoring, logs]
     case 'admin':

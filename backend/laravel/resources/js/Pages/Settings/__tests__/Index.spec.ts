@@ -275,7 +275,7 @@ describe('Settings/Index.vue', () => {
 
     await flushPromises()
 
-    expect(wrapper.find('[role="tab"][aria-selected="true"]').text()).toBe('Профиль')
+      expect(wrapper.find('[role="tab"][aria-selected="true"]').text()).toBe('Мой профиль')
     expect(wrapper.get('[data-testid="settings-section-profile"]').isVisible()).toBe(true)
     expect(wrapper.get('[data-testid="settings-automation-engine-card"]').isVisible()).toBe(false)
   })
@@ -287,7 +287,7 @@ describe('Settings/Index.vue', () => {
 
       await flushPromises()
 
-      expect(tabLabels(wrapper)).not.toContain('Автоматика')
+      expect(tabLabels(wrapper)).not.toContain('Параметры движка')
       expect(wrapper.find('[data-testid="settings-automation-engine-card"]').exists()).toBe(false)
       expect(wrapper.find('[data-testid="settings-alert-policies-card"]').exists()).toBe(false)
       expect(wrapper.find('[data-testid="settings-automation-engine-reset"]').exists()).toBe(false)
@@ -304,12 +304,12 @@ describe('Settings/Index.vue', () => {
 
       await flushPromises()
 
-      expect(tabLabels(wrapper)).toContain('Автоматика')
+      expect(tabLabels(wrapper)).toContain('Параметры движка')
       expect(wrapper.find('[data-testid="settings-automation-engine-card"]').exists()).toBe(true)
       expect(wrapper.find('[data-testid="settings-alert-policies-card"]').exists()).toBe(true)
       expect(wrapper.find('[data-testid="settings-automation-engine-reset"]').exists()).toBe(true)
       expect(wrapper.text()).toContain('Политики алертов')
-      expect(wrapper.find('[role="tab"][aria-selected="true"]').text()).toBe('Профиль')
+      expect(wrapper.find('[role="tab"][aria-selected="true"]').text()).toBe('Мой профиль')
       expect(getDocumentMock).toHaveBeenCalledWith('system', 0, 'system.runtime')
       expect(getDocumentMock).toHaveBeenCalledWith('system', 0, 'system.alert_policies')
     },
@@ -334,6 +334,9 @@ describe('Settings/Index.vue', () => {
     )
 
     await wrapper.get('[data-testid="settings-automation-engine-reset"]').trigger('click')
+    await flushPromises()
+    const confirmButtons = wrapper.findAll('button').filter((button) => button.text() === 'Сбросить')
+    await confirmButtons[confirmButtons.length - 1]?.trigger('click')
     await flushPromises()
 
     expect(resetDocumentMock).toHaveBeenCalledWith('system', 0, 'system.runtime')

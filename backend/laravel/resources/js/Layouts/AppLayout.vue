@@ -137,7 +137,10 @@
             </header>
 
             <div class="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-4 py-3 pb-20 lg:pb-6 space-y-2">
-              <div class="glass-panel border border-[color:var(--border-muted)] px-3 py-1.5 rounded-xl shadow-[var(--shadow-card)]">
+              <div
+                v-if="showBreadcrumbs"
+                class="glass-panel border border-[color:var(--border-muted)] px-3 py-1.5 rounded-xl shadow-[var(--shadow-card)]"
+              >
                 <Breadcrumbs />
               </div>
               <Transition
@@ -175,7 +178,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted } from 'vue'
+import { computed, ref, watch, onMounted } from 'vue'
+import { usePage } from '@inertiajs/vue3'
 import CommandPalette from '@/Components/CommandPalette.vue'
 import RoleBasedNavigation from '@/Components/RoleBasedNavigation.vue'
 import Breadcrumbs from '@/Components/Breadcrumbs.vue'
@@ -188,6 +192,8 @@ import HistoryWidget from '@/Components/HistoryWidget.vue'
 import UserMenu from '@/Components/UserMenu.vue'
 import { useKeyboardShortcuts } from '@/composables/useKeyboardShortcuts'
 
+const page = usePage()
+const showBreadcrumbs = computed(() => !String(page.url || '').startsWith('/launch'))
 const showMobileMenu = ref(false)
 const collapsed = ref(false)
 

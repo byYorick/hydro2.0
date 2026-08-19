@@ -105,34 +105,34 @@
           class="status-chip status-chip--alarm shrink-0"
           title="Телеметрия устарела — нет свежих данных"
         >
-          НЕТ СВЯЗИ
+          Нет связи
         </div>
         <div
           v-else-if="telemetryHealth === 'danger'"
           class="status-chip status-chip--alarm shrink-0"
           title="Метрика вне допустимого диапазона"
         >
-          ВНЕ НОРМЫ
+          Вне нормы
         </div>
         <div
           v-else-if="telemetryHealth === 'warn'"
           class="status-chip status-chip--warning shrink-0"
           title="Метрика близко к границе диапазона"
         >
-          ВНИМАНИЕ
+          Внимание
         </div>
         <div
           v-else-if="telemetryHealth === 'unknown'"
           class="status-chip status-chip--paused shrink-0"
           title="Нет данных телеметрии или targets для оценки"
         >
-          НЕТ ДАННЫХ
+          Нет данных
         </div>
         <div
           v-else
           class="status-chip status-chip--running shrink-0"
         >
-          ОК
+          В норме
         </div>
         <div
           v-if="automationBlock && zone.alerts_count > 0"

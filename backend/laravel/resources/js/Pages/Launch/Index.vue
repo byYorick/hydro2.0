@@ -5,8 +5,8 @@
       <template #topbar>
         <LaunchTopBar
           :user-email="userEmail"
-          :quick-jump-steps="stepperSteps"
-          @jump="onStepSelect"
+          :quick-jump-steps="allVisibleSteps"
+          @jump="onQuickJump"
         >
           <template
             v-if="breadcrumbZoneName"
@@ -92,6 +92,14 @@
           :total="stepperSteps.length"
         />
 
+        <RepeatPathHint
+          v-if="isRepeatPath && currentStep === 'recipe'"
+          :show-automation="hasVisibleStep('automation')"
+          :show-calibration="hasVisibleStep('calibration')"
+          @open-automation="jumpToStep('automation')"
+          @open-calibration="jumpToStep('calibration')"
+        />
+
         <ZoneStep
           v-if="currentStep === 'zone'"
           :model-value="state.zone_id"
@@ -163,7 +171,7 @@
       <template #footer>
         <LaunchFooterNav
           v-if="stepperSteps.length > 0"
-          :active="activeIndex"
+          :active="isAdvancedStep ? -1 : activeIndex"
           :total="stepperSteps.length"
           :completion="completion"
           :can-launch="canLaunch"
@@ -179,7 +187,7 @@
       <BlockersDrawer
         :open="readinessBlockersOpen"
         :blockers="readinessBlockerContracts"
-        title="Readiness blockers"
+        title="Блокеры готовности"
         @close="readinessBlockersOpen = false"
         @navigate="onReadinessBlockerNavigate"
       />
@@ -197,6 +205,7 @@ import LaunchStepper from '@/Components/Launch/Shell/LaunchStepper.vue'
 import LaunchFooterNav from '@/Components/Launch/Shell/LaunchFooterNav.vue'
 import BlockersDrawer, { type BlockerContract } from '@/Components/Launch/Shell/BlockersDrawer.vue'
 import StepHeader from '@/Components/Launch/Shell/StepHeader.vue'
+import RepeatPathHint from '@/Components/Launch/Shell/RepeatPathHint.vue'
 import ZoneStep from '@/Components/Launch/ZoneStep.vue'
 import RecipeStep from '@/Components/Launch/RecipeStep.vue'
 import AutomationStep from '@/Components/Launch/AutomationStep.vue'
@@ -222,6 +231,7 @@ import type { LaunchFlowReadinessBlocker } from '@/services/api/launchFlow'
 import { api } from '@/services/api'
 import { useToast } from '@/composables/useToast'
 import { useLaunchSteps } from '@/composables/useLaunchSteps'
+import { useLaunchWizardNav } from '@/composables/useLaunchWizardNav'
 import { useLaunchPreviewContext } from '@/composables/useLaunchPreviewContext'
 import { useLaunchTopBarContext } from '@/composables/useLaunchTopBarContext'
 import { route } from '@/utils/route'
@@ -256,11 +266,14 @@ const automationProfile = ref<AutomationProfile>(
 
 const {
   stepperSteps,
+  allVisibleSteps,
   activeIndex,
   completion,
   currentStepDef,
   canLaunch,
   canProceedStep,
+  isRepeatPath,
+  isAdvancedStep,
 } = useLaunchSteps({
   state,
   manifest,
@@ -270,15 +283,12 @@ const {
 })
 
 watch(
-  () => stepperSteps.value.map((s) => s.id).join('|'),
+  () => allVisibleSteps.value.map((s) => s.id).join('|'),
   (joined) => {
     if (!joined) return
-    const first = stepperSteps.value[0]?.id ?? ''
-    if (
-      !currentStep.value ||
-      !stepperSteps.value.some((s) => s.id === currentStep.value)
-    ) {
-      currentStep.value = first
+    const known = allVisibleSteps.value.some((s) => s.id === currentStep.value)
+    if (!currentStep.value || !known) {
+      currentStep.value = stepperSteps.value[0]?.id ?? allVisibleSteps.value[0]?.id ?? ''
     }
   },
   { immediate: true },
@@ -399,6 +409,18 @@ const errorList = computed(() =>
 
 const readinessBlockersOpen = ref(false)
 const readinessBlockers = computed(() => manifest.value?.readiness.blockers ?? [])
+
+const { hasVisibleStep, jumpToStep, onStepSelect, onQuickJump, goNext, goBack } =
+  useLaunchWizardNav({
+    currentStep,
+    stepperSteps,
+    allVisibleSteps,
+    activeIndex,
+    isAdvancedStep,
+    canProceedStep,
+    readinessBlockers,
+    showToast,
+  })
 const readinessBlockerContracts = computed<BlockerContract[]>(() =>
   readinessBlockers.value.map((blocker, idx) => ({
     id: `${blocker.code}-${idx}`,
@@ -418,6 +440,10 @@ const footerBlockerReason = computed<string | null>(() => {
   }
 
   if (stepperSteps.value.length === 0 || !currentStep.value) {
+    return null
+  }
+
+  if (isAdvancedStep.value) {
     return null
   }
 
@@ -548,57 +574,6 @@ function onZoneSelected(zoneId: number): void {
   } else {
     updateField('zone_id', undefined)
   }
-}
-
-function onStepSelect(index: number): void {
-  const step = stepperSteps.value[index]
-  if (!step) return
-  // Allow free navigation backward and to next-only-if-current-is-passable.
-  if (index <= activeIndex.value) {
-    currentStep.value = step.id
-    return
-  }
-
-  const firstBlocker = readinessBlockers.value[0]
-  if (firstBlocker && step.id === 'preview') {
-    showToast(firstBlocker.message || 'Есть активные блокеры readiness', 'warning')
-    return
-  }
-
-  // Forward jump: every step before must be passable.
-  for (let i = 0; i < index; i++) {
-    if (canProceedStep(stepperSteps.value[i].id) !== true) {
-      const reason = canProceedStep(stepperSteps.value[i].id) as { reason?: string }
-      showToast(reason?.reason || 'Заполните предыдущие шаги', 'warning')
-      return
-    }
-  }
-  currentStep.value = step.id
-}
-
-function goNext(): void {
-  const i = activeIndex.value
-  const next = stepperSteps.value[i + 1]
-  if (!next) return
-
-  const firstBlocker = readinessBlockers.value[0]
-  if (firstBlocker && next.id === 'preview') {
-    showToast(firstBlocker.message || 'Есть активные блокеры readiness', 'warning')
-    return
-  }
-
-  const verdict = canProceedStep(currentStep.value)
-  if (verdict !== true) {
-    showToast((verdict as { reason: string }).reason, 'warning')
-    return
-  }
-  currentStep.value = next.id
-}
-
-function goBack(): void {
-  const i = activeIndex.value
-  const prev = stepperSteps.value[i - 1]
-  if (prev) currentStep.value = prev.id
 }
 
 function openBlockerAction(blocker: LaunchFlowReadinessBlocker): void {

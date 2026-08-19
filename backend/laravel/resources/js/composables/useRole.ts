@@ -70,6 +70,10 @@ export function useRole() {
     isAdmin.value || isAgronomist.value
   )
 
+  const canCalibrateSensors = computed(() =>
+    isAdmin.value || isAgronomist.value || isEngineer.value || isOperator.value
+  )
+
   // Операционное управление циклами (старт/стоп/контроль)
   const canOperateCycles = computed(() =>
     isAdmin.value || isAgronomist.value || isOperator.value
@@ -118,6 +122,7 @@ export function useRole() {
     canSubscribeUnassignedDevices,
     canEditAutomationEngineSettings,
     canLaunchCycle,
+    canCalibrateSensors,
     canResolveAlerts,
     canConfigureEntities,
     canOperateCycles,

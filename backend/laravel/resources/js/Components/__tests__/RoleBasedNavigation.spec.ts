@@ -92,6 +92,7 @@ describe('RoleBasedNavigation', () => {
       '/analytics',
       '/alerts',
       '/launch',
+      '/documentation/fertigation',
     ])
     expect(labels(wrapper)).toEqual([
       'Обзор',
@@ -100,6 +101,7 @@ describe('RoleBasedNavigation', () => {
       'Аналитика',
       'Тревоги',
       'Запуск',
+      'Справочник',
     ])
     expect(wrapper.text()).not.toContain('Узлы')
     expect(wrapper.text()).not.toContain('Устройства')

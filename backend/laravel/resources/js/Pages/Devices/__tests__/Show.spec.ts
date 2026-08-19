@@ -203,11 +203,15 @@ vi.mock('@/composables/useToast', () => ({
   }),
 }))
 
+const pageState = vi.hoisted(() => ({
+  role: 'engineer',
+}))
+
 vi.mock('@inertiajs/vue3', () => ({
   usePage: () => ({
     props: {
       device: sampleDevice,
-      auth: { user: { role: 'agronomist' } },
+      auth: { user: { role: pageState.role } },
     },
   }),
   Link: { name: 'Link', props: ['href'], template: '<a :href="href"><slot /></a>' },
@@ -218,6 +222,7 @@ import DevicesShow from '../Show.vue'
 describe('Devices/Show.vue', () => {
   beforeEach(() => {
     resetSampleDevice()
+    pageState.role = 'engineer'
     axiosPostMock.mockClear()
     mockShowToast.mockClear()
     mockApiGet.mockClear()
@@ -272,7 +277,7 @@ describe('Devices/Show.vue', () => {
   it('отображает тип устройства', () => {
     const wrapper = mount(DevicesShow)
     
-    expect(wrapper.text()).toContain('Тип: ph')
+    expect(wrapper.text()).toContain('Тип: pH')
   })
 
   it('отображает метаданные ноды в header', () => {
@@ -283,7 +288,7 @@ describe('Devices/Show.vue', () => {
     expect(wrapper.text()).toContain('node-ph-1')
     expect(wrapper.text()).toContain('HW:')
     expect(wrapper.text()).toContain('rev-a')
-    expect(wrapper.text()).toContain('Heartbeat:')
+    expect(wrapper.text()).toContain('Последняя связь:')
     expect(wrapper.text()).toContain('RSSI:')
     expect(wrapper.text()).toContain('-62 dBm')
     expect(wrapper.text()).toContain('Память:')
@@ -572,5 +577,28 @@ describe('Devices/Show.vue', () => {
     const text = wrapper.text()
     // Может быть либо данные, либо сообщение о загрузке
     expect(text).toBeTruthy()
+  })
+
+  it('показывает каналы и метаданные раньше калибровки и графиков', () => {
+    const wrapper = mount(DevicesShow)
+    expect(wrapper.text()).toContain('Каналы')
+    expect(wrapper.text()).not.toContain('Channels')
+    const ids = ['device-meta', 'device-channels', 'device-ph-calibration', 'device-charts', 'device-nodeconfig']
+      .map((id) => wrapper.html().indexOf(`data-testid="${id}"`))
+    expect(ids[0]).toBeGreaterThan(-1)
+    expect(ids.every((pos, i) => i === 0 || pos > ids[i - 1])).toBe(true)
+  })
+
+  it('скрывает raw NodeConfig у оператора и показывает человеческий статус калибровки', async () => {
+    pageState.role = 'operator'
+    try {
+      const wrapper = mount(DevicesShow)
+      await flushPromises()
+      expect(wrapper.find('[data-testid="device-nodeconfig"]').exists()).toBe(false)
+      expect(wrapper.text()).toContain('Нужна калибровка')
+      expect(wrapper.text()).not.toContain('offset/slope')
+    } finally {
+      pageState.role = 'engineer'
+    }
   })
 })

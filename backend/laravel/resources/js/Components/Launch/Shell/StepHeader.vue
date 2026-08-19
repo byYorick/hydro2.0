@@ -5,7 +5,7 @@
         class="text-[11px] font-semibold uppercase tracking-widest text-[var(--text-dim)]"
       >
         Шаг
-        <span class="font-mono">{{ index + 1 }}/{{ total }}</span>
+        <span class="font-mono">{{ index >= 0 ? `${index + 1}/${total}` : 'доп.' }}</span>
       </div>
       <h1 class="mt-0.5 text-[22px] font-semibold tracking-tight">
         {{ step.label }}

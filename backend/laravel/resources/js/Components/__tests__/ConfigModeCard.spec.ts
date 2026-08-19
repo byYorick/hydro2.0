@@ -103,4 +103,34 @@ describe('ConfigModeCard', () => {
       expect.objectContaining({ mode: 'live', reason: 'tuning ec' }),
     )
   })
+
+  it('opens locked dialog instead of window.prompt', async () => {
+    const promptSpy = vi.spyOn(window, 'prompt')
+    vi.mocked(zoneConfigModeApi.show).mockResolvedValue(liveState)
+    const w = mount(ConfigModeCard, {
+      props: { zoneId: 1, controlMode: 'manual', role: 'agronomist' },
+    })
+    await flushPromises()
+    await w.find('[data-testid="config-mode-switch-locked"]').trigger('click')
+    expect(promptSpy).not.toHaveBeenCalled()
+    expect(w.find('[data-testid="config-mode-locked-dialog"]').exists()).toBe(true)
+    promptSpy.mockRestore()
+  })
+
+  it('calls update API on locked confirm', async () => {
+    vi.mocked(zoneConfigModeApi.show).mockResolvedValue(liveState)
+    vi.mocked(zoneConfigModeApi.update).mockResolvedValue(lockedState)
+    const w = mount(ConfigModeCard, {
+      props: { zoneId: 1, controlMode: 'manual', role: 'agronomist' },
+    })
+    await flushPromises()
+    await w.find('[data-testid="config-mode-switch-locked"]').trigger('click')
+    await w.find('[data-testid="config-mode-locked-dialog"] input[type="text"]').setValue('cycle snapshot')
+    await w.find('[data-testid="config-mode-locked-confirm"]').trigger('click')
+    await flushPromises()
+    expect(zoneConfigModeApi.update).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({ mode: 'locked', reason: 'cycle snapshot' }),
+    )
+  })
 })

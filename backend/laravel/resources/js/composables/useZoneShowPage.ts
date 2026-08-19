@@ -76,8 +76,8 @@ const ZONE_TAB_LABELS: Record<ZoneTabId, string> = {
   automation: 'Автоматизация',
   scheduler: 'Планировщик',
   events: 'События',
-  alerts: 'Алерты',
-  devices: 'Устройства',
+  alerts: 'Тревоги',
+  devices: 'Узлы',
 }
 
 function tab(id: ZoneTabId, label?: string): ZoneTabItem {

@@ -11,7 +11,7 @@
               Настройки
             </h1>
             <p class="text-sm text-[color:var(--text-muted)] max-w-2xl mt-0.5">
-              Профиль, уведомления, параметры automation-engine и управление пользователями.
+              Мой профиль, уведомления и параметры платформы по вашей роли.
             </p>
           </div>
           <div class="flex items-center gap-2.5 rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)]/80 px-3 py-2 shrink-0">
@@ -87,7 +87,7 @@
         <div class="space-y-4 min-w-0">
           <SettingsSectionShell
             v-show="activeSection === 'profile'"
-            title="Профиль"
+            title="Мой профиль"
             description="Основные данные вашей учётной записи. Редактирование имени и email — через администратора."
             icon="👤"
             test-id="settings-section-profile"
@@ -200,7 +200,7 @@
                   variant="danger"
                   data-testid="settings-automation-engine-reset"
                   :disabled="automationSettingsSaving || automationSettingsLoading || automationSettingsResetting"
-                  @click="resetAutomationEngineSettings"
+                  @click="resetConfirmOpen = true"
                 >
                   {{ automationSettingsResetting ? 'Сбрасываем...' : 'Сбросить' }}
                 </Button>
@@ -381,244 +381,21 @@
             </SettingsSectionShell>
           </template>
 
-          <SettingsSectionShell
-            v-if="isAdmin"
-            v-show="activeSection === 'users'"
-            title="Управление пользователями"
-            description="Создание учётных записей и назначение ролей операторов платформы."
-            icon="👥"
-            test-id="settings-section-users"
-          >
-            <template #actions>
-              <Button
-                size="sm"
-                variant="secondary"
-                @click="loadUsers"
-              >
-                Обновить
-              </Button>
-              <Button
-                size="sm"
-                @click="openCreateModal()"
-              >
-                Создать пользователя
-              </Button>
-            </template>
-
-            <div class="mb-4 flex flex-wrap items-center gap-2">
-              <input
-                v-model="searchQuery"
-                placeholder="Поиск по имени или email..."
-                class="input-field w-full sm:w-72"
-                autocomplete="off"
-              />
-              <select
-                v-model="roleFilter"
-                class="input-select"
-              >
-                <option value="">
-                  Все роли
-                </option>
-                <option value="admin">
-                  Администратор
-                </option>
-                <option value="operator">
-                  Оператор
-                </option>
-                <option value="viewer">
-                  Наблюдатель
-                </option>
-              </select>
-            </div>
-
-            <div class="settings-group-card overflow-hidden">
-              <div class="max-h-[560px] overflow-auto">
-                <table class="min-w-full text-sm">
-                  <thead class="sticky top-0 z-10 bg-[color:var(--bg-elevated)] text-[color:var(--text-muted)]">
-                    <tr>
-                      <th class="px-3 py-2 text-left font-medium border-b border-[color:var(--border-muted)]">
-                        Пользователь
-                      </th>
-                      <th class="px-3 py-2 text-left font-medium border-b border-[color:var(--border-muted)]">
-                        Роль
-                      </th>
-                      <th class="px-3 py-2 text-left font-medium border-b border-[color:var(--border-muted)] hidden md:table-cell">
-                        Создан
-                      </th>
-                      <th class="px-3 py-2 text-left font-medium border-b border-[color:var(--border-muted)]">
-                        Действия
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr
-                      v-for="u in paginatedUsers"
-                      :key="u.id"
-                      class="odd:bg-[color:var(--bg-surface-strong)] even:bg-[color:var(--bg-surface)]"
-                    >
-                      <td class="px-3 py-3 border-b border-[color:var(--border-muted)]">
-                        <div class="font-medium text-[color:var(--text-primary)]">
-                          {{ u.name }}
-                        </div>
-                        <div class="text-xs text-[color:var(--text-dim)]">
-                          {{ u.email }}
-                        </div>
-                      </td>
-                      <td class="px-3 py-3 border-b border-[color:var(--border-muted)]">
-                        <Badge :variant="userRoleBadgeVariant(u.role)">
-                          {{ translateRole(u.role) }}
-                        </Badge>
-                      </td>
-                      <td class="px-3 py-3 border-b border-[color:var(--border-muted)] text-xs text-[color:var(--text-muted)] hidden md:table-cell">
-                        {{ new Date(u.created_at).toLocaleDateString() }}
-                      </td>
-                      <td class="px-3 py-3 border-b border-[color:var(--border-muted)]">
-                        <div class="flex flex-wrap gap-2">
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            @click="editUser(u)"
-                          >
-                            Изменить
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="danger"
-                            :disabled="u.id === currentUserId"
-                            @click="confirmDelete(u)"
-                          >
-                            Удалить
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-                <div
-                  v-if="!paginatedUsers.length"
-                  class="text-sm text-[color:var(--text-dim)] px-3 py-10 text-center"
-                >
-                  Нет пользователей по выбранным фильтрам
-                </div>
-              </div>
-              <div class="border-t border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] px-3 py-2">
-                <Pagination
-                  v-model:current-page="currentPage"
-                  v-model:per-page="perPage"
-                  :total="filteredUsers.length"
-                />
-              </div>
-            </div>
-          </SettingsSectionShell>
         </div>
       </div>
     </div>
 
-    <Modal
-      :open="showCreateModal || editingUser !== null"
-      title="Пользователь"
-      @close="closeModal"
-      hide-default-cancel
-    >
-      <div class="space-y-3">
-        <div>
-          <label class="text-sm text-[color:var(--text-muted)]">Имя</label>
-          <input
-            v-model="userForm.name"
-            class="input-field mt-1"
-            autocomplete="name"
-          />
-        </div>
-        <div>
-          <label class="text-sm text-[color:var(--text-muted)]">Email</label>
-          <input
-            v-model="userForm.email"
-            type="email"
-            class="input-field mt-1"
-            autocomplete="email"
-          />
-        </div>
-        <div>
-          <label
-            for="user-form-password"
-            class="text-sm text-[color:var(--text-muted)]"
-          >Пароль</label>
-          <input
-            id="user-form-password"
-            v-model="userForm.password"
-            name="password"
-            type="password"
-            class="input-field mt-1"
-            :placeholder="editingUser ? 'Оставьте пустым, чтобы не менять' : ''"
-            :autocomplete="editingUser ? 'new-password' : 'new-password'"
-          />
-        </div>
-        <div>
-          <label
-            for="user-form-role"
-            class="text-sm text-[color:var(--text-muted)]"
-          >Роль</label>
-          <select
-            id="user-form-role"
-            v-model="userForm.role"
-            name="role"
-            class="input-select mt-1"
-          >
-            <option value="viewer">
-              Наблюдатель
-            </option>
-            <option value="operator">
-              Оператор
-            </option>
-            <option value="admin">
-              Администратор
-            </option>
-          </select>
-        </div>
-      </div>
-      <template #footer>
-        <Button
-          size="sm"
-          variant="secondary"
-          @click="closeModal"
-        >
-          Отмена
-        </Button>
-        <Button
-          size="sm"
-          @click="saveUser"
-        >
-          Сохранить
-        </Button>
-      </template>
-    </Modal>
-
-    <Modal
-      :open="deletingUser !== null"
-      title="Удалить пользователя?"
-      @close="deletingUser = null"
-      hide-default-cancel
-    >
-      <div class="text-sm text-[color:var(--text-muted)]">
-        Вы уверены, что хотите удалить пользователя <strong>{{ deletingUser?.name }}</strong>?
-      </div>
-      <template #footer>
-        <Button
-          size="sm"
-          variant="secondary"
-          @click="deletingUser = null"
-        >
-          Отмена
-        </Button>
-        <Button
-          size="sm"
-          variant="danger"
-          @click="doDelete"
-        >
-          Удалить
-        </Button>
-      </template>
-    </Modal>
+    <ConfirmModal
+      :open="resetConfirmOpen"
+      title="Сбросить параметры движка?"
+      message="Сброс вернёт runtime-override AE3/scheduler к значениям env/config. Активные циклы не останавливаются сразу, но следующие тики и интервалы пойдут с дефолтами. Пользовательские профили зон не меняются."
+      confirm-text="Сбросить"
+      confirm-variant="danger"
+      :loading="automationSettingsResetting"
+      data-testid="settings-automation-engine-reset-confirm"
+      @close="resetConfirmOpen = false"
+      @confirm="confirmResetAutomationEngineSettings"
+    />
   </AppLayout>
 </template>
 
@@ -631,22 +408,18 @@ import SettingsFieldCard from '@/Components/Settings/SettingsFieldCard.vue'
 import Tabs from '@/Components/Tabs.vue'
 import Button from '@/Components/Button.vue'
 import Badge from '@/Components/Badge.vue'
-import Modal from '@/Components/Modal.vue'
-import Pagination from '@/Components/Pagination.vue'
+import ConfirmModal from '@/Components/ConfirmModal.vue'
 import { translateRole } from '@/utils/i18n'
 import { logger } from '@/utils/logger'
 import { api } from '@/services/api'
 import { useRole } from '@/composables/useRole'
 import { useAutomationConfig } from '@/composables/useAutomationConfig'
 import { useToast } from '@/composables/useToast'
-import { useSimpleModal } from '@/composables/useModal'
 import { ERROR_MESSAGES } from '@/constants/messages'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
 
 const page = usePage()
 const currentUser = computed(() => page.props.auth?.user)
-const currentUserId = computed(() => currentUser.value?.id)
-const isAdmin = computed(() => currentUser.value?.role === 'admin')
 const { canEditAutomationEngineSettings } = useRole()
 
 const profileInitial = computed(() => {
@@ -661,21 +434,13 @@ const roleBadgeVariant = computed(() => {
   return 'info'
 })
 
-function userRoleBadgeVariant(role) {
-  if (role === 'admin') return 'danger'
-  if (role === 'operator') return 'warning'
-  return 'info'
-}
-
 const sectionCatalog = [
-  { id: 'profile', label: 'Профиль', hint: 'Имя, email, роль', icon: '👤' },
+  { id: 'profile', label: 'Мой профиль', hint: 'Имя, email, роль', icon: '👤' },
   { id: 'notifications', label: 'Уведомления', hint: 'Тосты и алерты', icon: '🔔' },
-  { id: 'automation', label: 'Автоматика', hint: 'AE3 и runtime', icon: '⚙️', requiresAutomation: true },
-  { id: 'users', label: 'Пользователи', hint: 'Администрирование', icon: '👥', requiresAdmin: true },
+  { id: 'automation', label: 'Параметры движка', hint: 'AE3 и runtime', icon: '⚙️', requiresAutomation: true },
 ]
 
 const visibleSections = computed(() => sectionCatalog.filter((section) => {
-  if (section.requiresAdmin && !isAdmin.value) return false
   if (section.requiresAutomation && !canEditAutomationEngineSettings.value) return false
   return true
 }))
@@ -743,11 +508,6 @@ const alertPolicyModeLabel = computed(() => {
 const { showToast } = useToast()
 const automationConfig = useAutomationConfig(showToast)
 
-const users = ref([])
-const searchQuery = ref('')
-const roleFilter = ref('')
-const currentPage = ref(1)
-const perPage = ref(25)
 const preferencesLoading = ref(false)
 const preferencesSaving = ref(false)
 const automationSettingsLoading = ref(false)
@@ -756,17 +516,7 @@ const automationSettingsResetting = ref(false)
 const alertPoliciesLoading = ref(false)
 const alertPoliciesSaving = ref(false)
 const alertPoliciesResetting = ref(false)
-const { isOpen: showCreateModal, open: openCreateModal, close: closeCreateModal } = useSimpleModal()
-const editingUser = ref(null)
-const deletingUser = ref(null)
 const automationSettingsDraft = reactive({})
-
-const userForm = reactive({
-  name: '',
-  email: '',
-  password: '',
-  role: 'operator',
-})
 
 const notificationSettings = reactive({
   alertToastSuppressionSec: 30,
@@ -898,6 +648,13 @@ const saveAutomationEngineSettings = async () => {
   }
 }
 
+const resetConfirmOpen = ref(false)
+
+const confirmResetAutomationEngineSettings = async () => {
+  await resetAutomationEngineSettings()
+  resetConfirmOpen.value = false
+}
+
 const resetAutomationEngineSettings = async () => {
   automationSettingsResetting.value = true
   try {
@@ -1027,145 +784,12 @@ const savePreferences = async () => {
   }
 }
 
-const filteredUsers = computed(() => {
-  return users.value.filter((u) => {
-    const matchSearch =
-      !searchQuery.value ||
-      u.name.toLowerCase().includes(searchQuery.value.toLowerCase()) ||
-      u.email.toLowerCase().includes(searchQuery.value.toLowerCase())
-    const matchRole = !roleFilter.value || u.role === roleFilter.value
-    return matchSearch && matchRole
-  })
-})
-
-const clampCurrentPage = (total) => {
-  const maxPage = Math.ceil(total / perPage.value) || 1
-  const validPage = Math.min(currentPage.value, maxPage)
-  if (validPage !== currentPage.value) {
-    currentPage.value = validPage
-  }
-  return validPage
-}
-
-watch([filteredUsers, perPage], () => {
-  if (filteredUsers.value.length > 0) {
-    clampCurrentPage(filteredUsers.value.length)
-  } else {
-    currentPage.value = 1
-  }
-})
-
-const paginatedUsers = computed(() => {
-  const total = filteredUsers.value.length
-  if (total === 0) return []
-
-  const maxPage = Math.ceil(total / perPage.value) || 1
-  const validPage = Math.min(currentPage.value, maxPage)
-  const start = (validPage - 1) * perPage.value
-  const end = start + perPage.value
-  return filteredUsers.value.slice(start, end)
-})
-
-const loadUsers = () => {
-  if (!isAdmin.value) return
-  const propsUsers = page.props.users || []
-  users.value = propsUsers.map((u) => ({
-    ...u,
-    created_at: u.created_at,
-  }))
-}
-
-const editUser = (user) => {
-  editingUser.value = user
-  userForm.name = user.name
-  userForm.email = user.email
-  userForm.password = ''
-  userForm.role = user.role
-}
-
-const confirmDelete = (user) => {
-  deletingUser.value = user
-}
-
-const doDelete = async () => {
-  if (!deletingUser.value) return
-  const idToDelete = deletingUser.value.id
-  try {
-    await api.users.delete(idToDelete)
-    showToast('Пользователь успешно удален', 'success', TOAST_TIMEOUT.NORMAL)
-
-    users.value = users.value.filter((u) => u.id !== idToDelete)
-    deletingUser.value = null
-  } catch (err) {
-    logger.error('Failed to delete user:', err)
-    const errorMsg = err.response?.data?.message || err.message || ERROR_MESSAGES.UNKNOWN
-    showToast(`Ошибка: ${errorMsg}`, 'error', TOAST_TIMEOUT.LONG)
-    deletingUser.value = null
-  }
-}
-
-const saveUser = async () => {
-  try {
-    const payload = { ...userForm }
-    if (editingUser.value) {
-      if (!payload.password) {
-        delete payload.password
-      }
-      const updatedUser = await api.users.update(editingUser.value.id, payload)
-
-      if (updatedUser?.id) {
-        const index = users.value.findIndex((u) => u.id === updatedUser.id)
-        if (index !== -1) {
-          users.value[index] = {
-            ...updatedUser,
-            created_at: updatedUser.created_at || users.value[index].created_at,
-          }
-        } else {
-          users.value.push({ ...updatedUser, created_at: updatedUser.created_at })
-        }
-      }
-    } else {
-      const newUser = await api.users.create(payload)
-
-      if (newUser?.id) {
-        users.value.push({ ...newUser, created_at: newUser.created_at })
-      }
-    }
-    showToast(
-      editingUser.value ? 'Пользователь успешно обновлен' : 'Пользователь успешно создан',
-      'success',
-      TOAST_TIMEOUT.NORMAL
-    )
-    closeModal()
-  } catch (err) {
-    logger.error('Failed to save user:', err)
-    const errorMsg = err.response?.data?.message || err.message || ERROR_MESSAGES.UNKNOWN
-    showToast(`Ошибка: ${errorMsg}`, 'error', TOAST_TIMEOUT.LONG)
-  }
-}
-
-const closeModal = () => {
-  closeCreateModal()
-  editingUser.value = null
-  userForm.name = ''
-  userForm.email = ''
-  userForm.password = ''
-  userForm.role = 'operator'
-}
-
 onMounted(() => {
-  if (isAdmin.value) {
-    loadUsers()
-  }
   applyPreferences(currentUser.value?.preferences || null)
   loadPreferences()
   if (canEditAutomationEngineSettings.value) {
     void loadAutomationEngineSettings({ silent: true })
     void loadAlertPolicies({ silent: true })
   }
-})
-
-watch([searchQuery, roleFilter], () => {
-  currentPage.value = 1
 })
 </script>

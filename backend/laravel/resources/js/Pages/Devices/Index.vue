@@ -2,7 +2,7 @@
   <AppLayout>
     <div class="space-y-4">
       <PageHeader
-        title="Устройства"
+        title="Узлы"
         subtitle="Список узлов, статусы и быстрые действия."
         eyebrow="инфраструктура"
       >
@@ -35,7 +35,7 @@
         <div class="ui-kpi-grid grid-cols-2 xl:grid-cols-4">
           <div class="ui-kpi-card">
             <div class="ui-kpi-label">
-              Всего устройств
+              Всего узлов
             </div>
             <div class="ui-kpi-value">
               {{ totalDevices }}
@@ -171,14 +171,12 @@
             <option value="">
               Все
             </option>
-            <option value="sensor">
-              Датчик
-            </option>
-            <option value="actuator">
-              Актуатор
-            </option>
-            <option value="controller">
-              Контроллер
+            <option
+              v-for="option in typeOptions"
+              :key="option.value"
+              :value="option.value"
+            >
+              {{ option.label }}
             </option>
           </select>
         </div>
@@ -215,6 +213,18 @@
               />
             </svg>
             <span>Избранные</span>
+          </button>
+        </div>
+        <div class="flex items-center gap-2 flex-1 sm:flex-none">
+          <button
+            class="h-9 px-3 rounded-md border text-sm transition-colors flex items-center gap-1.5 bg-[color:var(--bg-elevated)]"
+            :class="showOnlyProblematic
+              ? 'border-[color:var(--badge-danger-border)] text-[color:var(--accent-red)]'
+              : 'border-[color:var(--border-muted)] text-[color:var(--text-muted)] hover:border-[color:var(--border-strong)]'"
+            data-testid="devices-filter-problematic"
+            @click="showOnlyProblematic = !showOnlyProblematic"
+          >
+            <span>Только проблемные</span>
           </button>
         </div>
       </FilterBar>
@@ -273,7 +283,10 @@
             {{ row.fw_version || '-' }}
           </template>
           <template #cell-last_seen_at="{ row }">
-            {{ row.last_seen_at ? new Date(row.last_seen_at).toLocaleString('ru-RU') : '-' }}
+            {{ formatDeviceLastSeen(row.last_seen_at) }}
+          </template>
+          <template #cell-rssi="{ row }">
+            {{ formatDeviceRssi(row.rssi) }}
           </template>
         </DataTableV2>
         <Pagination
@@ -304,6 +317,7 @@ import { useUrlState } from '@/composables/useUrlState'
 import { api } from '@/services/api'
 import type { SiteWeatherStation } from '@/services/api/siteWeatherStations'
 import { translateDeviceType, translateStatus } from '@/utils/i18n'
+import { formatTime } from '@/utils/formatTime'
 import type { Device } from '@/types'
 import { logger } from '@/utils/logger'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
@@ -498,6 +512,12 @@ const showOnlyFavorites = useUrlState<boolean>({
   parse: (value) => value === '1',
   serialize: (value) => (value ? '1' : null),
 })
+const showOnlyProblematic = useUrlState<boolean>({
+  key: 'problems',
+  defaultValue: false,
+  parse: (value) => value === '1',
+  serialize: (value) => (value ? '1' : null),
+})
 const currentPage = useUrlState<number>({
   key: 'page',
   defaultValue: 1,
@@ -580,6 +600,37 @@ async function unassignWeatherStation(nodeId: number): Promise<void> {
   }
 }
 
+function isDeviceOffline(device: Device): boolean {
+  const status = String(device.status || '').toLowerCase()
+  return status === 'offline' || status === 'error' || status === 'stale'
+}
+
+function isDeviceProblematic(device: Device): boolean {
+  return isDeviceOffline(device) || device.status === 'degraded'
+}
+
+function formatDeviceLastSeen(value?: string | null): string {
+  if (!value) return '-'
+  return formatTime(value) || '-'
+}
+
+function formatDeviceRssi(value?: number | null): string {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return '-'
+  return `${value} dBm`
+}
+
+const typeOptions = computed(() => {
+  const unique = Array.from(new Set(
+    allDevices.value
+      .map((device) => String(device.type || '').trim())
+      .filter((type) => type.length > 0),
+  )).sort((a, b) => a.localeCompare(b, 'ru'))
+
+  return unique.map((value) => ({
+    value,
+    label: translateDeviceType(value),
+  }))
+})
 const totalDevices = computed(() => allDevices.value.length)
 const onlineDevices = computed(() => allDevices.value.filter((device) => device.status === 'online').length)
 const offlineDevices = computed(() => allDevices.value.filter((device) => device.status === 'offline').length)
@@ -597,11 +648,21 @@ const filtered = computed(() => {
     return []
   }
   
-  return devices.filter(d => {
+  const matched = devices.filter(d => {
     const okType = typeFilter ? d.type === typeFilter : true
     const okQuery = queryFilter ? (d.uid || d.name || '').toLowerCase().includes(queryFilter) : true
     const okFavorites = showOnlyFavorites.value ? isDeviceFavorite(d.id) : true
-    return okType && okQuery && okFavorites
+    const okProblematic = showOnlyProblematic.value ? isDeviceProblematic(d) : true
+    return okType && okQuery && okFavorites && okProblematic
+  })
+
+  return matched.slice().sort((a, b) => {
+    const aOffline = isDeviceOffline(a) ? 0 : 1
+    const bOffline = isDeviceOffline(b) ? 0 : 1
+    if (aOffline !== bOffline) return aOffline - bOffline
+    const aSeen = a.last_seen_at ? new Date(a.last_seen_at).getTime() : 0
+    const bSeen = b.last_seen_at ? new Date(b.last_seen_at).getTime() : 0
+    return bSeen - aSeen
   })
 })
 const visibleDevices = computed(() => filtered.value.length)
@@ -649,16 +710,24 @@ const columns = [
   { key: 'fw_version', label: 'Версия ПО', sortable: true, headerClass: 'min-w-[110px]', class: 'min-w-[110px]' },
   {
     key: 'last_seen_at',
-    label: 'Последний раз видели',
+    label: 'Последняя связь',
     sortable: true,
-    headerClass: 'min-w-[180px]',
-    class: 'min-w-[180px]',
+    headerClass: 'min-w-[160px]',
+    class: 'min-w-[160px]',
     sortAccessor: (device: Device) => (device.last_seen_at ? new Date(device.last_seen_at).getTime() : 0),
+  },
+  {
+    key: 'rssi',
+    label: 'RSSI',
+    sortable: true,
+    headerClass: 'min-w-[90px]',
+    class: 'min-w-[90px]',
+    sortAccessor: (device: Device) => (typeof device.rssi === 'number' ? device.rssi : -999),
   },
 ]
 
 // Сбрасываем на первую страницу при изменении фильтров
-watch([type, query, showOnlyFavorites], () => {
+watch([type, query, showOnlyFavorites, showOnlyProblematic], () => {
   currentPage.value = 1
 })
 

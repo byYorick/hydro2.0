@@ -11,7 +11,9 @@
       >
         Назад
       </Button>
-      <span class="font-mono text-xs text-[var(--text-dim)]">{{ active + 1 }}/{{ total }}</span>
+      <span class="font-mono text-xs text-[var(--text-dim)]">
+        {{ active >= 0 ? `${active + 1}/${total}` : 'доп.' }}
+      </span>
     </div>
 
     <div class="flex min-w-0 items-center gap-2">

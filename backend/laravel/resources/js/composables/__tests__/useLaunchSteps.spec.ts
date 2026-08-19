@@ -142,4 +142,67 @@ describe('useLaunchSteps', () => {
     currentStep.value = 'recipe'
     expect(canLaunch.value).toBe(false)
   })
+
+  it('repeat path: ready zone linear stepper skips automation and calibration', () => {
+    state.zone_id = 7
+    manifest.value = {
+      ...makeManifest(),
+      steps: [
+        { id: 'zone', title: 'Z', visible: false, required: true },
+        { id: 'recipe', title: 'R', visible: true, required: true },
+        { id: 'automation', title: 'A', visible: true, required: false },
+        { id: 'calibration', title: 'C', visible: true, required: false },
+        { id: 'preview', title: 'P', visible: true, required: true },
+      ],
+    }
+    currentStep.value = 'recipe'
+    const { stepperSteps, allVisibleSteps, isRepeatPath, isAdvancedStep } = build()
+
+    expect(isRepeatPath.value).toBe(true)
+    expect(stepperSteps.value.map((s) => s.id)).toEqual(['recipe', 'preview'])
+    expect(allVisibleSteps.value.map((s) => s.id)).toEqual([
+      'recipe',
+      'automation',
+      'calibration',
+      'preview',
+    ])
+    expect(stepperSteps.value[0]?.sub).toBe('культура + дата посадки')
+    expect(isAdvancedStep.value).toBe(false)
+  })
+
+  it('repeat path: blockers keep full linear stepper', () => {
+    state.zone_id = 7
+    manifest.value = makeManifest(['missing-node'])
+    currentStep.value = 'recipe'
+    const { stepperSteps, isRepeatPath } = build()
+
+    expect(isRepeatPath.value).toBe(false)
+    expect(stepperSteps.value.map((s) => s.id)).toEqual([
+      'zone',
+      'recipe',
+      'automation',
+      'calibration',
+      'preview',
+    ])
+  })
+
+  it('repeat path: advanced step is off the linear index', () => {
+    state.zone_id = 7
+    manifest.value = {
+      ...makeManifest(),
+      steps: [
+        { id: 'zone', title: 'Z', visible: false, required: true },
+        { id: 'recipe', title: 'R', visible: true, required: true },
+        { id: 'automation', title: 'A', visible: true, required: false },
+        { id: 'calibration', title: 'C', visible: true, required: false },
+        { id: 'preview', title: 'P', visible: true, required: true },
+      ],
+    }
+    currentStep.value = 'calibration'
+    const { activeIndex, isAdvancedStep, currentStepDef } = build()
+
+    expect(isAdvancedStep.value).toBe(true)
+    expect(activeIndex.value).toBe(-1)
+    expect(currentStepDef.value).toMatchObject({ id: 'calibration', label: 'Калибровка' })
+  })
 })

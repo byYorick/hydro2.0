@@ -6,6 +6,7 @@
  *   - STEP_DEFS — labels/sub для LaunchStepper
  *   - canProceedStep(stepId) — gate-функция per step (forward navigation)
  *   - completion[] computed — состояние bullets в LaunchStepper
+ *   - isRepeatPath — короткий линейный путь (рецепт → подтверждение) для готовой зоны
  */
 import { computed, type ComputedRef, type Ref } from 'vue'
 import type { LaunchStep, StepCompletion } from '@/Components/Launch/Shell/types'
@@ -28,6 +29,8 @@ const STEP_DEFS: Record<string, { label: string; sub: string }> = {
   preview: { label: 'Подтверждение', sub: 'diff + запуск' },
 }
 
+const LINEAR_REPEAT_STEP_IDS = new Set(['zone', 'recipe', 'preview'])
+
 export interface UseLaunchStepsInput {
   state: Partial<GrowCycleLaunchPayload>
   manifest: ComputedRef<LaunchFlowManifest | null>
@@ -38,11 +41,14 @@ export interface UseLaunchStepsInput {
 
 export interface UseLaunchStepsReturn {
   stepperSteps: ComputedRef<LaunchStep[]>
+  allVisibleSteps: ComputedRef<LaunchStep[]>
   activeIndex: ComputedRef<number>
   completion: ComputedRef<StepCompletion[]>
   currentStepDef: ComputedRef<LaunchStep>
   canLaunch: ComputedRef<boolean>
   canProceedStep: (stepId: string) => ProceedVerdict
+  isRepeatPath: ComputedRef<boolean>
+  isAdvancedStep: ComputedRef<boolean>
 }
 
 export function useLaunchSteps(input: UseLaunchStepsInput): UseLaunchStepsReturn {
@@ -68,17 +74,47 @@ export function useLaunchSteps(input: UseLaunchStepsInput): UseLaunchStepsReturn
     () => (input.manifest.value?.steps ?? []).filter((s) => s.visible),
   )
 
-  const stepperSteps = computed<LaunchStep[]>(() =>
-    visibleSteps.value.map((s) => ({
+  const isRepeatPath = computed(() => {
+    if (input.state.zone_id == null) return false
+    const manifest = input.manifest.value
+    if (!manifest) return false
+    const blockers = manifest.readiness?.blockers ?? []
+    if (blockers.length > 0) return false
+    const calibration = (manifest.steps ?? []).find((s) => s.id === 'calibration')
+    return calibration?.required !== true
+  })
+
+  function toLaunchStep(s: { id: string; title?: string; description?: string }): LaunchStep {
+    const recipeSub =
+      isRepeatPath.value && s.id === 'recipe' ? 'культура + дата посадки' : undefined
+    return {
       id: s.id,
       label: STEP_DEFS[s.id]?.label ?? s.title ?? s.id,
-      sub: STEP_DEFS[s.id]?.sub ?? s.description ?? '',
-    })),
+      sub: recipeSub ?? STEP_DEFS[s.id]?.sub ?? s.description ?? '',
+    }
+  }
+
+  const allVisibleSteps = computed<LaunchStep[]>(() =>
+    visibleSteps.value.map(toLaunchStep),
+  )
+
+  const stepperSteps = computed<LaunchStep[]>(() => {
+    const source = isRepeatPath.value
+      ? visibleSteps.value.filter((s) => LINEAR_REPEAT_STEP_IDS.has(s.id))
+      : visibleSteps.value
+    return source.map(toLaunchStep)
+  })
+
+  const isAdvancedStep = computed(
+    () =>
+      isRepeatPath.value &&
+      input.currentStep.value !== '' &&
+      !stepperSteps.value.some((s) => s.id === input.currentStep.value),
   )
 
   const activeIndex = computed(() => {
     const idx = stepperSteps.value.findIndex((s) => s.id === input.currentStep.value)
-    return idx >= 0 ? idx : 0
+    return idx
   })
 
   function canProceedStep(stepId: string): ProceedVerdict {
@@ -116,7 +152,7 @@ export function useLaunchSteps(input: UseLaunchStepsInput): UseLaunchStepsReturn
       const blockers = input.manifest.value?.readiness.blockers ?? []
       return blockers.length === 0
         ? true
-        : { ok: false, reason: blockersReason('Остались blockers') }
+        : { ok: false, reason: blockersReason('Остались блокеры') }
     }
     if (stepId === 'preview') {
       if (!input.isFormValid.value) return { ok: false, reason: 'Payload не валиден' }
@@ -142,10 +178,18 @@ export function useLaunchSteps(input: UseLaunchStepsInput): UseLaunchStepsReturn
     }),
   )
 
-  const currentStepDef = computed<LaunchStep>(
-    () =>
-      stepperSteps.value[activeIndex.value] ?? { id: '', label: '', sub: '' },
-  )
+  const currentStepDef = computed<LaunchStep>(() => {
+    if (activeIndex.value >= 0) {
+      return stepperSteps.value[activeIndex.value] ?? { id: '', label: '', sub: '' }
+    }
+    return (
+      allVisibleSteps.value.find((s) => s.id === input.currentStep.value) ?? {
+        id: '',
+        label: '',
+        sub: '',
+      }
+    )
+  })
 
   const canLaunch = computed(() => {
     if (input.currentStep.value !== 'preview') return false
@@ -154,10 +198,13 @@ export function useLaunchSteps(input: UseLaunchStepsInput): UseLaunchStepsReturn
 
   return {
     stepperSteps,
+    allVisibleSteps,
     activeIndex,
     completion,
     currentStepDef,
     canLaunch,
     canProceedStep,
+    isRepeatPath,
+    isAdvancedStep,
   }
 }

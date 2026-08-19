@@ -553,6 +553,16 @@ vi.mock('@/utils/i18n', () => ({
   translateStrategy: (strategy: string) => {
     return strategy === 'periodic' ? 'Периодическая' : strategy
   },
+  formatAlertHumanTitle: (alert: { type?: string, title?: string, zone?: { name?: string } } | null) => {
+    if (!alert) return ''
+    const phrases: Record<string, string> = {
+      PH_HIGH: 'pH выше нормы',
+      EC_LOW: 'EC ниже нормы',
+    }
+    const phrase = phrases[String(alert.type || '')] || alert.title || alert.type || ''
+    const zoneName = String(alert.zone?.name || '').trim()
+    return zoneName && phrase && !phrase.includes(zoneName) ? `${phrase} в ${zoneName}` : phrase
+  },
 }))
 
 vi.mock('@/utils/formatTime', () => ({
@@ -947,7 +957,7 @@ describe('Zones/Show.vue', () => {
     const wrapper = mount(ZonesShow)
     const tablist = wrapper.get('[role="tablist"]')
 
-    expect(tablist.text()).toContain('Устройства')
+    expect(tablist.text()).toContain('Узлы')
     expect(tablist.text()).toContain('Процесс')
     expect(wrapper.text()).toContain('Automation')
   })

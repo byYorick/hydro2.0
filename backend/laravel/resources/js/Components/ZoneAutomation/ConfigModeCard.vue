@@ -52,7 +52,7 @@
               : 'text-[color:var(--text-muted)] hover:bg-[color:var(--surface-muted)]/60'"
             :disabled="!canEdit || loading || saving || state?.config_mode === 'locked'"
             data-testid="config-mode-switch-locked"
-            @click="requestLocked"
+            @click="openLockedDialog"
           >
             locked
           </button>
@@ -103,6 +103,42 @@
       >
         Продлить TTL
       </button>
+    </div>
+
+    <!-- Enter-locked dialog -->
+    <div
+      v-if="lockedDialog.open"
+      class="mt-3 border border-[color:var(--border-muted)] rounded-lg p-3 space-y-2 bg-[color:var(--surface-muted)]/40"
+      data-testid="config-mode-locked-dialog"
+    >
+      <label class="flex flex-col gap-1 text-xs">
+        <span class="text-[color:var(--text-dim)]">Причина перехода в locked (&ge; 3 символов)</span>
+        <input
+          v-model="lockedDialog.reason"
+          type="text"
+          minlength="3"
+          maxlength="500"
+          class="input input-bordered text-sm px-2 py-1 rounded border border-[color:var(--border-muted)] bg-[color:var(--surface-card)]"
+        />
+      </label>
+      <div class="flex gap-2 justify-end">
+        <button
+          type="button"
+          class="text-xs px-3 py-1 rounded border border-[color:var(--border-muted)]"
+          @click="lockedDialog.open = false"
+        >
+          Отмена
+        </button>
+        <button
+          type="button"
+          class="text-xs px-3 py-1 rounded bg-[color:var(--accent,#3b82f6)] text-white disabled:opacity-50"
+          :disabled="saving || lockedDialog.reason.trim().length < 3"
+          data-testid="config-mode-locked-confirm"
+          @click="confirmLocked"
+        >
+          Перевести в locked
+        </button>
+      </div>
     </div>
 
     <!-- Enter-live dialog -->
@@ -222,6 +258,7 @@ const canSetLive = computed(() =>
 )
 
 const liveDialog = reactive({ open: false, ttlMin: 60, reason: '' })
+const lockedDialog = reactive({ open: false, reason: '' })
 const extendDialog = reactive({ open: false, ttlMin: 60 })
 
 const nowTick = ref<number>(Date.now())
@@ -251,19 +288,31 @@ async function load() {
   }
 }
 
-async function requestLocked() {
-  const reason = window.prompt('Причина перехода в locked:')
-  if (!reason || reason.trim().length < 3) return
+function openLockedDialog() {
+  liveDialog.open = false
+  extendDialog.open = false
+  lockedDialog.reason = ''
+  lockedDialog.open = true
+}
+
+async function confirmLocked() {
+  const reason = lockedDialog.reason.trim()
+  if (reason.length < 3) return
   await doUpdate({ mode: 'locked', reason })
+  lockedDialog.open = false
 }
 
 function openLiveDialog() {
+  lockedDialog.open = false
+  extendDialog.open = false
   liveDialog.reason = ''
   liveDialog.ttlMin = 60
   liveDialog.open = true
 }
 
 function openExtendDialog() {
+  lockedDialog.open = false
+  liveDialog.open = false
   extendDialog.ttlMin = 60
   extendDialog.open = true
 }

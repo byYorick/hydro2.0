@@ -27,4 +27,17 @@ describe('StepHeader', () => {
     })
     expect(w.find('[data-test="right"]').exists()).toBe(true)
   })
+
+  it('renders доп. instead of 0/N for an off-path step', () => {
+    const w = mount(StepHeader, {
+      props: {
+        step: { id: 'calibration', label: 'Калибровка', sub: '5 подсистем' },
+        index: -1,
+        total: 2,
+      },
+    })
+    expect(w.text()).toContain('Калибровка')
+    expect(w.text()).toContain('доп.')
+    expect(w.text()).not.toContain('0/2')
+  })
 })

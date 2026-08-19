@@ -1,26 +1,26 @@
 # Спецификация ролевых интерфейсов UI/UX
 
 **Дата создания:** 2025-01-27
-**Дата обновления:** 2026-08-02 (DefaultDashboard в примерах — hypothetical; production = Unified Index)
-**Версия:** 1.2
-**Статус:** Спецификация для будущего редизайна. Большая часть отдельных ролевых дашбордов и ролевых меню **не реализована** в production — см. блок Status ниже.
+**Дата обновления:** 2026-08-19 (production = Unified Index + ролевые views; отдельные Dashboards-маршруты wontfix)
+**Версия:** 1.3
+**Статус:** Намерение ролей. Production-канон внедрения — [`ROLE_BASED_UX_IMPROVEMENT_PLAN.md`](ROLE_BASED_UX_IMPROVEMENT_PLAN.md).
 
-> **Status: planned / not implemented (полный set ролевых dashboards):**
-> Отдельные ролевые компоненты `AgronomistDashboard.vue`…`ViewerDashboard.vue` существуют в `Dashboards/`, но **не подключены к маршрутам**. Файла `DefaultDashboard.vue` **нет** — примеры ниже с ним hypothetical. Production-UI — Unified Dashboard (`Pages/Dashboard/Index.vue`) для всех ролей.
+> **Status: wontfix (отдельные ролевые dashboards как маршруты):**
+> Компоненты `Dashboards/*` помечены `@deprecated` и **не подключаются**. Production home — `Pages/Dashboard/Index.vue` с views `operations|agronomy|engineering|admin`. Примеры с `DefaultDashboard.vue` ниже — hypothetical, не реализовывать.
 >
-> **Status: partially implemented (роль-based access):**
+> **Status: implemented (роль-based access, итерации 1–3 плана UX):**
 > Реально работают:
-> - `useRole()` composable (`canEdit`, `canConfigureCycle`, `canManageCycle`, `canOperateCycles`, `canConfigureEntities`, `canOperateClimate`, `hasRole`)
-> - Фильтрация пунктов меню через `RoleBasedNavigation.vue` (общий массив + `roles?: string[]` filter на пункт)
-> - Условный рендеринг кнопок/действий внутри страниц через `useRole()`
+> - `useRole()` — capability-gates (`canEditRecipes`, `canConfigureDevices`, `canLaunchCycle`, `canEditAutomationEngineSettings`, …)
+> - Меню per role в `RoleBasedNavigation.vue` / `MobileNavigation.vue` (не один общий список с filter)
+> - Ролевые виды Unified Dashboard, шапка зоны, табы зоны, журнал админа `/audit`
 >
-> **Расхождения с этим документом, которые сохраняются как known issue (см. таблицу аудита):**
-> - Спецификация ниже описывает «отдельное меню per role» — в коде один общий nav array с per-item filter.
-> - Operator по спецификации управляет зонами и редактирует рецепты — реальная реализация: `/launch` доступен `admin`/`agronomist`/`engineer`, `/recipes` — `admin`/`agronomist`, operator исключён.
-> - Viewer по спецификации не видит Settings — в коде `/settings` доступен всем.
-> - Пункт «Система» (`/system`) в спецификации — в коде маршрута нет; ближайший аналог — `/monitoring` («Сервисы»).
+> **Расхождения с текстом ниже, которые остаются wontfix / done:**
+> - Отдельное «меню per role» как четыре layout — **done** через `getRoleNavigationItems(role)`.
+> - Operator редактирует рецепты — **wontfix**; рецепты — agronomist/admin.
+> - Viewer без Settings — **done** частично: `/settings` есть у всех как профиль; системные вкладки скрыты.
+> - Пункт «Система» (`/system`) — **wontfix**; канон: `/` (admin hero «Система») и `/monitoring` («Здоровье системы»).
 >
-> Конкретные пункты ниже сохранены как описание целевого UX-намерения. Когда продуктовая команда решит подключать ролевые дашборды или ужесточать role-based menus — этот документ становится отправной точкой.
+> Конкретные виджеты в разделах ниже — историческое UX-намерение. Не копировать протухшие ссылки `/admin/users`, `/system`, `MEASURE_NOW`.
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 Breaking-change: обратная совместимость со старыми форматами и алиасами не поддерживается.

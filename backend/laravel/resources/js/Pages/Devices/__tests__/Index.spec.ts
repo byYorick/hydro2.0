@@ -57,6 +57,7 @@ import DevicesIndex from '../Index.vue'
 describe('Devices/Index.vue', () => {
   beforeEach(() => {
     testState.role = 'viewer'
+    window.history.replaceState({}, '', '/devices')
   })
 
   it('фильтрует по типу', async () => {
@@ -123,6 +124,28 @@ describe('Devices/Index.vue', () => {
 
     expect(wrapper.text()).toContain('Добавить ноду')
     wrapper.unmount()
+  })
+
+  it('показывает заголовок «Узлы» и фильтр проблемных', async () => {
+    testState.role = 'engineer'
+    const previous = testState.devices
+    testState.devices = [
+      { id: 'dev-1', uid: 'dev-1', zone: { name: 'Z1' }, type: 'ph_node', status: 'online', fw_version: '1.0', rssi: -50 },
+      { id: 'dev-2', uid: 'dev-2', zone: { name: 'Z2' }, type: 'pump_node', status: 'offline', fw_version: '1.1', rssi: -90 },
+    ]
+    const wrapper = mount(DevicesIndex)
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.text()).toContain('Узлы')
+    expect(wrapper.text()).toContain('RSSI')
+    const filtered = (wrapper.vm as any).filtered as Array<{ uid: string }>
+    expect(filtered.map((row) => row.uid)).toEqual(['dev-2', 'dev-1'])
+
+    await wrapper.get('[data-testid="devices-filter-problematic"]').trigger('click')
+    await wrapper.vm.$nextTick()
+    expect(((wrapper.vm as any).filtered as Array<{ uid: string }>).map((row) => row.uid)).toEqual(['dev-2'])
+    wrapper.unmount()
+    testState.devices = previous
   })
 })
 

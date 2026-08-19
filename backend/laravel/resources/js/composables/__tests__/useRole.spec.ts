@@ -298,6 +298,25 @@ describe('useRole', () => {
       expect(canLaunchCycle.value).toBe(expected)
     })
 
+    it.each([
+      ['admin', true],
+      ['agronomist', true],
+      ['engineer', true],
+      ['operator', true],
+      ['viewer', false],
+    ] as const)('canCalibrateSensors for %s is %s', (role, expected) => {
+      mockPage.mockReturnValue({
+        props: {
+          auth: {
+            user: { role: role as UserRole }
+          }
+        }
+      })
+
+      const { canCalibrateSensors } = useRole()
+      expect(canCalibrateSensors.value).toBe(expected)
+    })
+
     it('should allow alert resolution for admin, agronomist, engineer, operator', () => {
       const roles: UserRole[] = ['admin', 'agronomist', 'engineer', 'operator', 'viewer']
       
