@@ -148,6 +148,7 @@ describe('Recipes/Edit.vue', () => {
 
     usePageMock.mockReturnValue({
       props: {
+        auth: { user: { role: 'agronomist' } },
         recipe: sampleRecipe,
       },
     })
@@ -223,6 +224,7 @@ describe('Recipes/Edit.vue', () => {
   it('для published recipe создаёт draft clone и не patch-ит published phase ids', async () => {
     usePageMock.mockReturnValue({
       props: {
+        auth: { user: { role: 'agronomist' } },
         recipe: {
           ...sampleRecipe,
           draft_revision_id: null,
@@ -256,5 +258,14 @@ describe('Recipes/Edit.vue', () => {
     }))
     expect(recipesUpdatePhaseMock).not.toHaveBeenCalledWith(101, expect.anything())
     expect(recipesPublishRevisionMock).toHaveBeenCalledWith(30)
+  })
+
+  it('для агронома открывает простой режим без PID и NFT', async () => {
+    const wrapper = mount(RecipesEdit)
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="recipe-editor-mode-simple"]').exists()).toBe(true)
+    expect(wrapper.text()).not.toContain('PID по EC + доли')
+    expect(wrapper.text()).not.toContain('NFT (Nutrient Film)')
   })
 })

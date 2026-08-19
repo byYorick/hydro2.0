@@ -71,6 +71,7 @@ import { usePage } from '@inertiajs/vue3'
 import Badge from '@/Components/Badge.vue'
 import OperatorStoriesPanel from '@/Components/Events/OperatorStoriesPanel.vue'
 import EngineerEventsPanel from '@/Components/Events/EngineerEventsPanel.vue'
+import { useRole } from '@/composables/useRole'
 import { api } from '@/services/api'
 import { classifyEventKind } from '@/utils/i18n'
 import { groupZoneEvents } from '@/utils/eventGroups'
@@ -95,7 +96,13 @@ const layoutModes: Array<{ value: LayoutMode; label: string }> = [
 ]
 
 const page = usePage()
-const layoutMode = ref<LayoutMode>('both')
+const { isEngineer } = useRole()
+
+function resolveDefaultLayoutMode(): LayoutMode {
+  return isEngineer.value ? 'engineer' : 'operator'
+}
+
+const layoutMode = ref<LayoutMode>(resolveDefaultLayoutMode())
 const selectedKind = ref<KindFilter>('ALL')
 const query = ref('')
 const olderEvents = ref<ZoneEvent[]>([])
@@ -128,7 +135,7 @@ function applyDeepLinkFilters(): void {
     // Clear sticky filter when deep-link params disappear (e.g. popstate).
     if (lastAppliedDeepLink.value && query.value === lastAppliedDeepLink.value) {
       query.value = ''
-      layoutMode.value = 'both'
+      layoutMode.value = resolveDefaultLayoutMode()
     }
     lastAppliedDeepLink.value = null
     return

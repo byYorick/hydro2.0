@@ -1,165 +1,148 @@
 <template>
   <AppLayout>
     <div class="space-y-4">
-      <div class="flex items-center justify-between">
+      <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h1 class="text-lg font-semibold">
-          Мониторинг системы
+          Здоровье системы
         </h1>
-        <Button
-          size="sm"
-          variant="secondary"
-          :disabled="refreshing"
-          @click="refreshStatus"
-        >
-          {{ refreshing ? 'Обновление...' : 'Обновить' }}
-        </Button>
-      </div>
-
-      <!-- Основные компоненты -->
-      <div>
-        <h3 class="text-sm font-semibold mb-3 text-[color:var(--text-primary)]">
-          Основные компоненты
-        </h3>
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <ServiceStatusCard
-            name="Core API"
-            :status="coreStatus ?? 'unknown'"
-            icon="⚙️"
-            description="Основной API сервис"
-          />
-          <ServiceStatusCard
-            name="Database"
-            :status="dbStatus ?? 'unknown'"
-            icon="💾"
-            description="PostgreSQL база данных"
-          />
-          <ServiceStatusCard
-            name="WebSocket"
-            :status="wsStatus ?? 'unknown'"
-            icon="🔌"
-            description="WebSocket соединение"
-            status-type="ws"
-          />
-          <ServiceStatusCard
-            name="MQTT Broker"
-            :status="mqttStatus ?? 'unknown'"
-            icon="📡"
-            description="MQTT брокер"
-            status-type="mqtt"
-          />
+        <div class="flex flex-wrap items-center gap-2">
+          <a
+            href="http://localhost:3000"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="btn btn-outline h-9 px-3 text-xs"
+          >Grafana</a>
+          <a
+            href="http://localhost:9090"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="btn btn-outline h-9 px-3 text-xs"
+          >Prometheus</a>
+          <Button
+            size="sm"
+            variant="secondary"
+            :disabled="refreshing"
+            @click="refreshStatus"
+          >
+            {{ refreshing ? 'Обновление...' : 'Обновить' }}
+          </Button>
         </div>
       </div>
 
-      <!-- Python сервисы -->
-      <div>
-        <h3 class="text-sm font-semibold mb-3 text-[color:var(--text-primary)]">
-          Python сервисы
-        </h3>
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <ServiceStatusCard
-            name="History Logger"
-            :status="historyLoggerStatus"
-            icon="📝"
-            description="Логирование телеметрии в БД"
-            :endpoint="historyLoggerEndpoint"
+      <button
+        v-if="!isEngineer"
+        type="button"
+        data-testid="health-summary"
+        class="w-full flex items-center justify-between gap-3 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] px-4 py-3 text-left"
+        :aria-expanded="detailsOpen"
+        @click="detailsOpen = !detailsOpen"
+      >
+        <span class="flex items-center gap-3">
+          <span
+            class="w-3 h-3 rounded-full shrink-0"
+            :class="summaryDotClass"
           />
-          <ServiceStatusCard
-            name="Automation Engine"
-            :status="automationEngineStatus"
-            icon="🤖"
-            description="Автоматизация управления зонами"
-            :endpoint="automationEngineEndpoint"
-          />
-        </div>
-      </div>
+          <span class="text-sm font-medium text-[color:var(--text-primary)]">
+            {{ healthyCount }} из {{ totalCount }} в норме
+          </span>
+        </span>
+        <span class="text-xs text-[color:var(--text-muted)]">
+          {{ detailsOpen ? 'Скрыть детали' : 'Показать детали' }}
+        </span>
+      </button>
 
-      <!-- Цепочка состояния -->
-      <div>
-        <h3 class="text-sm font-semibold mb-3 text-[color:var(--text-primary)]">
-          Цепочка состояния
-        </h3>
-        <div class="bg-[color:var(--bg-elevated)] rounded-lg p-4 border border-[color:var(--border-muted)]">
-          <div class="flex items-center justify-between gap-4 text-xs">
-            <div class="flex items-center gap-2">
+      <div
+        v-if="isEngineer || detailsOpen"
+        class="space-y-4"
+      >
+        <div>
+          <h3 class="text-sm font-semibold mb-3 text-[color:var(--text-primary)]">
+            Основные компоненты
+          </h3>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div
+              v-for="service in coreServices"
+              :key="service.key"
+              class="space-y-1"
+            >
+              <ServiceStatusCard
+                :name="service.name"
+                :status="service.status"
+                :icon="service.icon"
+                :description="service.description"
+                :status-type="service.statusType"
+                :endpoint="service.endpoint"
+              />
               <div
-                class="w-3 h-3 rounded-full"
-                :class="getChainStatusClass('db')"
-              ></div>
-              <span class="text-[color:var(--text-muted)]">БД</span>
-            </div>
-            <span class="text-[color:var(--text-dim)]">→</span>
-            <div class="flex items-center gap-2">
-              <div
-                class="w-3 h-3 rounded-full"
-                :class="getChainStatusClass('mqtt')"
-              ></div>
-              <span class="text-[color:var(--text-muted)]">MQTT</span>
-            </div>
-            <span class="text-[color:var(--text-dim)]">→</span>
-            <div class="flex items-center gap-2">
-              <div
-                class="w-3 h-3 rounded-full"
-                :class="getChainStatusClass('ws')"
-              ></div>
-              <span class="text-[color:var(--text-muted)]">WebSocket</span>
-            </div>
-            <span class="text-[color:var(--text-dim)]">→</span>
-            <div class="flex items-center gap-2">
-              <div
-                class="w-3 h-3 rounded-full"
-                :class="getChainStatusClass('ui')"
-              ></div>
-              <span class="text-[color:var(--text-muted)]">UI</span>
+                v-if="isEngineer && extraText(service.healthKey)"
+                class="px-3 text-xs text-[color:var(--text-muted)]"
+              >
+                {{ extraText(service.healthKey) }}
+              </div>
             </div>
           </div>
-          <div class="mt-3 text-xs">
-            <div 
-              v-if="chainStatus.type === 'success'" 
-              class="text-[color:var(--accent-green)] flex items-center gap-2"
+        </div>
+
+        <div>
+          <h3 class="text-sm font-semibold mb-3 text-[color:var(--text-primary)]">
+            Python сервисы
+          </h3>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div
+              v-for="service in pythonServices"
+              :key="service.key"
+              class="space-y-1"
             >
-              <span class="text-base">✓</span>
-              <span>Все компоненты работают нормально</span>
-            </div>
-            <div 
-              v-else-if="chainStatus.type === 'warning'" 
-              class="text-[color:var(--accent-amber)] flex items-center gap-2"
-            >
-              <span class="text-base">⚠</span>
-              <span>{{ chainStatus.message }}</span>
-            </div>
-            <div 
-              v-else 
-              class="text-[color:var(--accent-red)] flex items-center gap-2"
-            >
-              <span class="text-base">✗</span>
-              <span>{{ chainStatus.message }}</span>
-            </div>
-          </div>
-          <!-- Легенда цветов -->
-          <div class="mt-3 pt-3 border-t border-[color:var(--border-muted)] text-xs text-[color:var(--text-dim)]">
-            <div class="flex items-center gap-4 flex-wrap">
-              <div class="flex items-center gap-1">
-                <div class="w-2 h-2 rounded-full bg-[color:var(--accent-green)]"></div>
-                <span>Работает</span>
-              </div>
-              <div class="flex items-center gap-1">
-                <div class="w-2 h-2 rounded-full bg-[color:var(--accent-amber)]"></div>
-                <span>Деградировано</span>
-              </div>
-              <div class="flex items-center gap-1">
-                <div class="w-2 h-2 rounded-full bg-[color:var(--text-dim)]"></div>
-                <span>Проверяется</span>
-              </div>
-              <div class="flex items-center gap-1">
-                <div class="w-2 h-2 rounded-full bg-[color:var(--accent-red)]"></div>
-                <span>Недоступно</span>
+              <ServiceStatusCard
+                :name="service.name"
+                :status="service.status"
+                :icon="service.icon"
+                :description="service.description"
+                :endpoint="service.endpoint"
+              />
+              <div
+                v-if="isEngineer && extraText(service.healthKey)"
+                class="px-3 text-xs text-[color:var(--text-muted)]"
+              >
+                {{ extraText(service.healthKey) }}
               </div>
             </div>
           </div>
         </div>
       </div>
 
-      <!-- Последнее обновление -->
+      <div>
+        <h3 class="text-sm font-semibold mb-3 text-[color:var(--text-primary)]">
+          Пайплайны
+        </h3>
+        <div class="bg-[color:var(--bg-elevated)] rounded-lg p-4 border border-[color:var(--border-muted)] space-y-3 text-xs">
+          <div>
+            <div class="font-medium text-[color:var(--text-primary)] mb-1">
+              Телеметрия
+            </div>
+            <div class="text-[color:var(--text-muted)]">
+              узел → MQTT → history-logger → PostgreSQL
+            </div>
+          </div>
+          <div>
+            <div class="font-medium text-[color:var(--text-primary)] mb-1">
+              Команды
+            </div>
+            <div class="text-[color:var(--text-muted)]">
+              Laravel → automation-engine → history-logger → MQTT → узел
+            </div>
+          </div>
+          <div>
+            <div class="font-medium text-[color:var(--text-primary)] mb-1">
+              UI live
+            </div>
+            <div class="text-[color:var(--text-muted)]">
+              WebSocket (Reverb) — отдельный канал обновления UI, не звено телеметрии
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div class="text-xs text-[color:var(--text-dim)] text-center">
         Последнее обновление: {{ lastUpdate ? formatTime(lastUpdate) : 'Никогда' }}
       </div>
@@ -173,9 +156,29 @@ import AppLayout from '@/Layouts/AppLayout.vue'
 import Button from '@/Components/Button.vue'
 import ServiceStatusCard from '@/Components/ServiceStatusCard.vue'
 import { useSystemStatus } from '@/composables/useSystemStatus'
+import { useRole } from '@/composables/useRole'
+import { api } from '@/services/api'
+import type { SystemHealthPayload } from '@/services/api/system'
 import { formatTime } from '@/utils/formatTime'
 
+type StatusType = 'service' | 'ws' | 'mqtt'
+
+interface MonitoredService {
+  key: string
+  name: string
+  status: string
+  icon: string
+  description: string
+  healthKey: string
+  statusType?: StatusType
+  endpoint?: string
+}
+
+const { isEngineer } = useRole()
+
 const refreshing = ref(false)
+const detailsOpen = ref(false)
+const healthPayload = ref<SystemHealthPayload | null>(null)
 let autoRefreshInterval: ReturnType<typeof setInterval> | null = null
 
 const {
@@ -193,70 +196,124 @@ const {
 const historyLoggerEndpoint = '/api/system/health (data.history_logger)'
 const automationEngineEndpoint = '/api/system/health (data.automation_engine)'
 
+const coreServices = computed<MonitoredService[]>(() => [
+  {
+    key: 'core',
+    name: 'Core API',
+    status: coreStatus.value ?? 'unknown',
+    icon: '⚙️',
+    description: 'Основной API сервис',
+    healthKey: 'app',
+  },
+  {
+    key: 'db',
+    name: 'Database',
+    status: dbStatus.value ?? 'unknown',
+    icon: '💾',
+    description: 'PostgreSQL база данных',
+    healthKey: 'db',
+  },
+  {
+    key: 'ws',
+    name: 'WebSocket',
+    status: wsStatus.value ?? 'unknown',
+    icon: '🔌',
+    description: 'WebSocket соединение',
+    healthKey: 'websocket',
+    statusType: 'ws',
+  },
+  {
+    key: 'mqtt',
+    name: 'MQTT Broker',
+    status: mqttStatus.value ?? 'unknown',
+    icon: '📡',
+    description: 'MQTT брокер',
+    healthKey: 'mqtt',
+    statusType: 'mqtt',
+  },
+])
 
-// Вычисляем состояние цепочки
-const isChainHealthy = computed(() => {
-  const criticalStatuses = ['fail', 'offline', 'disconnected']
-  return !criticalStatuses.includes(dbStatus.value ?? 'unknown') &&
-         !criticalStatuses.includes(mqttStatus.value ?? 'unknown') &&
-         !criticalStatuses.includes(wsStatus.value ?? 'unknown')
+const pythonServices = computed<MonitoredService[]>(() => [
+  {
+    key: 'history_logger',
+    name: 'History Logger',
+    status: historyLoggerStatus.value,
+    icon: '📝',
+    description: 'Логирование телеметрии в БД',
+    healthKey: 'history_logger',
+    endpoint: historyLoggerEndpoint,
+  },
+  {
+    key: 'automation_engine',
+    name: 'Automation Engine',
+    status: automationEngineStatus.value,
+    icon: '🤖',
+    description: 'Автоматизация управления зонами',
+    healthKey: 'automation_engine',
+    endpoint: automationEngineEndpoint,
+  },
+])
+
+const allServices = computed(() => [...coreServices.value, ...pythonServices.value])
+
+function isHealthyStatus(status: string): boolean {
+  return status === 'ok' || status === 'connected' || status === 'online' || status === 'success'
+}
+
+function isFailStatus(status: string): boolean {
+  return status === 'fail' || status === 'offline' || status === 'disconnected'
+}
+
+const healthyCount = computed(() => allServices.value.filter((service) => isHealthyStatus(service.status)).length)
+const totalCount = computed(() => allServices.value.length)
+
+const summaryDotClass = computed(() => {
+  if (allServices.value.some((service) => isFailStatus(service.status))) {
+    return 'bg-[color:var(--accent-red)]'
+  }
+  if (healthyCount.value === totalCount.value) {
+    return 'bg-[color:var(--accent-green)]'
+  }
+  return 'bg-[color:var(--accent-amber)]'
 })
 
-const chainStatus = computed(() => {
-  if (isChainHealthy.value) {
-    return { type: 'success', message: 'Все компоненты работают нормально' }
+function extraText(healthKey: string): string {
+  if (!isEngineer.value) {
+    return ''
   }
-  
-  const issues: string[] = []
-  if (['fail', 'offline', 'disconnected'].includes(dbStatus.value ?? 'unknown')) {
-    issues.push('БД недоступна')
+  const payload = healthPayload.value
+  if (!payload) {
+    return ''
   }
-  if (['fail', 'offline', 'disconnected'].includes(mqttStatus.value ?? 'unknown')) {
-    issues.push('MQTT недоступен')
-  }
-  if (['fail', 'offline', 'disconnected'].includes(wsStatus.value ?? 'unknown')) {
-    issues.push('WebSocket недоступен')
-  }
-  
-  if (issues.length > 0) {
-    return { type: 'error', message: issues.join(', ') }
-  }
-  
-  return { type: 'warning', message: 'Некоторые компоненты в состоянии деградации' }
-})
 
-function getChainStatusClass(component: 'db' | 'mqtt' | 'ws' | 'ui'): string {
-  let status: string
-  switch (component) {
-    case 'db':
-      status = dbStatus.value ?? 'unknown'
-      break
-    case 'mqtt':
-      status = mqttStatus.value ?? 'unknown'
-      break
-    case 'ws':
-      status = wsStatus.value ?? 'unknown'
-      break
-    case 'ui':
-      status = 'success' // UI всегда доступен, если страница загрузилась
-      break
-    default:
-      status = 'unknown'
+  const parts: string[] = []
+  const pick = (value: unknown) => {
+    if (!value || typeof value !== 'object') {
+      return
+    }
+    const rec = value as Record<string, unknown>
+    if (typeof rec.version === 'string' && rec.version.trim()) {
+      parts.push(`версия ${rec.version}`)
+    }
+    if (typeof rec.error === 'string' && rec.error.trim()) {
+      parts.push(rec.error)
+    }
   }
-  
-  switch (status) {
-    case 'success':
-    case 'connected':
-      return 'bg-[color:var(--accent-green)]'
-    case 'degraded':
-    case 'warning':
-      return 'bg-[color:var(--accent-amber)]'
-    case 'fail':
-    case 'offline':
-    case 'disconnected':
-      return 'bg-[color:var(--accent-red)]'
-    default:
-      return 'bg-[color:var(--text-dim)]'
+
+  pick(payload[healthKey])
+  const checks = payload.checks
+  if (checks && typeof checks === 'object') {
+    pick((checks as Record<string, unknown>)[healthKey])
+  }
+
+  return parts.join(' · ')
+}
+
+async function loadHealthDetails(): Promise<void> {
+  try {
+    healthPayload.value = await api.system.health()
+  } catch {
+    healthPayload.value = null
   }
 }
 
@@ -265,14 +322,14 @@ async function refreshStatus(): Promise<void> {
   try {
     await Promise.all([
       checkHealth(),
-      checkWebSocketStatus(),
+      Promise.resolve(checkWebSocketStatus()),
+      loadHealthDetails(),
     ])
   } finally {
     refreshing.value = false
   }
 }
 
-// Автообновление каждые 30 секунд
 onMounted(() => {
   refreshStatus()
   autoRefreshInterval = setInterval(() => {

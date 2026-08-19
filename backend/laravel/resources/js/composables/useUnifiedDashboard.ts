@@ -1,4 +1,4 @@
-import { computed, onMounted, onUnmounted, ref, watch, type Ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch, type ComputedRef, type Ref } from 'vue'
 import { router } from '@inertiajs/vue3'
 import { useTelemetry } from '@/composables/useTelemetry'
 import { useCycleCenterActions } from '@/composables/useCycleCenterActions'
@@ -98,13 +98,38 @@ export function createThrottledTask(
   return { schedule, cancel }
 }
 
+export function cropGroupLabel(zone: UnifiedZone): string {
+  return zone.crop || zone.plant?.name || zone.recipe?.name || 'Без культуры'
+}
+
+export function groupZonesByCrop(zones: UnifiedZone[]): Array<{ crop: string; zones: UnifiedZone[] }> {
+  const groups = new Map<string, UnifiedZone[]>()
+
+  for (const zone of zones) {
+    const label = cropGroupLabel(zone)
+    const bucket = groups.get(label)
+    if (bucket) {
+      bucket.push(zone)
+    } else {
+      groups.set(label, [zone])
+    }
+  }
+
+  return Array.from(groups.entries()).map(([crop, grouped]) => ({
+    crop,
+    zones: grouped,
+  }))
+}
+
 export function useUnifiedDashboard(options: {
   zones: Ref<UnifiedZone[]>
   showToast: ToastLike
+  defaultDense?: boolean
 }): ReturnType<typeof useCycleCenterView> & ReturnType<typeof useCycleCenterActions> & {
   sparklines: Ref<Record<number, ZoneSparklineSeries>>
   sparklineColor: (zone: UnifiedZone) => string
   reloadUnified: () => Promise<void>
+  zonesByCrop: ComputedRef<Array<{ crop: string; zones: UnifiedZone[] }>>
 } {
   const { fetchHistory } = useTelemetry()
   const { subscribeToGlobalEvents, subscribeToAlerts } = useWebSocket()
@@ -123,10 +148,15 @@ export function useUnifiedDashboard(options: {
   }
 
   const view = useCycleCenterView({ zones: zonesAsSummary, statusFilterMode: 'zone' })
+  if (options.defaultDense) {
+    view.denseView.value = true
+    view.perPage.value = 12
+  }
   const actions = useCycleCenterActions({
     showToast: options.showToast,
     reloadCenter: reloadUnified,
   })
+  const zonesByCrop = computed(() => groupZonesByCrop(view.pagedZones.value as UnifiedZone[]))
 
   function loadSparklinesForZones(zones: UnifiedZone[]): void {
     const now = Date.now()
@@ -218,6 +248,7 @@ export function useUnifiedDashboard(options: {
     sparklines,
     sparklineColor,
     reloadUnified,
+    zonesByCrop,
   }
 }
 

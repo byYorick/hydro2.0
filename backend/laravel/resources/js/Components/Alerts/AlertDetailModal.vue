@@ -14,7 +14,10 @@
       <div class="rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] px-3 py-2">
         <div class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 font-mono text-xs">
           <span class="text-[color:var(--text-dim)] whitespace-nowrap">тип</span>
-          <span class="font-sans font-semibold text-[color:var(--text-primary)] break-words">{{ getAlertTitle(alert) }}</span>
+          <span
+            class="font-sans font-semibold text-[color:var(--text-primary)] break-words"
+            data-testid="alert-human-title"
+          >{{ humanTitle }}</span>
 
           <span class="text-[color:var(--text-dim)] whitespace-nowrap">статус</span>
           <span class="font-sans text-[color:var(--text-primary)]">{{ translateStatus(alert.status) }}</span>
@@ -36,12 +39,12 @@
 
           <template v-if="alert.source">
             <span class="text-[color:var(--text-dim)] whitespace-nowrap">источник</span>
-            <span class="font-sans text-[color:var(--text-primary)]">{{ alert.source }}</span>
+            <span class="font-sans text-[color:var(--text-primary)]">{{ translateAlertSource(alert.source) }}</span>
           </template>
 
           <template v-if="alert.severity">
             <span class="text-[color:var(--text-dim)] whitespace-nowrap">критичность</span>
-            <span class="text-[color:var(--text-primary)]">{{ alert.severity }}</span>
+            <span class="text-[color:var(--text-primary)]">{{ translateAlertSeverity(alert.severity) }}</span>
           </template>
 
           <template v-if="alert.node_uid">
@@ -191,7 +194,7 @@
         data-testid="zone-alert-resolve-button"
         @click="$emit('resolve')"
       >
-        {{ resolveLoading ? 'Решаю...' : 'Решить' }}
+        {{ resolveLoading ? 'Отмечаем...' : 'Отметить как решённый' }}
       </Button>
     </template>
   </Modal>
@@ -203,7 +206,7 @@ import { Link } from '@inertiajs/vue3'
 import Button from '@/Components/Button.vue'
 import Modal from '@/Components/Modal.vue'
 import { useRole } from '@/composables/useRole'
-import { translateStatus } from '@/utils/i18n'
+import { translateAlertSeverity, translateAlertSource, translateStatus, formatAlertHumanTitle } from '@/utils/i18n'
 import type { Alert } from '@/types/Alert'
 import {
   detailsToString,
@@ -252,6 +255,9 @@ const detailsContextSummary = computed(() => (props.alert ? getAlertDetailsConte
 const message = computed(() => (props.alert ? getAlertMessage(props.alert) : ''))
 const description = computed(() => (props.alert ? getAlertDescription(props.alert) : ''))
 const recommendation = computed(() => (props.alert ? getAlertRecommendation(props.alert) : ''))
+const humanTitle = computed(() => (
+  props.alert ? formatAlertHumanTitle(props.alert, getAlertTitle(props.alert)) : ''
+))
 const zoneHref = computed(() => {
   const zoneId = props.alert?.zone_id
   return zoneId ? zoneAlertsTabUrl(zoneId) : null

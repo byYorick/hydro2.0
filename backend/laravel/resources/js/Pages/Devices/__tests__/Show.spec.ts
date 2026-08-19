@@ -263,7 +263,7 @@ describe('Devices/Show.vue', () => {
   it('отображает статус устройства', () => {
     const wrapper = mount(DevicesShow)
     
-    expect(wrapper.text()).toContain('ONLINE')
+    expect(wrapper.text()).toContain('Онлайн')
     const badge = wrapper.findComponent({ name: 'Badge' })
     expect(badge.exists()).toBe(true)
     expect(badge.props('variant')).toBe('success')
@@ -272,7 +272,7 @@ describe('Devices/Show.vue', () => {
   it('отображает тип устройства', () => {
     const wrapper = mount(DevicesShow)
     
-    expect(wrapper.text()).toContain('Type: ph')
+    expect(wrapper.text()).toContain('Тип: ph')
   })
 
   it('отображает метаданные ноды в header', () => {
@@ -286,9 +286,9 @@ describe('Devices/Show.vue', () => {
     expect(wrapper.text()).toContain('Heartbeat:')
     expect(wrapper.text()).toContain('RSSI:')
     expect(wrapper.text()).toContain('-62 dBm')
-    expect(wrapper.text()).toContain('Heap:')
+    expect(wrapper.text()).toContain('Память:')
     expect(wrapper.text()).toContain('96 KB')
-    expect(wrapper.text()).toContain('Uptime:')
+    expect(wrapper.text()).toContain('Время работы:')
     expect(wrapper.text()).toContain('1ч 1м')
     expect(wrapper.text()).toContain('Привязка:')
     expect(wrapper.text()).toContain('Zone A1')
@@ -297,7 +297,7 @@ describe('Devices/Show.vue', () => {
   it('отображает версию прошивки', () => {
     const wrapper = mount(DevicesShow)
     
-    expect(wrapper.text()).toContain('FW: 1.0.0')
+    expect(wrapper.text()).toContain('Прошивка: 1.0.0')
   })
 
   it('показывает блок калибровки pH для привязанной ph-ноды', async () => {
@@ -326,7 +326,7 @@ describe('Devices/Show.vue', () => {
 
     const wrapper = mount(DevicesShow)
 
-    expect(wrapper.text()).toContain('Zone: -')
+    expect(wrapper.text()).toContain('Зона: -')
     expect(wrapper.text()).toContain('Устройство не привязано к зоне')
   })
 
@@ -339,7 +339,7 @@ describe('Devices/Show.vue', () => {
 
     const wrapper = mount(DevicesShow)
 
-    expect(wrapper.text()).toContain('Zone: Zone #1')
+    expect(wrapper.text()).toContain('Зона: Зона #1')
     expect(wrapper.text()).toContain('Привязано к зоне')
     expect(wrapper.text()).not.toContain('Устройство не привязано к зоне')
 
@@ -480,9 +480,18 @@ describe('Devices/Show.vue', () => {
 
     const wrapper = mount(DevicesShow)
 
-    expect(wrapper.text()).toContain('OFFLINE')
+    expect(wrapper.text()).toContain('Офлайн')
     const badge = wrapper.findComponent({ name: 'Badge' })
     expect(badge.props('variant')).toBe('danger')
+  })
+
+  it('показывает неизвестный статус устройства на русском', () => {
+    sampleDevice.status = 'unknown'
+
+    const wrapper = mount(DevicesShow)
+
+    expect(wrapper.text()).toContain('Неизвестно')
+    expect(wrapper.text()).not.toContain('UNKNOWN')
   })
 
   it('форматирует NodeConfig как JSON после раскрытия', async () => {

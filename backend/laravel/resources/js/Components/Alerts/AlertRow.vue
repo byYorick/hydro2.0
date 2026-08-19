@@ -13,8 +13,11 @@
     </Badge>
     <div class="flex-1 min-w-0">
       <div class="flex flex-wrap items-center gap-1.5">
-        <span class="text-xs font-semibold text-[color:var(--text-primary)] truncate">
-          {{ getAlertTitle(item) }}
+        <span
+          class="text-xs font-semibold text-[color:var(--text-primary)] truncate"
+          data-testid="alert-human-title"
+        >
+          {{ humanTitle }}
         </span>
         <span
           v-if="item.code"
@@ -56,7 +59,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import Badge from '@/Components/Badge.vue'
-import { translateStatus } from '@/utils/i18n'
+import { translateStatus, formatAlertHumanTitle } from '@/utils/i18n'
 import type { Alert } from '@/types/Alert'
 import {
   alertProcessStoppingKind,
@@ -75,6 +78,8 @@ import {
 const props = defineProps<{
   item: Alert
 }>()
+
+const humanTitle = computed(() => formatAlertHumanTitle(props.item, getAlertTitle(props.item)))
 
 const processStoppingKind = computed(() => alertProcessStoppingKind(props.item.code))
 

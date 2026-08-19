@@ -1,3 +1,6 @@
+<!--
+  @deprecated Не подключать к маршрутам. Production home — Pages/Dashboard/Index.vue. Удаление — отдельный PR.
+-->
 <template>
   <div class="space-y-4">
     <!-- ══════════════════════════════════════════════════════════════
@@ -328,6 +331,7 @@
 </template>
 
 <script setup lang="ts">
+/** @deprecated Не подключать к маршрутам. Production home — Pages/Dashboard/Index.vue. Удаление — отдельный PR. */
 import { computed, ref, onMounted } from 'vue'
 import { Link } from '@inertiajs/vue3'
 import Badge from '@/Components/Badge.vue'

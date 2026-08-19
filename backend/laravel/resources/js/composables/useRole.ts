@@ -38,8 +38,8 @@ export function useRole() {
     isAdmin.value || isAgronomist.value || isEngineer.value || isOperator.value
   )
   
-  const canEditRecipes = computed(() => 
-    isAdmin.value || isAgronomist.value || isOperator.value
+  const canEditRecipes = computed(() =>
+    isAdmin.value || isAgronomist.value
   )
   
   const canResolveAlerts = computed(() => 
@@ -48,6 +48,25 @@ export function useRole() {
   
   // Конфигурация сущностей и инфраструктуры (CRUD)
   const canConfigureEntities = computed(() =>
+    isAdmin.value || isAgronomist.value
+  )
+
+  // Добавление/привязка узлов (не agronomist)
+  const canConfigureDevices = computed(() =>
+    isEngineer.value || isAdmin.value
+  )
+
+  const canSubscribeUnassignedDevices = computed(() =>
+    canConfigureDevices.value
+  )
+
+  // AE3 в /settings: admin write, engineer diagnostics (не operator, не agronomist)
+  const canEditAutomationEngineSettings = computed(() =>
+    isAdmin.value || isEngineer.value
+  )
+
+  // Мастер /launch и кнопка «Запустить цикл»
+  const canLaunchCycle = computed(() =>
     isAdmin.value || isAgronomist.value
   )
 
@@ -95,6 +114,10 @@ export function useRole() {
     canDiagnose,
     canCreateCommands,
     canEditRecipes,
+    canConfigureDevices,
+    canSubscribeUnassignedDevices,
+    canEditAutomationEngineSettings,
+    canLaunchCycle,
     canResolveAlerts,
     canConfigureEntities,
     canOperateCycles,

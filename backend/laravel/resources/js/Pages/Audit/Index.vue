@@ -1,9 +1,17 @@
 <template>
   <AppLayout>
-    <h1 class="text-lg font-semibold mb-4">
-      Аудит
-    </h1>
-    
+    <div class="space-y-4">
+      <h1 class="text-lg font-semibold">
+        Журнал
+      </h1>
+      <Tabs
+        v-model="journalSection"
+        data-testid="journal-tabs"
+        :tabs="journalTabs"
+        aria-label="Разделы журнала"
+      />
+
+      <div v-if="journalSection === 'audit'">
     <Card class="mb-4">
       <div class="mb-3 flex flex-wrap items-center gap-2">
         <label class="text-sm text-[color:var(--text-muted)]">Уровень:</label>
@@ -189,6 +197,12 @@
         </Button>
       </template>
     </Modal>
+      </div>
+      <LogsIndex
+        v-else
+        embedded
+      />
+    </div>
   </AppLayout>
 </template>
 
@@ -199,6 +213,9 @@ import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
 import Button from '@/Components/Button.vue'
 import Badge from '@/Components/Badge.vue'
+import Tabs from '@/Components/Tabs.vue'
+import LogsIndex from '@/Pages/Logs/Index.vue'
+import { useUrlState } from '@/composables/useUrlState'
 
 type BadgeVariant = 'success' | 'warning' | 'danger' | 'info' | 'neutral' | 'secondary'
 import Modal from '@/Components/Modal.vue'
@@ -220,9 +237,22 @@ interface PageProps {
   [key: string]: any
 }
 
+type JournalSection = 'audit' | 'logs'
+
 const page = usePage<PageProps>()
 const all = computed(() => (page.props.logs || []) as SystemLog[])
 const { showToast } = useToast()
+
+const journalTabs = [
+  { id: 'audit', label: 'Аудит' },
+  { id: 'logs', label: 'Системные логи' },
+]
+
+const journalSection = useUrlState<JournalSection>({
+  key: 'tab',
+  defaultValue: 'audit',
+  parse: (value) => (value === 'logs' ? 'logs' : 'audit'),
+})
 
 const headers = ['Уровень', 'Время', 'Сообщение', 'Действия']
 const levelFilter = ref<string>('')

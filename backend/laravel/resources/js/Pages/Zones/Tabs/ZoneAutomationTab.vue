@@ -2,12 +2,24 @@
   <div class="zone-automation-tab space-y-6">
     <header class="space-y-1">
       <h1 class="text-lg font-semibold text-[color:var(--text-primary)]">
-        Автоматика зоны
+        {{ innerSectionTitle }}
       </h1>
       <p class="text-sm text-[color:var(--text-muted)]">
-        Процесс AE3, операторское управление, профиль и параметры движка
+        {{ innerSectionDescription }}
       </p>
     </header>
+
+    <div
+      class="surface-card border border-[color:var(--border-muted)] rounded-xl p-1.5"
+      data-testid="automation-inner-tabs"
+    >
+      <Tabs
+        :model-value="activeInnerSection"
+        :tabs="innerSectionTabs"
+        aria-label="Разделы вкладки автоматики"
+        @update:model-value="onInnerSectionSelect"
+      />
+    </div>
 
     <div
       v-if="!zoneId"
@@ -17,70 +29,147 @@
     </div>
 
     <template v-else>
-      <ZoneAutomationRuntimeSection
-        :zone-id="zoneId"
-        :fallback-tanks-count="waterForm.tanksCount"
-        :fallback-system-type="waterForm.systemType"
-        :automation-state-refresh-seq="automationStateRefreshSeq ?? 0"
-        :pump-calibration-save-seq="props.pumpCalibrationSaveSeq ?? 0"
-        @state-snapshot="handleProcessStateSnapshot"
-      />
+      <div
+        v-if="activeInnerSection === 'solution'"
+        class="space-y-4"
+        data-testid="automation-section-solution"
+      >
+        <ZoneAutomationConfigSection>
+          <ConfigModeCard
+            v-if="props.zoneId"
+            :zone-id="Number(props.zoneId)"
+            :control-mode="configModeControlMode"
+            :role="currentUserRole"
+            @changed="onConfigModeChanged"
+            @state-loaded="onConfigModeStateLoaded"
+          />
+          <RecipePhaseLiveEditCard
+            v-if="liveEditEnabled && activeGrowCycleId"
+            :grow-cycle-id="activeGrowCycleId"
+            :initial="recipePhaseInitial"
+            @applied="onConfigModeChanged"
+          />
+          <CorrectionLiveEditCard
+            v-if="liveEditEnabled && props.zoneId"
+            :zone-id="Number(props.zoneId)"
+            @applied="onCorrectionLiveEditApplied"
+          />
+          <ConfigChangesTimeline
+            v-if="props.zoneId"
+            :zone-id="Number(props.zoneId)"
+            :reload-key="configChangesReloadKey"
+          />
+        </ZoneAutomationConfigSection>
 
-      <ZoneAutomationOpsPanel
-        :can-operate-automation="canOperateAutomation"
-        :user-role="currentUserRole"
-        :automation-control-mode="automationControlMode"
-        :control-mode-available="controlModeAvailable"
-        :allowed-manual-steps="allowedManualSteps"
-        :automation-control-mode-loading="automationControlModeLoading"
-        :automation-control-mode-saving="automationControlModeSaving"
-        :manual-step-loading="manualStepLoading"
-        :pending-control-mode-value="pendingControlModeValue"
-        :automation-state-meta-label="automationStateMetaLabel"
-        :irrigation-action-loading="props.irrigationActionLoading ?? false"
-        :diagnostics-action-loading="diagnosticsLoading"
-        :solution-change-action-loading="solutionChangeLoading"
-        :current-stage="automationCurrentStage"
-        :workflow-phase="lastAutomationSnapshot?.workflow_phase ?? null"
-        @select-mode="onControlModeSelect"
-        @run-manual-step="runManualStep"
-        @start-irrigation="emit('start-irrigation')"
-        @force-irrigation="emit('force-irrigation')"
-        @run-diagnostics="runDiagnostics"
-        @start-solution-change="runSolutionChange"
-      />
+        <ZoneAutomationAccordionSection
+          title="Коррекция и калибровка"
+          :default-open="true"
+        >
+          <ZoneCorrectionCalibrationStack
+            :zone-id="Number(zoneId)"
+            :sensor-calibration-settings="sensorCalibrationSettings"
+            :phase-targets="currentRecipePhaseTargets"
+            :save-success-seq="props.pumpCalibrationSaveSeq ?? 0"
+            :run-success-seq="props.pumpCalibrationRunSeq ?? 0"
+            @open-pump-calibration="emit('open-pump-calibration')"
+          />
+        </ZoneAutomationAccordionSection>
+      </div>
 
-      <ZoneAutomationConfigSection>
-        <ConfigModeCard
-          v-if="props.zoneId"
-          :zone-id="Number(props.zoneId)"
-          :control-mode="configModeControlMode"
-          :role="currentUserRole"
-          @changed="onConfigModeChanged"
-          @state-loaded="onConfigModeStateLoaded"
+      <div
+        v-if="activeInnerSection === 'actions'"
+        data-testid="automation-section-actions"
+      >
+        <ZoneAutomationOpsPanel
+          :can-operate-automation="canOperateAutomation"
+          :user-role="currentUserRole"
+          :automation-control-mode="automationControlMode"
+          :control-mode-available="controlModeAvailable"
+          :allowed-manual-steps="allowedManualSteps"
+          :automation-control-mode-loading="automationControlModeLoading"
+          :automation-control-mode-saving="automationControlModeSaving"
+          :manual-step-loading="manualStepLoading"
+          :pending-control-mode-value="pendingControlModeValue"
+          :automation-state-meta-label="automationStateMetaLabel"
+          :irrigation-action-loading="props.irrigationActionLoading ?? false"
+          :diagnostics-action-loading="diagnosticsLoading"
+          :solution-change-action-loading="solutionChangeLoading"
+          :current-stage="automationCurrentStage"
+          :workflow-phase="lastAutomationSnapshot?.workflow_phase ?? null"
+          @select-mode="onControlModeSelect"
+          @run-manual-step="runManualStep"
+          @start-irrigation="emit('start-irrigation')"
+          @force-irrigation="emit('force-irrigation')"
+          @run-diagnostics="runDiagnostics"
+          @start-solution-change="runSolutionChange"
         />
-        <RecipePhaseLiveEditCard
-          v-if="liveEditEnabled && activeGrowCycleId"
-          :grow-cycle-id="activeGrowCycleId"
-          :initial="recipePhaseInitial"
-          @applied="onConfigModeChanged"
+      </div>
+
+      <div
+        v-if="activeInnerSection === 'process'"
+        data-testid="automation-section-process"
+      >
+        <ZoneAutomationRuntimeSection
+          :zone-id="zoneId"
+          :fallback-tanks-count="waterForm.tanksCount"
+          :fallback-system-type="waterForm.systemType"
+          :automation-state-refresh-seq="automationStateRefreshSeq ?? 0"
+          :pump-calibration-save-seq="props.pumpCalibrationSaveSeq ?? 0"
+          @state-snapshot="handleProcessStateSnapshot"
         />
-        <CorrectionLiveEditCard
-          v-if="liveEditEnabled && props.zoneId"
-          :zone-id="Number(props.zoneId)"
-          @applied="onCorrectionLiveEditApplied"
-        />
-        <ConfigChangesTimeline
-          v-if="props.zoneId"
-          :zone-id="Number(props.zoneId)"
-          :reload-key="configChangesReloadKey"
-        />
-      </ZoneAutomationConfigSection>
+      </div>
 
       <div class="space-y-3">
-        <h2 class="text-sm font-semibold text-[color:var(--text-primary)] px-0.5">
-          Настройки зоны
-        </h2>
+        <section
+          class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl overflow-hidden"
+          data-testid="automation-technical-details"
+        >
+          <button
+            v-if="collapseTechnicalDetails"
+            type="button"
+            class="w-full flex items-center justify-between gap-3 p-4 text-left hover:bg-[color:var(--bg-elevated)] transition-colors"
+            data-testid="automation-technical-details-toggle"
+            :aria-expanded="showTechnicalDetails"
+            @click="showTechnicalDetails = !showTechnicalDetails"
+          >
+            <span class="text-base font-semibold text-[color:var(--text-primary)]">
+              Технические детали
+            </span>
+            <svg
+              class="shrink-0 w-4 h-4 text-[color:var(--text-dim)] transition-transform duration-200"
+              :class="showTechnicalDetails ? 'rotate-180' : ''"
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 20 20"
+              fill="currentColor"
+              aria-hidden="true"
+            >
+              <path
+                fill-rule="evenodd"
+                d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"
+                clip-rule="evenodd"
+              />
+            </svg>
+          </button>
+          <div
+            v-else
+            class="px-4 pt-4"
+          >
+            <h2 class="text-sm font-semibold text-[color:var(--text-primary)]">
+              Технические детали
+            </h2>
+          </div>
+
+          <div
+            v-if="technicalDetailsVisible"
+            class="px-4 pb-4 space-y-4"
+            :class="collapseTechnicalDetails ? 'border-t border-[color:var(--border-muted)]' : ''"
+            data-testid="automation-technical-details-body"
+          >
+            <div :class="collapseTechnicalDetails ? 'pt-4' : 'pt-2'">
+              <div class="space-y-3">
+                <h2 class="text-sm font-semibold text-[color:var(--text-primary)] px-0.5">
+                  Настройки зоны
+                </h2>
 
         <ZoneAutomationAccordionSection
           title="Профиль зоны"
@@ -88,7 +177,7 @@
         >
           <p class="text-xs text-[color:var(--text-dim)] leading-relaxed">
             Документ автоматики зоны в БД (<code class="text-[11px] text-[color:var(--text-muted)]">zone.logic_profile</code>).
-            Климат теплицы — отдельно на странице теплицы; канонические pH/EC цикла — в фазе рецепта и в блоке «Коррекция и калибровка» ниже.
+            Климат теплицы — отдельно на странице теплицы; канонические pH/EC цикла — в фазе рецепта и в разделе «Раствор».
           </p>
           <AutomationProfileCard
             :can-configure-automation="canConfigureAutomation"
@@ -168,17 +257,6 @@
           </div>
         </ZoneAutomationAccordionSection>
 
-        <ZoneAutomationAccordionSection title="Коррекция и калибровка">
-          <ZoneCorrectionCalibrationStack
-            :zone-id="Number(zoneId)"
-            :sensor-calibration-settings="sensorCalibrationSettings"
-            :phase-targets="currentRecipePhaseTargets"
-            :save-success-seq="props.pumpCalibrationSaveSeq ?? 0"
-            :run-success-seq="props.pumpCalibrationRunSeq ?? 0"
-            @open-pump-calibration="emit('open-pump-calibration')"
-          />
-        </ZoneAutomationAccordionSection>
-
         <ZoneAutomationAccordionSection title="Настройки Automation Engine">
           <template #badge>
             <Badge variant="info">
@@ -253,6 +331,7 @@
           <pre
             v-if="showRuntimePayload"
             class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] p-3 text-xs text-[color:var(--text-primary)] overflow-auto max-h-[520px]"
+            data-testid="automation-runtime-payload"
           >{{ automationEngineRuntimePayloadPretty }}</pre>
 
           <AIPredictionsSection
@@ -263,6 +342,10 @@
             :default-expanded="false"
           />
         </ZoneAutomationAccordionSection>
+              </div>
+            </div>
+          </div>
+        </section>
       </div>
 
       <ZoneAutomationEditWizard
@@ -297,8 +380,10 @@ import CorrectionLiveEditCard from '@/Components/ZoneAutomation/CorrectionLiveEd
 import RecipePhaseLiveEditCard from '@/Components/ZoneAutomation/RecipePhaseLiveEditCard.vue'
 import Badge from '@/Components/Badge.vue'
 import Button from '@/Components/Button.vue'
+import Tabs from '@/Components/Tabs.vue'
 import ZoneAutomationEditWizard from '@/Pages/Zones/Tabs/ZoneAutomationEditWizard.vue'
 import { useRole } from '@/composables/useRole'
+import { useUrlState } from '@/composables/useUrlState'
 import { useAutomationCommandTemplates } from '@/composables/useAutomationCommandTemplates'
 import { useAutomationDefaults } from '@/composables/useAutomationDefaults'
 import { resolveRecipePhasePidTargets } from '@/composables/recipePhasePidTargets'
@@ -348,8 +433,67 @@ const sensorCalibrationSettings = useSensorCalibrationSettings()
 const automationDefaults = useAutomationDefaults()
 const automationCommandTemplates = useAutomationCommandTemplates()
 
+type AutomationInnerSection = 'solution' | 'actions' | 'process'
+
+const INNER_SECTION_META: Record<AutomationInnerSection, { title: string; description: string }> = {
+  solution: {
+    title: 'Раствор',
+    description: 'Цели фазы, коррекция и live-правки раствора',
+  },
+  actions: {
+    title: 'Действия',
+    description: 'Полив, режим управления и ручные шаги',
+  },
+  process: {
+    title: 'Процесс',
+    description: 'Состояние автоматики и ход оборудования',
+  },
+}
+
+function defaultAutomationInnerSection(role: string): AutomationInnerSection {
+  if (role === 'agronomist') {
+    return 'solution'
+  }
+  if (role === 'engineer' || role === 'admin') {
+    return 'process'
+  }
+  return 'actions'
+}
+
+function parseAutomationInnerSection(raw: string | null, fallback: AutomationInnerSection): AutomationInnerSection {
+  if (raw === 'solution' || raw === 'actions' || raw === 'process') {
+    return raw
+  }
+  return fallback
+}
+
 const { role: userRoleRef } = useRole()
 const currentUserRole = computed(() => String(userRoleRef.value ?? 'viewer'))
+const roleDefaultInnerSection = defaultAutomationInnerSection(currentUserRole.value)
+const activeInnerSection = useUrlState<AutomationInnerSection>({
+  key: 'auto',
+  defaultValue: roleDefaultInnerSection,
+  parse: (raw) => parseAutomationInnerSection(raw, roleDefaultInnerSection),
+})
+const innerSectionTabs = [
+  { id: 'solution', label: 'Раствор', testId: 'automation-inner-tab-solution' },
+  { id: 'actions', label: 'Действия', testId: 'automation-inner-tab-actions' },
+  { id: 'process', label: 'Процесс', testId: 'automation-inner-tab-process' },
+]
+const innerSectionTitle = computed(() => INNER_SECTION_META[activeInnerSection.value].title)
+const innerSectionDescription = computed(() => INNER_SECTION_META[activeInnerSection.value].description)
+const collapseTechnicalDetails = computed(() =>
+  ['operator', 'agronomist', 'viewer'].includes(currentUserRole.value),
+)
+const showTechnicalDetails = ref(false)
+const technicalDetailsVisible = computed(() =>
+  collapseTechnicalDetails.value ? showTechnicalDetails.value : true,
+)
+
+function onInnerSectionSelect(value: string): void {
+  activeInnerSection.value = parseAutomationInnerSection(value, roleDefaultInnerSection)
+}
+
 const configChangesReloadKey = ref(0)
 const configModeState = ref<import('@/services/api/zoneConfigMode').ConfigModeState | null>(null)
 function onConfigModeChanged(state?: import('@/services/api/zoneConfigMode').ConfigModeState): void {

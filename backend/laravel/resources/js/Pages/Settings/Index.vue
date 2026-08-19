@@ -66,7 +66,7 @@
             class="settings-kpi-chip"
             title="Политика auto-resolve"
           >
-            <span class="settings-kpi-chip__label">AE3 alerts</span>
+            <span class="settings-kpi-chip__label">Политики алертов</span>
             <span class="settings-kpi-chip__value settings-kpi-chip__value--sm">{{ alertPolicyModeLabel }}</span>
           </div>
         </div>
@@ -636,6 +636,7 @@ import Pagination from '@/Components/Pagination.vue'
 import { translateRole } from '@/utils/i18n'
 import { logger } from '@/utils/logger'
 import { api } from '@/services/api'
+import { useRole } from '@/composables/useRole'
 import { useAutomationConfig } from '@/composables/useAutomationConfig'
 import { useToast } from '@/composables/useToast'
 import { useSimpleModal } from '@/composables/useModal'
@@ -646,10 +647,7 @@ const page = usePage()
 const currentUser = computed(() => page.props.auth?.user)
 const currentUserId = computed(() => currentUser.value?.id)
 const isAdmin = computed(() => currentUser.value?.role === 'admin')
-const canEditAutomationEngineSettings = computed(() => {
-  const role = String(currentUser.value?.role || 'viewer')
-  return ['admin', 'engineer', 'operator', 'agronomist'].includes(role)
-})
+const { canEditAutomationEngineSettings } = useRole()
 
 const profileInitial = computed(() => {
   const name = String(currentUser.value?.name || '?').trim()
@@ -1162,7 +1160,6 @@ onMounted(() => {
   applyPreferences(currentUser.value?.preferences || null)
   loadPreferences()
   if (canEditAutomationEngineSettings.value) {
-    activeSection.value = 'automation'
     void loadAutomationEngineSettings({ silent: true })
     void loadAlertPolicies({ silent: true })
   }

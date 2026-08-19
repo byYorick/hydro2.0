@@ -1,10 +1,15 @@
 import { mount } from '@vue/test-utils'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { router } from '@inertiajs/vue3'
 import ZoneDashboardCard from '@/Components/ZoneDashboardCard.vue'
 import CombinedTelemetrySparkline from '@/Components/ZoneDashboardCard/CombinedTelemetrySparkline.vue'
 import MetricPillBar from '@/Components/ZoneDashboardCard/MetricPillBar.vue'
 import CycleProgressStack from '@/Components/ZoneDashboardCard/CycleProgressStack.vue'
+
+const { pauseMock, pageAuth } = vi.hoisted(() => ({
+  pauseMock: vi.fn(),
+  pageAuth: { role: 'agronomist' as string | undefined },
+}))
 
 vi.mock('@inertiajs/vue3', () => ({
   Link: {
@@ -15,6 +20,25 @@ vi.mock('@inertiajs/vue3', () => ({
   router: {
     visit: vi.fn(),
   },
+  usePage: () => ({
+    props: {
+      auth: {
+        user: { role: pageAuth.role },
+      },
+    },
+  }),
+}))
+
+vi.mock('@/services/api/growCycles', () => ({
+  growCyclesApi: {
+    pause: pauseMock,
+  },
+}))
+
+vi.mock('@/composables/useToast', () => ({
+  useToast: () => ({
+    showToast: vi.fn(),
+  }),
 }))
 
 vi.mock('@/Components/Badge.vue', () => ({
@@ -46,6 +70,7 @@ function makeZone(overrides: Record<string, unknown> = {}) {
       temperature: { min: 22.5, max: 25.5 },
     },
     cycle: {
+      id: 501,
       status: 'running',
       progress: { overall_pct: 10 },
       planting_at: '2026-04-29T00:00:00.000Z',
@@ -78,6 +103,12 @@ function makeZone(overrides: Record<string, unknown> = {}) {
 }
 
 describe('ZoneDashboardCard', () => {
+  beforeEach(() => {
+    pageAuth.role = 'agronomist'
+    pauseMock.mockReset().mockResolvedValue(undefined)
+    vi.mocked(router.visit).mockClear()
+  })
+
   it('рендерит ключевые поля карточки', () => {
     const wrapper = mount(ZoneDashboardCard, {
       props: {
@@ -96,13 +127,20 @@ describe('ZoneDashboardCard', () => {
     expect(wrapper.text()).toContain('Устр: 0/3')
     expect(wrapper.text()).toContain('Алертов: 4')
     expect(wrapper.text()).toContain('Обновление:')
+    expect(wrapper.findAll('.badge').length).toBeLessThanOrEqual(2)
   })
 
-  it('показывает текущий workflow-статус зоны в шапке', () => {
+  it('показывает здоровье status-chip и не дублирует workflow отдельным Badge', () => {
     const wrapper = mount(ZoneDashboardCard, {
       props: {
         zone: makeZone({
           alerts_count: 0,
+          telemetry: {
+            ph: 5.45,
+            ec: 1.9,
+            temperature: 23.4,
+            updated_at: new Date().toISOString(),
+          },
           system_state: { label: 'Готов', phase: 'ready', stale: false },
         }),
       },
@@ -110,7 +148,10 @@ describe('ZoneDashboardCard', () => {
 
     const status = wrapper.find('[data-testid="zone-card-current-status"]')
     expect(status.exists()).toBe(true)
-    expect(status.text()).toContain('Готов')
+    expect(status.text()).toContain('ОК')
+    expect(wrapper.findAll('.badge').length).toBeLessThanOrEqual(2)
+    expect(wrapper.findAll('.badge').some((badge) => badge.text().includes('Готов'))).toBe(false)
+    expect(wrapper.findAll('.badge').some((badge) => badge.text().includes('Авария'))).toBe(false)
   })
 
   it('в non-dense показывает только выбранную метрику на графике и переключает вкладки', async () => {
@@ -317,6 +358,7 @@ describe('ZoneDashboardCard', () => {
       props: {
         zone: makeZone({
           cycle: {
+            id: 501,
             status: 'RUNNING',
             progress: null,
             planting_at: null,
@@ -354,6 +396,7 @@ describe('ZoneDashboardCard', () => {
       props: {
         zone: makeZone({
           cycle: {
+            id: 501,
             status: 'RUNNING',
             // Устаревший snapshot DTO не должен перебивать live-расчёт.
             progress: { overall_pct: 0, stage_pct: 0 },
@@ -446,6 +489,58 @@ describe('ZoneDashboardCard', () => {
     expect(wrapper.text()).toContain('Сбой запуска контура')
     expect(wrapper.text()).not.toContain('"code"')
     expect(wrapper.text()).not.toContain('{"code"')
+  })
+
+  it('не рендерит больше двух Badge даже в dense', () => {
+    const wrapper = mount(ZoneDashboardCard, {
+      props: {
+        zone: makeZone(),
+        dense: true,
+        sparklineSeriesData: { ph: [5.5], ec: [1.8], temperature: [23] },
+      },
+    })
+
+    expect(wrapper.findAll('.badge').length).toBeLessThanOrEqual(2)
+    expect(wrapper.findAll('.badge').length).toBe(1)
+    expect(wrapper.findAll('.badge')[0]?.text()).toContain('Активен')
+  })
+
+  it('у operator с running-циклом показывает Пауза и Тревоги; клик паузы не ведёт на зону', async () => {
+    pageAuth.role = 'operator'
+    const wrapper = mount(ZoneDashboardCard, {
+      props: {
+        zone: makeZone(),
+      },
+    })
+
+    expect(wrapper.findAll('.badge').length).toBeLessThanOrEqual(2)
+
+    const pauseBtn = wrapper.find('[data-testid="zone-card-pause"]')
+    expect(pauseBtn.exists()).toBe(true)
+    expect(pauseBtn.text()).toBe('Пауза')
+
+    await pauseBtn.trigger('click')
+    expect(router.visit).not.toHaveBeenCalled()
+    expect(pauseMock).toHaveBeenCalledTimes(1)
+    expect(pauseMock).toHaveBeenCalledWith(501)
+
+    const alertsLink = wrapper.find('[data-testid="zone-card-alerts-link"]')
+    expect(alertsLink.exists()).toBe(true)
+    expect(alertsLink.attributes('href')).toBe('/zones/886?tab=alerts')
+    expect(alertsLink.text()).toContain('Тревоги')
+  })
+
+  it('у non-operator не показывает Пауза', () => {
+    pageAuth.role = 'agronomist'
+    const wrapper = mount(ZoneDashboardCard, {
+      props: {
+        zone: makeZone(),
+      },
+    })
+
+    expect(wrapper.find('[data-testid="zone-card-pause"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="zone-card-alerts-link"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toMatch(/(^|\s)Пауза(\s|$)/)
   })
 })
 

@@ -5,6 +5,13 @@ import ZoneEventsTab from '../ZoneEventsTab.vue'
 
 const pageState = vi.hoisted(() => ({
   url: '/zones/42?tab=events',
+  props: {
+    auth: {
+      user: {
+        role: 'operator' as string,
+      },
+    },
+  },
 }))
 
 vi.mock('@inertiajs/vue3', () => ({
@@ -36,35 +43,88 @@ function makeEvent(id: number, kind: string, message: string, payload: Record<st
   }
 }
 
+async function selectLayoutMode(wrapper: ReturnType<typeof mount>, label: string) {
+  const button = wrapper.findAll('button').find((el) => el.text() === label)
+  expect(button).toBeTruthy()
+  await button!.trigger('click')
+}
+
 async function expandEngineerEvent(wrapper: ReturnType<typeof mount>) {
+  await selectLayoutMode(wrapper, 'Инженер')
   const engineer = wrapper.get('[data-testid="zone-events-engineer"]')
   const clickable = engineer.findAll('.cursor-pointer')
   // [0] group header, [1] EventRow
   await clickable[1].trigger('click')
 }
 
+function sampleEvents() {
+  return [
+    makeEvent(1, 'EC_DOSING', 'EC dosing', {
+      task_id: 28,
+      correction_window_id: 'task:28:irrigating:irrigation_check',
+      dose_ml: 12,
+      channel: 'A+B',
+    }),
+    makeEvent(2, 'IRR_STATE_SNAPSHOT', 'snapshot', { task_id: 28 }),
+    makeEvent(3, 'ALERT_CREATED', 'Alert', { severity: 'critical', code: 'pump fail' }),
+  ]
+}
+
 describe('ZoneEventsTab.vue', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     pageState.url = '/zones/42?tab=events'
+    pageState.props.auth.user.role = 'operator'
   })
 
-  it('рендерит dual-pane: оператор и инженер', () => {
+  it('для operator по умолчанию показывает OperatorStoriesPanel без панели инженера', () => {
     const wrapper = mount(ZoneEventsTab, {
       props: {
         zoneId: 42,
-        events: [
-          makeEvent(1, 'EC_DOSING', 'EC dosing', {
-            task_id: 28,
-            correction_window_id: 'task:28:irrigating:irrigation_check',
-            dose_ml: 12,
-            channel: 'A+B',
-          }),
-          makeEvent(2, 'IRR_STATE_SNAPSHOT', 'snapshot', { task_id: 28 }),
-          makeEvent(3, 'ALERT_CREATED', 'Alert', { severity: 'critical', code: 'pump fail' }),
-        ],
+        events: sampleEvents(),
       },
     })
+
+    expect(wrapper.find('[data-testid="zone-events-operator"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="zone-events-engineer"]').exists()).toBe(false)
+  })
+
+  it('для engineer по умолчанию показывает EngineerEventsPanel без панели оператора', () => {
+    pageState.props.auth.user.role = 'engineer'
+    const wrapper = mount(ZoneEventsTab, {
+      props: {
+        zoneId: 42,
+        events: sampleEvents(),
+      },
+    })
+
+    expect(wrapper.find('[data-testid="zone-events-engineer"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="zone-events-operator"]').exists()).toBe(false)
+  })
+
+  it('переключатель «Оба» показывает панели оператора и инженера', async () => {
+    const wrapper = mount(ZoneEventsTab, {
+      props: {
+        zoneId: 42,
+        events: sampleEvents(),
+      },
+    })
+
+    await selectLayoutMode(wrapper, 'Оба')
+
+    expect(wrapper.find('[data-testid="zone-events-operator"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="zone-events-engineer"]').exists()).toBe(true)
+  })
+
+  it('рендерит dual-pane: оператор и инженер', async () => {
+    const wrapper = mount(ZoneEventsTab, {
+      props: {
+        zoneId: 42,
+        events: sampleEvents(),
+      },
+    })
+
+    await selectLayoutMode(wrapper, 'Оба')
 
     expect(wrapper.find('[data-testid="zone-events-operator"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="zone-events-engineer"]').exists()).toBe(true)
@@ -73,7 +133,7 @@ describe('ZoneEventsTab.vue', () => {
     expect(wrapper.get('[data-testid="zone-events-engineer"]').text()).toContain('AE задача #28')
   })
 
-  it('группирует связанные runtime events по задаче и correction window', () => {
+  it('группирует связанные runtime events по задаче и correction window', async () => {
     const wrapper = mount(ZoneEventsTab, {
       props: {
         zoneId: 42,
@@ -114,6 +174,8 @@ describe('ZoneEventsTab.vue', () => {
         ],
       },
     })
+
+    await selectLayoutMode(wrapper, 'Оба')
 
     expect(wrapper.get('[data-testid="zone-events-engineer"]').text()).toContain('AE задача #28 · Окно irrigation_check')
     expect(wrapper.get('[data-testid="zone-events-engineer"]').text()).toContain('2 события')

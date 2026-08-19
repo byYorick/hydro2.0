@@ -10,17 +10,17 @@
             <Link
               :href="`/zones/${linkedZoneId}`"
               class="text-[color:var(--accent-cyan)] hover:underline"
-            >Zone: {{ linkedZoneName }}</Link>
+            >Зона: {{ linkedZoneName }}</Link>
           </span>
-          <span v-else>Zone: -</span>
-          · Type: {{ device.type || '-' }}
-          <span v-if="device.fw_version"> · FW: {{ device.fw_version }}</span>
+          <span v-else>Зона: -</span>
+          · Тип: {{ device.type || '-' }}
+          <span v-if="device.fw_version"> · Прошивка: {{ device.fw_version }}</span>
         </div>
       </div>
       <div class="flex flex-col gap-2 lg:items-end">
         <div class="flex flex-wrap items-center gap-2 lg:justify-end">
           <Badge :variant="device.status === 'online' ? 'success' : device.status === 'offline' ? 'danger' : 'neutral'">
-            {{ device.status?.toUpperCase() || 'UNKNOWN' }}
+            {{ formatDeviceStatus(device.status) }}
           </Badge>
           <NodeLifecycleBadge
             v-if="device.lifecycle_state"
@@ -427,6 +427,7 @@ import { useDeviceCommandActions } from '@/composables/useDeviceCommandActions'
 import type { Device, DeviceChannel } from '@/types'
 import type { SensorCalibrationOverview, SensorCalibrationSessionOutcome } from '@/types/SensorCalibration'
 import { formatPendingBindAge } from '@/composables/useNodeLifecycle'
+import { translateStatus } from '@/utils/i18n'
 
 interface PageProps {
   device?: Device
@@ -446,11 +447,11 @@ const linkedZoneName = computed(() => {
   }
 
   if (device.value.zone_id) {
-    return `Zone #${device.value.zone_id}`
+    return `Зона #${device.value.zone_id}`
   }
 
   if (device.value.pending_zone_id) {
-    return `Zone #${device.value.pending_zone_id}`
+    return `Зона #${device.value.pending_zone_id}`
   }
 
   return '-'
@@ -506,6 +507,14 @@ function formatUptime(seconds?: number | null): string | null {
   return `${minutes}м`
 }
 
+function formatDeviceStatus(status?: string | null): string {
+  const key = String(status || 'unknown').trim().toUpperCase()
+  if (!key || key === 'UNKNOWN') {
+    return 'Неизвестно'
+  }
+  return translateStatus(key)
+}
+
 function formatHeap(bytes?: number | null): string | null {
   if (typeof bytes !== 'number' || !Number.isFinite(bytes) || bytes < 0) {
     return null
@@ -546,11 +555,11 @@ const nodeMetaItems = computed<NodeMetaItem[]>(() => {
   }
   const heap = formatHeap(device.value.free_heap_bytes)
   if (heap) {
-    items.push({ label: 'Heap', value: heap })
+    items.push({ label: 'Память', value: heap })
   }
   const uptime = formatUptime(device.value.uptime_seconds)
   if (uptime) {
-    items.push({ label: 'Uptime', value: uptime })
+    items.push({ label: 'Время работы', value: uptime })
   }
 
   return items

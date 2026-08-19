@@ -11,11 +11,23 @@
       </div>
       <div class="flex gap-2">
         <Button
+          v-if="canEditRecipes"
           size="sm"
           variant="secondary"
+          :disabled="copying"
+          data-testid="recipe-duplicate-button"
+          @click="duplicateRecipe"
         >
-          Создать копию
+          {{ copying ? 'Создание копии…' : 'Создать копию' }}
         </Button>
+        <Link href="/launch">
+          <Button
+            size="sm"
+            variant="secondary"
+          >
+            Применить к зоне
+          </Button>
+        </Link>
         <Link :href="`/recipes/${recipe.id}/edit`">
           <Button size="sm">
             Редактировать
@@ -41,36 +53,50 @@
               <span v-if="p.targets?.ph">pH {{ p.targets.ph.min || '-' }}–{{ p.targets.ph.max || '-' }}</span>
               <span v-if="p.targets?.ec">, EC {{ p.targets.ec.min || '-' }}–{{ p.targets.ec.max || '-' }}</span>
             </div>
+            <div class="text-xs text-[color:var(--text-dim)] mt-1">
+              <span v-if="p.lighting_photoperiod_hours || p.targets?.light_hours">
+                Свет {{ p.lighting_photoperiod_hours ?? p.targets?.light_hours }} ч
+              </span>
+              <span v-if="p.irrigation_interval_sec || p.targets?.irrigation_interval_sec">
+                · Полив {{ p.irrigation_interval_sec ?? p.targets?.irrigation_interval_sec }} сек
+              </span>
+            </div>
 
-            <div
+            <details
               v-if="hasNutrition(p)"
               class="text-xs text-[color:var(--text-dim)] mt-1"
+              data-testid="recipe-nutrition-details"
             >
-              <div>
-                Программа: {{ p.nutrient_program_code || '-' }}
+              <summary class="cursor-pointer text-[color:var(--text-muted)]">
+                Питание и PID
+              </summary>
+              <div class="mt-1 space-y-0.5">
+                <div>
+                  Программа: {{ p.nutrient_program_code || '-' }}
+                </div>
+                <div>
+                  Режим: {{ p.nutrient_mode || 'ratio_ec_pid' }}
+                  <span v-if="p.nutrient_solution_volume_l">
+                    · Объём: {{ formatNumber(p.nutrient_solution_volume_l) }} л
+                  </span>
+                </div>
+                <div>
+                  NPK: {{ formatNumber(p.nutrient_npk_ratio_pct) }}% / {{ formatNumber(p.nutrient_npk_dose_ml_l) }} мл/л / {{ resolveProductLabel(p.npk_product, p.nutrient_npk_product_id) }}
+                </div>
+                <div>
+                  Кальций: {{ formatNumber(p.nutrient_calcium_ratio_pct) }}% / {{ formatNumber(p.nutrient_calcium_dose_ml_l) }} мл/л / {{ resolveProductLabel(p.calcium_product, p.nutrient_calcium_product_id) }}
+                </div>
+                <div>
+                  Магний: {{ formatNumber(p.nutrient_magnesium_ratio_pct) }}% / {{ formatNumber(p.nutrient_magnesium_dose_ml_l) }} мл/л / {{ resolveProductLabel(p.magnesium_product, p.nutrient_magnesium_product_id) }}
+                </div>
+                <div>
+                  Микро: {{ formatNumber(p.nutrient_micro_ratio_pct) }}% / {{ formatNumber(p.nutrient_micro_dose_ml_l) }} мл/л / {{ resolveProductLabel(p.micro_product, p.nutrient_micro_product_id) }}
+                </div>
+                <div>
+                  Пауза доз: {{ formatNumber(p.nutrient_dose_delay_sec) }} сек, EC stop tolerance: {{ formatNumber(p.nutrient_ec_stop_tolerance) }}
+                </div>
               </div>
-              <div>
-                Режим: {{ p.nutrient_mode || 'ratio_ec_pid' }}
-                <span v-if="p.nutrient_solution_volume_l">
-                  · Объём: {{ formatNumber(p.nutrient_solution_volume_l) }} л
-                </span>
-              </div>
-              <div>
-                NPK: {{ formatNumber(p.nutrient_npk_ratio_pct) }}% / {{ formatNumber(p.nutrient_npk_dose_ml_l) }} мл/л / {{ resolveProductLabel(p.npk_product, p.nutrient_npk_product_id) }}
-              </div>
-              <div>
-                Кальций: {{ formatNumber(p.nutrient_calcium_ratio_pct) }}% / {{ formatNumber(p.nutrient_calcium_dose_ml_l) }} мл/л / {{ resolveProductLabel(p.calcium_product, p.nutrient_calcium_product_id) }}
-              </div>
-              <div>
-                Магний: {{ formatNumber(p.nutrient_magnesium_ratio_pct) }}% / {{ formatNumber(p.nutrient_magnesium_dose_ml_l) }} мл/л / {{ resolveProductLabel(p.magnesium_product, p.nutrient_magnesium_product_id) }}
-              </div>
-              <div>
-                Микро: {{ formatNumber(p.nutrient_micro_ratio_pct) }}% / {{ formatNumber(p.nutrient_micro_dose_ml_l) }} мл/л / {{ resolveProductLabel(p.micro_product, p.nutrient_micro_product_id) }}
-              </div>
-              <div>
-                Пауза доз: {{ formatNumber(p.nutrient_dose_delay_sec) }} сек, EC stop tolerance: {{ formatNumber(p.nutrient_ec_stop_tolerance) }}
-              </div>
-            </div>
+            </details>
           </li>
         </ul>
       </Card>
@@ -93,17 +119,56 @@
           </div>
         </div>
       </Card>
+      <Card>
+        <div class="text-sm font-semibold mb-2">
+          Используется в зонах
+        </div>
+        <div
+          v-if="activeUsageLoading"
+          class="text-sm text-[color:var(--text-dim)]"
+        >
+          Загрузка…
+        </div>
+        <ul
+          v-else-if="activeUsage && activeUsage.count > 0"
+          class="text-sm text-[color:var(--text-muted)] space-y-1"
+          data-testid="recipe-used-in-zones"
+        >
+          <li
+            v-for="item in activeUsage.active_cycles"
+            :key="item.cycle_id"
+          >
+            <Link
+              :href="`/zones/${item.zone_id}`"
+              class="text-[color:var(--accent-cyan)] hover:underline"
+            >
+              {{ item.zone_name || `Зона #${item.zone_id}` }}
+            </Link>
+          </li>
+        </ul>
+        <div
+          v-else
+          class="text-sm text-[color:var(--text-dim)]"
+        >
+          Нет активных зон
+        </div>
+      </Card>
     </div>
   </AppLayout>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
-import { Link } from '@inertiajs/vue3'
+import { computed, onMounted, ref } from 'vue'
+import { Link, router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
 import Button from '@/Components/Button.vue'
 import { usePageProps } from '@/composables/usePageProps'
+import { useRole } from '@/composables/useRole'
+import { useToast } from '@/composables/useToast'
+import { api } from '@/services/api'
+import type { RecipeActiveUsage } from '@/services/api/recipes'
+import { extractHumanErrorMessage } from '@/utils/errorMessage'
 import type { Recipe, RecipePhase } from '@/types'
 
 interface NutrientProductSummary {
@@ -142,6 +207,80 @@ interface PageProps {
 
 const { recipe: recipeProp } = usePageProps<PageProps>(['recipe'])
 const recipe = computed(() => (recipeProp.value || {}) as Recipe)
+const { canEditRecipes } = useRole()
+const { showToast } = useToast()
+const copying = ref(false)
+const activeUsage = ref<RecipeActiveUsage | null>(null)
+const activeUsageLoading = ref(false)
+
+async function loadActiveUsage(): Promise<void> {
+  const recipeId = recipe.value.id
+  if (!recipeId) {
+    activeUsage.value = null
+    return
+  }
+  activeUsageLoading.value = true
+  try {
+    activeUsage.value = await api.recipes.getActiveUsage(recipeId)
+  } catch {
+    activeUsage.value = null
+  } finally {
+    activeUsageLoading.value = false
+  }
+}
+
+onMounted(() => {
+  void loadActiveUsage()
+})
+
+function resolveSourcePlantId(): number | null {
+  const plants = recipe.value.plants
+  const firstPlantId = plants?.[0]?.id
+  return typeof firstPlantId === 'number' ? firstPlantId : null
+}
+
+async function duplicateRecipe(): Promise<void> {
+  if (copying.value || !canEditRecipes.value) {
+    return
+  }
+
+  const source = recipe.value
+  const publishedRevisionId = source.latest_published_revision_id
+  if (typeof publishedRevisionId !== 'number') {
+    showToast('Нет опубликованной ревизии — копию создать нельзя', 'error')
+    return
+  }
+
+  const plantId = resolveSourcePlantId()
+  if (!plantId) {
+    showToast('У рецепта нет культуры — копию создать нельзя', 'error')
+    return
+  }
+
+  copying.value = true
+  try {
+    const created = await api.recipes.create({
+      name: `${source.name} (копия)`,
+      description: source.description?.trim() ? source.description : null,
+      plant_id: plantId,
+    })
+    const createdId = typeof created?.id === 'number' ? created.id : null
+    if (!createdId) {
+      throw new Error('Recipe ID missing')
+    }
+
+    await api.recipes.createRevision(createdId, {
+      clone_from_revision_id: publishedRevisionId,
+      description: `Копия рецепта «${source.name}»`,
+    })
+
+    router.visit(`/recipes/${createdId}/edit`)
+  } catch (error) {
+    showToast(extractHumanErrorMessage(error, 'Не удалось создать копию рецепта'), 'error')
+  } finally {
+    copying.value = false
+  }
+}
 
 const sortedPhases = computed<RecipePhaseWithNutrition[]>(() => {
   const phases = (recipe.value.phases || []) as RecipePhaseWithNutrition[]

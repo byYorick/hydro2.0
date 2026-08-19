@@ -47,10 +47,22 @@ vi.mock('vue-virtual-scroller', () => ({
 }))
 
 const sampleZones = [
-  { id: 1, name: 'Alpha', status: 'RUNNING' },
+  {
+    id: 1,
+    name: 'Alpha',
+    status: 'RUNNING',
+    crop: 'Салат',
+    activeGrowCycle: { current_phase_name: 'Вегетация' },
+  },
   { id: 2, name: 'Beta', status: 'PAUSED' },
   { id: 3, name: 'Gamma', status: 'WARNING' },
-  { id: 4, name: 'Delta', status: 'RUNNING' },
+  {
+    id: 4,
+    name: 'Delta',
+    status: 'RUNNING',
+    recipe_instance: { recipe: { name: 'Базилик NFT' } },
+    activeGrowCycle: { currentPhase: { name: 'Рассада' } },
+  },
 ]
 
 const initFromPropsMock = vi.fn()
@@ -170,5 +182,34 @@ describe('Zones/Index.vue', () => {
     const wrapper = mountZones()
     await wrapper.find('input').setValue('no-match-here')
     expect(wrapper.text()).toContain('Нет зон по текущим фильтрам')
+  })
+
+  it('подписывает KPI Warning/Alarm по-русски', () => {
+    const wrapper = mountZones()
+    const labels = wrapper.findAll('.ui-kpi-label').map((node) => node.text())
+
+    expect(labels).toEqual(['Активные', 'Пауза', 'Предупреждение', 'Тревога', 'Всего'])
+    expect(wrapper.text()).not.toMatch(/\bWarning\b/)
+    expect(wrapper.text()).not.toMatch(/\bAlarm\b/)
+  })
+
+  it('рендерит культуру и фазу в таблице из мок-зоны', () => {
+    const wrapper = mountZones()
+    const text = wrapper.text()
+
+    expect(text).toContain('Культура')
+    expect(text).toContain('Фаза')
+    expect(text).toContain('Салат')
+    expect(text).toContain('Вегетация')
+    expect(text).toContain('Базилик NFT')
+    expect(text).toContain('Рассада')
+  })
+
+  it('фильтрует по культуре через строку поиска', async () => {
+    const wrapper = mountZones()
+    const input = wrapper.find('input')
+    await input.setValue('салат')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.vm.filteredZones.map((z: { name: string }) => z.name)).toEqual(['Alpha'])
   })
 })

@@ -5,7 +5,7 @@
         v-if="!canConfigureDevices"
         class="rounded-xl border border-[color:var(--badge-warning-border)] bg-[color:var(--badge-warning-bg)] p-3 text-sm text-[color:var(--badge-warning-text)]"
       >
-        Режим только для просмотра. Добавление и удаление устройств доступно только агроному.
+        Режим только для просмотра. Добавление устройств доступно инженеру или администратору.
       </div>
       <section class="ui-hero p-5 space-y-4">
         <div class="flex items-center justify-between gap-3 flex-wrap">
@@ -280,7 +280,6 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted, onUnmounted, computed } from 'vue'
-import { usePage } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
 import Button from '@/Components/Button.vue'
@@ -289,6 +288,7 @@ import { logger } from '@/utils/logger'
 import { useNodeLifecycle } from '@/composables/useNodeLifecycle'
 import { useErrorHandler } from '@/composables/useErrorHandler'
 import { useToast } from '@/composables/useToast'
+import { useRole } from '@/composables/useRole'
 import { api } from '@/services/api'
 import { useLoading } from '@/composables/useLoading'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
@@ -296,11 +296,7 @@ import type { Device, Greenhouse, Zone } from '@/types'
 
 const { showToast } = useToast()
 const { loading, startLoading, stopLoading } = useLoading<boolean>(false)
-const page = usePage<{ auth?: { user?: { role?: string } } }>()
-const canConfigureDevices = computed(() => {
-  const role = page.props.auth?.user?.role ?? 'viewer'
-  return role === 'agronomist' || role === 'admin'
-})
+const { canConfigureDevices } = useRole()
 
 // Инициализация composables для lifecycle
 const {
@@ -428,7 +424,7 @@ async function loadZones(): Promise<void> {
 
 async function assignNode(node: any) {
   if (!canConfigureDevices.value) {
-    showToast('Привязка устройств доступна только агроному.', 'warning', TOAST_TIMEOUT.NORMAL)
+    showToast('Добавление устройств доступно инженеру или администратору.', 'warning', TOAST_TIMEOUT.NORMAL)
     return
   }
 
@@ -574,7 +570,7 @@ async function assignNode(node: any) {
 
 async function deleteNode(node: Device): Promise<void> {
   if (!canConfigureDevices.value) {
-    showToast('Удаление устройств доступно только агроному.', 'warning', TOAST_TIMEOUT.NORMAL)
+    showToast('Добавление устройств доступно инженеру или администратору.', 'warning', TOAST_TIMEOUT.NORMAL)
     return
   }
 

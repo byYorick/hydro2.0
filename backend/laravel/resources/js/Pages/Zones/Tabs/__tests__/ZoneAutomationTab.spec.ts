@@ -151,6 +151,12 @@ vi.mock('@/utils/logger', () => ({
 }))
 
 import ZoneAutomationTab from '../ZoneAutomationTab.vue'
+import type { VueWrapper } from '@vue/test-utils'
+
+const baseTargets = {
+  ph: { target: 5.8 },
+  ec: { target: 1.5 },
+} as any
 
 function defaultStateResponse(zoneId = 42) {
   return {
@@ -202,10 +208,27 @@ function defaultStateResponse(zoneId = 42) {
   }
 }
 
+async function selectInnerSection(
+  wrapper: VueWrapper,
+  id: 'solution' | 'actions' | 'process',
+): Promise<void> {
+  await wrapper.get(`[data-testid="automation-inner-tab-${id}"]`).trigger('click')
+  await flushPromises()
+}
+
+async function openTechnicalDetails(wrapper: VueWrapper): Promise<void> {
+  const toggle = wrapper.find('[data-testid="automation-technical-details-toggle"]')
+  if (toggle.exists()) {
+    await toggle.trigger('click')
+    await flushPromises()
+  }
+}
+
 describe('ZoneAutomationTab.vue', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     window.localStorage.clear()
+    window.history.replaceState({}, '', '/zones/42')
     roleState.role = 'agronomist'
     apiGetMock.mockReset()
     apiPostMock.mockReset()
@@ -324,8 +347,10 @@ describe('ZoneAutomationTab.vue', () => {
     expect(vm.lightingForm.luxNight).toBe(500)
     expect(vm.lightingForm.scheduleStart).toBe('05:30')
     expect(vm.lightingForm.scheduleEnd).toBe('20:30')
+    await openTechnicalDetails(wrapper)
     expect(wrapper.text()).toContain('pH ±0.29 (5%)')
     expect(wrapper.text()).not.toContain('Задачи автоматики')
+    expect(wrapper.text()).not.toContain('Процесс AE3')
   })
 
   it('пересинхронизируется при обновлении targets', async () => {
@@ -388,6 +413,7 @@ describe('ZoneAutomationTab.vue', () => {
     await flushPromises()
 
     expect((wrapper.vm as any).isSystemTypeLocked).toBe(true)
+    await openTechnicalDetails(wrapper)
     expect(wrapper.text()).toContain('Тип системы зафиксирован для активного цикла.')
   })
 
@@ -407,6 +433,7 @@ describe('ZoneAutomationTab.vue', () => {
     const vm = wrapper.vm as any
     expect(vm.climateForm.dayTemp).toBe(23)
 
+    await openTechnicalDetails(wrapper)
     const editButton = wrapper.findAll('button').find((btn) => btn.text().includes('Редактировать'))
     expect(editButton).toBeTruthy()
     await editButton!.trigger('click')
@@ -550,6 +577,8 @@ describe('ZoneAutomationTab.vue', () => {
 
     await flushPromises()
 
+    await selectInnerSection(wrapper, 'actions')
+
     const manualIrrigationButton = wrapper.findAll('button').find((btn) => btn.text() === 'Запустить полив')
     expect(manualIrrigationButton).toBeTruthy()
     expect(manualIrrigationButton!.attributes('disabled')).toBeUndefined()
@@ -673,6 +702,131 @@ describe('ZoneAutomationTab.vue', () => {
 
     expect(wrapper.get('[data-testid="mock-pump-save-seq"]').text()).toBe('3')
     expect(wrapper.get('[data-testid="mock-pump-run-seq"]').text()).toBe('5')
+  })
+
+  it('у агронома по умолчанию открыт раствор без JSON и logic_profile', async () => {
+    const wrapper = mount(ZoneAutomationTab, {
+      props: {
+        zoneId: 42,
+        targets: baseTargets,
+      },
+    })
+
+    await flushPromises()
+
+    expect(wrapper.get('h1').text()).toBe('Раствор')
+    expect(wrapper.find('[data-testid="automation-section-solution"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="config-mode-card"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="automation-section-actions"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="automation-section-process"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="automation-runtime-payload"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="automation-technical-details-body"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('logic_profile')
+    expect(wrapper.text()).not.toContain('GROWTH_CYCLE_CONFIG')
+  })
+
+  it('у оператора по умолчанию открыты действия без JSON и logic_profile', async () => {
+    roleState.role = 'operator'
+
+    const wrapper = mount(ZoneAutomationTab, {
+      props: {
+        zoneId: 42,
+        targets: baseTargets,
+      },
+    })
+
+    await flushPromises()
+
+    expect(wrapper.get('h1').text()).toBe('Действия')
+    expect(wrapper.find('[data-testid="automation-section-actions"]').exists()).toBe(true)
+    expect(wrapper.findAll('button').some((btn) => btn.text() === 'Запустить полив')).toBe(true)
+    expect(wrapper.find('[data-testid="automation-section-solution"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="automation-section-process"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="automation-runtime-payload"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="automation-technical-details-body"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('logic_profile')
+  })
+
+  it('у инженера по умолчанию открыт процесс, JSON скрыт за кнопкой', async () => {
+    roleState.role = 'engineer'
+
+    const wrapper = mount(ZoneAutomationTab, {
+      props: {
+        zoneId: 42,
+        targets: baseTargets,
+      },
+    })
+
+    await flushPromises()
+
+    expect(wrapper.get('h1').text()).toBe('Процесс')
+    expect(wrapper.find('[data-testid="automation-section-process"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('Процесс автоматики')
+    expect(wrapper.find('[data-testid="automation-technical-details-toggle"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="automation-technical-details-body"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="automation-runtime-payload"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('Показать payload JSON')
+  })
+
+  it('переключает внутренние секции раствор / действия / процесс', async () => {
+    const wrapper = mount(ZoneAutomationTab, {
+      props: {
+        zoneId: 42,
+        targets: baseTargets,
+      },
+    })
+
+    await flushPromises()
+    expect(wrapper.find('[data-testid="automation-section-solution"]').exists()).toBe(true)
+
+    await selectInnerSection(wrapper, 'actions')
+    expect(wrapper.get('h1').text()).toBe('Действия')
+    expect(wrapper.find('[data-testid="automation-section-actions"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="automation-section-solution"]').exists()).toBe(false)
+    expect(wrapper.findAll('button').some((btn) => btn.text() === 'Запустить полив')).toBe(true)
+
+    await selectInnerSection(wrapper, 'process')
+    expect(wrapper.get('h1').text()).toBe('Процесс')
+    expect(wrapper.find('[data-testid="automation-section-process"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('Процесс автоматики')
+  })
+
+  it('не показывает JSON агроному и оператору, пока не открыты технические детали', async () => {
+    const agronomist = mount(ZoneAutomationTab, {
+      props: {
+        zoneId: 42,
+        targets: baseTargets,
+      },
+    })
+    await flushPromises()
+
+    expect(agronomist.find('[data-testid="automation-runtime-payload"]').exists()).toBe(false)
+    await openTechnicalDetails(agronomist)
+    expect(agronomist.find('[data-testid="automation-technical-details-body"]').exists()).toBe(true)
+    expect(agronomist.text()).toContain('logic_profile')
+    expect(agronomist.find('[data-testid="automation-runtime-payload"]').exists()).toBe(false)
+
+    const showJson = agronomist.findAll('button').find((btn) => btn.text() === 'Показать payload JSON')
+    expect(showJson).toBeTruthy()
+    await showJson!.trigger('click')
+    await flushPromises()
+    expect(agronomist.find('[data-testid="automation-runtime-payload"]').exists()).toBe(true)
+
+    agronomist.unmount()
+    window.history.replaceState({}, '', '/zones/42')
+    roleState.role = 'operator'
+
+    const operator = mount(ZoneAutomationTab, {
+      props: {
+        zoneId: 42,
+        targets: baseTargets,
+      },
+    })
+    await flushPromises()
+
+    expect(operator.find('[data-testid="automation-runtime-payload"]').exists()).toBe(false)
+    expect(operator.find('[data-testid="automation-technical-details-body"]').exists()).toBe(false)
+    expect(operator.text()).not.toContain('logic_profile')
   })
 
 })

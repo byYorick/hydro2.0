@@ -9,10 +9,10 @@
                 операционный центр
               </p>
               <h1 class="text-2xl font-semibold tracking-tight text-[color:var(--text-primary)]">
-                Операционный центр
+                {{ heroTitle }}
               </h1>
               <p class="max-w-2xl text-sm text-[color:var(--text-muted)]">
-                Зоны, телеметрия и состояние автоматики. Циклы и фазы — внутри карточки зоны.
+                {{ heroSubtitle }}
               </p>
             </div>
             <div class="flex shrink-0 flex-wrap gap-2">
@@ -25,7 +25,7 @@
                 Фазы и рецепты
               </Button>
               <Button
-                v-if="canManageCycle"
+                v-if="canLaunchCycle"
                 size="sm"
                 @click="router.visit('/launch')"
               >
@@ -54,7 +54,7 @@
             </div>
             <div class="ui-kpi-card">
               <div class="ui-kpi-label">
-                Warning
+                Предупреждение
               </div>
               <div
                 class="ui-kpi-value"
@@ -65,7 +65,7 @@
             </div>
             <div class="ui-kpi-card">
               <div class="ui-kpi-label">
-                Alarm
+                Тревога
               </div>
               <div
                 class="ui-kpi-value"
@@ -115,6 +115,24 @@
           </div>
         </section>
 
+        <OperationsShiftPanel
+          v-if="dashboardView === 'operations'"
+          :items="shiftQueue"
+        />
+        <AgronomyOverviewPanel
+          v-else-if="dashboardView === 'agronomy'"
+          :corridor="agronomyCorridor"
+          :transitions="phaseTransitions"
+        />
+        <EngineeringIssuesPanel
+          v-else-if="dashboardView === 'engineering'"
+          :issues="engineeringIssues"
+        />
+        <AdminHealthPanel
+          v-else-if="dashboardView === 'admin'"
+          :blocked-count="summary.zones_blocked ?? blockedZonesCount"
+        />
+
         <section class="surface-card rounded-2xl border border-[color:var(--border-muted)] p-3 md:p-4">
           <div class="flex flex-col gap-3 lg:flex-row lg:items-center">
             <div class="flex flex-1 flex-col gap-2 sm:flex-row sm:items-center">
@@ -137,10 +155,10 @@
                   Пауза
                 </option>
                 <option value="WARNING">
-                  Warning
+                  Предупреждение
                 </option>
                 <option value="ALARM">
-                  Alarm
+                  Тревога
                 </option>
                 <option value="NONE">
                   Без цикла
@@ -193,7 +211,7 @@
                 Создайте теплицу
               </div>
               <div class="text-xs text-[color:var(--text-muted)] mt-1">
-                Добавьте теплицу и зоны, чтобы видеть их в операционном центре.
+                Добавьте теплицу и зоны, чтобы видеть их на обзоре.
               </div>
             </div>
             <Link href="/greenhouses">
@@ -209,6 +227,31 @@
           class="surface-card border border-[color:var(--border-muted)] rounded-2xl p-6 text-sm text-[color:var(--text-muted)] text-center"
         >
           Нет зон по текущим фильтрам.
+        </div>
+
+        <div
+          v-else-if="dashboardView === 'agronomy'"
+          class="space-y-6"
+        >
+          <section
+            v-for="group in cropGroups"
+            :key="group.crop"
+            class="space-y-3"
+            data-testid="dashboard-crop-group"
+          >
+            <h2 class="text-sm font-semibold text-[color:var(--text-primary)]">
+              {{ group.crop }}
+            </h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+              <ZoneDashboardCard
+                v-for="zone in group.zones"
+                :key="zone.id"
+                :zone="zone"
+                :sparkline-series-data="sparklines[zone.id] ?? null"
+                :dense="denseView"
+              />
+            </div>
+          </section>
         </div>
 
         <div
@@ -238,18 +281,35 @@
         class="flex flex-col flex-1 min-h-0"
         data-testid="dashboard-events-panel"
       >
-        <div class="flex items-center justify-between mb-3 shrink-0">
+        <div class="flex items-center justify-between mb-3 shrink-0 gap-2">
           <div class="text-[color:var(--text-primary)] font-medium">
-            Последние события
+            {{ contextTitle }}
           </div>
           <div class="flex items-center gap-1.5 text-xs text-[color:var(--text-dim)]">
             <div class="w-1.5 h-1.5 rounded-full bg-[color:var(--accent-green)] animate-pulse"></div>
             <span>Live</span>
           </div>
         </div>
+        <div
+          v-if="dashboardView === 'admin'"
+          class="mb-3 flex flex-wrap gap-2 shrink-0 text-xs"
+        >
+          <Link
+            href="/audit"
+            class="text-[color:var(--accent-cyan)] hover:underline"
+          >
+            Аудит
+          </Link>
+          <Link
+            href="/monitoring"
+            class="text-[color:var(--accent-cyan)] hover:underline"
+          >
+            Здоровье системы
+          </Link>
+        </div>
         <div class="mb-3 flex gap-1 flex-wrap shrink-0">
           <button
-            v-for="kind in (['ALL', 'ALERT', 'WARNING', 'INFO'] as const)"
+            v-for="kind in eventFilterKinds"
             :key="kind"
             :data-testid="`dashboard-event-filter-${kind}`"
             class="px-2.5 py-1 text-xs rounded-md border transition-all duration-200"
@@ -260,7 +320,7 @@
             "
             @click="eventFilter = kind"
           >
-            {{ kind === 'ALL' ? 'Все' : kind }}
+            {{ eventFilterLabel(kind) }}
           </button>
         </div>
         <div
@@ -285,7 +345,7 @@
                 :variant="e.kind === 'ALERT' ? 'danger' : e.kind === 'WARNING' ? 'warning' : 'info'"
                 class="text-xs"
               >
-                {{ e.kind }}
+                {{ eventKindLabel(e.kind) }}
               </Badge>
               <span class="text-xs text-[color:var(--text-dim)]">{{ formatTime(e.occurred_at || e.created_at) }}</span>
             </div>
@@ -318,13 +378,15 @@
 
 <script setup lang="ts">
 import { computed, ref, toRef } from 'vue'
-import { Link, router, usePage } from '@inertiajs/vue3'
+import { Link, router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Badge from '@/Components/Badge.vue'
 import Button from '@/Components/Button.vue'
 import Pagination from '@/Components/Pagination.vue'
 import ZoneDashboardCard from '@/Components/ZoneDashboardCard.vue'
 import { formatTime } from '@/utils/formatTime'
+import { translateEventKind } from '@/utils/i18n'
+import { useRole } from '@/composables/useRole'
 import { useToast } from '@/composables/useToast'
 import { useTheme } from '@/composables/useTheme'
 import { useDashboardRealtimeFeed } from '@/composables/useDashboardRealtimeFeed'
@@ -334,7 +396,23 @@ import {
   type UnifiedZone,
   type Greenhouse,
 } from '@/composables/useUnifiedDashboard'
-import type { Alert } from '@/types'
+import type { Alert, EventKind } from '@/types'
+import OperationsShiftPanel from './OperationsShiftPanel.vue'
+import AgronomyOverviewPanel from './AgronomyOverviewPanel.vue'
+import EngineeringIssuesPanel from './EngineeringIssuesPanel.vue'
+import AdminHealthPanel from './AdminHealthPanel.vue'
+import {
+  DASHBOARD_CONTEXT_TITLE,
+  DASHBOARD_HERO_SUBTITLE,
+  DASHBOARD_HERO_TITLE,
+  buildEngineeringIssues,
+  buildShiftQueue,
+  eventScopeForView,
+  groupZonesByCrop,
+  resolveDashboardView,
+  summarizePhEcCorridor,
+  upcomingPhaseTransitions,
+} from './dashboardRoleView'
 
 interface Props {
   summary: UnifiedSummary
@@ -344,10 +422,13 @@ interface Props {
 }
 
 const props = defineProps<Props>()
-const page = usePage()
-const role = computed(() => (page.props.auth as { user?: { role?: string } })?.user?.role || 'viewer')
-const canConfigureCycle = computed(() => ['admin', 'agronomist'].includes(role.value))
-const canManageCycle = computed(() => ['admin', 'agronomist', 'operator'].includes(role.value))
+const { role, canLaunchCycle, canEditRecipes: canConfigureCycle } = useRole()
+
+const dashboardView = computed(() => resolveDashboardView(role.value))
+const heroTitle = computed(() => DASHBOARD_HERO_TITLE[dashboardView.value])
+const heroSubtitle = computed(() => DASHBOARD_HERO_SUBTITLE[dashboardView.value])
+const contextTitle = computed(() => DASHBOARD_CONTEXT_TITLE[dashboardView.value])
+const eventScope = computed(() => eventScopeForView(dashboardView.value))
 
 const { showToast } = useToast()
 const { theme } = useTheme()
@@ -359,6 +440,7 @@ const { eventFilter, filteredEvents } = useDashboardRealtimeFeed({
   selectedZoneId,
   telemetryPeriod,
   latestAlerts: latestAlertsRef,
+  eventScope,
 })
 
 const zonesRef = computed(() => props.zones)
@@ -377,5 +459,33 @@ const {
 } = useUnifiedDashboard({
   zones: zonesRef,
   showToast,
+  defaultDense: dashboardView.value !== 'agronomy',
 })
+
+const shiftQueue = computed(() => buildShiftQueue(props.zones))
+const agronomyCorridor = computed(() => summarizePhEcCorridor(props.zones))
+const phaseTransitions = computed(() => upcomingPhaseTransitions(props.zones))
+const engineeringIssues = computed(() => buildEngineeringIssues(props.zones))
+const blockedZonesCount = computed(() => (
+  props.zones.filter((zone) => zone.automation_block?.blocked).length
+))
+const cropGroups = computed(() => groupZonesByCrop(pagedZones.value as UnifiedZone[]))
+
+const eventFilterKinds = computed((): Array<'ALL' | EventKind> => {
+  if (dashboardView.value === 'admin') {
+    return ['ALERT']
+  }
+  if (dashboardView.value === 'agronomy') {
+    return ['ALL', 'ALERT', 'WARNING']
+  }
+  return ['ALL', 'ALERT', 'WARNING', 'INFO']
+})
+
+function eventFilterLabel(kind: 'ALL' | EventKind): string {
+  return kind === 'ALL' ? 'Все' : translateEventKind(kind)
+}
+
+function eventKindLabel(kind: string): string {
+  return translateEventKind(kind) || kind
+}
 </script>

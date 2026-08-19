@@ -2,8 +2,8 @@
   <AppLayout>
     <div class="space-y-4">
       <PageHeader
-        title="Алерты"
-        subtitle="Операционные предупреждения и статус подтверждения."
+        title="Тревоги"
+        subtitle="Отклонения по зонам и статус решения."
         eyebrow="мониторинг"
       />
 
@@ -48,79 +48,26 @@
         </div>
 
         <div class="flex items-center gap-2 flex-1 sm:flex-none">
-          <label class="text-sm text-[color:var(--text-muted)] shrink-0">Источник:</label>
-          <select
-            v-model="sourceFilter"
-            class="input-select flex-1 sm:w-auto sm:min-w-[150px]"
-          >
-            <option value="">
-              Все
-            </option>
-            <option value="biz">
-              biz
-            </option>
-            <option value="infra">
-              infra
-            </option>
-            <option value="node">
-              node
-            </option>
-          </select>
-        </div>
-
-        <div class="flex items-center gap-2 flex-1 sm:flex-none">
           <label class="text-sm text-[color:var(--text-muted)] shrink-0">Критичность:</label>
           <select
             v-model="severityFilter"
+            data-testid="alerts-filter-severity"
             class="input-select flex-1 sm:w-auto sm:min-w-[150px]"
           >
             <option value="">
               Все
             </option>
             <option value="critical">
-              critical
+              {{ translateAlertSeverity('critical') }}
             </option>
             <option value="error">
-              error
+              {{ translateAlertSeverity('error') }}
             </option>
             <option value="warning">
-              warning
+              {{ translateAlertSeverity('warning') }}
             </option>
             <option value="info">
-              info
-            </option>
-          </select>
-        </div>
-
-        <div class="flex items-center gap-2 flex-1 sm:flex-none">
-          <label class="text-sm text-[color:var(--text-muted)] shrink-0">Категория:</label>
-          <select
-            v-model="categoryFilter"
-            class="input-select flex-1 sm:w-auto sm:min-w-[170px]"
-          >
-            <option value="">
-              Все
-            </option>
-            <option value="agronomy">
-              agronomy
-            </option>
-            <option value="operations">
-              operations
-            </option>
-            <option value="infrastructure">
-              infrastructure
-            </option>
-            <option value="node">
-              node
-            </option>
-            <option value="safety">
-              safety
-            </option>
-            <option value="config">
-              config
-            </option>
-            <option value="other">
-              other
+              {{ translateAlertSeverity('info') }}
             </option>
           </select>
         </div>
@@ -134,20 +81,32 @@
           />
         </div>
 
-        <div class="flex items-center gap-2 flex-1 sm:flex-none">
-          <label class="text-sm text-[color:var(--text-muted)] shrink-0">Подавление:</label>
-          <input
-            v-model.number="toastSuppressionSec"
-            type="number"
-            min="0"
-            max="600"
-            step="5"
-            class="input-field w-24"
-          />
-          <span class="text-xs text-[color:var(--text-dim)]">сек</span>
-        </div>
-
         <div class="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            class="h-9 px-3 rounded-lg border text-xs font-semibold transition-colors"
+            data-testid="alerts-filter-process-stopping"
+            :class="processStoppingOnly
+              ? 'border-[color:var(--accent-red)] text-[color:var(--accent-red)] bg-[color:var(--bg-elevated)]'
+              : isOperator
+                ? 'border-[color:var(--accent-red)]/60 text-[color:var(--accent-red)] bg-[color:var(--bg-elevated)] hover:border-[color:var(--accent-red)]'
+                : 'border-[color:var(--border-muted)] text-[color:var(--text-dim)] hover:border-[color:var(--border-strong)]'"
+            @click="processStoppingOnly = !processStoppingOnly"
+          >
+            Останавливают процесс
+          </button>
+          <button
+            v-if="isAgronomist"
+            type="button"
+            class="h-9 px-3 rounded-lg border text-xs font-semibold transition-colors"
+            data-testid="alerts-preset-agronomy-domain"
+            :class="agronomyDomainPreset
+              ? 'border-[color:var(--accent-cyan)] text-[color:var(--accent-cyan)] bg-[color:var(--bg-elevated)]'
+              : 'border-[color:var(--border-muted)] text-[color:var(--text-dim)] hover:border-[color:var(--border-strong)]'"
+            @click="agronomyDomainPreset = !agronomyDomainPreset"
+          >
+            Раствор / климат / свет
+          </button>
           <button
             type="button"
             class="h-9 px-3 rounded-lg border text-xs font-semibold transition-colors"
@@ -169,15 +128,92 @@
             Тревоги
           </button>
           <button
+            v-if="isOperator"
             type="button"
             class="h-9 px-3 rounded-lg border text-xs font-semibold transition-colors"
-            :class="processStoppingOnly
-              ? 'border-[color:var(--accent-red)] text-[color:var(--accent-red)] bg-[color:var(--bg-elevated)]'
+            data-testid="alerts-extra-filters-toggle"
+            :class="extraFiltersOpen
+              ? 'border-[color:var(--accent-cyan)] text-[color:var(--accent-cyan)] bg-[color:var(--bg-elevated)]'
               : 'border-[color:var(--border-muted)] text-[color:var(--text-dim)] hover:border-[color:var(--border-strong)]'"
-            @click="processStoppingOnly = !processStoppingOnly"
+            @click="extraFiltersOpen = !extraFiltersOpen"
           >
-            Останавливают процесс
+            Дополнительные фильтры
           </button>
+        </div>
+
+        <div
+          v-if="!isOperator || extraFiltersOpen"
+          class="flex flex-wrap items-center gap-2"
+          data-testid="alerts-extra-filters"
+        >
+          <div class="flex items-center gap-2 flex-1 sm:flex-none">
+            <label class="text-sm text-[color:var(--text-muted)] shrink-0">Источник:</label>
+            <select
+              v-model="sourceFilter"
+              data-testid="alerts-filter-source"
+              class="input-select flex-1 sm:w-auto sm:min-w-[150px]"
+            >
+              <option value="">
+                Все
+              </option>
+              <option value="biz">
+                {{ translateAlertSource('biz') }}
+              </option>
+              <option value="infra">
+                {{ translateAlertSource('infra') }}
+              </option>
+              <option value="node">
+                {{ translateAlertSource('node') }}
+              </option>
+            </select>
+          </div>
+
+          <div class="flex items-center gap-2 flex-1 sm:flex-none">
+            <label class="text-sm text-[color:var(--text-muted)] shrink-0">Категория:</label>
+            <select
+              v-model="categoryFilter"
+              data-testid="alerts-filter-category"
+              class="input-select flex-1 sm:w-auto sm:min-w-[170px]"
+            >
+              <option value="">
+                Все
+              </option>
+              <option value="agronomy">
+                agronomy
+              </option>
+              <option value="operations">
+                operations
+              </option>
+              <option value="infrastructure">
+                infrastructure
+              </option>
+              <option value="node">
+                node
+              </option>
+              <option value="safety">
+                safety
+              </option>
+              <option value="config">
+                config
+              </option>
+              <option value="other">
+                other
+              </option>
+            </select>
+          </div>
+
+          <div class="flex items-center gap-2 flex-1 sm:flex-none">
+            <label class="text-sm text-[color:var(--text-muted)] shrink-0">Скрытие повторов, сек</label>
+            <input
+              v-model.number="toastSuppressionSec"
+              type="number"
+              min="0"
+              max="600"
+              step="5"
+              class="input-field w-24"
+              data-testid="alerts-filter-suppression"
+            />
+          </div>
         </div>
 
         <template #actions>
@@ -214,18 +250,18 @@
             variant="secondary"
             @click="bulkConfirm.open = true"
           >
-            Подтвердить выбранные
+            Отметить выбранные как решённые
           </Button>
         </template>
       </FilterBar>
 
       <div
-        v-if="!isInitialLoading && groupedAlertSections.length > 0"
+        v-if="!isInitialLoading && displayedAlertSections.length > 0"
         class="flex flex-wrap items-center gap-2"
         data-testid="alerts-section-counts"
       >
         <button
-          v-if="alertSectionCounts.automation_block > 0"
+          v-if="displayedAlertSectionCounts.automation_block > 0"
           type="button"
           class="inline-flex items-center gap-1.5 rounded-full border border-[color:var(--badge-danger-border)] bg-[color:var(--badge-danger-bg)] px-2.5 py-1 text-xs font-semibold text-[color:var(--badge-danger-text)] transition-opacity hover:opacity-90"
           data-testid="alerts-count-automation-block"
@@ -236,11 +272,11 @@
             variant="danger"
             size="xs"
           >
-            {{ alertSectionCounts.automation_block }}
+            {{ displayedAlertSectionCounts.automation_block }}
           </Badge>
         </button>
         <button
-          v-if="alertSectionCounts.safety > 0"
+          v-if="displayedAlertSectionCounts.safety > 0"
           type="button"
           class="inline-flex items-center gap-1.5 rounded-full border border-[color:var(--badge-warning-border)] bg-[color:var(--badge-warning-bg)] px-2.5 py-1 text-xs font-semibold text-[color:var(--badge-warning-text)] transition-opacity hover:opacity-90"
           data-testid="alerts-count-safety"
@@ -251,11 +287,11 @@
             variant="warning"
             size="xs"
           >
-            {{ alertSectionCounts.safety }}
+            {{ displayedAlertSectionCounts.safety }}
           </Badge>
         </button>
         <button
-          v-if="alertSectionCounts.other_active > 0"
+          v-if="displayedAlertSectionCounts.other_active > 0"
           type="button"
           class="inline-flex items-center gap-1.5 rounded-full border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] px-2.5 py-1 text-xs font-semibold text-[color:var(--text-primary)] transition-opacity hover:opacity-90"
           data-testid="alerts-count-other"
@@ -266,11 +302,11 @@
             variant="neutral"
             size="xs"
           >
-            {{ alertSectionCounts.other_active }}
+            {{ displayedAlertSectionCounts.other_active }}
           </Badge>
         </button>
         <button
-          v-if="alertSectionCounts.activeTotal > 0"
+          v-if="displayedAlertSectionCounts.activeTotal > 0"
           type="button"
           class="inline-flex items-center gap-1.5 rounded-full border border-[color:var(--accent-cyan)] bg-[color:var(--bg-elevated)] px-2.5 py-1 text-xs font-semibold text-[color:var(--accent-cyan)] transition-opacity hover:opacity-90"
           data-testid="alerts-count-active-total"
@@ -281,7 +317,7 @@
             variant="info"
             size="xs"
           >
-            {{ alertSectionCounts.activeTotal }}
+            {{ displayedAlertSectionCounts.activeTotal }}
           </Badge>
         </button>
       </div>
@@ -300,7 +336,7 @@
         />
 
         <div
-          v-else-if="groupedAlertSections.length === 0"
+          v-else-if="displayedAlertSections.length === 0"
           class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)] px-4 py-8 text-center"
         >
           <div class="text-sm font-semibold text-[color:var(--text-primary)]">
@@ -313,7 +349,7 @@
 
         <template v-else>
           <section
-            v-for="section in groupedAlertSections"
+            v-for="section in displayedAlertSections"
             :key="section.key"
             class="overflow-hidden rounded-xl border bg-[color:var(--bg-surface)]"
             :class="sectionShellClass(section.tone)"
@@ -402,8 +438,11 @@
 
               <template #cell-type="{ row }">
                 <div class="min-w-0">
-                  <span class="truncate block max-w-[320px] text-[color:var(--text-primary)] font-medium">
-                    {{ getAlertMeta(row).title }}
+                  <span
+                    class="truncate block max-w-[320px] text-[color:var(--text-primary)] font-medium"
+                    data-testid="alert-human-title"
+                  >
+                    {{ humanTitle(row) }}
                   </span>
                   <span
                     v-if="row.code"
@@ -471,7 +510,7 @@
                   :disabled="isResolved(row)"
                   @click.stop="openResolve(row)"
                 >
-                  Подтвердить
+                  Отметить как решённый
                 </Button>
               </template>
             </DataTableV2>
@@ -483,8 +522,10 @@
 
     <ConfirmModal
       :open="confirm.open"
-      title="Подтвердить алерт"
-      message="Вы уверены, что алерт будет помечен как решённый?"
+      title="Отметить как решённый"
+      message="Алерт будет помечен как решённый."
+      confirm-text="Отметить как решённый"
+      loading-text="Отмечаем..."
       :loading="confirm.loading"
       @close="closeConfirm"
       @confirm="doResolve"
@@ -492,8 +533,10 @@
 
     <ConfirmModal
       :open="bulkConfirm.open"
-      title="Подтвердить выбранные"
-      message="Подтвердить выбранные алерты?"
+      title="Отметить выбранные как решённые"
+      message="Выбранные алерты будут помечены как решённые."
+      confirm-text="Отметить выбранные как решённые"
+      loading-text="Отмечаем..."
       :loading="bulkConfirm.loading"
       @close="bulkConfirm.open = false"
       @confirm="resolveSelected"
@@ -510,6 +553,7 @@
 </template>
 
 <script setup lang="ts">
+import { computed, ref } from 'vue'
 import { Link } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Button from '@/Components/Button.vue'
@@ -520,10 +564,12 @@ import ConfirmModal from '@/Components/ConfirmModal.vue'
 import DataTableV2 from '@/Components/DataTableV2.vue'
 import FilterBar from '@/Components/FilterBar.vue'
 import PageHeader from '@/Components/PageHeader.vue'
-import { translateStatus } from '@/utils/i18n'
+import { useRole } from '@/composables/useRole'
+import { formatAlertHumanTitle, translateAlertSeverity, translateAlertSource, translateStatus } from '@/utils/i18n'
 import {
   useAlertsPage,
   type AlertRecord,
+  type AlertSectionCounts,
   type GroupedAlertSection,
   type GroupedAlertSectionKey,
   type GroupedAlertZoneGroup,
@@ -554,7 +600,6 @@ const {
   alarmsOnly,
   processStoppingOnly,
   groupedAlertSections,
-  alertSectionCounts,
   zoneOptions,
   selectableAlerts,
   isRefreshing,
@@ -580,8 +625,70 @@ const {
   loadAlerts,
 } = useAlertsPage()
 
+const { isOperator, isAgronomist } = useRole()
+const extraFiltersOpen = ref(false)
+const agronomyDomainPreset = ref(isAgronomist.value)
+
+const AGRONOMY_DOMAIN_RE = /(ph|ec|temp|humid|climate|light|solution)/i
+
+function matchesAgronomyDomain(alert: AlertRecord): boolean {
+  const source = String(alert.source || '').toLowerCase()
+  const category = String(alert.category || '').toLowerCase()
+  if (source && source !== 'biz') return false
+  if (category && category !== 'agronomy') return false
+  const haystack = `${alert.code || ''} ${alert.type || ''}`
+  return AGRONOMY_DOMAIN_RE.test(haystack)
+}
+
+const displayedAlertSections = computed<GroupedAlertSection[]>(() => {
+  if (!isAgronomist.value || !agronomyDomainPreset.value) {
+    return groupedAlertSections.value
+  }
+
+  return groupedAlertSections.value
+    .map((section) => {
+      const items = section.items.filter(matchesAgronomyDomain)
+      const zoneGroups = section.zoneGroups
+        ?.map((zoneGroup) => ({
+          ...zoneGroup,
+          items: zoneGroup.items.filter(matchesAgronomyDomain),
+        }))
+        .filter((zoneGroup) => zoneGroup.items.length > 0)
+
+      return {
+        ...section,
+        items,
+        zoneGroups,
+      }
+    })
+    .filter((section) => section.items.length > 0)
+})
+
+const displayedAlertSectionCounts = computed<AlertSectionCounts>(() => {
+  const counts: AlertSectionCounts = {
+    automation_block: 0,
+    safety: 0,
+    other_active: 0,
+    resolved: 0,
+    activeTotal: 0,
+  }
+
+  for (const section of displayedAlertSections.value) {
+    counts[section.key] = section.items.length
+    if (section.key !== 'resolved') {
+      counts.activeTotal += section.items.length
+    }
+  }
+
+  return counts
+})
+
 function zoneLabel(alert: AlertRecord): string {
   return alert.zone?.name || (alert.zone_id ? `Зона #${alert.zone_id}` : '—')
+}
+
+function humanTitle(alert: AlertRecord): string {
+  return formatAlertHumanTitle(alert, getAlertMeta(alert).title)
 }
 
 function resolveFromDetails(): void {
@@ -626,7 +733,7 @@ function severityValue(alert: AlertRecord): NormalizedAlertSeverity {
 }
 
 function severityLabel(alert: AlertRecord): string {
-  return severityValue(alert)
+  return translateAlertSeverity(severityValue(alert))
 }
 
 function severitySortWeight(alert: AlertRecord): number {
@@ -690,7 +797,7 @@ function sectionHeaderClass(tone: GroupedAlertSection['tone']): string {
 function sectionHint(key: GroupedAlertSectionKey): string {
   if (key === 'automation_block') return 'AE3 ждёт ручного подтверждения'
   if (key === 'safety') return 'Остановлен actuator path'
-  if (key === 'resolved') return 'История подтверждённых алертов'
+  if (key === 'resolved') return 'История решённых алертов'
   return 'Активные алерты без остановки процесса'
 }
 

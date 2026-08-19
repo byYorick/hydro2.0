@@ -38,6 +38,8 @@ declare module '@/utils/i18n' {
   export function translateStrategy(strategy: string): string
   export function translateDeviceType(type: string): string
   export function translateWorkflowStage(value: string): string
+  export function translateAlertSource(source?: string | null): string
+  export function translateAlertSeverity(severity?: string | null): string
 }
 
 declare module '../../../vendor/tightenco/ziggy/dist/index.esm.js' {

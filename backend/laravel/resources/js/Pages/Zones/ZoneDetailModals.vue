@@ -66,6 +66,19 @@
             placeholder="Например: Batch-042"
           />
         </div>
+        <div>
+          <label class="text-xs text-[color:var(--text-dim)]">Урожай, кг</label>
+          <input
+            v-model="harvestYieldKg"
+            type="number"
+            min="0"
+            step="0.01"
+            inputmode="decimal"
+            class="input-field mt-1 w-full"
+            placeholder="Необязательно"
+            data-testid="harvest-yield-kg"
+          />
+        </div>
       </div>
     </ConfirmModal>
 
@@ -148,6 +161,7 @@ import { pickIrrigationDurationFromTargets } from '@/utils/irrigationModalDefaul
 interface HarvestModalState {
   open: boolean
   batchLabel: string
+  yieldKg?: string
 }
 
 interface AbortModalState {
@@ -213,6 +227,7 @@ const emit = defineEmits<{
   (e: 'close-change-recipe'): void
   (e: 'confirm-change-recipe'): void
   (e: 'update-harvest-batch-label', value: string): void
+  (e: 'update-harvest-yield-kg', value: string): void
   (e: 'update-abort-notes', value: string): void
   (e: 'update-change-recipe-revision-id', value: string): void
   (e: 'update-change-recipe-apply-mode', value: 'now' | 'next_phase'): void
@@ -222,6 +237,13 @@ const harvestBatchLabel = computed({
   get: () => props.harvestModal.batchLabel,
   set: (value: string) => {
     emit('update-harvest-batch-label', value)
+  },
+})
+
+const harvestYieldKg = computed({
+  get: () => props.harvestModal.yieldKg ?? '',
+  set: (value: string | number) => {
+    emit('update-harvest-yield-kg', value === '' || value == null ? '' : String(value))
   },
 })
 

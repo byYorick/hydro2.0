@@ -92,11 +92,13 @@ vi.mock('@/utils/logger', () => ({
   },
 }))
 
+const pageAuth = vi.hoisted(() => ({ role: 'engineer' }))
+
 vi.mock('@inertiajs/vue3', () => ({
   usePage: () => ({
     props: {
       auth: {
-        user: { role: 'agronomist' },
+        user: pageAuth,
       },
     },
   }),
@@ -109,6 +111,7 @@ import DevicesAdd from '../Add.vue'
 
 describe('Devices/Add.vue', () => {
   beforeEach(() => {
+    pageAuth.role = 'engineer'
     vi.useFakeTimers()
     apiGetMock.mockReset()
     apiPatchMock.mockReset()
@@ -199,6 +202,38 @@ describe('Devices/Add.vue', () => {
 
     expect(apiDeleteMock).toHaveBeenCalledWith('/api/nodes/1', undefined)
     expect(wrapper.text()).not.toContain('UID: nd-clim-1')
+
+    wrapper.unmount()
+  })
+
+  it('agronomist видит баннер и не может удалять узлы', async () => {
+    pageAuth.role = 'agronomist'
+
+    const wrapper = mount(DevicesAdd)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Добавление устройств доступно инженеру или администратору.')
+    const deleteButton = wrapper.find('[data-test="delete-node-1"]')
+    expect(deleteButton.exists()).toBe(true)
+    expect(deleteButton.attributes('disabled')).toBeDefined()
+
+    await deleteButton.trigger('click')
+    await flushPromises()
+    expect(apiDeleteMock).not.toHaveBeenCalled()
+
+    wrapper.unmount()
+  })
+
+  it.each(['engineer', 'admin'] as const)('%s может привязывать и удалять узлы', async (role) => {
+    pageAuth.role = role
+
+    const wrapper = mount(DevicesAdd)
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('Добавление устройств доступно инженеру или администратору.')
+    const deleteButton = wrapper.find('[data-test="delete-node-1"]')
+    expect(deleteButton.exists()).toBe(true)
+    expect(deleteButton.attributes('disabled')).toBeUndefined()
 
     wrapper.unmount()
   })

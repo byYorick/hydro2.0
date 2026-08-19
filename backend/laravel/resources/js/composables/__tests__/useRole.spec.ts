@@ -203,7 +203,7 @@ describe('useRole', () => {
       })
     })
 
-    it('should allow recipe editing for admin, agronomist, operator', () => {
+    it('should allow recipe editing for admin and agronomist only', () => {
       const roles: UserRole[] = ['admin', 'agronomist', 'operator', 'engineer', 'viewer']
       
       roles.forEach(role => {
@@ -217,9 +217,85 @@ describe('useRole', () => {
 
         const { canEditRecipes } = useRole()
         expect(canEditRecipes.value).toBe(
-          role === 'admin' || role === 'agronomist' || role === 'operator'
+          role === 'admin' || role === 'agronomist'
         )
       })
+    })
+
+    it.each([
+      ['admin', true],
+      ['engineer', true],
+      ['agronomist', false],
+      ['operator', false],
+      ['viewer', false],
+    ] as const)('canConfigureDevices for %s is %s', (role, expected) => {
+      mockPage.mockReturnValue({
+        props: {
+          auth: {
+            user: { role: role as UserRole }
+          }
+        }
+      })
+
+      const { canConfigureDevices } = useRole()
+      expect(canConfigureDevices.value).toBe(expected)
+    })
+
+    it.each([
+      ['admin', true],
+      ['engineer', true],
+      ['agronomist', false],
+      ['operator', false],
+      ['viewer', false],
+    ] as const)('canSubscribeUnassignedDevices for %s is %s', (role, expected) => {
+      mockPage.mockReturnValue({
+        props: {
+          auth: {
+            user: { role: role as UserRole }
+          }
+        }
+      })
+
+      const { canSubscribeUnassignedDevices } = useRole()
+      expect(canSubscribeUnassignedDevices.value).toBe(expected)
+    })
+
+    it.each([
+      ['admin', true],
+      ['engineer', true],
+      ['agronomist', false],
+      ['operator', false],
+      ['viewer', false],
+    ] as const)('canEditAutomationEngineSettings for %s is %s', (role, expected) => {
+      mockPage.mockReturnValue({
+        props: {
+          auth: {
+            user: { role: role as UserRole }
+          }
+        }
+      })
+
+      const { canEditAutomationEngineSettings } = useRole()
+      expect(canEditAutomationEngineSettings.value).toBe(expected)
+    })
+
+    it.each([
+      ['admin', true],
+      ['agronomist', true],
+      ['engineer', false],
+      ['operator', false],
+      ['viewer', false],
+    ] as const)('canLaunchCycle for %s is %s', (role, expected) => {
+      mockPage.mockReturnValue({
+        props: {
+          auth: {
+            user: { role: role as UserRole }
+          }
+        }
+      })
+
+      const { canLaunchCycle } = useRole()
+      expect(canLaunchCycle.value).toBe(expected)
     })
 
     it('should allow alert resolution for admin, agronomist, engineer, operator', () => {

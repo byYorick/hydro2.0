@@ -299,6 +299,7 @@ import { useDevicesStore } from '@/stores/devices'
 import { useStoreEvents } from '@/composables/useStoreEvents'
 import { useFavorites } from '@/composables/useFavorites'
 import { useToast } from '@/composables/useToast'
+import { useRole } from '@/composables/useRole'
 import { useUrlState } from '@/composables/useUrlState'
 import { api } from '@/services/api'
 import type { SiteWeatherStation } from '@/services/api/siteWeatherStations'
@@ -310,14 +311,7 @@ import { subscribeManagedChannelEvents } from '@/ws/managedChannelEvents'
 
 const page = usePage<{ devices?: Device[] }>()
 const { showToast } = useToast()
-const canConfigureDevices = computed(() => {
-  const role = (page.props as any)?.auth?.user?.role ?? 'viewer'
-  return role === 'agronomist' || role === 'admin'
-})
-const canSubscribeUnassignedDevices = computed(() => {
-  const role = (page.props as any)?.auth?.user?.role ?? 'viewer'
-  return role === 'agronomist' || role === 'admin'
-})
+const { canConfigureDevices, canSubscribeUnassignedDevices } = useRole()
 const devicesStore = useDevicesStore()
 const { subscribeWithCleanup } = useStoreEvents()
 const deviceUpdateEventName = '.device.updated'

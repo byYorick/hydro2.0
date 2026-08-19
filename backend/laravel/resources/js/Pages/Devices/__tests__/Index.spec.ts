@@ -1,5 +1,5 @@
 import { mount, config } from '@vue/test-utils'
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 vi.mock('@/Layouts/AppLayout.vue', () => ({
   default: { name: 'AppLayout', template: '<div><slot /></div>' },
@@ -25,28 +25,40 @@ const RecycleScrollerStub = {
 
 config.global.components.RecycleScroller = RecycleScrollerStub
 
-const sampleDevices = [
-  { id: 'dev-1', uid: 'dev-1', zone: { name: 'Z1' }, type: 'sensor', status: 'OK', fw_version: '1.0' },
-  { id: 'dev-2', uid: 'dev-2', zone: { name: 'Z2' }, type: 'sensor', status: 'OK', fw_version: '1.1' },
-  { id: 'dev-3', uid: 'dev-3', zone: { name: 'Z1' }, type: 'actuator', status: 'OK', fw_version: '2.0' },
-]
+const testState = vi.hoisted(() => ({
+  role: 'viewer',
+  devices: [
+    { id: 'dev-1', uid: 'dev-1', zone: { name: 'Z1' }, type: 'sensor', status: 'OK', fw_version: '1.0' },
+    { id: 'dev-2', uid: 'dev-2', zone: { name: 'Z2' }, type: 'sensor', status: 'OK', fw_version: '1.1' },
+    { id: 'dev-3', uid: 'dev-3', zone: { name: 'Z1' }, type: 'actuator', status: 'OK', fw_version: '2.0' },
+  ],
+}))
 
 vi.mock('@/stores/devices', () => ({
   useDevicesStore: () => ({
-    items: sampleDevices,
-    allDevices: sampleDevices, // Добавляем геттер allDevices
+    items: testState.devices,
+    allDevices: testState.devices,
     initFromProps: () => {},
   }),
 }))
 
 vi.mock('@inertiajs/vue3', () => ({
   Link: { name: 'Link', props: ['href'], template: '<a><slot /></a>' },
-  usePage: () => ({ props: { devices: sampleDevices } }),
+  usePage: () => ({
+    props: {
+      devices: testState.devices,
+      auth: { user: { role: testState.role } },
+    },
+  }),
 }))
 
 import DevicesIndex from '../Index.vue'
 
 describe('Devices/Index.vue', () => {
+  beforeEach(() => {
+    testState.role = 'viewer'
+  })
+
   it('фильтрует по типу', async () => {
     const wrapper = mount(DevicesIndex)
     await wrapper.vm.$nextTick()
@@ -93,6 +105,24 @@ describe('Devices/Index.vue', () => {
       expect((wrapper.vm as any).filtered?.length ?? 0).toBe(0)
       expect(wrapper.text()).toContain('Нет устройств по текущим фильтрам')
     }
+  })
+
+  it('agronomist не видит кнопку «Добавить ноду»', async () => {
+    testState.role = 'agronomist'
+    const wrapper = mount(DevicesIndex)
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.text()).not.toContain('Добавить ноду')
+    wrapper.unmount()
+  })
+
+  it.each(['engineer', 'admin'] as const)('%s видит кнопку «Добавить ноду»', async (role) => {
+    testState.role = role
+    const wrapper = mount(DevicesIndex)
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.text()).toContain('Добавить ноду')
+    wrapper.unmount()
   })
 })
 

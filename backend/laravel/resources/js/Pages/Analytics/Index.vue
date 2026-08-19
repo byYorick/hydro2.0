@@ -63,7 +63,15 @@
         </FilterBar>
       </section>
 
-      <section class="space-y-4">
+      <template
+        v-for="block in analyticsBlockOrder"
+        :key="block"
+      >
+        <section
+          v-if="block === 'telemetry'"
+          class="space-y-4"
+          data-testid="analytics-telemetry-block"
+        >
         <div class="surface-card border border-[color:var(--border-muted)] rounded-2xl p-4">
           <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)] mb-3">
             Агрегаты телеметрии
@@ -130,7 +138,7 @@
                 data-testid="analytics-filter-median"
                 @click="showMedian = !showMedian"
               >
-                Median
+                Медиана
               </button>
             </div>
             <template #actions>
@@ -158,7 +166,11 @@
         />
       </section>
 
-      <section class="space-y-4">
+        <section
+          v-else-if="block === 'recipes'"
+          class="space-y-4"
+          data-testid="analytics-recipes-block"
+        >
         <div class="surface-card border border-[color:var(--border-muted)] rounded-2xl p-4">
           <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)] mb-3">
             Эффективность рецептов
@@ -241,7 +253,10 @@
           :virtualize="false"
         >
           <template #cell-zone="{ row }">
-            {{ row.zone?.name || (row.zone_id ? `Zone #${row.zone_id}` : '-') }}
+            {{ row.zone?.name || '—' }}
+          </template>
+          <template #cell-yield_kg="{ row }">
+            {{ formatNumber(recipeYieldKg(row), 2) }}
           </template>
           <template #cell-start_date="{ row }">
             {{ formatDate(row.start_date) }}
@@ -272,9 +287,7 @@
           v-model:per-page="recipePerPage"
           :total="recipeTotal"
         />
-      </section>
 
-      <section class="space-y-4">
         <div class="surface-card border border-[color:var(--border-muted)] rounded-2xl p-4">
           <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)] mb-3">
             Сравнение рецептов
@@ -325,6 +338,9 @@
                 <template #cell-recipe_name="{ row }">
                   {{ row.recipe?.name || `Рецепт #${row.recipe_id}` }}
                 </template>
+                <template #cell-yield_kg="{ row }">
+                  {{ formatNumber(recipeYieldKg(row), 2) }}
+                </template>
                 <template #cell-avg_efficiency="{ row }">
                   {{ formatNumber(row.avg_efficiency, 2) }}
                 </template>
@@ -345,6 +361,7 @@
           </div>
         </div>
       </section>
+      </template>
     </div>
   </AppLayout>
 </template>
@@ -376,6 +393,7 @@ import {
   type ZoneOption,
 } from '@/composables/useAnalyticsTransforms'
 import { useToast } from '@/composables/useToast'
+import { useRole } from '@/composables/useRole'
 import { logger } from '@/utils/logger'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import { extractHumanErrorMessage } from '@/utils/errorMessage'
@@ -390,6 +408,11 @@ interface SavedView {
 }
 
 const { showToast } = useToast()
+const { isAgronomist } = useRole()
+
+const analyticsBlockOrder = computed(() => (
+  isAgronomist.value ? (['recipes', 'telemetry'] as const) : (['telemetry', 'recipes'] as const)
+))
 
 const zoneOptions = ref<ZoneOption[]>([])
 const recipeOptions = ref<RecipeOption[]>([])
@@ -444,6 +467,7 @@ const recipeColumns = [
   { key: 'start_date', label: 'Старт', sortable: true },
   { key: 'end_date', label: 'Финиш', sortable: true },
   { key: 'efficiency_score', label: 'Эффективность', sortable: true },
+  { key: 'yield_kg', label: 'Урожай, кг' },
   { key: 'avg_ph_deviation', label: 'ΔpH', sortable: true },
   { key: 'avg_ec_deviation', label: 'ΔEC', sortable: true },
   { key: 'alerts_count', label: 'Алерты', sortable: true },
@@ -453,12 +477,32 @@ const recipeColumns = [
 const compareColumns = [
   { key: 'recipe_name', label: 'Рецепт' },
   { key: 'avg_efficiency', label: 'Эффективность', sortable: true },
+  { key: 'yield_kg', label: 'Урожай, кг' },
   { key: 'avg_ph_deviation', label: 'ΔpH', sortable: true },
   { key: 'avg_ec_deviation', label: 'ΔEC', sortable: true },
   { key: 'avg_alerts_count', label: 'Алерты', sortable: true },
   { key: 'avg_duration_hours', label: 'Длительность', sortable: true },
   { key: 'runs_count', label: 'Запуски', sortable: true },
 ]
+
+function recipeYieldKg(row: RecipeRun | RecipeComparisonRow): unknown {
+  const rec = row as (RecipeRun | RecipeComparisonRow) & {
+    yield_weight_kg?: unknown
+    avg_weight_kg?: unknown
+    avg_yield_weight_kg?: unknown
+    final_yield?: { weight_kg?: unknown } | null
+  }
+  if (rec.yield_weight_kg != null && rec.yield_weight_kg !== '') {
+    return rec.yield_weight_kg
+  }
+  if (rec.avg_yield_weight_kg != null && rec.avg_yield_weight_kg !== '') {
+    return rec.avg_yield_weight_kg
+  }
+  if (rec.avg_weight_kg != null && rec.avg_weight_kg !== '') {
+    return rec.avg_weight_kg
+  }
+  return rec.final_yield?.weight_kg
+}
 
 const loadZones = async (): Promise<void> => {
   try {

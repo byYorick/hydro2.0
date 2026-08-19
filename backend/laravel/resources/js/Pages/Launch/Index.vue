@@ -16,7 +16,7 @@
               :href="dashboardHref"
               class="text-[var(--text-muted)] hover:text-[var(--text-primary)]"
             >
-              Dashboard
+              Обзор
             </Link>
             <span class="text-[var(--text-dim)]">/</span>
             <Link

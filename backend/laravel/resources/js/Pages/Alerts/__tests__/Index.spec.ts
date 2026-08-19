@@ -119,6 +119,7 @@ const resetItemsData = () => {
   itemsDataValue.splice(0, itemsDataValue.length, ...fresh)
 }
 
+const currentUserRole = vi.hoisted(() => ({ value: undefined as string | undefined }))
 const axiosGetMock = vi.hoisted(() => vi.fn())
 const axiosPatchMock = vi.hoisted(() => vi.fn())
 const routerReloadMock = vi.hoisted(() => vi.fn())
@@ -151,6 +152,9 @@ vi.mock('axios', () => {
 vi.mock('@inertiajs/vue3', () => ({
   usePage: () => ({
     props: {
+      auth: currentUserRole.value
+        ? { user: { role: currentUserRole.value } }
+        : {},
       alerts: itemsDataValue,
       zones: [
         { id: 1, name: 'Zone A1' },
@@ -193,6 +197,7 @@ describe('Alerts/Index.vue', () => {
   })
 
   beforeEach(() => {
+    currentUserRole.value = undefined
     setActivePinia(createPinia())
     window.history.replaceState({}, '', '/alerts')
     resetItemsData()
@@ -248,18 +253,51 @@ describe('Alerts/Index.vue', () => {
     expect(wrapper.text()).toContain('Блокируют автоматику')
     expect(wrapper.text()).toContain('Останавливают железо')
     expect(wrapper.text()).toContain('Критичность')
-    expect(wrapper.text()).toContain('critical')
+    expect(wrapper.text()).toContain('Критическая')
     expect(wrapper.text()).toContain('Автоматика')
     expect(wrapper.text()).toContain('Железо')
+  })
+
+  it('локализует заголовок и фильтры источника/критичности, сохраняя machine values', async () => {
+    const wrapper = mountWithPinia()
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.text()).toContain('Тревоги')
+    expect(wrapper.text()).toContain('Отклонения по зонам и статус решения.')
+    expect(wrapper.text()).toContain('Скрытие повторов, сек')
+
+    const sourceOptions = wrapper.get('[data-testid="alerts-filter-source"]').findAll('option')
+    expect(sourceOptions.map((option) => option.attributes('value'))).toEqual(['', 'biz', 'infra', 'node'])
+    expect(sourceOptions.map((option) => option.text().trim())).toEqual([
+      'Все',
+      'Процесс',
+      'Инфраструктура',
+      'Узел',
+    ])
+
+    const severityOptions = wrapper.get('[data-testid="alerts-filter-severity"]').findAll('option')
+    expect(severityOptions.map((option) => option.attributes('value'))).toEqual([
+      '',
+      'critical',
+      'error',
+      'warning',
+      'info',
+    ])
+    expect(severityOptions.map((option) => option.text().trim())).toEqual([
+      'Все',
+      'Критическая',
+      'Ошибка',
+      'Предупреждение',
+      'Информация',
+    ])
   })
 
   it('фильтрует алерты, которые останавливают процесс', async () => {
     const wrapper = mountWithPinia()
     await wrapper.vm.$nextTick()
 
-    const processToggle = wrapper.findAll('button').find(button => button.text().includes('Останавливают процесс'))
-    expect(processToggle).toBeTruthy()
-    await processToggle!.trigger('click')
+    const processToggle = wrapper.get('[data-testid="alerts-filter-process-stopping"]')
+    await processToggle.trigger('click')
     await wrapper.vm.$nextTick()
 
     const rows = findRows(wrapper)
@@ -421,5 +459,75 @@ describe('Alerts/Index.vue', () => {
     expect(wrapper.get('[data-testid="alert-row-2"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="alerts-count-active-total"]').exists()).toBe(true)
     expect(wrapper.get('[data-testid="alerts-count-active-total"]').text()).toContain('3')
+  })
+
+  it('использует «Отметить как решённый» вместо «Подтвердить»', async () => {
+    const wrapper = mountWithPinia()
+    await wrapper.vm.$nextTick()
+
+    const resolveBtn = wrapper.get('[data-testid="alert-resolve-btn-1"]')
+    expect(resolveBtn.text()).toContain('Отметить как решённый')
+    expect(resolveBtn.text()).not.toContain('Подтвердить')
+
+    const globalSelectAll = wrapper.find('[data-testid="alerts-select-all"] input[type="checkbox"]')
+    await globalSelectAll.setValue(true)
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.text()).toContain('Отметить выбранные как решённые')
+    expect(wrapper.text()).not.toContain('Подтвердить выбранные')
+  })
+
+  it('у operator прячет source/category/suppression в дополнительные фильтры', async () => {
+    currentUserRole.value = 'operator'
+    const wrapper = mountWithPinia()
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('[data-testid="alerts-extra-filters-toggle"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="alerts-filter-process-stopping"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="alerts-filter-source"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="alerts-filter-category"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="alerts-filter-suppression"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="alerts-extra-filters"]').exists()).toBe(false)
+
+    await wrapper.get('[data-testid="alerts-extra-filters-toggle"]').trigger('click')
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('[data-testid="alerts-extra-filters"]').exists()).toBe(true)
+    const sourceOptions = wrapper.get('[data-testid="alerts-filter-source"]').findAll('option')
+    expect(sourceOptions.map((option) => option.attributes('value'))).toEqual(['', 'biz', 'infra', 'node'])
+    expect(wrapper.find('[data-testid="alerts-filter-category"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="alerts-filter-suppression"]').exists()).toBe(true)
+  })
+
+  it('у agronomist включает пресет раствор/климат/свет по code/type', async () => {
+    currentUserRole.value = 'agronomist'
+    const wrapper = mountWithPinia()
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.get('[data-testid="alerts-preset-agronomy-domain"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="alert-row-3"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('Температура выше нормы в Zone A1')
+    expect(wrapper.find('[data-testid="alert-row-1"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('biz_ae3_task_failed')
+    expect(wrapper.find('[data-testid="alerts-filter-source"]').exists()).toBe(true)
+  })
+
+  it('показывает человеческий заголовок с именем зоны и машинный code вторым слоем', async () => {
+    itemsDataValue.push({
+      id: 5,
+      type: 'PH_HIGH',
+      code: 'biz_high_ph',
+      severity: 'warning',
+      zone: { id: 3, name: 'Салат-1' },
+      zone_id: 3,
+      created_at: '2025-01-01T13:00:00Z',
+      status: 'active',
+    })
+    const wrapper = mountWithPinia()
+    await wrapper.vm.$nextTick()
+
+    const row = wrapper.get('[data-testid="alert-row-5"]')
+    expect(row.get('[data-testid="alert-human-title"]').text()).toContain('pH выше нормы в Салат-1')
+    expect(row.text()).toContain('biz_high_ph')
   })
 })

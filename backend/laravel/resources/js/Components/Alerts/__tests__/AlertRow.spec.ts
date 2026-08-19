@@ -47,4 +47,20 @@ describe('AlertRow.vue', () => {
     expect(badge.text()).toContain('Железо')
     expect(badge.attributes('data-process-stopping-kind')).toBe('safety')
   })
+
+  it('показывает человеческий заголовок с именем зоны, code остаётся вторым слоем', () => {
+    const wrapper = mount(AlertRow, {
+      props: {
+        item: makeAlert({
+          type: 'PH_HIGH',
+          code: 'biz_high_ph',
+          title: 'High pH',
+          zone: { id: 7, name: 'Салат-1' },
+        }),
+      },
+    })
+
+    expect(wrapper.get('[data-testid="alert-human-title"]').text()).toBe('pH выше нормы в Салат-1')
+    expect(wrapper.text()).toContain('biz_high_ph')
+  })
 })

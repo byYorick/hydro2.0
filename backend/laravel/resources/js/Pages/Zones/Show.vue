@@ -4,19 +4,76 @@
       class="space-y-2"
       data-testid="zone-detail-page"
     >
-      <h1 class="sr-only">
-        {{ zone.name }}
-      </h1>
       <ZoneAutomationBlockBanner
         :block="automationBlock"
         @open-alerts="activeTab = 'alerts'"
       />
-      <div class="surface-card border border-[color:var(--border-muted)] rounded-xl p-1.5">
+      <ZonePageHeader
+        :zone-name="zone.name"
+        :crop-label="headerCropLabel"
+        :phase-label="headerPhaseLabel"
+        :phase-days-elapsed="computedPhaseDaysElapsed"
+        :phase-days-total="computedPhaseDaysTotal"
+        :status-label="headerStatusLabel"
+        :status-variant="headerStatusVariant"
+        :cycle-status="activeGrowCycle?.status ?? null"
+        :can-operate-zone="canOperateZone"
+        :can-manage-cycle="canManageCycle"
+        :pause-loading="loading.cyclePause"
+        :next-phase-loading="loading.nextPhase"
+        @water="openActionModal('START_IRRIGATION')"
+        @pause="onCyclePause"
+        @next-phase="onNextPhase"
+        @open-actions="activeTab = 'automation'"
+        @diagnose="activeTab = 'devices'"
+      />
+      <div class="surface-card flex flex-wrap items-center gap-1 rounded-xl border border-[color:var(--border-muted)] p-1.5">
         <Tabs
           v-model="activeTab"
           :tabs="zoneTabs"
           aria-label="Разделы зоны"
+          class="min-w-0 flex-1"
         />
+        <Dropdown
+          v-if="moreZoneTabs.length > 0"
+          align="right"
+          width="48"
+        >
+          <template #trigger>
+            <button
+              type="button"
+              class="inline-flex items-center gap-1.5 rounded-lg border border-transparent px-3 py-1.5 text-[13px] font-semibold text-[color:var(--text-dim)] transition-colors hover:bg-[color:var(--bg-elevated)] hover:text-[color:var(--text-primary)]"
+              data-testid="zone-more-tabs"
+            >
+              Ещё
+              <svg
+                class="h-3 w-3"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M19 9l-7 7-7-7"
+                />
+              </svg>
+            </button>
+          </template>
+          <template #content>
+            <button
+              v-for="tab in moreZoneTabs"
+              :key="tab.id"
+              type="button"
+              class="block w-full px-4 py-2 text-start text-sm text-[color:var(--text-primary)] transition-colors hover:bg-[color:var(--bg-elevated)]"
+              :data-testid="`zone-more-tab-${tab.id}`"
+              @click="activeTab = tab.id"
+            >
+              {{ tab.label }}
+            </button>
+          </template>
+        </Dropdown>
       </div>
       <ZoneTelemetryTab
         v-if="activeTab === 'telemetry'"
@@ -152,6 +209,7 @@
       @close-change-recipe="closeChangeRecipeModal"
       @confirm-change-recipe="confirmChangeRecipe"
       @update-harvest-batch-label="harvestModal.batchLabel = $event"
+      @update-harvest-yield-kg="harvestModal.yieldKg = String($event ?? '')"
       @update-abort-notes="abortModal.notes = $event"
       @update-change-recipe-revision-id="changeRecipeModal.recipeRevisionId = $event"
       @update-change-recipe-apply-mode="changeRecipeModal.applyMode = $event"
@@ -163,6 +221,8 @@ import { computed, ref } from 'vue';
 import { router } from '@inertiajs/vue3';
 import AppLayout from "@/Layouts/AppLayout.vue";
 import Tabs from "@/Components/Tabs.vue";
+import Dropdown from "@/Components/Dropdown.vue";
+import ZonePageHeader from "@/Components/ZonePageHeader.vue";
 import ZoneAutomationTab from "@/Pages/Zones/Tabs/ZoneAutomationTab.vue";
 import ZoneAlertsTab from "@/Pages/Zones/Tabs/ZoneAlertsTab.vue";
 import ZoneCycleTab from "@/Pages/Zones/Tabs/ZoneCycleTab.vue";
@@ -176,9 +236,11 @@ import ZoneAutomationBlockBanner from "@/Components/ZoneAutomationBlockBanner.vu
 import { useZoneShowPage } from "@/composables/useZoneShowPage";
 import { computeAutomationBlock } from "@/utils/automationBlock";
 import { normalizeDurationHours } from "@/utils/growCycleProgress";
+import { translateStatus } from "@/utils/i18n";
 
 const {
     zoneTabs,
+    moreZoneTabs,
     activeTab,
     modals,
     showActionModal,
@@ -253,6 +315,35 @@ const {
  * `AlertPolicyService::POLICY_MANAGED_CODES`).
  */
 const automationBlock = computed(() => computeAutomationBlock(alerts.value));
+
+const headerCropLabel = computed(() => {
+    const zoneCrop = (zone.value as { crop?: string } | null)?.crop;
+    return zoneCrop
+        || activeGrowCycle.value?.recipe?.name
+        || activeGrowCycle.value?.recipeRevision?.recipe?.name
+        || null;
+});
+
+const headerPhaseLabel = computed(() =>
+    activeGrowCycle.value?.currentPhase?.name
+        ?? activeGrowCycle.value?.current_phase_name
+        ?? null,
+);
+
+const headerStatusLabel = computed(() => {
+    if (activeGrowCycle.value) {
+        return cycleStatusLabel.value;
+    }
+    return translateStatus(zone.value.status);
+});
+
+const headerStatusVariant = computed(() => {
+    if (activeGrowCycle.value) {
+        return cycleStatusVariant.value;
+    }
+    return variant.value;
+});
+
 
 const automationStateRefreshSeq = ref(0);
 

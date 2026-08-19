@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\GrowCycleStatus;
 use App\Models\Recipe;
 use App\Support\Recipes\RecipeAggregatePresenter;
 use Inertia\Inertia;
@@ -20,6 +21,15 @@ class RecipePageController extends Controller
                 'latestPublishedRevision.phases',
                 'latestDraftRevision.phases',
                 'plants:id,name',
+            ])
+            ->withCount([
+                'growCycles as active_zones_count' => function ($query): void {
+                    $query->whereIn('status', [
+                        GrowCycleStatus::PLANNED,
+                        GrowCycleStatus::RUNNING,
+                        GrowCycleStatus::PAUSED,
+                    ]);
+                },
             ])
             ->latest('id')
             ->get();

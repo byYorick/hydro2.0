@@ -1,7 +1,10 @@
 <template>
-  <AppLayout>
+  <component :is="layoutRoot">
     <div class="space-y-4">
-      <header class="ui-hero p-5 space-y-4">
+      <header
+        v-if="!embedded"
+        class="ui-hero p-5 space-y-4"
+      >
         <div>
           <p class="text-[11px] uppercase tracking-[0.28em] text-[color:var(--text-dim)]">
             observability
@@ -224,7 +227,7 @@
         </div>
       </div>
     </div>
-  </AppLayout>
+  </component>
 </template>
 
 <script setup lang="ts">
@@ -266,15 +269,35 @@ interface ServiceLogMeta {
 }
 
 interface Props {
-  serviceOptions: ServiceOption[]
+  serviceOptions?: ServiceOption[]
   defaultService?: string
   defaultLevel?: string
   defaultSearch?: string
+  embedded?: boolean
 }
 
-const props = defineProps<Props>()
+const DEFAULT_SERVICE_OPTIONS: ServiceOption[] = [
+  {
+    key: 'automation-engine',
+    label: 'Automation Engine',
+    description: 'События ядра автоматики и командные переходы.',
+  },
+  {
+    key: 'system',
+    label: 'System Services',
+    description: 'Системные сервисы, очередь, запуск крон-заданий.',
+  },
+]
 
+const props = withDefaults(defineProps<Props>(), {
+  embedded: false,
+})
+
+const resolvedServiceOptions = computed(() =>
+  props.serviceOptions?.length ? props.serviceOptions : DEFAULT_SERVICE_OPTIONS
+)
 const excludedServiceKeys = new Set(['history-logger', 'history-locker'])
+const layoutRoot = computed(() => (props.embedded ? 'div' : AppLayout))
 const defaultService = props.defaultService && !excludedServiceKeys.has(props.defaultService)
   ? props.defaultService
   : 'all'
@@ -308,7 +331,7 @@ let pollInterval: ReturnType<typeof setInterval> | null = null
 let searchDebounce: ReturnType<typeof setTimeout> | null = null
 
 const dynamicServices = computed<ServiceOption[]>(() => {
-  const known = new Set(props.serviceOptions.map((s) => s.key))
+  const known = new Set(resolvedServiceOptions.value.map((s) => s.key))
   const dynamic = Array.from(new Set(logs.value.map((l) => l.service))).filter((key) =>
     !known.has(key) && !excludedServiceKeys.has(key)
   )
@@ -320,7 +343,7 @@ const dynamicServices = computed<ServiceOption[]>(() => {
 })
 
 const serviceSelectOptions = computed<ServiceOption[]>(() =>
-  [...props.serviceOptions, ...dynamicServices.value]
+  [...resolvedServiceOptions.value, ...dynamicServices.value]
     .filter((item) => !excludedServiceKeys.has(item.key))
     .filter((item, index, arr) => arr.findIndex((i) => i.key === item.key) === index)
 )

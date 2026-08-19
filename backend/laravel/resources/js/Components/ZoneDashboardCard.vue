@@ -35,28 +35,14 @@
 
         <div class="flex flex-wrap items-center gap-1.5">
           <Badge
-            v-if="currentZoneStatusLabel"
-            :variant="currentZoneStatusVariant"
-            data-testid="zone-card-current-status"
-            :title="currentZoneStatusTitle"
-          >
-            {{ currentZoneStatusLabel }}
-          </Badge>
-          <Badge
-            :variant="getZoneStatusVariant(zone.status)"
-            :title="'Статус зоны: ' + translateStatus(zone.status)"
-          >
-            {{ translateStatus(zone.status) }}
-          </Badge>
-          <Badge
             v-if="zone.cycle"
-            :variant="getCycleStatusVariant(zone.cycle.status, 'center')"
+            :variant="getCycleStatusVariant(cycleStatusKey, 'center')"
           >
-            {{ getCycleStatusLabel(zone.cycle.status, 'short') }}
+            {{ getCycleStatusLabel(cycleStatusKey, 'short') }}
           </Badge>
           <span
             v-if="zone.devices?.total"
-            class="inline-flex items-center rounded-full border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]/60 px-2 py-0.5 text-[11px] tabular-nums text-[color:var(--text-muted)]"
+            class="text-[11px] tabular-nums text-[color:var(--text-muted)]"
           >
             Устр: {{ zone.devices.online }}/{{ zone.devices.total }}
           </span>
@@ -69,9 +55,37 @@
             class="truncate"
           >· {{ zone.recipe.name }}</span>
         </div>
+
+        <div
+          v-if="isOperator"
+          class="flex flex-wrap items-center gap-1.5"
+          @click.stop
+        >
+          <button
+            v-if="canPauseCycle"
+            type="button"
+            class="rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]/60 px-2 py-0.5 text-[11px] font-medium text-[color:var(--text-secondary)] hover:bg-[color:var(--bg-elevated)] disabled:cursor-not-allowed disabled:opacity-50"
+            :disabled="pausing"
+            data-testid="zone-card-pause"
+            @click.stop="onPauseCycle"
+          >
+            {{ pausing ? 'Пауза...' : 'Пауза' }}
+          </button>
+          <Link
+            :href="alertsTabHref"
+            class="rounded-lg px-2 py-0.5 text-[11px] font-medium text-[color:var(--accent-cyan)] no-underline hover:underline"
+            data-testid="zone-card-alerts-link"
+            @click.stop
+          >
+            Тревоги
+          </Link>
+        </div>
       </div>
 
-      <div class="flex shrink-0 flex-col items-end gap-1">
+      <div
+        class="flex shrink-0 flex-col items-end gap-1"
+        data-testid="zone-card-current-status"
+      >
         <div
           v-if="automationBlock"
           class="status-chip status-chip--alarm shrink-0 animate-pulse"
@@ -329,12 +343,17 @@ import AlertPreviewList, {
   type AlertPreviewItem,
 } from '@/Components/ZoneDashboardCard/AlertPreviewList.vue'
 import { resolveAlertPreviewSeverity } from '@/Components/ZoneDashboardCard/alertPreviewSeverity'
-import { translateStatus } from '@/utils/i18n'
 import { getCycleStatusLabel, getCycleStatusVariant } from '@/utils/growCycleStatus'
 import {
   automationBlockHint as resolveAutomationBlockHint,
   automationBlockLabel as resolveAutomationBlockLabel,
 } from '@/utils/automationBlock'
+import { zoneAlertsTabUrl } from '@/utils/alertContext'
+import { logger } from '@/utils/logger'
+import { useRole } from '@/composables/useRole'
+import { useToast } from '@/composables/useToast'
+import { growCyclesApi } from '@/services/api/growCycles'
+import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import type { UnifiedZone } from '@/composables/useUnifiedDashboard'
 import type { GrowCycle } from '@/composables/useCycleCenterView'
 
@@ -359,6 +378,42 @@ const props = withDefaults(defineProps<Props>(), {
   sparklineSeriesData: null,
   dense: false,
 })
+
+const { isOperator } = useRole()
+const { showToast } = useToast()
+const pausing = ref(false)
+
+const cycleStatusKey = computed(() => (props.zone.cycle?.status ?? '').toUpperCase())
+
+const canPauseCycle = computed(() => {
+  if (!isOperator.value) return false
+  const cycle = props.zone.cycle
+  if (!cycle?.id) return false
+  return cycleStatusKey.value === 'RUNNING'
+})
+
+const alertsTabHref = computed(() => zoneAlertsTabUrl(props.zone.id))
+
+async function onPauseCycle(): Promise<void> {
+  const cycleId = props.zone.cycle?.id
+  if (!cycleId || pausing.value) {
+    return
+  }
+  pausing.value = true
+  try {
+    await growCyclesApi.pause(cycleId)
+    showToast('Цикл приостановлен', 'success', TOAST_TIMEOUT.NORMAL)
+  } catch (error) {
+    logger.error('Failed to pause cycle:', error)
+    showToast(
+      error instanceof Error ? error.message : 'Не удалось приостановить цикл',
+      'error',
+      TOAST_TIMEOUT.NORMAL,
+    )
+  } finally {
+    pausing.value = false
+  }
+}
 
 // ── Переключатель метрики на графике ─────────────────────────────────────────
 
@@ -467,50 +522,6 @@ const automationBlockHint = computed(() =>
   resolveAutomationBlockHint(automationBlock.value?.reason_code ?? null),
 )
 
-/** Текущий статус процесса зоны (workflow), приоритетнее lifecycle RUNNING. */
-const currentZoneStatusLabel = computed(() => {
-  if (automationBlock.value) {
-    return automationBlockLabelText.value || 'Автоматика остановлена'
-  }
-  const label = props.zone.system_state?.label?.trim()
-  if (label) return label
-  const phase = props.zone.system_state?.phase?.trim()
-  if (phase) return phase
-  return null
-})
-
-const currentZoneStatusTitle = computed(() => {
-  if (automationBlock.value) {
-    return automationBlockHint.value
-  }
-  const phase = props.zone.system_state?.phase
-  return phase ? `Фаза workflow: ${phase}` : 'Текущий статус зоны'
-})
-
-const currentZoneStatusVariant = computed<'success' | 'info' | 'warning' | 'danger' | 'neutral'>(() => {
-  if (automationBlock.value) return 'danger'
-  const phase = (props.zone.system_state?.phase ?? '').toLowerCase()
-  if (['error', 'failed', 'degraded'].includes(phase)) return 'danger'
-  if (['irrigating', 'irrigation', 'correction', 'irrigation_recovery'].includes(phase)) return 'info'
-  if ([
-    'tank_filling',
-    'tank_recirc',
-    'clean_fill',
-    'solution_fill',
-    'prepare_recirculation',
-    'preparing',
-    'startup',
-    'recirculation',
-    'irrig_recirc',
-  ].includes(phase)) {
-    return 'info'
-  }
-  if (phase === 'ready') return 'success'
-  if (['idle', 'waiting'].includes(phase)) return 'neutral'
-  if (props.zone.system_state?.stale) return 'warning'
-  return 'neutral'
-})
-
 const automationBlockMessageText = computed(() => {
   const msg = automationBlock.value?.message
   return typeof msg === 'string' && msg.trim() ? msg.trim() : null
@@ -592,9 +603,8 @@ const cycleOverallPct = computed(() => {
 })
 
 const cycleStatusLabel = computed(() => {
-  const cycle = props.zone.cycle
-  if (!cycle?.status) return null
-  return getCycleStatusLabel(cycle.status, 'short')
+  if (!cycleStatusKey.value) return null
+  return getCycleStatusLabel(cycleStatusKey.value, 'short')
 })
 
 const cycleOverallDayLabel = computed(() => {
@@ -690,16 +700,6 @@ function extractAlertMessage(details: unknown): string | null {
 }
 
 // ── Визуальные классы ─────────────────────────────────────────────────────────
-
-function getZoneStatusVariant(status: string): 'success' | 'info' | 'warning' | 'danger' | 'neutral' {
-  switch (status) {
-    case 'RUNNING': return 'success'
-    case 'PAUSED': return 'info'
-    case 'WARNING': return 'warning'
-    case 'ALARM': return 'danger'
-    default: return 'neutral'
-  }
-}
 
 const cardBorderClass = computed(() => {
   if (automationBlock.value) return 'border-[color:var(--accent-red)]/40 hover:border-[color:var(--accent-red)]/55'

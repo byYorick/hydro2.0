@@ -448,3 +448,118 @@ export function translateDeviceType(type) {
   }
   return translations[type] || type
 }
+
+const ALERT_SOURCE_TRANSLATIONS = {
+  biz: 'Процесс',
+  infra: 'Инфраструктура',
+  node: 'Узел',
+}
+
+const ALERT_SEVERITY_TRANSLATIONS = {
+  critical: 'Критическая',
+  error: 'Ошибка',
+  warning: 'Предупреждение',
+  info: 'Информация',
+}
+
+/**
+ * Переводит источник алерта (machine value biz|infra|node) на русский.
+ * Неизвестное значение возвращается как есть; API query params не меняются.
+ * @param {string|null|undefined} source
+ * @returns {string}
+ */
+export function translateAlertSource(source) {
+  if (typeof source !== 'string' || source.length === 0) return source ?? ''
+  return ALERT_SOURCE_TRANSLATIONS[source.toLowerCase()] || source
+}
+
+/**
+ * Переводит критичность алерта (critical|error|warning|info) на русский.
+ * Неизвестное значение возвращается как есть.
+ * @param {string|null|undefined} severity
+ * @returns {string}
+ */
+export function translateAlertSeverity(severity) {
+  if (typeof severity !== 'string' || severity.length === 0) return severity ?? ''
+  return ALERT_SEVERITY_TRANSLATIONS[severity.toLowerCase()] || severity
+}
+
+const ALERT_TYPE_TRANSLATIONS = {
+  PH_HIGH: 'pH выше нормы',
+  PH_LOW: 'pH ниже нормы',
+  PH_OUT_OF_RANGE: 'pH вне диапазона',
+  EC_HIGH: 'EC выше нормы',
+  EC_LOW: 'EC ниже нормы',
+  EC_OUT_OF_RANGE: 'EC вне диапазона',
+  TEMP_HIGH: 'Температура выше нормы',
+  TEMP_LOW: 'Температура ниже нормы',
+  HUMIDITY_HIGH: 'Влажность выше нормы',
+  HUMIDITY_LOW: 'Влажность ниже нормы',
+  LIGHT_FAILURE: 'Сбой освещения',
+  LIGHT_HIGH: 'Свет выше нормы',
+  LIGHT_LOW: 'Свет ниже нормы',
+  CLIMATE_WARNING: 'Отклонение климата',
+  NO_FLOW: 'Нет потока',
+  AE3_TASK_FAILED: 'Сбой задачи автоматики',
+  NODE_OFFLINE: 'Узел офлайн',
+}
+
+const ALERT_CODE_PHRASE_TRANSLATIONS = {
+  biz_high_ph: 'pH выше нормы',
+  biz_low_ph: 'pH ниже нормы',
+  biz_ph_high: 'pH выше нормы',
+  biz_ph_low: 'pH ниже нормы',
+  biz_high_ec: 'EC выше нормы',
+  biz_low_ec: 'EC ниже нормы',
+  biz_ec_high: 'EC выше нормы',
+  biz_ec_low: 'EC ниже нормы',
+  biz_high_temp: 'Температура выше нормы',
+  biz_low_temp: 'Температура ниже нормы',
+  biz_temp_high: 'Температура выше нормы',
+  biz_temp_low: 'Температура ниже нормы',
+  biz_light_failure: 'Сбой освещения',
+  biz_solution_temp_high: 'Температура раствора выше нормы',
+}
+
+function normalizeAlertTypeKey(value) {
+  return String(value || '')
+    .trim()
+    .toUpperCase()
+    .replace(/[-\s]+/g, '_')
+}
+
+/**
+ * Переводит type/code алерта в короткую человеческую фразу.
+ * Неизвестное значение возвращает пустую строку, чтобы вызывающий код мог взять title.
+ * @param {string|null|undefined} type
+ * @returns {string}
+ */
+export function translateAlertType(type) {
+  if (typeof type !== 'string' || type.length === 0) return ''
+  const key = normalizeAlertTypeKey(type)
+  return ALERT_TYPE_TRANSLATIONS[key] || ''
+}
+
+/**
+ * Человеческий заголовок строки/карточки: «pH выше нормы в Салат-1».
+ * Машинный code не подставляется в заголовок — его показывают вторым слоем в UI.
+ * @param {{ type?: string, code?: string, title?: string, zone?: { name?: string } }|null|undefined} alert
+ * @param {string} [fallbackTitle]
+ * @returns {string}
+ */
+export function formatAlertHumanTitle(alert, fallbackTitle) {
+  if (!alert) return ''
+  const fromType = translateAlertType(alert.type)
+  const fromCode = ALERT_CODE_PHRASE_TRANSLATIONS[String(alert.code || '').trim().toLowerCase()] || ''
+  const phrase = fromType
+    || fromCode
+    || String(alert.title || '').trim()
+    || String(fallbackTitle || '').trim()
+    || String(alert.type || '').trim()
+    || 'Системное предупреждение'
+  const zoneName = String(alert.zone?.name || '').trim()
+  if (zoneName && !phrase.includes(zoneName)) {
+    return `${phrase} в ${zoneName}`
+  }
+  return phrase
+}

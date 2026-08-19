@@ -1,3 +1,6 @@
+<!--
+  @deprecated Не подключать к маршрутам. Production home — Pages/Dashboard/Index.vue. Удаление — отдельный PR.
+-->
 <template>
   <div class="space-y-6">
     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -229,6 +232,7 @@
 </template>
 
 <script setup lang="ts">
+/** @deprecated Не подключать к маршрутам. Production home — Pages/Dashboard/Index.vue. Удаление — отдельный PR. */
 import { computed, ref } from 'vue'
 import { Link } from '@inertiajs/vue3'
 import Card from '@/Components/Card.vue'

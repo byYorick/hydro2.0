@@ -44,7 +44,7 @@
           </div>
           <div class="ui-kpi-card border-[color:var(--badge-warning-border)]">
             <div class="ui-kpi-label">
-              Warning
+              Предупреждение
             </div>
             <div class="ui-kpi-value text-[color:var(--accent-amber)]">
               {{ warningCount }}
@@ -52,7 +52,7 @@
           </div>
           <div class="ui-kpi-card border-[color:var(--badge-danger-border)]">
             <div class="ui-kpi-label">
-              Alarm
+              Тревога
             </div>
             <div class="ui-kpi-value text-[color:var(--accent-red)]">
               {{ alarmCount }}
@@ -99,7 +99,7 @@
             <label class="text-sm text-[color:var(--text-muted)] shrink-0">Поиск:</label>
             <input
               v-model="query"
-              placeholder="Имя зоны..."
+              placeholder="Имя или культура..."
               class="input-field h-10 flex-1 sm:w-64"
               data-testid="zones-filter-query"
             />
@@ -178,6 +178,12 @@
             >
               {{ translateStatus(row.status) }}
             </Badge>
+          </template>
+          <template #cell-crop="{ row }">
+            <span class="truncate block">{{ zoneCropLabel(row) }}</span>
+          </template>
+          <template #cell-phase="{ row }">
+            <span class="truncate block">{{ zonePhaseLabel(row) }}</span>
           </template>
           <template #cell-greenhouse="{ row }">
             <span class="truncate block">{{ row.greenhouse?.name || '-' }}</span>
@@ -370,7 +376,9 @@ const filteredZones = computed(() => {
   
   return zones.value.filter((z) => {
     const okStatus = statusFilter ? z.status === statusFilter : true
-    const okQuery = queryFilter ? (z.name || '').toLowerCase().includes(queryFilter) : true
+    const okQuery = queryFilter
+      ? zoneSearchHaystack(z).includes(queryFilter)
+      : true
     const okFavorites = showOnlyFavorites.value ? isZoneFavorite(z.id) : true
     return okStatus && okQuery && okFavorites
   })
@@ -405,6 +413,29 @@ const paginatedZones = computed(() => {
   return filteredZones.value.slice(start, end)
 })
 
+function zoneCropLabel(zone: Zone): string {
+  return zone.crop
+    || zone.recipe_instance?.recipe?.name
+    || '—'
+}
+
+function zonePhaseLabel(zone: Zone): string {
+  const cycle = zone.activeGrowCycle
+  if (!cycle) return '—'
+  return cycle.current_phase_name || cycle.currentPhase?.name || '—'
+}
+
+function zoneSearchHaystack(zone: Zone): string {
+  return [
+    zone.name,
+    zone.crop,
+    zone.recipe_instance?.recipe?.name,
+  ]
+    .filter((value): value is string => Boolean(value))
+    .join(' ')
+    .toLowerCase()
+}
+
 const columns: DataTableColumn<Zone>[] = [
   {
     key: 'name',
@@ -413,6 +444,18 @@ const columns: DataTableColumn<Zone>[] = [
     class: 'min-w-[200px] max-w-[300px]',
   },
   { key: 'status', label: 'Статус', headerClass: 'min-w-[120px]', class: 'min-w-[120px]' },
+  {
+    key: 'crop',
+    label: 'Культура',
+    headerClass: 'min-w-[120px] max-w-[180px]',
+    class: 'min-w-[120px] max-w-[180px]',
+  },
+  {
+    key: 'phase',
+    label: 'Фаза',
+    headerClass: 'min-w-[120px] max-w-[180px]',
+    class: 'min-w-[120px] max-w-[180px]',
+  },
   {
     key: 'greenhouse',
     label: 'Теплица',

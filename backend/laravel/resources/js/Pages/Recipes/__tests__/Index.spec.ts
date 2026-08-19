@@ -34,23 +34,32 @@ vi.mock('@/Components/Button.vue', () => ({
 }))
 
 const sampleRecipesData = vi.hoisted(() => [
-  {
-    id: 1,
-    name: 'Lettuce Recipe',
-    description: 'Recipe for growing lettuce',
-    phases_count: 3,
-  },
-  {
-    id: 2,
-    name: 'Basil Recipe',
-    description: 'Recipe for growing basil',
-    phases_count: 2,
-  },
-  {
-    id: 3,
-    name: 'Tomato Recipe',
-    phases_count: 4,
-  },
+    {
+      id: 1,
+      name: 'Lettuce Recipe',
+      description: 'Recipe for growing lettuce',
+      phases_count: 3,
+      plants: [{ id: 1, name: 'Салат' }],
+      latest_published_revision_id: 11,
+      active_zones_count: 2,
+    },
+    {
+      id: 2,
+      name: 'Basil Recipe',
+      description: 'Recipe for growing basil',
+      phases_count: 2,
+      plants: [{ id: 2, name: 'Базилик' }],
+      latest_published_revision_id: null,
+      active_zones_count: 0,
+    },
+    {
+      id: 3,
+      name: 'Tomato Recipe',
+      phases_count: 4,
+      plants: [{ id: 3, name: 'Томат' }],
+      latest_published_revision_id: 12,
+      active_zones_count: 1,
+    },
 ])
 
 const resetSampleRecipesData = vi.hoisted(() => () => {
@@ -62,17 +71,26 @@ const resetSampleRecipesData = vi.hoisted(() => () => {
       name: 'Lettuce Recipe',
       description: 'Recipe for growing lettuce',
       phases_count: 3,
+      plants: [{ id: 1, name: 'Салат' }],
+      latest_published_revision_id: 11,
+      active_zones_count: 2,
     },
     {
       id: 2,
       name: 'Basil Recipe',
       description: 'Recipe for growing basil',
       phases_count: 2,
+      plants: [{ id: 2, name: 'Базилик' }],
+      latest_published_revision_id: null,
+      active_zones_count: 0,
     },
     {
       id: 3,
       name: 'Tomato Recipe',
       phases_count: 4,
+      plants: [{ id: 3, name: 'Томат' }],
+      latest_published_revision_id: 12,
+      active_zones_count: 1,
     },
   )
 })
@@ -246,5 +264,27 @@ describe('Recipes/Index.vue', () => {
     expect(wrapper.text()).toContain('Lettuce Recipe')
     expect(wrapper.text()).toContain('Basil Recipe')
     expect(wrapper.text()).toContain('Tomato Recipe')
+  })
+
+  it('не показывает vanity KPI среднего числа фаз', () => {
+    const wrapper = mount(RecipesIndex)
+
+    expect(wrapper.text()).not.toContain('Среднее фаз')
+    expect(wrapper.text()).not.toContain('Суммарно фаз')
+    expect(wrapper.text()).not.toContain('По фильтру')
+  })
+
+  it('показывает колонку культуры и ищет по ней', async () => {
+    const wrapper = mount(RecipesIndex)
+
+    expect(wrapper.text()).toContain('Культура')
+    expect(wrapper.text()).toContain('Салат')
+
+    const searchInput = wrapper.find('input[placeholder*="Название или культура"]')
+    await searchInput.setValue('салат')
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.text()).toContain('Lettuce Recipe')
+    expect(wrapper.text()).not.toContain('Basil Recipe')
   })
 })

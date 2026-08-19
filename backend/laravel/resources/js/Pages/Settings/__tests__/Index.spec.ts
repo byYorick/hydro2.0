@@ -94,6 +94,16 @@ vi.mock('@/composables/useModal', () => ({
   }),
 }))
 
+const pageUser = vi.hoisted(() => ({
+  id: 7,
+  role: 'admin',
+  name: 'Admin',
+  email: 'admin@example.com',
+  preferences: {
+    alert_toast_suppression_sec: 25,
+  },
+}))
+
 vi.mock('@inertiajs/vue3', () => ({
   Link: {
     name: 'Link',
@@ -103,15 +113,7 @@ vi.mock('@inertiajs/vue3', () => ({
   usePage: () => ({
     props: {
       auth: {
-        user: {
-          id: 7,
-          role: 'agronomist',
-          name: 'Agronomist',
-          email: 'agronomist@example.com',
-          preferences: {
-            alert_toast_suppression_sec: 25,
-          },
-        },
+        user: pageUser,
       },
       users: [],
       automationEngineSettings: {
@@ -191,8 +193,26 @@ function makeAlertPoliciesDocument(value = 'manual_ack') {
   }
 }
 
+function mountSettings(role = 'admin') {
+  pageUser.role = role
+  pageUser.name = role.charAt(0).toUpperCase() + role.slice(1)
+  pageUser.email = `${role}@example.com`
+  return mount(SettingsIndex)
+}
+
+function tabLabels(wrapper: ReturnType<typeof mount>) {
+  return wrapper.findAll('[role="tab"]').map((tab) => tab.text())
+}
+
 describe('Settings/Index.vue', () => {
   beforeEach(() => {
+    pageUser.id = 7
+    pageUser.role = 'admin'
+    pageUser.name = 'Admin'
+    pageUser.email = 'admin@example.com'
+    pageUser.preferences = {
+      alert_toast_suppression_sec: 25,
+    }
     apiGetMock.mockReset()
     apiPatchMock.mockReset()
     apiPostMock.mockReset()
@@ -236,7 +256,7 @@ describe('Settings/Index.vue', () => {
   })
 
   it('читает runtime snapshot только через authority API и игнорирует legacy page props', async () => {
-    const wrapper = mount(SettingsIndex)
+    const wrapper = mountSettings('admin')
 
     await flushPromises()
 
@@ -250,8 +270,53 @@ describe('Settings/Index.vue', () => {
     expect(wrapper.text()).not.toContain('Legacy prop item')
   })
 
+  it('после mount открывает секцию Профиль, а не Автоматика', async () => {
+    const wrapper = mountSettings('admin')
+
+    await flushPromises()
+
+    expect(wrapper.find('[role="tab"][aria-selected="true"]').text()).toBe('Профиль')
+    expect(wrapper.get('[data-testid="settings-section-profile"]').isVisible()).toBe(true)
+    expect(wrapper.get('[data-testid="settings-automation-engine-card"]').isVisible()).toBe(false)
+  })
+
+  it.each(['operator', 'agronomist'] as const)(
+    'не показывает секцию Автоматика, AE3 alerts и reset для роли %s',
+    async (role) => {
+      const wrapper = mountSettings(role)
+
+      await flushPromises()
+
+      expect(tabLabels(wrapper)).not.toContain('Автоматика')
+      expect(wrapper.find('[data-testid="settings-automation-engine-card"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="settings-alert-policies-card"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="settings-automation-engine-reset"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="settings-alert-policy-reset"]').exists()).toBe(false)
+      expect(wrapper.text()).not.toContain('Политики алертов')
+      expect(getDocumentMock).not.toHaveBeenCalled()
+    },
+  )
+
+  it.each(['admin', 'engineer'] as const)(
+    'показывает секцию Автоматика для роли %s, но не делает её стартовой',
+    async (role) => {
+      const wrapper = mountSettings(role)
+
+      await flushPromises()
+
+      expect(tabLabels(wrapper)).toContain('Автоматика')
+      expect(wrapper.find('[data-testid="settings-automation-engine-card"]').exists()).toBe(true)
+      expect(wrapper.find('[data-testid="settings-alert-policies-card"]').exists()).toBe(true)
+      expect(wrapper.find('[data-testid="settings-automation-engine-reset"]').exists()).toBe(true)
+      expect(wrapper.text()).toContain('Политики алертов')
+      expect(wrapper.find('[role="tab"][aria-selected="true"]').text()).toBe('Профиль')
+      expect(getDocumentMock).toHaveBeenCalledWith('system', 0, 'system.runtime')
+      expect(getDocumentMock).toHaveBeenCalledWith('system', 0, 'system.alert_policies')
+    },
+  )
+
   it('сохраняет и сбрасывает runtime overrides через authority document endpoints', async () => {
-    const wrapper = mount(SettingsIndex)
+    const wrapper = mountSettings('admin')
 
     await flushPromises()
 
@@ -275,7 +340,7 @@ describe('Settings/Index.vue', () => {
   })
 
   it('сохраняет alert policy через authority document endpoints', async () => {
-    const wrapper = mount(SettingsIndex)
+    const wrapper = mountSettings('admin')
 
     await flushPromises()
 

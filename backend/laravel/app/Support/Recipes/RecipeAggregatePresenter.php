@@ -40,6 +40,7 @@ class RecipeAggregatePresenter
             'latest_published_revision_id' => $published?->id,
             'latest_draft_revision_id' => $draft?->id,
             'draft_revision_id' => $draft?->id,
+            'active_zones_count' => (int) ($recipe->active_zones_count ?? 0),
             'plants' => $recipe->plants->map(fn ($plant): array => [
                 'id' => $plant->id,
                 'name' => $plant->name,

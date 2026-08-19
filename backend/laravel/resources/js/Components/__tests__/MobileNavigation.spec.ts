@@ -2,13 +2,9 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import MobileNavigation from '@/Components/MobileNavigation.vue'
 
-// Моки
-vi.mock('@/composables/useRole', () => ({
-  useRole: () => ({
-    isViewer: false,
-    canEdit: true,
-    hasAnyRole: () => true
-  })
+const mockPage = vi.fn()
+vi.mock('@inertiajs/vue3', () => ({
+  usePage: () => mockPage()
 }))
 
 vi.mock('@/Components/NavLink.vue', () => ({
@@ -19,72 +15,119 @@ vi.mock('@/Components/NavLink.vue', () => ({
   }
 }))
 
-// Моки window.innerWidth
+let currentInnerWidth = 768
 Object.defineProperty(window, 'innerWidth', {
-  writable: true,
   configurable: true,
-  value: 1024
+  get: () => currentInnerWidth,
 })
+
+function mountForRole(role: string, innerWidth = 768) {
+  currentInnerWidth = innerWidth
+  mockPage.mockReturnValue({
+    props: {
+      auth: {
+        user: { role }
+      }
+    }
+  })
+
+  return mount(MobileNavigation)
+}
+
+function hrefs(wrapper: ReturnType<typeof mount>) {
+  return wrapper.findAll('a').map((link) => link.attributes('href'))
+}
 
 describe('MobileNavigation', () => {
   let wrapper: ReturnType<typeof mount>
 
   beforeEach(() => {
-    wrapper = mount(MobileNavigation)
+    wrapper = mountForRole('operator')
   })
 
   describe('Отображение', () => {
     it('скрывает навигацию на десктопе', () => {
-      Object.defineProperty(window, 'innerWidth', { value: 1920, writable: true })
-      wrapper = mount(MobileNavigation)
-      
-      expect(wrapper.exists()).toBe(true)
+      wrapper = mountForRole('operator', 1920)
+
+      expect(wrapper.find('nav').exists()).toBe(false)
     })
 
     it('показывает навигацию на мобильных устройствах', () => {
-      Object.defineProperty(window, 'innerWidth', { value: 768, writable: true })
-      wrapper = mount(MobileNavigation)
-      
-      expect(wrapper.exists()).toBe(true)
+      wrapper = mountForRole('operator', 768)
+
+      expect(wrapper.find('nav').exists()).toBe(true)
     })
   })
 
   describe('Навигационные ссылки', () => {
-    it('показывает ссылку на Dashboard', () => {
-      const links = wrapper.findAll('a')
-      const dashboardLink = links.find(link => link.attributes('href') === '/')
-      expect(dashboardLink).toBeDefined()
+    it('для operator показывает ровно 5 пунктов смены', () => {
+      expect(hrefs(wrapper)).toEqual([
+        '/',
+        '/zones',
+        '/alerts',
+        '/documentation/fertigation',
+        '/settings',
+      ])
+      expect(wrapper.text()).toContain('Сегодня')
+      expect(wrapper.text()).toContain('Справочник')
+      expect(wrapper.text()).toContain('Профиль')
+      expect(wrapper.text()).not.toContain('Рецепты')
+      expect(wrapper.text()).not.toContain('Узлы')
+      expect(wrapper.text()).not.toContain('Аналитика')
+      expect(wrapper.text()).not.toContain('Логи')
     })
 
-    it('показывает ссылку на Zones', () => {
-      const links = wrapper.findAll('a')
-      const zonesLink = links.find(link => link.attributes('href') === '/zones')
-      expect(zonesLink).toBeDefined()
+    it('для agronomist показывает рецепты и скрывает устройства', () => {
+      wrapper = mountForRole('agronomist')
+
+      expect(hrefs(wrapper)).toEqual([
+        '/',
+        '/zones',
+        '/recipes',
+        '/analytics',
+        '/alerts',
+        '/launch',
+      ])
+      expect(wrapper.text()).toContain('Рецепты')
+      expect(wrapper.text()).not.toContain('Узлы')
     })
 
-    it('показывает ссылку на Alerts', () => {
-      const links = wrapper.findAll('a')
-      const alertsLink = links.find(link => link.attributes('href') === '/alerts')
-      expect(alertsLink).toBeDefined()
+    it('для engineer ставит узлы первым пунктом', () => {
+      wrapper = mountForRole('engineer')
+
+      expect(hrefs(wrapper)[0]).toBe('/devices')
+      expect(wrapper.text()).toContain('Узлы')
+      expect(wrapper.text()).toContain('Обзор')
+      expect(wrapper.text()).not.toContain('Рецепты')
     })
 
-    it('показывает ссылку на Analytics', () => {
-      const links = wrapper.findAll('a')
-      const analyticsLink = links.find(link => link.attributes('href') === '/analytics')
-      expect(analyticsLink).toBeDefined()
+    it('для admin показывает пользователей, а не операторов', () => {
+      wrapper = mountForRole('admin')
+
+      expect(hrefs(wrapper)).toContain('/users')
+      expect(hrefs(wrapper)).toContain('/audit')
+      expect(hrefs(wrapper)).not.toContain('/logs')
+      expect(wrapper.text()).toContain('Пользователи')
+      expect(wrapper.text()).toContain('Журнал')
+      expect(wrapper.text()).not.toContain('Операторы')
+      expect(wrapper.text()).not.toContain('Логи')
     })
 
-    it('показывает ссылку на Logs', () => {
-      const links = wrapper.findAll('a')
-      const logsLink = links.find(link => link.attributes('href') === '/logs')
-      expect(logsLink).toBeDefined()
+    it('для viewer не показывает устройства, аналитику и сервисы', () => {
+      wrapper = mountForRole('viewer')
+
+      expect(hrefs(wrapper)).toEqual(['/', '/zones', '/alerts', '/settings'])
+      expect(wrapper.text()).not.toContain('Рецепты')
+      expect(wrapper.text()).not.toContain('Узлы')
+      expect(wrapper.text()).not.toContain('Аналитика')
+      expect(wrapper.text()).not.toContain('Здоровье системы')
     })
   })
 
   describe('Иконки', () => {
     it('показывает иконки для каждой ссылки', () => {
       const icons = wrapper.findAll('svg')
-      expect(icons.length).toBeGreaterThan(0)
+      expect(icons.length).toBe(5)
     })
   })
 
@@ -92,7 +135,6 @@ describe('MobileNavigation', () => {
     it('применяет стили для мобильной навигации', () => {
       const nav = wrapper.find('nav')
       expect(nav.exists()).toBe(true)
-      // Проверяем наличие базовых классов
       const classes = nav.classes()
       expect(classes.length).toBeGreaterThan(0)
     })

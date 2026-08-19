@@ -79,4 +79,9 @@ class Recipe extends Model
             ->withPivot(['season', 'site_type', 'is_default', 'metadata'])
             ->withTimestamps();
     }
+
+    public function growCycles(): HasMany
+    {
+        return $this->hasMany(GrowCycle::class);
+    }
 }

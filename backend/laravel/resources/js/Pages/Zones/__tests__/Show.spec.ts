@@ -657,9 +657,9 @@ describe('Zones/Show.vue', () => {
 
   it('отображает устройства зоны', async () => {
     const wrapper = mount(ZonesShow)
-    const devicesTabButton = wrapper.findAll('button').find((button) => button.text().includes('Устройства'))
-    expect(devicesTabButton).toBeTruthy()
-    await devicesTabButton?.trigger('click')
+    const devicesTabButton = wrapper.find('[data-testid="zone-more-tab-devices"]')
+    expect(devicesTabButton.exists()).toBe(true)
+    await devicesTabButton.trigger('click')
     await nextTick()
     
     expect(wrapper.text()).toContain('node-1')
@@ -670,13 +670,13 @@ describe('Zones/Show.vue', () => {
   it('показывает блок автоматики только на вкладке устройств', async () => {
     const wrapper = mount(ZonesShow)
 
-    const devicesTabButton = wrapper.findAll('button').find((button) => button.text().includes('Устройства'))
-    expect(devicesTabButton).toBeTruthy()
-    await devicesTabButton?.trigger('click')
+    const devicesTabButton = wrapper.find('[data-testid="zone-more-tab-devices"]')
+    expect(devicesTabButton.exists()).toBe(true)
+    await devicesTabButton.trigger('click')
     await nextTick()
     expect(wrapper.text()).toContain('Automation')
 
-    const eventsTabButton = wrapper.findAll('button').find((button) => button.text().includes('События'))
+    const eventsTabButton = wrapper.find('[role="tablist"]').findAll('button').find((button) => button.text().includes('История работ'))
     expect(eventsTabButton).toBeTruthy()
     await eventsTabButton?.trigger('click')
     await nextTick()
@@ -686,13 +686,13 @@ describe('Zones/Show.vue', () => {
   it('отображает секцию событий на overview', () => {
     const wrapper = mount(ZonesShow)
     
-    expect(wrapper.text()).toContain('События')
+    expect(wrapper.text()).toContain('История работ')
   })
 
   it('отображает алерты зоны на вкладке "Алерты"', async () => {
     const wrapper = mount(ZonesShow)
 
-    const alertsTabButton = wrapper.findAll('button').find((button) => button.text().includes('Алерты'))
+    const alertsTabButton = wrapper.find('[role="tablist"]').findAll('button').find((button) => button.text().includes('Тревоги'))
     expect(alertsTabButton).toBeTruthy()
     await alertsTabButton?.trigger('click')
     await nextTick()
@@ -713,7 +713,7 @@ describe('Zones/Show.vue', () => {
 
   it('отображает блок Cycles', async () => {
     const wrapper = mount(ZonesShow)
-    const cycleTabButton = wrapper.findAll('button').find((button) => button.text().includes('Цикл'))
+    const cycleTabButton = wrapper.find('[role="tablist"]').findAll('button').find((button) => button.text().includes('Состояние'))
     expect(cycleTabButton).toBeTruthy()
     await cycleTabButton?.trigger('click')
     await nextTick()
@@ -726,7 +726,7 @@ describe('Zones/Show.vue', () => {
   it('показывает кнопки управления для агронома', async () => {
     usePageMockInstance.props.auth.user.role = 'agronomist'
     const wrapper = mount(ZonesShow)
-    const cycleTabButton = wrapper.findAll('button').find((button) => button.text().includes('Цикл'))
+    const cycleTabButton = wrapper.find('[role="tablist"]').findAll('button').find((button) => button.text().includes('Цикл'))
     expect(cycleTabButton).toBeTruthy()
     await cycleTabButton?.trigger('click')
     await nextTick()
@@ -772,7 +772,7 @@ describe('Zones/Show.vue', () => {
     usePageMockInstance.props.auth.user.role = 'agronomist'
     const wrapper = mount(ZonesShow)
     expect(wrapper.exists()).toBe(true)
-    const cycleTabButton = wrapper.findAll('button').find((button) => button.text().includes('Цикл'))
+    const cycleTabButton = wrapper.find('[role="tablist"]').findAll('button').find((button) => button.text().includes('Цикл'))
     expect(cycleTabButton).toBeTruthy()
     await cycleTabButton?.trigger('click')
     await nextTick()
@@ -789,7 +789,7 @@ describe('Zones/Show.vue', () => {
     const wrapper = mount(ZonesShow)
     expect(wrapper.exists()).toBe(true)
 
-    const automationTab = wrapper.findAll('button').find((button) => button.text().includes('Автоматизация'))
+    const automationTab = wrapper.find('[role="tablist"]').findAll('button').find((button) => button.text().includes('Действия'))
     expect(automationTab).toBeTruthy()
     await automationTab?.trigger('click')
     await nextTick()
@@ -877,7 +877,7 @@ describe('Zones/Show.vue', () => {
   it('форматирует время для циклов', async () => {
     const wrapper = mount(ZonesShow)
     expect(wrapper.exists()).toBe(true)
-    const cycleTabButton = wrapper.findAll('button').find((button) => button.text().includes('Цикл'))
+    const cycleTabButton = wrapper.find('[role="tablist"]').findAll('button').find((button) => button.text().includes('Состояние'))
     expect(cycleTabButton).toBeTruthy()
     await cycleTabButton?.trigger('click')
     await nextTick()
@@ -892,7 +892,7 @@ describe('Zones/Show.vue', () => {
 
     const wrapper = mount(ZonesShow)
     expect(wrapper.exists()).toBe(true)
-    const cycleTabButton = wrapper.findAll('button').find((button) => button.text().includes('Цикл'))
+    const cycleTabButton = wrapper.find('[role="tablist"]').findAll('button').find((button) => button.text().includes('Состояние'))
     expect(cycleTabButton).toBeTruthy()
     await cycleTabButton?.trigger('click')
     await nextTick()
@@ -900,5 +900,55 @@ describe('Zones/Show.vue', () => {
 
     expect(wrapper.text()).toContain('Цикл выращивания')
     expect(wrapper.text()).toBeTruthy()
+  })
+
+  it('показывает видимый h1 с именем зоны для оператора', () => {
+    const wrapper = mount(ZonesShow)
+    const title = wrapper.get('[data-testid="zone-page-header-title"]')
+
+    expect(title.element.tagName).toBe('H1')
+    expect(title.classes()).not.toContain('sr-only')
+    expect(title.text()).toContain('Test Zone')
+  })
+
+  it('показывает культуру и фазу в шапке зоны для оператора', () => {
+    const wrapper = mount(ZonesShow)
+    const header = wrapper.get('[data-testid="zone-page-header"]')
+
+    expect(header.get('[data-testid="zone-page-header-crop"]').text()).toContain('Test Recipe')
+    expect(header.get('[data-testid="zone-page-header-phase"]').text()).toContain('Phase 1')
+  })
+
+  it('прячет телеметрию в «Ещё» для оператора и позволяет её выбрать', async () => {
+    const wrapper = mount(ZonesShow)
+    const tablist = wrapper.get('[role="tablist"]')
+
+    expect(tablist.text()).not.toContain('Телеметрия')
+    expect(wrapper.find('[data-testid="zone-more-tabs"]').exists()).toBe(true)
+
+    await wrapper.get('[data-testid="zone-more-tab-telemetry"]').trigger('click')
+    await nextTick()
+
+    expect(wrapper.get('[role="tablist"]').text()).toContain('Телеметрия')
+    expect(wrapper.find('.zone-telemetry-tab').exists()).toBe(true)
+  })
+
+  it('показывает вкладку «Раствор» для агронома', () => {
+    usePageMockInstance.props.auth.user.role = 'agronomist'
+    const wrapper = mount(ZonesShow)
+    const tablist = wrapper.get('[role="tablist"]')
+
+    expect(tablist.text()).toContain('Раствор')
+    expect(tablist.text()).toContain('Цикл')
+  })
+
+  it('открывает устройства и процесс для инженера по умолчанию', () => {
+    usePageMockInstance.props.auth.user.role = 'engineer'
+    const wrapper = mount(ZonesShow)
+    const tablist = wrapper.get('[role="tablist"]')
+
+    expect(tablist.text()).toContain('Устройства')
+    expect(tablist.text()).toContain('Процесс')
+    expect(wrapper.text()).toContain('Automation')
   })
 })

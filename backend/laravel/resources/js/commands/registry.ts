@@ -201,7 +201,7 @@ const staticCommandDefinitions: CommandDefinition[] = [
   },
   {
     id: 'admin-audit',
-    label: 'Аудит',
+    label: 'Журнал',
     icon: '📝',
     groupId: 'admin',
     route: '/audit',

@@ -45,6 +45,7 @@ Breaking-change: обратная совместимость со старыми
 
 ### Living plans (`plan`)
 
+- [ROLE_BASED_UX_IMPROVEMENT_PLAN.md](ROLE_BASED_UX_IMPROVEMENT_PLAN.md) — ролевой UI/UX и доработка страниц (оператор, агроном, инженер, админ)
 - [LAUNCH_REDESIGN.md](LAUNCH_REDESIGN.md)
 - [AUTOMATION_WIZARD_UNIFICATION_PLAN.md](AUTOMATION_WIZARD_UNIFICATION_PLAN.md)
 - [ZONE_AUTOMATION_PRESETS_PLAN.md](ZONE_AUTOMATION_PRESETS_PLAN.md)

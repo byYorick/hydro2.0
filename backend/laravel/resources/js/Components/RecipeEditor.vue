@@ -1,5 +1,30 @@
 <template>
   <div class="space-y-3">
+    <div class="flex flex-wrap items-center gap-2">
+      <span class="text-xs font-semibold text-[color:var(--text-muted)]">Режим редактора</span>
+      <button
+        type="button"
+        class="rounded-lg border px-2.5 py-1 text-[11px] font-semibold"
+        :class="editorMode === 'simple'
+          ? 'border-[color:var(--border-strong)] bg-[color:var(--bg-elevated)] text-[color:var(--text-primary)]'
+          : 'border-[color:var(--border-muted)] text-[color:var(--text-dim)]'"
+        data-testid="recipe-editor-mode-simple"
+        @click="editorMode = 'simple'"
+      >
+        Простой
+      </button>
+      <button
+        type="button"
+        class="rounded-lg border px-2.5 py-1 text-[11px] font-semibold"
+        :class="editorMode === 'advanced'
+          ? 'border-[color:var(--border-strong)] bg-[color:var(--bg-elevated)] text-[color:var(--text-primary)]'
+          : 'border-[color:var(--border-muted)] text-[color:var(--text-dim)]'"
+        data-testid="recipe-editor-mode-advanced"
+        @click="editorMode = 'advanced'"
+      >
+        Расширенный
+      </button>
+    </div>
     <!-- ── 1. Культура ────────────────────────────────────────── -->
     <div
       v-if="!hidePlantSelect"
@@ -115,7 +140,10 @@
     </div>
 
     <!-- ── 3. Система подготовки раствора и полива ─────────────── -->
-    <div class="rounded-md border border-[color:var(--border-muted)] p-3 space-y-2">
+    <div
+      v-if="isAdvanced"
+      class="rounded-md border border-[color:var(--border-muted)] p-3 space-y-2"
+    >
       <div class="text-[12px] font-bold uppercase tracking-[0.16em] text-[color:var(--text-muted)]">
         Система подготовки раствора и полива
       </div>
@@ -181,7 +209,7 @@
                 @change="setDurationFromString(phase, ($event.target as HTMLInputElement).value)"
               />
             </div>
-            <div>
+            <div v-if="isAdvanced">
               <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">Раздельно день / ночь</label>
               <label class="md-switch">
                 <input
@@ -217,7 +245,10 @@
           <div class="text-[12px] font-bold uppercase tracking-[0.16em] text-[color:var(--text-muted)]">
             Полив
           </div>
-          <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div
+            v-if="isAdvanced"
+            class="grid grid-cols-1 md:grid-cols-4 gap-4"
+          >
             <div>
               <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">Тип системы полива</label>
               <select
@@ -623,7 +654,10 @@
         </div>
 
         <!-- Питание -->
-        <div class="rounded-md border border-[color:var(--border-muted)] p-2.5 space-y-2">
+        <div
+          v-if="isAdvanced"
+          class="rounded-md border border-[color:var(--border-muted)] p-2.5 space-y-2"
+        >
           <div class="text-[12px] font-bold uppercase tracking-[0.16em] text-[color:var(--text-muted)]">
             Питание
           </div>
@@ -1096,6 +1130,7 @@ import { computeEcBreakdown, normalizePhaseRatios, nutrientRatioSum } from '@/co
 import type { EcBreakdown } from '@/composables/recipeEditorShared'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import { useToast } from '@/composables/useToast'
+import { useRole } from '@/composables/useRole'
 import { api } from '@/services/api'
 import SubstrateCreateModal from '@/Components/SubstrateCreateModal.vue'
 import type { Substrate } from '@/services/api/substrates'
@@ -1131,6 +1166,9 @@ const emit = defineEmits<{
 }>()
 
 const { showToast } = useToast()
+const { isAdmin } = useRole()
+const editorMode = ref<'simple' | 'advanced'>(isAdmin.value ? 'advanced' : 'simple')
+const isAdvanced = computed(() => editorMode.value === 'advanced')
 
 const plantMode = ref<'select' | 'create'>('select')
 const newPlantName = ref('')

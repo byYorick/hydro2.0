@@ -110,6 +110,9 @@ describe('AlertDetailModal.vue', () => {
     })
 
     expect(active.find('[data-testid="zone-alert-resolve-button"]').exists()).toBe(true)
+    expect(active.get('[data-testid="zone-alert-resolve-button"]').text()).toContain('Отметить как решённый')
+    expect(active.get('[data-testid="zone-alert-resolve-button"]').text()).not.toContain('Подтвердить')
+    expect(active.get('[data-testid="zone-alert-resolve-button"]').text()).not.toBe('Решить')
 
     const resolved = mount(AlertDetailModal, {
       props: {
@@ -129,5 +132,36 @@ describe('AlertDetailModal.vue', () => {
     })
 
     expect(resolved.find('[data-testid="zone-alert-resolve-button"]').exists()).toBe(false)
+  })
+
+  it('показывает человеческий заголовок с именем зоны', () => {
+    const wrapper = mount(AlertDetailModal, {
+      props: {
+        open: true,
+        alert: makeAlert({
+          type: 'PH_HIGH',
+          code: 'biz_high_ph',
+          title: 'High pH',
+          zone: { id: 7, name: 'Салат-1' },
+        }),
+        resolveLoading: false,
+      },
+      global: {
+        stubs: {
+          Modal: {
+            props: ['open', 'title'],
+            template: '<div v-if="open"><slot /><slot name="footer" /></div>',
+          },
+          Button: { template: '<button><slot /></button>' },
+          Link: {
+            props: ['href'],
+            template: '<a :href="href"><slot /></a>',
+          },
+        },
+      },
+    })
+
+    expect(wrapper.get('[data-testid="alert-human-title"]').text()).toContain('pH выше нормы в Салат-1')
+    expect(wrapper.text()).toContain('biz_high_ph')
   })
 })

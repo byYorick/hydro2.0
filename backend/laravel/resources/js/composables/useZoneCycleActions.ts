@@ -7,6 +7,9 @@ import type { ToastHandler } from '@/services/api'
 interface GrowCycleRef {
   value: {
     id?: number
+    recipe_id?: number
+    recipeRevision?: { recipe_id?: number; recipe?: { id?: number } } | null
+    recipe_revision?: { recipe_id?: number } | null
   } | null
 }
 
@@ -29,6 +32,44 @@ interface UseZoneCycleActionsDeps {
   handleError: (error: unknown) => void
 }
 
+export interface HarvestModalState {
+  open: boolean
+  batchLabel: string
+  yieldKg: string
+}
+
+function todayDateString(): string {
+  const now = new Date()
+  const yyyy = now.getFullYear()
+  const mm = String(now.getMonth() + 1).padStart(2, '0')
+  const dd = String(now.getDate()).padStart(2, '0')
+  return `${yyyy}-${mm}-${dd}`
+}
+
+function resolveRecipeId(cycle: GrowCycleRef['value']): number | undefined {
+  if (!cycle) {
+    return undefined
+  }
+  const raw = cycle.recipe_id
+    ?? cycle.recipeRevision?.recipe_id
+    ?? cycle.recipeRevision?.recipe?.id
+    ?? cycle.recipe_revision?.recipe_id
+  const id = typeof raw === 'number' ? raw : Number(raw)
+  return Number.isFinite(id) && id > 0 ? id : undefined
+}
+
+function parseYieldKg(raw: unknown): { empty: true } | { empty: false; value: number } | { invalid: true } {
+  const trimmed = String(raw ?? '').trim()
+  if (trimmed === '') {
+    return { empty: true }
+  }
+  const value = Number(trimmed.replace(',', '.'))
+  if (!Number.isFinite(value) || value < 0) {
+    return { invalid: true }
+  }
+  return { empty: false, value }
+}
+
 export function useZoneCycleActions({
   activeGrowCycle,
   zoneId,
@@ -38,7 +79,7 @@ export function useZoneCycleActions({
   setLoading,
   handleError,
 }: UseZoneCycleActionsDeps): {
-  harvestModal: { open: boolean; batchLabel: string }
+  harvestModal: HarvestModalState
   abortModal: { open: boolean; notes: string }
   changeRecipeModal: { open: boolean; recipeRevisionId: string; applyMode: 'now' | 'next_phase' }
   closeHarvestModal: () => void
@@ -54,9 +95,10 @@ export function useZoneCycleActions({
   onCycleChangeRecipe: () => void
   confirmChangeRecipe: () => Promise<void>
 } {
-  const harvestModal = reactive<{ open: boolean; batchLabel: string }>({
+  const harvestModal = reactive<HarvestModalState>({
     open: false,
     batchLabel: '',
+    yieldKg: '',
   })
 
   const abortModal = reactive<{ open: boolean; notes: string }>({
@@ -73,6 +115,7 @@ export function useZoneCycleActions({
   function closeHarvestModal(): void {
     harvestModal.open = false
     harvestModal.batchLabel = ''
+    harvestModal.yieldKg = ''
   }
 
   function closeAbortModal(): void {
@@ -155,8 +198,28 @@ export function useZoneCycleActions({
       return
     }
 
+    const parsedKg = parseYieldKg(harvestModal.yieldKg)
+    if ('invalid' in parsedKg) {
+      showToast('Некорректный вес урожая', 'error', TOAST_TIMEOUT.NORMAL)
+      return
+    }
+
     setLoading('cycleHarvest', true)
     try {
+      if (!parsedKg.empty) {
+        if (!zoneId.value) {
+          showToast('Не удалось сохранить урожай: зона неизвестна', 'error', TOAST_TIMEOUT.NORMAL)
+          return
+        }
+        const recipeId = resolveRecipeId(activeGrowCycle.value)
+        await api.harvests.create({
+          zone_id: zoneId.value,
+          harvest_date: todayDateString(),
+          yield_weight_kg: parsedKg.value,
+          ...(recipeId != null ? { recipe_id: recipeId } : {}),
+        })
+      }
+
       await api.growCycles.harvest(activeGrowCycle.value.id, {
         batch_label: harvestModal.batchLabel || undefined,
       })

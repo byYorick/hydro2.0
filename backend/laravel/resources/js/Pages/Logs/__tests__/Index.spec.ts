@@ -131,4 +131,21 @@ describe('Logs/Index.vue', () => {
 
     wrapper.unmount()
   })
+
+  it('в embedded-режиме скрывает hero «Журнал сервисов»', async () => {
+    const wrapper = mount(LogsIndex, {
+      props: {
+        serviceOptions,
+        embedded: true,
+      },
+    })
+
+    await flushPromises()
+
+    expect(wrapper.find('h1').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Журнал сервисов')
+    expect(wrapper.find('[data-testid="logs-service-tabs"]').exists()).toBe(true)
+
+    wrapper.unmount()
+  })
 })

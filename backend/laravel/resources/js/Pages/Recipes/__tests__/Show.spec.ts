@@ -1,11 +1,21 @@
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+
+const recipesCreateMock = vi.hoisted(() => vi.fn())
+const recipesCreateRevisionMock = vi.hoisted(() => vi.fn())
+const routerVisitMock = vi.hoisted(() => vi.fn())
+const showToastMock = vi.hoisted(() => vi.fn())
+const pageState = vi.hoisted(() => ({
+  role: 'agronomist' as string,
+}))
 
 const { sampleRecipe, resetSampleRecipe } = vi.hoisted(() => {
   const makeRecipe = () => ({
     id: 1,
     name: 'Test Recipe',
     description: 'Test Description',
+    latest_published_revision_id: 10,
+    plants: [{ id: 5, name: 'Lettuce' }],
     phases: [
       {
         id: 1,
@@ -74,15 +84,42 @@ vi.mock('@/Components/Card.vue', () => ({
 }))
 
 vi.mock('@/Components/Button.vue', () => ({
-  default: { name: 'Button', props: ['size', 'variant'], template: '<button><slot /></button>' },
+  default: {
+    name: 'Button',
+    props: ['size', 'variant', 'disabled'],
+    emits: ['click'],
+    template: '<button :disabled="disabled" @click="$emit(\'click\')"><slot /></button>',
+  },
+}))
+
+vi.mock('@/services/api', () => ({
+  api: {
+    recipes: {
+      create: recipesCreateMock,
+      createRevision: recipesCreateRevisionMock,
+      getActiveUsage: vi.fn().mockResolvedValue({ recipe_id: 1, active_cycles: [], count: 0 }),
+    },
+  },
+}))
+
+vi.mock('@/composables/useToast', () => ({
+  useToast: () => ({
+    showToast: showToastMock,
+  }),
 }))
 
 vi.mock('@inertiajs/vue3', () => ({
   usePage: () => ({
     props: {
+      auth: {
+        user: { role: pageState.role },
+      },
       recipe: sampleRecipe,
     },
   }),
+  router: {
+    visit: routerVisitMock,
+  },
   Link: { name: 'Link', props: ['href'], template: '<a :href="href"><slot /></a>' },
 }))
 
@@ -91,6 +128,13 @@ import RecipesShow from '../Show.vue'
 describe('Recipes/Show.vue', () => {
   beforeEach(() => {
     resetSampleRecipe()
+    pageState.role = 'agronomist'
+    recipesCreateMock.mockReset()
+    recipesCreateRevisionMock.mockReset()
+    routerVisitMock.mockReset()
+    showToastMock.mockReset()
+    recipesCreateMock.mockResolvedValue({ id: 99, name: 'Test Recipe (копия)' })
+    recipesCreateRevisionMock.mockResolvedValue({ id: 20 })
   })
 
   it('отображает название рецепта', () => {
@@ -156,6 +200,8 @@ describe('Recipes/Show.vue', () => {
   it('отображает параметры питания для фаз', () => {
     const wrapper = mount(RecipesShow)
 
+    expect(wrapper.find('[data-testid="recipe-nutrition-details"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('Питание и PID')
     expect(wrapper.text()).toContain('Программа: YARAREGA_CALCINIT_HAIFA_MICRO_V1')
     expect(wrapper.text()).toContain('NPK: 44% / 0.55 мл/л / Yara · YaraRega Water-Soluble NPK')
     expect(wrapper.text()).toContain('Кальций: 44% / 0.55 мл/л / Yara · YaraLiva Calcinit')
@@ -189,6 +235,49 @@ describe('Recipes/Show.vue', () => {
     expect(wrapper.text()).toContain('Создать копию')
   })
 
+  it('скрывает кнопку копии для operator', () => {
+    pageState.role = 'operator'
+    const wrapper = mount(RecipesShow)
+
+    expect(wrapper.text()).not.toContain('Создать копию')
+  })
+
+  it('создаёт копию через create + clone revision и открывает edit', async () => {
+    const wrapper = mount(RecipesShow)
+    const copyButton = wrapper.find('[data-testid="recipe-duplicate-button"]')
+
+    expect(copyButton.exists()).toBe(true)
+    await copyButton.trigger('click')
+    await flushPromises()
+
+    expect(recipesCreateMock).toHaveBeenCalledWith({
+      name: 'Test Recipe (копия)',
+      description: 'Test Description',
+      plant_id: 5,
+    })
+    expect(recipesCreateRevisionMock).toHaveBeenCalledWith(99, {
+      clone_from_revision_id: 10,
+      description: 'Копия рецепта «Test Recipe»',
+    })
+    expect(routerVisitMock).toHaveBeenCalledWith('/recipes/99/edit')
+  })
+
+  it('показывает toast если нет published-ревизии', async () => {
+    sampleRecipe.latest_published_revision_id = null
+    const wrapper = mount(RecipesShow)
+
+    await wrapper.find('[data-testid="recipe-duplicate-button"]').trigger('click')
+    await flushPromises()
+
+    expect(recipesCreateMock).not.toHaveBeenCalled()
+    expect(recipesCreateRevisionMock).not.toHaveBeenCalled()
+    expect(showToastMock).toHaveBeenCalledWith(
+      'Нет опубликованной ревизии — копию создать нельзя',
+      'error',
+    )
+    expect(routerVisitMock).not.toHaveBeenCalled()
+  })
+
   it('обрабатывает рецепт без описания', () => {
     sampleRecipe.description = ''
 
@@ -214,5 +303,12 @@ describe('Recipes/Show.vue', () => {
     
     // Проверяем, что форматирование работает (может быть дни или часы)
     expect(wrapper.text()).toMatch(/\d+\s*(ч|дн)/)
+  })
+
+  it('показывает блок использования в зонах', () => {
+    const wrapper = mount(RecipesShow)
+
+    expect(wrapper.text()).toContain('Используется в зонах')
+    expect(wrapper.text()).toContain('Нет активных зон')
   })
 })

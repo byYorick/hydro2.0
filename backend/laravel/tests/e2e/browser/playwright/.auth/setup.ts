@@ -12,6 +12,10 @@ setup('authenticate', async ({ page }) => {
   const readyIndicators = [
     page.locator('[data-testid="dashboard-zones-count"]'),
     page.getByRole('heading', { name: 'Операционный центр' }),
+    page.getByRole('heading', { name: 'Обзор культур' }),
+    page.getByRole('heading', { name: 'Сегодня' }),
+    page.getByRole('heading', { name: 'Узлы' }),
+    page.getByRole('heading', { name: 'Система' }),
     page.getByText('Зоны (всего / в работе)'),
     page.locator('[data-testid^="zone-card-"]').first(),
     page.locator('nav a[href="/zones"]'),

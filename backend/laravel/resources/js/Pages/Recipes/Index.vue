@@ -14,7 +14,7 @@
           </p>
         </div>
         <Link
-          v-if="canConfigureRecipes"
+          v-if="canEditRecipes"
           href="/recipes/create"
         >
           <Button
@@ -38,7 +38,7 @@
           </Button>
         </Link>
       </div>
-      <div class="ui-kpi-grid grid-cols-2 xl:grid-cols-4">
+      <div class="ui-kpi-grid grid-cols-2">
         <div class="ui-kpi-card">
           <div class="ui-kpi-label">
             Всего рецептов
@@ -48,39 +48,6 @@
           </div>
           <div class="ui-kpi-hint">
             В базе конфигураций
-          </div>
-        </div>
-        <div class="ui-kpi-card">
-          <div class="ui-kpi-label">
-            Суммарно фаз
-          </div>
-          <div class="ui-kpi-value text-[color:var(--accent-cyan)]">
-            {{ totalPhases }}
-          </div>
-          <div class="ui-kpi-hint">
-            Во всех рецептах
-          </div>
-        </div>
-        <div class="ui-kpi-card">
-          <div class="ui-kpi-label">
-            По фильтру
-          </div>
-          <div class="ui-kpi-value text-[color:var(--accent-green)]">
-            {{ visibleRecipes }}
-          </div>
-          <div class="ui-kpi-hint">
-            Отображается в таблице
-          </div>
-        </div>
-        <div class="ui-kpi-card">
-          <div class="ui-kpi-label">
-            Среднее фаз
-          </div>
-          <div class="ui-kpi-value">
-            {{ averagePhasesPerRecipe }}
-          </div>
-          <div class="ui-kpi-hint">
-            На один рецепт
           </div>
         </div>
       </div>
@@ -104,7 +71,13 @@
                 Название
               </th>
               <th class="text-left px-3 py-2 font-semibold border-b border-[color:var(--border-muted)]">
-                Описание
+                Культура
+              </th>
+              <th class="text-left px-3 py-2 font-semibold border-b border-[color:var(--border-muted)]">
+                Версия
+              </th>
+              <th class="text-left px-3 py-2 font-semibold border-b border-[color:var(--border-muted)]">
+                Зон в работе
               </th>
               <th class="text-left px-3 py-2 font-semibold border-b border-[color:var(--border-muted)]">
                 Фаз
@@ -116,27 +89,34 @@
           </thead>
           <tbody>
             <tr
-              v-for="(r, index) in rows"
-              :key="r[0]"
+              v-for="(row, index) in rows"
+              :key="row.id"
               :class="index % 2 === 0 ? 'bg-[color:var(--bg-surface-strong)]' : 'bg-[color:var(--bg-surface)]'"
               class="text-sm border-b border-[color:var(--border-muted)] hover:bg-[color:var(--bg-elevated)] transition-colors"
             >
               <td class="px-3 py-2">
                 <Link
-                  :href="`/recipes/${r[0]}`"
+                  :href="`/recipes/${row.id}`"
                   class="text-[color:var(--accent-cyan)] hover:underline truncate block"
                 >
-                  {{ r[1] }}
+                  {{ row.name }}
                 </Link>
+                <span class="block text-xs text-[color:var(--text-muted)] truncate">{{ row.description }}</span>
               </td>
               <td class="px-3 py-2 text-xs text-[color:var(--text-muted)]">
-                <span class="truncate block">{{ r[2] || 'Без описания' }}</span>
+                {{ row.crop }}
               </td>
               <td class="px-3 py-2 text-xs text-[color:var(--text-muted)]">
-                {{ r[3] || 0 }}
+                {{ row.versionLabel }}
+              </td>
+              <td class="px-3 py-2 text-xs text-[color:var(--text-muted)]">
+                {{ row.zonesLabel }}
+              </td>
+              <td class="px-3 py-2 text-xs text-[color:var(--text-muted)]">
+                {{ row.phasesCount }}
               </td>
               <td class="px-3 py-2">
-                <Link :href="`/recipes/${r[0]}`">
+                <Link :href="`/recipes/${row.id}`">
                   <Button
                     size="sm"
                     variant="secondary"
@@ -148,7 +128,7 @@
             </tr>
             <tr v-if="!rows.length">
               <td
-                colspan="4"
+                colspan="6"
                 class="px-3 py-6 text-sm text-[color:var(--text-dim)] text-center"
               >
                 {{ all.length === 0 ? 'Рецепты не найдены' : 'Нет рецептов по текущему фильтру' }}
@@ -172,38 +152,44 @@ import { Link, usePage } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Button from '@/Components/Button.vue'
 import Pagination from '@/Components/Pagination.vue'
+import { useRole } from '@/composables/useRole'
 import type { Recipe } from '@/types'
 
-const page = usePage<{ recipes?: Recipe[]; auth?: { user?: { role?: string } } }>()
+const page = usePage<{ recipes?: Recipe[] }>()
 const all = computed(() => (page.props.recipes || []) as Recipe[])
-const canConfigureRecipes = computed(() => {
-  const role = page.props.auth?.user?.role ?? 'viewer'
-  return role === 'agronomist' || role === 'admin'
-})
+const { canEditRecipes } = useRole()
 const query = ref<string>('')
 const currentPage = ref<number>(1)
 const perPage = ref<number>(25)
 
-// Оптимизируем фильтрацию: мемоизируем нижний регистр запроса
+function cropLabel(recipe: Recipe): string {
+  const names = (recipe.plants ?? []).map((plant) => plant.name).filter(Boolean)
+  return names.length > 0 ? names.join(', ') : '—'
+}
+
+function versionLabel(recipe: Recipe): string {
+  return recipe.latest_published_revision_id ? 'опубликован' : 'черновик'
+}
+
+function zonesLabel(recipe: Recipe): string {
+  return typeof recipe.active_zones_count === 'number' ? String(recipe.active_zones_count) : '—'
+}
+
 const queryLower = computed(() => query.value.toLowerCase())
 const filtered = computed(() => {
   const q = queryLower.value
   if (!q) {
-    return all.value // Если запроса нет, возвращаем все рецепты
+    return all.value
   }
-  
-  return all.value.filter(r => {
-    return r.name?.toLowerCase().includes(q) || r.description?.toLowerCase().includes(q)
+
+  return all.value.filter((recipe) => {
+    return recipe.name?.toLowerCase().includes(q)
+      || recipe.description?.toLowerCase().includes(q)
+      || cropLabel(recipe).toLowerCase().includes(q)
   })
 })
 
 const totalRecipes = computed(() => all.value.length)
-const totalPhases = computed(() => all.value.reduce((sum, recipe) => sum + Number(recipe.phases_count || 0), 0))
-const visibleRecipes = computed(() => filtered.value.length)
-const averagePhasesPerRecipe = computed(() => {
-  if (totalRecipes.value === 0) return '0.0'
-  return (totalPhases.value / totalRecipes.value).toFixed(1)
-})
 
 function clampCurrentPage(total: number): number {
   const maxPage = Math.ceil(total / perPage.value) || 1
@@ -222,11 +208,10 @@ watch([filtered, perPage], () => {
   }
 })
 
-// Пагинированные рецепты
 const paginatedRecipes = computed(() => {
   const total = filtered.value.length
   if (total === 0) return []
-  
+
   const maxPage = Math.ceil(total / perPage.value) || 1
   const validPage = Math.min(currentPage.value, maxPage)
   const start = (validPage - 1) * perPage.value
@@ -234,22 +219,21 @@ const paginatedRecipes = computed(() => {
   return filtered.value.slice(start, end)
 })
 
-// Преобразуем рецепты в строки таблицы
 const rows = computed(() => {
-  return paginatedRecipes.value.map(r => [
-    r.id,
-    r.name || '-',
-    r.description || 'Без описания',
-    r.phases_count || 0,
-    r.id // Добавляем ID в конец для удобства доступа
-  ])
+  return paginatedRecipes.value.map((recipe) => ({
+    id: recipe.id,
+    name: recipe.name || '-',
+    description: recipe.description || 'Без описания',
+    crop: cropLabel(recipe),
+    versionLabel: versionLabel(recipe),
+    zonesLabel: zonesLabel(recipe),
+    phasesCount: recipe.phases_count || 0,
+  }))
 })
 
-// Сбрасываем на первую страницу при изменении фильтров
 watch(query, () => {
   currentPage.value = 1
 })
-
 </script>
 
 <style scoped>
@@ -271,12 +255,12 @@ td:first-child {
 th:nth-child(2),
 td:nth-child(2) {
   white-space: normal;
-  min-width: 250px;
-  max-width: 400px;
+  min-width: 140px;
+  max-width: 240px;
 }
 
-th:nth-child(3),
-td:nth-child(3) {
+th:nth-child(5),
+td:nth-child(5) {
   min-width: 80px;
   text-align: center;
 }

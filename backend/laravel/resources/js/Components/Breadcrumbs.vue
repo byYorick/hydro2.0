@@ -71,25 +71,35 @@ const autoItems = computed(() => {
   const url = page.url
   const pathParts = url.split('/').filter(Boolean)
   
+  const role = (page.props.auth as { user?: { role?: string } })?.user?.role || 'viewer'
+  const homeLabels: Record<string, string> = {
+    operator: 'Сегодня',
+    agronomist: 'Обзор',
+    engineer: 'Обзор',
+    admin: 'Система',
+    viewer: 'Обзор',
+  }
+
   const items: BreadcrumbItem[] = [
-    { label: 'Панель управления', href: '/' }
+    { label: homeLabels[role] ?? 'Обзор', href: '/' }
   ]
   
-  // Маппинг путей к названиям
   const pathLabels: Record<string, string> = {
     'zones': 'Зоны',
-    'devices': 'Устройства',
+    'devices': 'Узлы',
     'recipes': 'Рецепты',
-    'alerts': 'Алерты',
+    'alerts': 'Тревоги',
     'settings': 'Настройки',
     'users': 'Пользователи',
     'system': 'Система',
     'logs': 'Логи',
     'analytics': 'Аналитика',
-    'audit': 'Аудит',
+    'audit': 'Журнал',
     'setup': 'Настройка',
     'greenhouses': 'Теплицы',
     'admin': 'Администрирование',
+    'monitoring': 'Здоровье системы',
+    'launch': 'Запуск',
   }
   
   let currentPath = ''

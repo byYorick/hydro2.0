@@ -14,12 +14,14 @@ import { useZoneCycleActions } from '@/composables/useZoneCycleActions'
 import { useZonePageState } from '@/composables/useZonePageState'
 import { useZoneTelemetryChart } from '@/composables/useZoneTelemetryChart'
 import { usePumpCalibrationActions } from '@/composables/usePumpCalibrationActions'
+import { useRole } from '@/composables/useRole'
 import { logger } from '@/utils/logger'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import { ERROR_MESSAGES } from '@/constants/messages'
 import { subscribeManagedChannelEvents } from '@/ws/managedChannelEvents'
 import { parseNodeTelemetryBatch } from '@/ws/nodeTelemetryPayload'
 import type { CommandType } from '@/types'
+import type { UserRole } from '@/types/User'
 import type { PumpCalibrationRunPayload, PumpCalibrationSavePayload } from '@/types/Calibration'
 
 // ─── Local types ──────────────────────────────────────────────────────────────
@@ -36,29 +38,156 @@ interface LoadingState extends Record<string, boolean> {
   pumpCalibrationSave: boolean
 }
 
-// ─── Module-level constants ───────────────────────────────────────────────────
+// ─── Zone tabs (role layout) ──────────────────────────────────────────────────
 
-const zoneTabs = [
-  { id: 'cycle', label: 'Цикл' },
-  { id: 'telemetry', label: 'Телеметрия' },
-  { id: 'automation', label: 'Автоматизация' },
-  { id: 'scheduler', label: 'Планировщик' },
-  { id: 'events', label: 'События' },
-  { id: 'alerts', label: 'Алерты' },
-  { id: 'devices', label: 'Устройства' },
+export type ZoneTabId =
+  | 'cycle'
+  | 'telemetry'
+  | 'automation'
+  | 'scheduler'
+  | 'events'
+  | 'alerts'
+  | 'devices'
+
+export interface ZoneTabItem {
+  id: ZoneTabId
+  label: string
+}
+
+interface ZoneTabLayout {
+  defaultTab: ZoneTabId
+  primary: ZoneTabItem[]
+  more: ZoneTabItem[]
+}
+
+const ALL_ZONE_TAB_IDS: ZoneTabId[] = [
+  'cycle',
+  'telemetry',
+  'automation',
+  'scheduler',
+  'events',
+  'alerts',
+  'devices',
 ]
+
+const ZONE_TAB_LABELS: Record<ZoneTabId, string> = {
+  cycle: 'Цикл',
+  telemetry: 'Телеметрия',
+  automation: 'Автоматизация',
+  scheduler: 'Планировщик',
+  events: 'События',
+  alerts: 'Алерты',
+  devices: 'Устройства',
+}
+
+function tab(id: ZoneTabId, label?: string): ZoneTabItem {
+  return { id, label: label ?? ZONE_TAB_LABELS[id] }
+}
+
+const OPERATOR_ZONE_TAB_LAYOUT: ZoneTabLayout = {
+  defaultTab: 'cycle',
+  primary: [
+    tab('cycle', 'Состояние'),
+    tab('automation', 'Действия'),
+    tab('alerts', 'Тревоги'),
+    tab('events', 'История работ'),
+  ],
+  more: [
+    tab('telemetry'),
+    tab('scheduler'),
+    tab('devices'),
+  ],
+}
+
+const ZONE_TAB_LAYOUT_BY_ROLE: Record<UserRole, ZoneTabLayout> = {
+  operator: OPERATOR_ZONE_TAB_LAYOUT,
+  viewer: OPERATOR_ZONE_TAB_LAYOUT,
+  agronomist: {
+    defaultTab: 'cycle',
+    primary: [
+      tab('cycle', 'Цикл'),
+      tab('automation', 'Раствор'),
+      tab('telemetry', 'Телеметрия'),
+      tab('alerts', 'Отклонения'),
+    ],
+    more: [
+      tab('scheduler'),
+      tab('devices'),
+      tab('events'),
+    ],
+  },
+  engineer: {
+    defaultTab: 'devices',
+    primary: [
+      tab('devices'),
+      tab('automation', 'Процесс'),
+      tab('scheduler'),
+      tab('events'),
+      tab('telemetry'),
+    ],
+    more: [
+      tab('cycle'),
+    ],
+  },
+  admin: {
+    defaultTab: 'alerts',
+    primary: [
+      tab('alerts', 'Тревоги'),
+      tab('devices'),
+      tab('events', 'Журнал'),
+    ],
+    more: [
+      tab('cycle'),
+      tab('automation', 'Раствор'),
+      tab('scheduler'),
+      tab('telemetry'),
+    ],
+  },
+}
+
+function isZoneTabId(value: string): value is ZoneTabId {
+  return ALL_ZONE_TAB_IDS.includes(value as ZoneTabId)
+}
 
 // ─── Composable ───────────────────────────────────────────────────────────────
 
 export function useZoneShowPage() {
+  const { role } = useRole()
+
+  const zoneTabLayout = computed<ZoneTabLayout>(() => {
+    const currentRole = role.value
+    if (currentRole && currentRole in ZONE_TAB_LAYOUT_BY_ROLE) {
+      return ZONE_TAB_LAYOUT_BY_ROLE[currentRole]
+    }
+    return OPERATOR_ZONE_TAB_LAYOUT
+  })
+
+  const defaultTabId = computed<ZoneTabId>(() => zoneTabLayout.value.defaultTab)
+
   const activeTab = useUrlState<string>({
     key: 'tab',
-    defaultValue: zoneTabs[0].id,
+    defaultValue: defaultTabId.value,
     parse: (value) => {
-      if (!value) return zoneTabs[0].id
-      return zoneTabs.some((tab) => tab.id === value) ? value : zoneTabs[0].id
+      const fallback = defaultTabId.value
+      if (!value) return fallback
+      return isZoneTabId(value) ? value : fallback
     },
     serialize: (value) => value,
+  })
+
+  const moreZoneTabs = computed<ZoneTabItem[]>(() => zoneTabLayout.value.more)
+
+  const zoneTabs = computed<ZoneTabItem[]>(() => {
+    const primary = zoneTabLayout.value.primary
+    const activeId = activeTab.value
+    if (primary.some((item) => item.id === activeId)) {
+      return primary
+    }
+    const extra = moreZoneTabs.value.find((item) => item.id === activeId)
+    if (extra) {
+      return [...primary, extra]
+    }
+    return primary
   })
 
   const modals = useModal<{
@@ -402,6 +531,7 @@ export function useZoneShowPage() {
 
   return {
     zoneTabs,
+    moreZoneTabs,
     activeTab,
     modals,
     showActionModal,

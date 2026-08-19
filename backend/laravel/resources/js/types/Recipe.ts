@@ -131,6 +131,7 @@ export interface Recipe {
   latest_draft_revision_id?: number | null
   draft_revision_id?: number | null
   plants?: Array<{ id: number; name: string }>
+  active_zones_count?: number
   created_at?: string
   updated_at?: string
 }

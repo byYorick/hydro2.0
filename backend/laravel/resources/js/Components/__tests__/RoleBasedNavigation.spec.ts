@@ -17,87 +17,148 @@ vi.mock('../NavLink.vue', () => ({
   }
 }))
 
+function mountForRole(role: string) {
+  mockPage.mockReturnValue({
+    props: {
+      auth: {
+        user: { role }
+      }
+    }
+  })
+
+  return mount(RoleBasedNavigation)
+}
+
+function hrefs(wrapper: ReturnType<typeof mount>) {
+  return wrapper.findAllComponents(NavLink).map((link) => link.props('href'))
+}
+
+function labels(wrapper: ReturnType<typeof mount>) {
+  return wrapper.findAllComponents(NavLink).map((link) => link.props('label'))
+}
+
 describe('RoleBasedNavigation', () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })
 
-  it('renders dashboard and common items for viewer', () => {
-    mockPage.mockReturnValue({
-      props: {
-        auth: {
-          user: { role: 'viewer' }
-        }
-      }
-    })
+  it('renders a simple read-only menu for viewer', () => {
+    const wrapper = mountForRole('viewer')
 
-    const wrapper = mount(RoleBasedNavigation)
+    expect(labels(wrapper)).toEqual(['Обзор', 'Зоны', 'Тревоги', 'Настройки'])
+    expect(wrapper.text()).not.toContain('Рецепты')
+    expect(wrapper.text()).not.toContain('Запуск')
+    expect(wrapper.text()).not.toContain('Пользователи')
+    expect(wrapper.text()).not.toContain('Аудит')
+    expect(wrapper.text()).not.toContain('Логи')
+    expect(wrapper.text()).not.toContain('Узлы')
+    expect(wrapper.text()).not.toContain('Аналитика')
+    expect(wrapper.text()).not.toContain('Здоровье системы')
+  })
 
-    expect(wrapper.text()).toContain('Операционный центр')
-    expect(wrapper.text()).toContain('Зоны')
-    expect(wrapper.text()).toContain('Теплицы')
-    expect(wrapper.text()).toContain('Устройства')
-    expect(wrapper.text()).toContain('Алерты')
-    expect(wrapper.text()).toContain('Аналитика')
-    expect(wrapper.text()).toContain('Сервисы')
-    expect(wrapper.text()).toContain('Настройки')
+  it('renders exactly five operator items in order', () => {
+    const wrapper = mountForRole('operator')
+
+    expect(hrefs(wrapper)).toEqual([
+      '/',
+      '/zones',
+      '/alerts',
+      '/documentation/fertigation',
+      '/settings',
+    ])
+    expect(labels(wrapper)).toEqual([
+      'Сегодня',
+      'Зоны',
+      'Тревоги',
+      'Справочник',
+      'Профиль',
+    ])
+    expect(wrapper.text()).not.toContain('Рецепты')
+    expect(wrapper.text()).not.toContain('Узлы')
+    expect(wrapper.text()).not.toContain('Устройства')
+    expect(wrapper.text()).not.toContain('Здоровье системы')
+    expect(wrapper.text()).not.toContain('Сервисы')
+    expect(wrapper.text()).not.toContain('Запуск')
+    expect(wrapper.text()).not.toContain('Аналитика')
+  })
+
+  it('renders agronomist items without devices or system tools', () => {
+    const wrapper = mountForRole('agronomist')
+
+    expect(hrefs(wrapper)).toEqual([
+      '/',
+      '/zones',
+      '/recipes',
+      '/analytics',
+      '/alerts',
+      '/launch',
+    ])
+    expect(labels(wrapper)).toEqual([
+      'Обзор',
+      'Зоны',
+      'Рецепты',
+      'Аналитика',
+      'Тревоги',
+      'Запуск',
+    ])
+    expect(wrapper.text()).not.toContain('Узлы')
+    expect(wrapper.text()).not.toContain('Устройства')
+    expect(wrapper.text()).not.toContain('Здоровье системы')
+    expect(wrapper.text()).not.toContain('Логи')
+    expect(wrapper.text()).not.toContain('Аудит')
+    expect(wrapper.text()).not.toContain('Пользователи')
+    expect(wrapper.text()).not.toContain('Культуры')
+  })
+
+  it('renders engineer items with nodes first', () => {
+    const wrapper = mountForRole('engineer')
+
+    expect(hrefs(wrapper)).toEqual([
+      '/devices',
+      '/',
+      '/zones',
+      '/alerts',
+      '/monitoring',
+      '/logs',
+    ])
+    expect(labels(wrapper)[0]).toBe('Узлы')
+    expect(wrapper.text()).toContain('Обзор')
+    expect(wrapper.text()).toContain('Здоровье системы')
+    expect(wrapper.text()).not.toContain('Рецепты')
+    expect(wrapper.text()).not.toContain('Запуск')
+    expect(wrapper.text()).not.toContain('Аналитика')
+    expect(wrapper.text()).not.toContain('Пользователи')
+    expect(wrapper.text()).not.toContain('Аудит')
+  })
+
+  it('renders admin items with users instead of operators', () => {
+    const wrapper = mountForRole('admin')
+
+    expect(hrefs(wrapper)).toEqual([
+      '/',
+      '/alerts',
+      '/monitoring',
+      '/users',
+      '/audit',
+      '/zones',
+      '/devices',
+      '/settings',
+    ])
+    expect(labels(wrapper)[0]).toBe('Система')
+    expect(wrapper.text()).toContain('Пользователи')
+    expect(wrapper.text()).not.toContain('Операторы')
+    expect(wrapper.text()).toContain('Журнал')
+    expect(wrapper.text()).not.toContain('Аудит')
+    expect(wrapper.text()).not.toContain('Логи')
+    expect(wrapper.text()).toContain('Здоровье системы')
+    expect(wrapper.text()).toContain('Узлы')
     expect(wrapper.text()).not.toContain('Рецепты')
     expect(wrapper.text()).not.toContain('Культуры')
-    expect(wrapper.text()).not.toContain('Операторы')
-    expect(wrapper.text()).not.toContain('Логи')
-    expect(wrapper.text()).not.toContain('Аудит')
-  })
-
-  it('renders agronomist-only items', () => {
-    mockPage.mockReturnValue({
-      props: {
-        auth: {
-          user: { role: 'agronomist' }
-        }
-      }
-    })
-
-    const wrapper = mount(RoleBasedNavigation)
-
-    expect(wrapper.text()).toContain('Рецепты')
-    expect(wrapper.text()).toContain('Культуры')
-    expect(wrapper.text()).toContain('Мастер запуска')
-    expect(wrapper.text()).toContain('Аналитика')
-    expect(wrapper.text()).not.toContain('Операторы')
-    expect(wrapper.text()).not.toContain('Логи')
-    expect(wrapper.text()).not.toContain('Аудит')
-  })
-
-  it('renders admin-only items', () => {
-    mockPage.mockReturnValue({
-      props: {
-        auth: {
-          user: { role: 'admin' }
-        }
-      }
-    })
-
-    const wrapper = mount(RoleBasedNavigation)
-
-    expect(wrapper.text()).toContain('Рецепты')
-    expect(wrapper.text()).toContain('Культуры')
-    expect(wrapper.text()).toContain('Мастер запуска')
-    expect(wrapper.text()).toContain('Аналитика')
-    expect(wrapper.text()).toContain('Операторы')
-    expect(wrapper.text()).toContain('Логи')
-    expect(wrapper.text()).toContain('Аудит')
+    expect(wrapper.text()).not.toContain('Запуск')
   })
 
   it('renders NavLink components for visible items', () => {
-    mockPage.mockReturnValue({
-      props: {
-        auth: {
-          user: { role: 'viewer' }
-        }
-      }
-    })
-
-    const wrapper = mount(RoleBasedNavigation)
+    const wrapper = mountForRole('viewer')
     const navLinks = wrapper.findAllComponents(NavLink)
 
     expect(navLinks.length).toBeGreaterThan(0)

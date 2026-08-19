@@ -21,6 +21,7 @@ import { automationPresetsApi } from './automationPresets'
 import { commandsApi } from './commands'
 import { greenhousesApi } from './greenhouses'
 import { growCyclesApi } from './growCycles'
+import { harvestsApi } from './harvests'
 import { infrastructureApi } from './infrastructure'
 import { logsApi } from './logs'
 import { nodesApi } from './nodes'
@@ -50,6 +51,7 @@ export const api = {
   commands: commandsApi,
   greenhouses: greenhousesApi,
   growCycles: growCyclesApi,
+  harvests: harvestsApi,
   infrastructure: infrastructureApi,
   logs: logsApi,
   nodes: nodesApi,

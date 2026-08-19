@@ -1,4 +1,4 @@
-import { computed, onMounted, onUnmounted, ref, shallowRef, type Ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, shallowRef, type ComputedRef, type Ref } from 'vue'
 import { router } from '@inertiajs/vue3'
 import { useTelemetry } from '@/composables/useTelemetry'
 import { useWebSocket } from '@/composables/useWebSocket'
@@ -44,11 +44,14 @@ function normalizeEventKind(kind: string): EventKind {
   return 'INFO'
 }
 
+export type DashboardEventScope = 'all' | 'warnings_alerts' | 'alerts_only'
+
 interface UseDashboardRealtimeFeedOptions {
   theme: Ref<unknown>
   selectedZoneId: Ref<number | null>
   telemetryPeriod: Ref<TelemetryPeriod>
   latestAlerts: Ref<Alert[]>
+  eventScope?: Ref<DashboardEventScope> | ComputedRef<DashboardEventScope>
 }
 
 export function useDashboardRealtimeFeed({
@@ -56,6 +59,7 @@ export function useDashboardRealtimeFeed({
   selectedZoneId,
   telemetryPeriod,
   latestAlerts,
+  eventScope,
 }: UseDashboardRealtimeFeedOptions): {
   eventFilter: Ref<'ALL' | EventKind>
   filteredEvents: Ref<Array<ZoneEvent & { created_at?: string }>>
@@ -108,11 +112,22 @@ export function useDashboardRealtimeFeed({
       .slice(0, 20)
   })
 
+  const scopedEvents = computed(() => {
+    const scope = eventScope?.value ?? 'all'
+    if (scope === 'alerts_only') {
+      return allEvents.value.filter(e => e.kind === 'ALERT')
+    }
+    if (scope === 'warnings_alerts') {
+      return allEvents.value.filter(e => e.kind === 'ALERT' || e.kind === 'WARNING')
+    }
+    return allEvents.value
+  })
+
   const filteredEvents = computed(() => {
     if (eventFilter.value === 'ALL') {
-      return allEvents.value
+      return scopedEvents.value
     }
-    return allEvents.value.filter(e => e.kind === eventFilter.value)
+    return scopedEvents.value.filter(e => e.kind === eventFilter.value)
   })
 
   function handleOpenDetail(zoneId: number, _metric: string): void {
