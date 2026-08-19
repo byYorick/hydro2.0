@@ -22,7 +22,9 @@ DOCKER_COMPOSE ?= $(shell if command -v docker-compose >/dev/null 2>&1; then ech
 .PHONY: help
 help:
 	@echo "hydro2.0 - targets:"
-	@echo "  up             - start dev stack (backend/docker-compose.dev.yml)"
+	@echo "  up             - start dev stack (code via bind-mount, no image rebuild)"
+	@echo "  up-build       - start and rebuild images (Dockerfile / deps)"
+	@echo "  up-offline     - start from local images (no registry pull, no rebuild)"
 	@echo "  down           - stop dev stack"
 	@echo "  migrate        - run Laravel migrations and dev bootstrap seeders"
 	@echo "  refresh        - full clean dev refresh with only base users in DB"
@@ -112,8 +114,20 @@ prod-logs:
 	@$(PROD_COMPOSE) logs -f --tail=$(or $(TAIL),200) $(SERVICE)
 
 .PHONY: up
+# Код Laravel/Python уже bind-mount — пересборка образа не нужна.
+# --pull missing: не дёргать :latest в registry, если образ уже есть.
 up:
+	@$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) up -d --pull missing
+
+.PHONY: up-build
+up-build:
 	@$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) up -d --build
+
+# Без интернета: не ходим в Docker Hub и не пересобираем Dockerfile
+# (apt/pip/npm/composer). Нужен ранее собранный стек (`make up-build`).
+.PHONY: up-offline
+up-offline:
+	@$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) up -d --pull never --no-build
 
 .PHONY: down
 down:

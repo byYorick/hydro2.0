@@ -56,7 +56,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 # Запустить dev окружение (из корня проекта)
 make up
-# Или: docker compose -f backend/docker-compose.dev.yml up -d --build
+# Или: docker compose -f backend/docker-compose.dev.yml up -d --pull missing
+# Пересборка образов (Dockerfile/зависимости): make up-build
 
 # Остановить dev окружение
 make down
