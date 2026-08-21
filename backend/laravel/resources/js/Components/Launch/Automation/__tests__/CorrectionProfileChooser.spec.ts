@@ -34,8 +34,7 @@ describe('CorrectionProfileChooser', () => {
     const w = mount(CorrectionProfileChooser, {
       props: { modelValue: null, waterForm: baseWaterForm as WaterFormState },
     })
-    const aggressiveBtn = w.findAll('button').find((b) => b.text().startsWith('Агрессивный'))!
-    await aggressiveBtn.trigger('click')
+    await w.get('[data-testid="correction-profile-preset-aggressive"]').trigger('click')
 
     expect(w.emitted('update:modelValue')![0]).toEqual(['aggressive'])
     const apply = w.emitted('apply')!

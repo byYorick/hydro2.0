@@ -39,70 +39,49 @@
         <div
           v-for="(step, index) in stepsFor(field.path)"
           :key="`${field.path}-${index}`"
-          class="settings-field-card !p-3 md:grid md:grid-cols-[auto_1fr_auto_auto] md:gap-2 md:!transform-none"
+          class="settings-row"
           :data-testid="`command-template-step-${field.path}-${index}`"
         >
-          <div class="flex items-center text-xs font-medium text-[color:var(--text-muted)] pt-2 md:pt-0 md:items-center md:h-full">
-            #{{ index + 1 }}
+          <div class="settings-row__main">
+            <span class="settings-row__label">Шаг {{ index + 1 }}</span>
+            <SettingsFieldHelp
+              title="Канал реле"
+              summary="Имя ACTUATOR-канала на узле полива."
+              help="Укажите channel из NodeConfig узла irrig/pump (например `pump_main`, `valve_irrigation`). Команда `set_relay` будет отправлена именно на этот канал."
+              :test-id="`command-template-channel-help-${field.path}-${index}`"
+            />
+            <SettingsFieldHelp
+              title="Состояние реле"
+              summary="Вкл — реле замыкается, выкл — размыкается."
+              help="При остановке процесса обычно сначала выключают насос, затем клапаны."
+              :test-id="`command-template-state-help-${field.path}-${index}`"
+            />
           </div>
-
-          <div class="space-y-1">
-            <div class="flex items-center gap-1">
-              <label
-                class="block text-[10px] uppercase tracking-wide text-[color:var(--text-dim)]"
-                :for="stepInputId(field.path, index, 'channel')"
-              >
-                Канал
-              </label>
-              <SettingsFieldHelp
-                title="Канал relay-команды"
-                summary="Имя ACTUATOR-канала на узле полива."
-                help="Укажите channel из NodeConfig узла irrig/pump (например `pump_main`, `valve_irrigation`). Команда `set_relay` будет отправлена именно на этот канал. Имя должно совпадать с конфигурацией оборудования, иначе узел вернёт INVALID или NO_EFFECT."
-                :test-id="`command-template-channel-help-${field.path}-${index}`"
-              />
-            </div>
+          <div class="settings-row__control flex-wrap">
             <input
               :id="stepInputId(field.path, index, 'channel')"
               v-model="step.channel"
               type="text"
-              class="input-field w-full font-mono text-sm"
-              placeholder="valve_irrigation"
+              class="input-field settings-control--text font-mono"
+              placeholder="канал"
+              :aria-label="`Канал шага ${index + 1}`"
               :data-testid="`command-template-channel-${field.path}-${index}`"
             />
-          </div>
-
-          <div class="space-y-1">
-            <div class="flex items-center gap-1">
-              <label
-                class="block text-[10px] uppercase tracking-wide text-[color:var(--text-dim)]"
-                :for="stepInputId(field.path, index, 'state')"
-              >
-                Состояние
-              </label>
-              <SettingsFieldHelp
-                title="Состояние реле"
-                summary="Вкл/выкл для команды set_relay."
-                help="ON — реле замыкается (насос/клапан включается). OFF — реле размыкается. При остановке процесса обычно сначала выключают насос, затем клапаны — соблюдайте безопасный порядок шагов в шаблоне."
-                :test-id="`command-template-state-help-${field.path}-${index}`"
-              />
-            </div>
             <select
               :id="stepInputId(field.path, index, 'state')"
               :value="step.params.state ? 'true' : 'false'"
-              class="input-select w-full"
+              class="input-select settings-control--select"
+              :aria-label="`Состояние шага ${index + 1}`"
               :data-testid="`command-template-state-${field.path}-${index}`"
               @change="step.params.state = ($event.target as HTMLSelectElement).value === 'true'"
             >
               <option value="true">
-                Включить (ON)
+                Включить
               </option>
               <option value="false">
-                Выключить (OFF)
+                Выключить
               </option>
             </select>
-          </div>
-
-          <div class="flex items-end gap-1">
             <Button
               size="sm"
               variant="secondary"

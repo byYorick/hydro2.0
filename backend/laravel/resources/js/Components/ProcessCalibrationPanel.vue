@@ -73,28 +73,14 @@
     </div>
 
     <!-- PRESET STRIP -->
-    <div class="flex flex-wrap items-center gap-1.5 px-3 py-2 rounded-md border border-[var(--border-muted)] bg-[var(--bg-elevated)]">
-      <span class="text-[10px] uppercase tracking-wider text-[var(--text-dim)] font-semibold pr-1">
-        Пресет
-      </span>
-      <button
-        v-for="preset in presetOptions"
-        :key="preset.key"
-        type="button"
-        :class="presetClass(preset.key)"
-        :data-testid="`process-calibration-preset-${preset.key}`"
-        :disabled="presetSwitching"
-        @click="onPresetPillClick(preset.key)"
-      >
-        {{ preset.name }}
-      </button>
-      <span
-        v-if="selectedPresetDescription"
-        class="text-[11px] text-[var(--text-dim)] ml-1"
-      >
-        · {{ selectedPresetDescription }}
-      </span>
-    </div>
+    <PresetPillStrip
+      :items="presetPillItems"
+      :model-value="selectedPresetKey"
+      :description="selectedPresetDescription"
+      :disabled="presetSwitching"
+      test-id="process-calibration-preset-strip"
+      @select="onPresetPillClick"
+    />
 
     <!-- MODE TABS -->
     <div class="flex flex-wrap gap-1 border-b border-[var(--border-muted)]">
@@ -152,10 +138,11 @@
           <span class="text-sm font-medium text-[var(--text-primary)]">{{ section.title }}</span>
           <span class="text-[11px] text-[var(--text-muted)]">{{ section.desc }}</span>
         </summary>
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-3 px-3 py-3 border-t border-[var(--border-muted)]">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-2 px-3 py-2.5 border-t border-[var(--border-muted)]">
           <Field
             v-for="field in section.fields"
             :key="field.key"
+            compact
             :label="fieldLabel(field)"
             :hint="field.hint"
             :error="validationErrors[field.key]"
@@ -169,8 +156,8 @@
               :max="field.max"
               :placeholder="field.placeholder"
               :class="inputCls"
+              :title="field.description"
             />
-            <span class="text-[11px] text-[var(--text-dim)]">{{ field.description }}</span>
           </Field>
         </div>
       </details>
@@ -201,7 +188,7 @@
       <transition name="pc-drawer">
         <div
           v-if="historyOpen"
-          class="fixed inset-0 z-50 flex justify-end bg-black/45 backdrop-blur-sm"
+          class="fixed inset-0 z-[55] flex justify-end bg-black/45 backdrop-blur-sm"
           @click.self="historyOpen = false"
         >
           <aside
@@ -281,6 +268,7 @@ import Button from '@/Components/Button.vue'
 import ConfirmModal from '@/Components/ConfirmModal.vue'
 import { useConfirmDialog } from '@/composables/useConfirmDialog'
 import { Chip, Field, Stat } from '@/Components/Shared/Primitives'
+import PresetPillStrip, { type PresetPillItem, type PresetPillKey } from '@/Components/Shared/PresetPillStrip.vue'
 import Ic from '@/Components/Icons/Ic.vue'
 import {
   buildEcComponentGainsPayload,
@@ -362,7 +350,7 @@ const { showToast } = useToast()
 const processCalibrationDefaults = useProcessCalibrationDefaults()
 
 const inputCls =
-  'w-full px-2.5 py-1.5 rounded-md border border-[var(--border-muted)] bg-[var(--bg-surface)] text-sm text-[var(--text-primary)] focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/40'
+  'block w-full max-w-[8.5rem] h-8 px-2 rounded-md border border-[var(--border-muted)] bg-[var(--bg-surface)] text-sm font-mono text-[var(--text-primary)] focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/40'
 
 const modes: Array<{ key: ProcessCalibrationMode; label: string; description: string }> = [
   {
@@ -623,6 +611,16 @@ const selectedPreset = computed(() => selectedRuntimeTuningPreset(runtimeTuningB
 const presetOptions = computed(() => runtimeTuningBundle.value?.presets ?? [])
 const selectedPresetName = computed(() => selectedPreset.value?.name ?? 'Системный пресет')
 const selectedPresetDescription = computed(() => selectedPreset.value?.description ?? '')
+const presetPillItems = computed<PresetPillItem[]>(() =>
+  presetOptions.value.map((preset) => ({
+    key: preset.key,
+    label: preset.key === 'system_default' ? 'Системный пресет' : preset.name,
+    meta: preset.key === 'system_default' ? 'system' : 'custom',
+    locked: preset.key === 'system_default',
+    title: preset.description ?? undefined,
+    testId: `process-calibration-preset-${preset.key}`,
+  })),
+)
 const observationWindowLabel = computed(() => {
   const transport = parseNumeric(form.value.transport_delay_sec) ?? 0
   const settle = parseNumeric(form.value.settle_sec) ?? 0
@@ -646,17 +644,6 @@ function isFieldDirty(key: FormKey): boolean {
 
 function fieldLabel(field: FieldDescriptor): string {
   return isFieldDirty(field.key) ? `${field.label} ●` : field.label
-}
-
-function presetClass(key: string): string {
-  const active = selectedPresetKey.value === key
-  return [
-    'px-2.5 py-1 rounded-full border text-[12px] cursor-pointer transition-colors',
-    active
-      ? 'bg-brand-soft border-brand text-brand-ink font-semibold'
-      : 'border-[var(--border-muted)] text-[var(--text-muted)] hover:bg-[var(--bg-surface-strong)]',
-    presetSwitching.value ? 'opacity-55 cursor-not-allowed' : '',
-  ].join(' ')
 }
 
 function tabClass(mode: ProcessCalibrationMode): string {
@@ -859,10 +846,11 @@ async function persistRuntimeTuningBundle(nextBundle: RuntimeTuningBundlePayload
   selectedPresetKey.value = runtimeTuningBundle.value.selected_preset_key
 }
 
-async function onPresetPillClick(key: string): Promise<void> {
-  if (!runtimeTuningBundle.value) return
-  if (selectedPresetKey.value === key) return
-  selectedPresetKey.value = key
+async function onPresetPillClick(key: PresetPillKey): Promise<void> {
+  if (!runtimeTuningBundle.value || key === null) return
+  const presetKey = String(key)
+  if (selectedPresetKey.value === presetKey) return
+  selectedPresetKey.value = presetKey
 
   presetSwitching.value = true
   try {

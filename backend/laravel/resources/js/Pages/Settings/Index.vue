@@ -34,42 +34,6 @@
             </Badge>
           </div>
         </div>
-
-        <div
-          class="settings-kpi-strip"
-          data-testid="settings-kpi-strip"
-        >
-          <div
-            class="settings-kpi-chip"
-            title="Права в интерфейсе"
-          >
-            <span class="settings-kpi-chip__label">Роль</span>
-            <span class="settings-kpi-chip__value">{{ translateRole(currentUser?.role) }}</span>
-          </div>
-          <div
-            class="settings-kpi-chip"
-            title="Личная настройка тостов"
-          >
-            <span class="settings-kpi-chip__label">Подавление алертов</span>
-            <span class="settings-kpi-chip__value">{{ notificationSettings.alertToastSuppressionSec }} с</span>
-          </div>
-          <div
-            v-if="canEditAutomationEngineSettings"
-            class="settings-kpi-chip"
-            title="Снимок scheduler / engine"
-          >
-            <span class="settings-kpi-chip__label">Снимок AE</span>
-            <span class="settings-kpi-chip__value settings-kpi-chip__value--sm">{{ automationEngineSettingsGeneratedAtLabel }}</span>
-          </div>
-          <div
-            v-if="canEditAutomationEngineSettings"
-            class="settings-kpi-chip"
-            title="Политика auto-resolve"
-          >
-            <span class="settings-kpi-chip__label">Политики алертов</span>
-            <span class="settings-kpi-chip__value settings-kpi-chip__value--sm">{{ alertPolicyModeLabel }}</span>
-          </div>
-        </div>
       </header>
 
       <div class="space-y-4">
@@ -100,51 +64,50 @@
             icon="🔔"
             test-id="settings-section-notifications"
           >
-            <div class="max-w-xl space-y-4">
-              <SettingsFieldCard
-                label="Окно подавления повторов алертов"
-                description="Одинаковые тосты на странице алертов не будут показываться чаще указанного интервала."
-                :show-description="true"
+            <div class="settings-rows max-w-xl">
+              <SettingsFieldRow
+                label="Не повторять одинаковые тревоги чаще"
+                description="Одинаковые тосты на странице тревог не будут показываться чаще указанного интервала."
+                unit="сек"
+                field-id="settings-alert-suppression-input"
                 test-id="settings-notifications-suppression-card"
               >
-                <div class="flex items-center gap-2">
-                  <input
-                    v-model.number="notificationSettings.alertToastSuppressionSec"
-                    type="number"
-                    min="0"
-                    max="600"
-                    step="5"
-                    class="input-field w-28"
-                    data-testid="settings-alert-suppression-input"
-                  />
-                  <span class="text-sm text-[color:var(--text-muted)]">секунд</span>
-                </div>
-              </SettingsFieldCard>
-              <div class="flex flex-wrap gap-2">
-                <Button
-                  size="sm"
-                  :disabled="preferencesLoading || preferencesSaving"
-                  @click="savePreferences"
-                >
-                  {{ preferencesSaving ? 'Сохраняем...' : 'Сохранить' }}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  :disabled="preferencesLoading || preferencesSaving"
-                  @click="loadPreferences"
-                >
-                  {{ preferencesLoading ? 'Загружаем...' : 'Обновить' }}
-                </Button>
-              </div>
+                <input
+                  id="settings-alert-suppression-input"
+                  v-model.number="notificationSettings.alertToastSuppressionSec"
+                  type="number"
+                  min="0"
+                  max="600"
+                  step="5"
+                  class="input-field settings-control--num text-right"
+                  data-testid="settings-alert-suppression-input"
+                />
+              </SettingsFieldRow>
             </div>
+            <template #footer>
+              <Button
+                size="sm"
+                :disabled="preferencesLoading || preferencesSaving"
+                @click="savePreferences"
+              >
+                {{ preferencesSaving ? 'Сохраняем...' : 'Сохранить' }}
+              </Button>
+              <Button
+                size="sm"
+                variant="secondary"
+                :disabled="preferencesLoading || preferencesSaving"
+                @click="loadPreferences"
+              >
+                {{ preferencesLoading ? 'Загружаем...' : 'Обновить' }}
+              </Button>
+            </template>
           </SettingsSectionShell>
 
           <template v-if="canEditAutomationEngineSettings">
             <SettingsSectionShell
               v-show="activeSection === 'automation'"
-              title="Automation Engine"
-              description="Глобальные runtime-параметры Laravel scheduler и интеграции с automation-engine."
+              title="Планировщик задач"
+              description="Как часто система проверяет расписания полива и света и сколько ждёт ответа от движка автоматики."
               icon="⚙️"
               test-id="settings-automation-engine-card"
             >
@@ -184,153 +147,70 @@
                 Параметры runtime пока не загружены.
               </div>
 
-              <div
+              <AutomationRuntimeFieldsForm
                 v-else
-                class="space-y-3"
-              >
-                <section
-                  v-for="section in automationEngineSettingsSections"
-                  :key="section.key"
-                  class="settings-group-card"
-                >
-                  <div class="settings-group-card__toggle cursor-default">
-                    <h3 class="text-sm font-semibold text-[color:var(--text-primary)]">
-                      {{ section.title }}
-                    </h3>
-                  </div>
-                  <div class="settings-group-card__body">
-                    <div class="settings-fields-stack">
-                      <SettingsFieldCard
-                        v-for="item in section.items"
-                        :key="`${section.key}-${item.key}`"
-                        :label="item.label"
-                        :description="item.description"
-                        :show-description="false"
-                        :test-id="`settings-automation-field-${item.key}`"
-                      >
-                        <template v-if="item.editable">
-                          <select
-                            v-if="item.input_type === 'boolean'"
-                            v-model="automationSettingsDraft[item.key]"
-                            :data-testid="`settings-automation-engine-input-${item.key}`"
-                            class="input-select w-full"
-                          >
-                            <option :value="true">
-                              true
-                            </option>
-                            <option :value="false">
-                              false
-                            </option>
-                          </select>
-                          <select
-                            v-else-if="item.input_type === 'select'"
-                            v-model="automationSettingsDraft[item.key]"
-                            :data-testid="`settings-automation-engine-input-${item.key}`"
-                            class="input-select w-full"
-                          >
-                            <option
-                              v-for="option in item.options || []"
-                              :key="`${item.key}-option-${option}`"
-                              :value="option"
-                            >
-                              {{ option }}
-                            </option>
-                          </select>
-                          <input
-                            v-else-if="item.input_type === 'number'"
-                            v-model="automationSettingsDraft[item.key]"
-                            :data-testid="`settings-automation-engine-input-${item.key}`"
-                            class="input-field w-full font-mono text-sm"
-                            type="number"
-                            :step="item.step || 1"
-                            :min="item.min"
-                            :max="item.max"
-                          />
-                          <input
-                            v-else
-                            v-model="automationSettingsDraft[item.key]"
-                            :data-testid="`settings-automation-engine-input-${item.key}`"
-                            class="input-field w-full font-mono text-sm"
-                            type="text"
-                          />
-                        </template>
-                        <template v-else>
-                          <div class="font-mono text-sm text-[color:var(--text-primary)] break-all">
-                            {{ formatAutomationSettingValue(item.value, item.unit) }}
-                          </div>
-                        </template>
-                        <template #meta>
-                          source: {{ item.source || 'default' }}
-                        </template>
-                      </SettingsFieldCard>
-                    </div>
-                  </div>
-                </section>
-              </div>
+                v-model="automationSettingsDraft"
+                :sections="automationEngineSettingsSections"
+              />
             </SettingsSectionShell>
 
             <SettingsSectionShell
               v-show="activeSection === 'automation'"
-              title="AE3 Alert Policies"
-              description="Управляет auto-resolve для operational alerts с формализованным recovery contract."
+              title="Закрытие тревог автоматики"
+              description="Закрывать ли тревоги автоматически, когда причина устранена, или всегда требовать подтверждения оператора."
               icon="🛡️"
               test-id="settings-alert-policies-card"
             >
-              <template #actions>
-                <span class="text-xs text-[color:var(--text-muted)] px-2 py-1 rounded-lg bg-[color:var(--bg-elevated)] border border-[color:var(--border-muted)]">
-                  {{ alertPolicyModeLabel }}
-                </span>
-              </template>
-
-              <div class="max-w-2xl settings-fields-stack">
-                <SettingsFieldCard
-                  label="Политика закрытия AE3 operational alerts"
-                  description="Даже в режиме автозакрытия manual-only alerts остаются активными, пока для них нет формализованного recovery contract."
-                  :show-description="false"
+              <div class="settings-rows max-w-xl">
+                <SettingsFieldRow
+                  label="Как закрывать тревоги"
+                  description="Даже в режиме автозакрытия тревоги, требующие ручной проверки, остаются активными до подтверждения оператором."
+                  field-id="settings-alert-policy-input"
                   test-id="settings-alert-policy-card"
                 >
                   <select
+                    id="settings-alert-policy-input"
                     v-model="alertPolicyDraft.ae3_operational_resolution_mode"
                     data-testid="settings-alert-policy-input-ae3-operational-resolution-mode"
-                    class="input-select w-full"
+                    class="input-select settings-control--select"
                   >
                     <option value="manual_ack">
-                      Только ручное подтверждение
+                      Только вручную
                     </option>
                     <option value="auto_resolve_on_recovery">
-                      Автозакрытие после recovery
+                      Автоматически, когда причина устранена
                     </option>
                   </select>
-                </SettingsFieldCard>
-                <div class="flex flex-wrap gap-2">
-                  <Button
-                    size="sm"
-                    data-testid="settings-alert-policy-save"
-                    :disabled="alertPoliciesLoading || alertPoliciesSaving || alertPoliciesResetting"
-                    @click="saveAlertPolicies"
-                  >
-                    {{ alertPoliciesSaving ? 'Сохраняем...' : 'Сохранить policy' }}
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    data-testid="settings-alert-policy-refresh"
-                    :disabled="alertPoliciesLoading || alertPoliciesSaving || alertPoliciesResetting"
-                    @click="loadAlertPolicies"
-                  >
-                    {{ alertPoliciesLoading ? 'Обновляем...' : 'Обновить' }}
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="danger"
-                    data-testid="settings-alert-policy-reset"
-                    :disabled="alertPoliciesLoading || alertPoliciesSaving || alertPoliciesResetting"
-                    @click="resetAlertPolicies"
-                  >
-                    {{ alertPoliciesResetting ? 'Сбрасываем...' : 'Сбросить' }}
-                  </Button>
-                </div>
+                </SettingsFieldRow>
               </div>
+              <template #footer>
+                <Button
+                  size="sm"
+                  data-testid="settings-alert-policy-save"
+                  :disabled="alertPoliciesLoading || alertPoliciesSaving || alertPoliciesResetting"
+                  @click="saveAlertPolicies"
+                >
+                  {{ alertPoliciesSaving ? 'Сохраняем...' : 'Сохранить' }}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  data-testid="settings-alert-policy-refresh"
+                  :disabled="alertPoliciesLoading || alertPoliciesSaving || alertPoliciesResetting"
+                  @click="loadAlertPolicies"
+                >
+                  {{ alertPoliciesLoading ? 'Обновляем...' : 'Обновить' }}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="danger"
+                  data-testid="settings-alert-policy-reset"
+                  :disabled="alertPoliciesLoading || alertPoliciesSaving || alertPoliciesResetting"
+                  @click="resetAlertPolicies"
+                >
+                  {{ alertPoliciesResetting ? 'Сбрасываем...' : 'Сбросить' }}
+                </Button>
+              </template>
             </SettingsSectionShell>
           </template>
 
@@ -338,7 +218,6 @@
             v-if="canManageSystem"
             v-show="activeSection === 'system'"
           />
-
         </div>
       </div>
     </div>
@@ -362,7 +241,8 @@ import { computed, reactive, ref, watch, onMounted } from 'vue'
 import { usePage } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import SettingsSectionShell from '@/Components/Settings/SettingsSectionShell.vue'
-import SettingsFieldCard from '@/Components/Settings/SettingsFieldCard.vue'
+import SettingsFieldRow from '@/Components/Settings/SettingsFieldRow.vue'
+import AutomationRuntimeFieldsForm from '@/Components/Settings/AutomationRuntimeFieldsForm.vue'
 import SettingsProfilePanel from '@/Components/Settings/SettingsProfilePanel.vue'
 import SettingsSystemAuthorityCard from '@/Components/Settings/SettingsSystemAuthorityCard.vue'
 import Tabs from '@/Components/Tabs.vue'
@@ -438,13 +318,6 @@ const automationEngineSettingsSections = computed(() => {
     )
   })
 })
-const automationEngineSettingsGeneratedAtLabel = computed(() => {
-  const raw = automationEngineSettingsState.value?.snapshot?.generated_at
-  if (typeof raw !== 'string' || raw.trim() === '') return 'неизвестно'
-  const date = new Date(raw)
-  if (Number.isNaN(date.getTime())) return raw
-  return date.toLocaleString()
-})
 const editableAutomationSettingsItems = computed(() => {
   return automationEngineSettingsSections.value
     .flatMap((section) => (Array.isArray(section.items) ? section.items : []))
@@ -453,18 +326,6 @@ const editableAutomationSettingsItems = computed(() => {
 const alertPoliciesState = ref(null)
 const alertPolicyDraft = reactive({
   ae3_operational_resolution_mode: 'manual_ack',
-})
-const alertPolicyMode = computed(() => {
-  const mode = alertPoliciesState.value?.payload?.ae3_operational_resolution_mode
-  if (typeof mode === 'string' && mode.trim() !== '') {
-    return mode
-  }
-  return 'manual_ack'
-})
-const alertPolicyModeLabel = computed(() => {
-  return alertPolicyMode.value === 'auto_resolve_on_recovery'
-    ? 'Автозакрытие после recovery'
-    : 'Только ручное подтверждение'
 })
 
 const { showToast } = useToast()
@@ -478,26 +339,11 @@ const automationSettingsResetting = ref(false)
 const alertPoliciesLoading = ref(false)
 const alertPoliciesSaving = ref(false)
 const alertPoliciesResetting = ref(false)
-const automationSettingsDraft = reactive({})
+const automationSettingsDraft = ref({})
 
 const notificationSettings = reactive({
   alertToastSuppressionSec: 30,
 })
-
-const formatAutomationSettingValue = (value, unit = null) => {
-  if (value === null || value === undefined) return '—'
-  const suffix = unit ? ` ${unit}` : ''
-  if (typeof value === 'boolean') return value ? 'true' : 'false'
-  if (Array.isArray(value)) return value.length ? value.join(', ') : '[]'
-  if (typeof value === 'object') {
-    try {
-      return JSON.stringify(value) + suffix
-    } catch {
-      return String(value) + suffix
-    }
-  }
-  return String(value) + suffix
-}
 
 const extractApiError = (error, fallback) => {
   const details = error?.response?.data?.errors
@@ -511,15 +357,12 @@ const extractApiError = (error, fallback) => {
   return error?.response?.data?.message || error?.message || fallback
 }
 
-const resetAutomationSettingsDraft = () => {
-  Object.keys(automationSettingsDraft).forEach((key) => delete automationSettingsDraft[key])
-}
-
 const hydrateAutomationSettingsDraft = () => {
-  resetAutomationSettingsDraft()
+  const next = {}
   editableAutomationSettingsItems.value.forEach((item) => {
-    automationSettingsDraft[item.key] = item.value
+    next[item.key] = item.value
   })
+  automationSettingsDraft.value = next
 }
 
 const applyAutomationSettingsSnapshot = (snapshot) => {
@@ -559,7 +402,7 @@ const normalizeAutomationSettingDraftValue = (item, value) => {
 const buildAutomationSettingsPayload = () => {
   const payload = {}
   editableAutomationSettingsItems.value.forEach((item) => {
-    payload[item.key] = normalizeAutomationSettingDraftValue(item, automationSettingsDraft[item.key])
+    payload[item.key] = normalizeAutomationSettingDraftValue(item, automationSettingsDraft.value[item.key])
   })
   return payload
 }

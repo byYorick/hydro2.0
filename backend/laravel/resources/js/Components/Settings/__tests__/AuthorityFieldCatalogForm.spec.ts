@@ -24,6 +24,24 @@ const sections: SystemSettingsSection[] = [
 ]
 
 describe('AuthorityFieldCatalogForm', () => {
+  const manySections: SystemSettingsSection[] = [
+    ...sections,
+    {
+      key: 'observability_snapshot',
+      label: 'Снимок',
+      description: 'Пороги снимка.',
+      fields: [
+        {
+          path: 'snapshot_stale_sec',
+          label: 'Снимок устарел',
+          description: 'Возраст снимка.',
+          type: 'integer',
+          unit: 'сек',
+        },
+      ],
+    },
+  ]
+
   it('renders section headers and field descriptions', async () => {
     const wrapper = mount(AuthorityFieldCatalogForm, {
       props: {
@@ -35,14 +53,30 @@ describe('AuthorityFieldCatalogForm', () => {
     })
 
     expect(wrapper.text()).toContain('Команды')
-    expect(wrapper.text()).toContain('Пороги команд AE3.')
     expect(wrapper.text()).toContain('Waiting command — warning')
     expect(wrapper.get('[data-testid="authority-field-waiting_command_warn_sec"]').exists()).toBe(true)
     expect(wrapper.get('[data-testid="authority-field-help-waiting_command_warn_sec"]').exists()).toBe(true)
     expect(wrapper.get('[data-testid="authority-section-help-observability_commands"]').exists()).toBe(true)
 
-    // Field description is not inline (show-description=false); it lives in the help modal.
+    await wrapper.get('[data-testid="authority-section-help-observability_commands"]').trigger('click')
+    expect(wrapper.text()).toContain('Пороги команд AE3.')
+
     await wrapper.get('[data-testid="authority-field-help-waiting_command_warn_sec"]').trigger('click')
     expect(wrapper.text()).toContain('Ожидание command_response.')
+  })
+
+  it('оставляет первую секцию открытой, остальные сворачивает', () => {
+    const wrapper = mount(AuthorityFieldCatalogForm, {
+      props: {
+        sections: manySections,
+        modelValue: {
+          waiting_command_warn_sec: 120,
+          snapshot_stale_sec: 60,
+        },
+      },
+    })
+
+    expect(wrapper.find('[data-testid="authority-field-waiting_command_warn_sec"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="authority-field-snapshot_stale_sec"]').exists()).toBe(false)
   })
 })

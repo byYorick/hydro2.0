@@ -74,43 +74,24 @@
     </div>
 
     <!-- PRESET STRIP -->
-    <div class="flex flex-wrap items-center gap-1.5 px-3 py-2 rounded-md border border-[var(--border-muted)] bg-[var(--bg-elevated)]">
-      <span class="text-[10px] uppercase tracking-wider text-[var(--text-dim)] font-semibold pr-1">
-        Пресет
-      </span>
-
-      <button
-        type="button"
-        :class="presetPillClass(selectedPresetId === null)"
-        @click="onPresetPillClick(null)"
-      >
-        Системный пресет
-        <span class="text-[10px] font-mono opacity-65">system</span>
-        <span class="text-[10px]">🔒</span>
-      </button>
-
-      <button
-        v-for="preset in presets"
-        :key="preset.id"
-        type="button"
-        :class="presetPillClass(selectedPresetId === preset.id)"
-        :data-testid="`correction-config-preset-${preset.id}`"
-        @click="onPresetPillClick(preset.id)"
-      >
-        {{ preset.name }}
-        <span class="text-[10px] font-mono opacity-65">{{ preset.scope }}</span>
-      </button>
-
-      <button
-        type="button"
-        class="px-2.5 py-1 rounded-full border border-dashed border-[var(--border-muted)] text-[12px] text-[var(--text-muted)] cursor-pointer hover:bg-[var(--bg-surface-strong)]"
-        data-testid="correction-config-new-preset"
-        @click="newPresetModalOpen = true"
-      >
-        + новый пресет
-      </button>
-
-      <div class="ml-auto flex items-center gap-1.5">
+    <PresetPillStrip
+      :items="presetPillItems"
+      :model-value="selectedPresetId"
+      test-id="correction-config-preset-strip"
+      @select="onPresetPillClick"
+    >
+      <template #extra>
+        <button
+          type="button"
+          class="px-3 py-2 border border-dashed border-[var(--border-muted)] rounded-sm text-left flex flex-col items-start justify-center gap-0.5 min-w-[120px] text-[12px] text-[var(--text-muted)] cursor-pointer hover:border-brand hover:bg-[var(--bg-surface)]"
+          data-testid="correction-config-new-preset"
+          @click="newPresetModalOpen = true"
+        >
+          <span class="text-xs font-semibold">+ новый пресет</span>
+          <span class="font-mono text-[10px] text-[var(--text-dim)]">custom</span>
+        </button>
+      </template>
+      <template #actions>
         <Button
           size="sm"
           variant="secondary"
@@ -149,7 +130,7 @@
           <div
             v-if="presetMenuOpen"
             v-click-outside="() => (presetMenuOpen = false)"
-            class="absolute right-0 top-full mt-1 z-10 min-w-[200px] rounded-md border border-[var(--border-muted)] bg-[var(--bg-surface-strong)] shadow-lg overflow-hidden"
+            class="absolute right-0 top-full mt-1 z-[55] min-w-[200px] rounded-md border border-[var(--border-muted)] bg-[var(--bg-surface-strong)] shadow-lg overflow-hidden"
           >
             <div class="px-3 py-2 text-[11px] font-mono text-[var(--text-dim)] border-b border-[var(--border-muted)]">
               {{ selectedPreset?.name || 'Системный пресет' }}
@@ -195,8 +176,8 @@
             </button>
           </div>
         </div>
-      </div>
-    </div>
+      </template>
+    </PresetPillStrip>
 
     <!-- PHASE TABS -->
     <div class="flex flex-wrap items-end gap-1 border-b border-[var(--border-muted)]">
@@ -220,7 +201,6 @@
         @click="currentTab = phase"
       >
         <span class="text-sm font-medium">{{ phaseLabel(phase) }}</span>
-        <span class="text-[11px] font-mono opacity-65">{{ phase }}</span>
         <span
           class="text-[11px] font-mono"
           :class="overrideCountByPhase[phase] > 0 ? 'text-brand' : 'opacity-65'"
@@ -287,7 +267,7 @@
           >
             <span :class="['inline-block transition-transform', openSections.has(section.key) ? 'rotate-90' : '']">▸</span>
             <span class="text-sm font-medium text-[var(--text-primary)]">{{ section.label }}</span>
-            <span class="text-[11px] font-mono text-[var(--text-dim)]">{{ section.key }}</span>
+            <span class="text-[11px] text-[var(--text-dim)]">{{ visibleFields(section.fields).length }}</span>
             <span class="ml-auto">
               <Chip
                 v-if="sectionOverrideCount(section) > 0"
@@ -315,39 +295,43 @@
               {{ sectionRuntimeNote(section.key, currentForm) }}
             </div>
 
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <div
+            <div class="settings-rows settings-rows--split">
+              <SettingsFieldRow
                 v-for="field in visibleFields(section.fields)"
                 :key="field.path"
-                :class="['flex flex-col gap-1', isFieldOverridden(field) ? 'cc-field--overridden' : '']"
+                :label="field.label"
+                :description="field.description"
+                :unit="field.unit"
+                :field-id="`correction-config-${currentTab}-${field.path}`"
+                :stacked="field.type === 'string' && Boolean(field.readonly)"
+                :test-id="`correction-config-row-${currentTab}-${field.path}`"
+                :changed="isFieldOverridden(field)"
+                class="cc-field"
+                :class="{ 'cc-field--overridden': isFieldOverridden(field) }"
               >
-                <span class="text-xs font-medium text-[var(--text-muted)]">
-                  {{ field.label }}
-                  <span
-                    v-if="field.unit"
-                    class="text-[10px] text-[var(--text-dim)] ml-1"
-                  >{{ field.unit }}</span>
-                </span>
-
                 <label
                   v-if="field.type === 'boolean'"
-                  class="flex items-center gap-2 text-sm cursor-pointer"
+                  class="inline-flex items-center gap-2 text-sm cursor-pointer"
                 >
                   <input
+                    :id="`correction-config-${currentTab}-${field.path}`"
                     :checked="Boolean(getByPath(currentForm, field.path))"
                     :data-testid="`correction-config-${currentTab}-${field.path}`"
                     type="checkbox"
                     class="accent-brand"
                     @change="setByPath(currentForm, field.path, ($event.target as HTMLInputElement).checked)"
                   />
-                  {{ Boolean(getByPath(currentForm, field.path)) ? 'включено' : 'выключено' }}
+                  <span class="text-xs text-[var(--text-muted)]">
+                    {{ Boolean(getByPath(currentForm, field.path)) ? 'вкл' : 'выкл' }}
+                  </span>
                 </label>
 
                 <select
                   v-else-if="field.type === 'enum'"
+                  :id="`correction-config-${currentTab}-${field.path}`"
                   :value="String(getByPath(currentForm, field.path) ?? '')"
                   :data-testid="`correction-config-${currentTab}-${field.path}`"
-                  :class="inputCls"
+                  class="input-select settings-control--select"
                   :disabled="Boolean(field.readonly)"
                   @change="setByPath(currentForm, field.path, ($event.target as HTMLSelectElement).value)"
                 >
@@ -362,6 +346,7 @@
 
                 <input
                   v-else
+                  :id="`correction-config-${currentTab}-${field.path}`"
                   :value="String(getByPath(currentForm, field.path) ?? '')"
                   :data-testid="`correction-config-${currentTab}-${field.path}`"
                   :type="field.type === 'string' ? 'text' : 'number'"
@@ -369,23 +354,17 @@
                   :min="field.min"
                   :max="field.max"
                   :disabled="Boolean(field.readonly)"
-                  :class="inputCls"
+                  class="input-field"
+                  :class="field.type === 'string' ? 'settings-control--text font-mono' : 'settings-control--num text-right'"
                   @input="handleScalarInput(currentForm, field, $event)"
                 />
-
-                <div
-                  v-if="field.type !== 'boolean'"
-                  class="text-[11px] text-[var(--text-dim)] leading-snug"
+                <span
+                  v-if="isFieldOverridden(field) && currentTab !== 'base'"
+                  class="text-[11px] text-[var(--text-dim)] whitespace-nowrap"
                 >
-                  {{ field.description }}
-                  <span
-                    v-if="isFieldOverridden(field) && currentTab !== 'base'"
-                    class="text-brand ml-1 font-mono"
-                  >
-                    базовое: {{ formatFieldValue(field, getByPath(baseForm, field.path)) }}
-                  </span>
-                </div>
-              </div>
+                  было {{ formatFieldValue(field, getByPath(baseForm, field.path)) }}
+                </span>
+              </SettingsFieldRow>
             </div>
           </div>
         </div>
@@ -402,7 +381,7 @@
               Итоговое состояние runtime
             </h3>
             <Chip tone="neutral">
-              <span class="font-mono">фаза: {{ currentTab }}</span>
+              <span class="font-mono">фаза: {{ previewPhaseLabel }}</span>
             </Chip>
           </div>
           <div class="flex flex-wrap gap-1.5">
@@ -451,7 +430,7 @@
     <teleport to="body">
       <div
         v-if="conflictOpen"
-        class="fixed inset-0 z-50 flex items-center justify-center bg-black/45 backdrop-blur-sm"
+        class="fixed inset-0 z-[55] flex items-center justify-center bg-black/45 backdrop-blur-sm"
         data-testid="correction-config-conflict-banner"
       >
         <div class="w-[min(540px,95vw)] rounded-lg border border-[var(--border-muted)] bg-[var(--bg-surface-strong)] shadow-2xl p-4 flex flex-col gap-3">
@@ -514,7 +493,7 @@
     <teleport to="body">
       <div
         v-if="historyDrawerOpen"
-        class="fixed inset-0 z-50 flex justify-end bg-black/45 backdrop-blur-sm"
+        class="fixed inset-0 z-[55] flex justify-end bg-black/45 backdrop-blur-sm"
         @click.self="historyDrawerOpen = false"
       >
         <aside
@@ -595,7 +574,7 @@
     <teleport to="body">
       <div
         v-if="diffModalOpen"
-        class="fixed inset-0 z-50 flex items-center justify-center bg-black/45 backdrop-blur-sm p-4"
+        class="fixed inset-0 z-[70] flex items-center justify-center bg-black/45 backdrop-blur-sm p-4"
         data-testid="correction-config-diff-modal"
         @click.self="diffModalOpen = false"
       >
@@ -699,7 +678,7 @@
     <teleport to="body">
       <div
         v-if="newPresetModalOpen"
-        class="fixed inset-0 z-50 flex items-center justify-center bg-black/45 backdrop-blur-sm p-4"
+        class="fixed inset-0 z-[60] flex items-center justify-center bg-black/45 backdrop-blur-sm p-4"
         @click.self="newPresetModalOpen = false"
       >
         <div class="w-[min(560px,95vw)] flex flex-col rounded-lg border border-[var(--border-muted)] bg-[var(--bg-surface-strong)] shadow-2xl overflow-hidden">
@@ -759,6 +738,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import Button from '@/Components/Button.vue'
+import SettingsFieldRow from '@/Components/Settings/SettingsFieldRow.vue'
+import PresetPillStrip, { type PresetPillItem, type PresetPillKey } from '@/Components/Shared/PresetPillStrip.vue'
 import { Chip, Field } from '@/Components/Shared/Primitives'
 import type { ChipTone } from '@/Components/Shared/Primitives'
 import Ic from '@/Components/Icons/Ic.vue'
@@ -839,6 +820,28 @@ const selectedPreset = computed(() =>
   presets.value.find((p) => p.id === selectedPresetId.value) ?? null
 )
 
+const presetPillItems = computed<PresetPillItem[]>(() => {
+  const items: PresetPillItem[] = [
+    {
+      key: null,
+      label: 'Системный пресет',
+      meta: 'system',
+      locked: true,
+      testId: 'correction-config-preset-system',
+    },
+  ]
+  for (const preset of presets.value) {
+    items.push({
+      key: preset.id,
+      label: preset.name,
+      meta: preset.scope,
+      locked: preset.scope === 'system',
+      testId: `correction-config-preset-${preset.id}`,
+    })
+  }
+  return items
+})
+
 const visibleSections = computed(() =>
   sections.value.filter((s) => advancedMode.value || !s.advanced_only)
 )
@@ -847,8 +850,12 @@ const currentForm = computed<Record<string, unknown>>(() =>
   currentTab.value === 'base' ? baseForm.value : phaseForms.value[currentTab.value]
 )
 
+const previewPhaseLabel = computed(() =>
+  currentTab.value === 'base' ? 'базовая' : phaseLabel(currentTab.value)
+)
+
 const baseFieldCount = computed(() =>
-  sections.value.reduce((sum, s) => sum + s.fields.length, 0)
+  sections.value.reduce((sum, s) => sum + visibleFields(s.fields).length, 0)
 )
 
 const isDirty = computed(() => {
@@ -1098,15 +1105,6 @@ function historyChipTone(ct: string): ChipTone {
   return 'neutral'
 }
 
-function presetPillClass(active: boolean): string {
-  return [
-    'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[12px] cursor-pointer transition-colors',
-    active
-      ? 'bg-brand-soft border-brand text-brand-ink font-semibold'
-      : 'border-[var(--border-muted)] text-[var(--text-muted)] hover:bg-[var(--bg-surface-strong)]',
-  ].join(' ')
-}
-
 function phaseTabClass(active: boolean): string {
   return [
     'flex flex-col items-start gap-0.5 px-3 py-2 -mb-px border-b-2 cursor-pointer transition-colors min-w-[160px]',
@@ -1324,13 +1322,14 @@ async function deleteSelectedPreset(): Promise<void> {
 }
 
 /* ================== PRESET PILL ВЗАИМОДЕЙСТВИЯ ================== */
-function onPresetPillClick(id: number | null): void {
-  if (id === selectedPresetId.value) return
+function onPresetPillClick(id: PresetPillKey): void {
+  const nextId = id === null ? null : Number(id)
+  if (nextId === selectedPresetId.value) return
   if (isDirty.value) {
-    pendingPresetId.value = id
+    pendingPresetId.value = nextId
     conflictOpen.value = true
   } else {
-    selectedPresetId.value = id
+    selectedPresetId.value = nextId
     applySelectedPreset()
   }
 }

@@ -1,5 +1,6 @@
 import { mount } from '@vue/test-utils'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
+import { nextTick } from 'vue'
 import SettingsFieldHelp from '../SettingsFieldHelp.vue'
 
 vi.mock('@/Components/Button.vue', () => ({
@@ -11,16 +12,11 @@ vi.mock('@/Components/Button.vue', () => ({
   },
 }))
 
-vi.mock('@/Components/Modal.vue', () => ({
-  default: {
-    name: 'Modal',
-    props: ['open', 'title', 'size', 'hideDefaultCancel'],
-    emits: ['close'],
-    template: '<div v-if="open" :data-testid="$attrs[\'data-testid\']"><slot /><slot name="footer" /></div>',
-  },
-}))
-
 describe('SettingsFieldHelp.vue', () => {
+  afterEach(() => {
+    document.body.innerHTML = ''
+  })
+
   it('открывает модальное окно с подробным текстом на русском', async () => {
     const wrapper = mount(SettingsFieldHelp, {
       props: {
@@ -28,14 +24,20 @@ describe('SettingsFieldHelp.vue', () => {
         summary: 'Краткое описание.',
         help: 'Подробное описание порога warning для оператора.',
       },
+      attachTo: document.body,
     })
 
-    expect(wrapper.find('[data-testid="settings-field-help-modal"]').exists()).toBe(false)
+    expect(document.body.querySelector('[data-testid="settings-field-help-modal"]')).toBeNull()
 
     await wrapper.find('[data-testid="settings-field-help"]').trigger('click')
+    await nextTick()
 
-    expect(wrapper.find('[data-testid="settings-field-help-modal"]').exists()).toBe(true)
-    expect(wrapper.text()).toContain('Подробное описание порога warning для оператора.')
-    expect(wrapper.text()).toContain('Краткое описание.')
+    const modal = document.body.querySelector('[data-testid="settings-field-help-modal"]')
+    expect(modal).not.toBeNull()
+    expect(modal?.textContent).toContain('Подробное описание порога warning для оператора.')
+    expect(modal?.textContent).toContain('Краткое описание.')
+    expect(document.body.querySelector('[data-testid="app-modal-root"]')).not.toBeNull()
+
+    wrapper.unmount()
   })
 })

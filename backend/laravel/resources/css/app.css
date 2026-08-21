@@ -544,14 +544,21 @@ body {
 
 .input-field,
 .input-select {
-  height: 2.6rem;
-  border-radius: 0.85rem;
+  height: 2.2rem;
+  border-radius: 0.6rem;
   border: 1px solid var(--border-muted);
   background: var(--bg-elevated);
   color: var(--text-primary);
-  padding: 0 0.85rem;
-  font-size: 0.85rem;
+  padding: 0 0.6rem;
+  font-size: 0.82rem;
   transition: border 0.2s ease, box-shadow 0.2s ease;
+}
+
+/* Многострочные поля не должны схлопываться до высоты однострочного input. */
+textarea.input-field {
+  height: auto;
+  padding: 0.45rem 0.6rem;
+  line-height: 1.45;
 }
 
 .input-field:focus,
@@ -797,12 +804,12 @@ body {
 
 .settings-card__header {
   border-bottom: 1px solid var(--border-muted);
-  padding: 1rem 1.15rem 1rem 1.35rem;
+  padding: 0.75rem 1rem 0.75rem 1.15rem;
   background: color-mix(in srgb, var(--bg-elevated) 55%, transparent);
 }
 
 .settings-card__body {
-  padding: 1rem 1.15rem 1.15rem 1.35rem;
+  padding: 0.75rem 1rem 0.9rem 1.15rem;
 }
 
 .settings-card__title {
@@ -876,6 +883,127 @@ body {
   font-size: 0.62rem;
   text-transform: uppercase;
   letter-spacing: 0.06em;
+}
+
+/*
+ * Компактная раскладка «подпись — значение» для списков параметров.
+ * Заменяет карточку на строку, чтобы на экран помещалось в 2-3 раза больше настроек.
+ */
+.settings-rows {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  column-gap: 1.5rem;
+}
+
+@media (min-width: 1280px) {
+  .settings-rows--split {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.settings-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.35rem 0.1rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--border-muted) 60%, transparent);
+}
+
+.settings-row:last-child {
+  border-bottom: none;
+}
+
+@media (min-width: 640px) {
+  .settings-row:not(.settings-row--stacked) {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+}
+
+.settings-row__main {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.settings-row__label {
+  color: var(--text-primary);
+  font-size: 0.8rem;
+  font-weight: 500;
+  line-height: 1.3;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.settings-row__unit {
+  color: var(--text-dim);
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+.settings-row__control {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  flex-shrink: 0;
+  max-width: 100%;
+}
+
+.settings-row--stacked .settings-row__control {
+  width: 100%;
+}
+
+.settings-row__readonly {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  overflow-wrap: anywhere;
+}
+
+.settings-row__changed {
+  color: var(--accent-green);
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* Ширина поля по объёму данных: число не должно растягиваться на всю строку. */
+.settings-control--num {
+  width: 6.5rem;
+}
+
+.settings-control--select {
+  width: 12rem;
+  max-width: 100%;
+}
+
+.settings-control--text {
+  width: 16rem;
+  max-width: 100%;
+}
+
+.settings-control--wide {
+  width: 100%;
+}
+
+@media (max-width: 639px) {
+  .settings-control--num,
+  .settings-control--select,
+  .settings-control--text {
+    width: 100%;
+  }
+
+  .settings-row__control {
+    width: 100%;
+  }
 }
 
 .settings-group-card {

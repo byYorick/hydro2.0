@@ -1,7 +1,7 @@
 <template>
   <label class="flex flex-col gap-1 min-w-0">
     <span class="flex items-center justify-between gap-2">
-      <span class="text-xs font-medium text-[var(--text-muted)]">
+      <span class="text-xs font-medium text-[var(--text-muted)]" :title="compact ? hint : undefined">
         {{ label }}<span
           v-if="required"
           class="text-alert"
@@ -16,7 +16,7 @@
     </span>
     <slot></slot>
     <span
-      v-if="hint && !error"
+      v-if="hint && !error && !compact"
       class="text-[11px] text-[var(--text-dim)]"
     >{{ hint }}</span>
     <span
@@ -32,5 +32,6 @@ defineProps<{
   hint?: string
   error?: string
   required?: boolean
+  compact?: boolean
 }>()
 </script>

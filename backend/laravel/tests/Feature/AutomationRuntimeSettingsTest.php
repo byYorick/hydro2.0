@@ -54,6 +54,38 @@ class AutomationRuntimeSettingsTest extends TestCase
         $this->assertSame('default', $item['source']);
     }
 
+    public function test_snapshot_marks_technical_settings_as_advanced(): void
+    {
+        $admin = User::factory()->create(['role' => 'admin']);
+
+        $response = $this->actingAs($admin)->getJson('/api/automation-configs/system/0/system.runtime');
+        $sections = $response->assertOk()->json('data.snapshot.sections');
+
+        $operatorFacing = $this->findSettingItem($sections, 'automation_engine.scheduler_due_grace_sec');
+        $technical = $this->findSettingItem($sections, 'automation_engine.scheduler_lock_key');
+
+        $this->assertNotNull($operatorFacing);
+        $this->assertNotNull($technical);
+        $this->assertFalse($operatorFacing['advanced']);
+        $this->assertTrue($technical['advanced']);
+    }
+
+    public function test_snapshot_exposes_human_readable_option_labels(): void
+    {
+        $admin = User::factory()->create(['role' => 'admin']);
+
+        $response = $this->actingAs($admin)->getJson('/api/automation-configs/system/0/system.runtime');
+        $item = $this->findSettingItem(
+            $response->assertOk()->json('data.snapshot.sections'),
+            'automation_engine.scheduler_catchup_policy'
+        );
+
+        $this->assertNotNull($item);
+        $this->assertSame(['replay_limited', 'skip'], $item['options']);
+        $this->assertArrayHasKey('replay_limited', $item['option_labels']);
+        $this->assertArrayHasKey('skip', $item['option_labels']);
+    }
+
     public function test_viewer_cannot_modify_runtime_settings(): void
     {
         $viewer = User::factory()->create(['role' => 'viewer']);

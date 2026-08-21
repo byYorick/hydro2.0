@@ -18,6 +18,33 @@ export interface SystemSettingsSection {
   fields: SystemSettingsField[]
 }
 
+/** Параметр runtime-снимка AE3/scheduler (`system.runtime`). */
+export interface AutomationRuntimeSettingItem {
+  key: string
+  item_key?: string
+  label: string
+  description?: string
+  value: unknown
+  default_value?: unknown
+  source?: string
+  editable: boolean
+  advanced?: boolean
+  type: string
+  input_type: string
+  min?: number
+  max?: number
+  step?: number
+  unit?: string
+  options?: string[]
+  option_labels?: Record<string, string>
+}
+
+export interface AutomationRuntimeSettingSection {
+  key: string
+  title: string
+  items: AutomationRuntimeSettingItem[]
+}
+
 export interface SettingsNamespacePayload<TConfig extends Record<string, unknown> = Record<string, unknown>> {
   namespace: string
   config: TConfig

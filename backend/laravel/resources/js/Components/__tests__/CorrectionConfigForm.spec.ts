@@ -198,12 +198,12 @@ function makeDocument(overrides: Record<string, unknown> = {}) {
       field_catalog: [
         {
           key: 'retry',
-          label: 'Retry and windows',
+          label: 'Повторы и окна',
           description: 'Лимиты correction-loop и временные retry delay.',
           fields: [
             {
               path: 'retry.telemetry_stale_retry_sec',
-              label: 'Telemetry stale retry',
+              label: 'Повтор при устаревшей телеметрии',
               description: 'Повтор при stale telemetry.',
               type: 'integer',
               min: 1,
@@ -212,7 +212,7 @@ function makeDocument(overrides: Record<string, unknown> = {}) {
             },
             {
               path: 'retry.decision_window_retry_sec',
-              label: 'Decision window retry',
+              label: 'Повтор, пока окно не готово',
               description: 'Повтор при неготовом decision window.',
               type: 'integer',
               min: 1,
@@ -221,7 +221,7 @@ function makeDocument(overrides: Record<string, unknown> = {}) {
             },
             {
               path: 'retry.low_water_retry_sec',
-              label: 'Low water retry',
+              label: 'Повтор при низком уровне',
               description: 'Повтор после low-water guard.',
               type: 'integer',
               min: 1,
@@ -232,7 +232,7 @@ function makeDocument(overrides: Record<string, unknown> = {}) {
         },
         {
           key: 'controllers.ph',
-          label: 'pH controller',
+          label: 'Коррекция pH',
           description: 'Параметры bounded PI/PID для коррекции pH.',
           fields: [
             {
@@ -245,7 +245,7 @@ function makeDocument(overrides: Record<string, unknown> = {}) {
             },
             {
               path: 'controllers.ph.observe.decision_window_sec',
-              label: 'Decision window',
+              label: 'Окно наблюдения после дозы',
               description: 'Минимальная длина окна наблюдения pH после дозы.',
               type: 'integer',
               min: 1,
@@ -321,10 +321,10 @@ describe('CorrectionConfigForm.vue', () => {
     await flushPromises()
     await wrapper.find('input[type="checkbox"]').setValue(true)
 
-    expect(wrapper.text()).toContain('Retry and windows')
-    expect(wrapper.text()).toContain('Telemetry stale retry')
-    expect(wrapper.text()).toContain('Decision window retry')
-    expect(wrapper.text()).toContain('Low water retry')
+    expect(wrapper.text()).toContain('Повторы и окна')
+    expect(wrapper.text()).toContain('Повтор при устаревшей телеметрии')
+    expect(wrapper.text()).toContain('Повтор, пока окно не готово')
+    expect(wrapper.text()).toContain('Повтор при низком уровне')
   })
 
   it('показывает effective preview и diff выбранной фазы относительно base', async () => {
@@ -338,18 +338,18 @@ describe('CorrectionConfigForm.vue', () => {
 
     // По умолчанию активен таб solution_fill
     expect(preview.text()).toContain('Итоговое состояние runtime')
-    expect(preview.text()).toContain('фаза: solution_fill')
+    expect(preview.text()).toContain('фаза: Набор раствора')
 
     // Переключаемся на фазу irrigation через таб
     await wrapper.get('[data-testid="correction-config-tab-irrigation"]').trigger('click')
 
-    expect(preview.text()).toContain('фаза: irrigation')
+    expect(preview.text()).toContain('фаза: Полив')
     expect(preview.text()).toMatch(/\d+ переопределений/)
     expect(preview.text()).toMatch(/\d+ секций затронуто/)
-    expect(preview.text()).toContain('pH controller')
+    expect(preview.text()).toContain('Коррекция pH')
     expect(preview.text()).toContain('Kp')
-    expect(preview.text()).toContain('Decision window')
-    expect(preview.text()).toContain('Retry and windows')
+    expect(preview.text()).toContain('Окно наблюдения после дозы')
+    expect(preview.text()).toContain('Повторы и окна')
     // Для overridden строк рендерится базовое значение рядом (class cc-preview__base)
     expect(preview.html()).toContain('cc-preview__row--overridden')
     expect(preview.html()).toContain('cc-preview__base')

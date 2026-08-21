@@ -1,12 +1,11 @@
 <template>
-  <SettingsFieldCard
+  <SettingsFieldRow
     label="Тема"
     description="Оформление интерфейса в этом браузере."
-    :show-description="false"
     test-id="settings-theme-toggle"
   >
     <div
-      class="flex gap-2"
+      class="flex gap-1"
       role="group"
       aria-label="Тема"
     >
@@ -14,7 +13,7 @@
         v-for="option in options"
         :key="option.value"
         type="button"
-        class="px-3 py-1.5 text-sm font-semibold rounded-lg border transition-colors"
+        class="px-2.5 py-1 text-xs font-semibold rounded-md border transition-colors"
         :class="theme === option.value
           ? 'bg-[color:var(--bg-surface-strong)] text-[color:var(--text-primary)] border-[color:var(--border-strong)]'
           : 'text-[color:var(--text-dim)] border-[color:var(--border-muted)] hover:text-[color:var(--text-primary)]'"
@@ -25,11 +24,11 @@
         {{ option.label }}
       </button>
     </div>
-  </SettingsFieldCard>
+  </SettingsFieldRow>
 </template>
 
 <script setup lang="ts">
-import SettingsFieldCard from '@/Components/Settings/SettingsFieldCard.vue'
+import SettingsFieldRow from '@/Components/Settings/SettingsFieldRow.vue'
 import { useTheme } from '@/composables/useTheme'
 
 const { theme, setTheme } = useTheme()

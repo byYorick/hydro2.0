@@ -12,6 +12,7 @@
     <SectionLabel>Топология и баки</SectionLabel>
     <div class="grid grid-cols-1 md:grid-cols-3 gap-2.5">
       <Field
+        compact
         :label="meta('systemType').label"
         required
         :hint="meta('systemType').hint"
@@ -29,6 +30,7 @@
         </div>
       </Field>
       <Field
+        compact
         :label="meta('tanksCount').label"
         :hint="meta('tanksCount').hint"
       >
@@ -40,6 +42,7 @@
         />
       </Field>
       <Field
+        compact
         :label="meta('workingTankL').label"
         :hint="meta('workingTankL').hint"
       >
@@ -51,6 +54,7 @@
         />
       </Field>
       <Field
+        compact
         :label="meta('cleanTankFillL').label"
         :hint="meta('cleanTankFillL').hint"
       >
@@ -62,6 +66,7 @@
         />
       </Field>
       <Field
+        compact
         :label="meta('nutrientTankTargetL').label"
         :hint="meta('nutrientTankTargetL').hint"
       >
@@ -73,6 +78,7 @@
         />
       </Field>
       <Field
+        compact
         :label="meta('irrigationBatchL').label"
         :hint="meta('irrigationBatchL').hint"
       >
@@ -84,6 +90,7 @@
         />
       </Field>
       <Field
+        compact
         :label="meta('mainPumpFlowLpm').label"
         :hint="meta('mainPumpFlowLpm').hint"
       >
@@ -95,6 +102,7 @@
         />
       </Field>
       <Field
+        compact
         :label="meta('cleanWaterFlowLpm').label"
         :hint="meta('cleanWaterFlowLpm').hint"
       >
@@ -107,9 +115,10 @@
       </Field>
     </div>
 
-    <SectionLabel>Окно наполнения и температура</SectionLabel>
+    <SectionLabel>Окно наполнения</SectionLabel>
     <div class="grid grid-cols-1 md:grid-cols-3 gap-2.5">
       <Field
+        compact
         :label="meta('fillWindowStart').label"
         :hint="meta('fillWindowStart').hint"
       >
@@ -121,6 +130,7 @@
         />
       </Field>
       <Field
+        compact
         :label="meta('fillWindowEnd').label"
         :hint="meta('fillWindowEnd').hint"
       >
@@ -132,6 +142,7 @@
         />
       </Field>
       <Field
+        compact
         :label="meta('fillTemperatureC').label"
         :hint="meta('fillTemperatureC').hint"
       >
@@ -143,6 +154,7 @@
         />
       </Field>
       <Field
+        compact
         :label="meta('cleanTankFullThreshold').label"
         :hint="meta('cleanTankFullThreshold').hint"
       >
@@ -153,7 +165,18 @@
           @input="upd('cleanTankFullThreshold', toNum($event))"
         />
       </Field>
+    </div>
+
+    <details class="rounded-md border border-[var(--border-muted)] bg-[var(--bg-elevated)] overflow-hidden">
+      <summary class="flex items-baseline gap-2 px-3 py-2 cursor-pointer text-sm font-medium text-[var(--text-primary)] hover:bg-[var(--bg-surface-strong)]">
+        Технические параметры контура
+        <span class="text-[11px] font-normal text-[var(--text-dim)]">долив, диагностика, таймауты запуска</span>
+      </summary>
+      <div class="flex flex-col gap-3.5 px-3 pb-3 border-t border-[var(--border-muted)] pt-3">
+        <SectionLabel>Долив</SectionLabel>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-2.5">
       <Field
+        compact
         :label="meta('refillDurationSeconds').label"
         :hint="meta('refillDurationSeconds').hint"
       >
@@ -165,6 +188,7 @@
         />
       </Field>
       <Field
+        compact
         :label="meta('refillTimeoutSeconds').label"
         :hint="meta('refillTimeoutSeconds').hint"
       >
@@ -176,6 +200,7 @@
         />
       </Field>
       <Field
+        compact
         :label="meta('refillRequiredNodeTypes').label"
         :hint="meta('refillRequiredNodeTypes').hint"
       >
@@ -188,6 +213,7 @@
         />
       </Field>
       <Field
+        compact
         :label="meta('refillPreferredChannel').label"
         :hint="meta('refillPreferredChannel').hint"
       >
@@ -198,7 +224,7 @@
           @input="upd('refillPreferredChannel', toStr($event))"
         />
       </Field>
-    </div>
+        </div>
 
     <SectionLabel>Диагностика и стартовые таймауты</SectionLabel>
     <div class="grid grid-cols-1 md:grid-cols-3 gap-2.5 items-center">
@@ -209,6 +235,7 @@
         @update:model-value="(v) => upd('diagnosticsEnabled', v)"
       />
       <Field
+        compact
         :label="meta('diagnosticsIntervalMinutes').label"
         :hint="meta('diagnosticsIntervalMinutes').hint"
       >
@@ -220,6 +247,7 @@
         />
       </Field>
       <Field
+        compact
         :label="meta('diagnosticsWorkflow').label"
         :hint="meta('diagnosticsWorkflow').hint"
       >
@@ -233,6 +261,7 @@
         />
       </Field>
       <Field
+        compact
         :label="meta('estopDebounceMs').label"
         :hint="meta('estopDebounceMs').hint"
       >
@@ -244,6 +273,7 @@
         />
       </Field>
       <Field
+        compact
         :label="meta('startupCleanFillTimeoutSeconds').label"
         :hint="meta('startupCleanFillTimeoutSeconds').hint"
       >
@@ -255,6 +285,7 @@
         />
       </Field>
       <Field
+        compact
         :label="meta('startupSolutionFillTimeoutSeconds').label"
         :hint="meta('startupSolutionFillTimeoutSeconds').hint"
       >
@@ -266,6 +297,7 @@
         />
       </Field>
       <Field
+        compact
         :label="meta('startupPrepareRecirculationTimeoutSeconds').label"
         :hint="meta('startupPrepareRecirculationTimeoutSeconds').hint"
       >
@@ -277,6 +309,7 @@
         />
       </Field>
       <Field
+        compact
         :label="meta('startupCleanFillRetryCycles').label"
         :hint="meta('startupCleanFillRetryCycles').hint"
       >
@@ -288,6 +321,7 @@
         />
       </Field>
       <Field
+        compact
         :label="meta('cleanFillMinCheckDelayMs').label"
         :hint="meta('cleanFillMinCheckDelayMs').hint"
       >
@@ -299,6 +333,7 @@
         />
       </Field>
       <Field
+        compact
         :label="meta('solutionFillCleanMinCheckDelayMs').label"
         :hint="meta('solutionFillCleanMinCheckDelayMs').hint"
       >
@@ -310,6 +345,7 @@
         />
       </Field>
       <Field
+        compact
         :label="meta('solutionFillSolutionMinCheckDelayMs').label"
         :hint="meta('solutionFillSolutionMinCheckDelayMs').hint"
       >
@@ -339,6 +375,7 @@
         @update:model-value="(v) => upd('enableDrainControl', v)"
       />
       <Field
+        compact
         :label="meta('drainTargetPercent').label"
         :hint="meta('drainTargetPercent').hint"
       >
@@ -356,6 +393,8 @@
         @update:model-value="(v) => upd('valveSwitching', v)"
       />
     </div>
+      </div>
+    </details>
 
     <SectionLabel>Смена раствора</SectionLabel>
     <div class="grid grid-cols-1 md:grid-cols-3 gap-2.5 items-center">
@@ -366,6 +405,7 @@
         @update:model-value="(v) => upd('solutionChangeEnabled', v)"
       />
       <Field
+        compact
         :label="meta('solutionChangeIntervalMinutes').label"
         :hint="meta('solutionChangeIntervalMinutes').hint"
       >
@@ -377,6 +417,7 @@
         />
       </Field>
       <Field
+        compact
         :label="meta('solutionChangeDurationSeconds').label"
         :hint="meta('solutionChangeDurationSeconds').hint"
       >
@@ -388,6 +429,7 @@
         />
       </Field>
       <Field
+        compact
         :label="meta('manualIrrigationSeconds').label"
         :hint="meta('manualIrrigationSeconds').hint"
       >
@@ -401,9 +443,8 @@
     </div>
 
     <Hint :show="showHints">
-      Полный набор полей <span class="font-mono">waterFormSchema</span>.
-      AE3 валидирует значения через zod и пишет в
-      <span class="font-mono">automation_configs/zone/{'{id}'}/zone.water</span>.
+      Объёмы, окно наполнения и смена раствора влияют на расчёт доз и график запуска.
+      Таймауты, диагностика и fail-safe спрятаны в технических параметрах.
     </Hint>
   </div>
 </template>
@@ -430,7 +471,7 @@ const emit = defineEmits<{
 const { showHints } = useLaunchPreferences()
 
 const inputCls =
-  'block w-full h-8 rounded-lg border border-[var(--border-muted)] bg-[var(--bg-surface)] text-[var(--text-primary)] px-2.5 text-sm font-mono outline-none transition-[border-color,box-shadow,background-color] duration-150 focus:border-brand focus:ring-2 focus:ring-brand-soft focus-visible:border-brand focus-visible:ring-2 focus-visible:ring-brand-soft'
+  'block w-full max-w-[9rem] h-8 rounded-md border border-[var(--border-muted)] bg-[var(--bg-surface)] text-[var(--text-primary)] px-2 text-sm font-mono outline-none transition-[border-color,box-shadow,background-color] duration-150 focus:border-brand focus:ring-2 focus:ring-brand-soft focus-visible:border-brand focus-visible:ring-2 focus-visible:ring-brand-soft'
 
 const numAttrs = { class: inputCls, type: 'number' }
 const textAttrs = { class: inputCls, type: 'text' }

@@ -26,7 +26,7 @@
           </span>
         </div>
         <p class="text-xs text-[color:var(--text-muted)]">
-          Датчики, форточки, погодные ограничения и runtime-параметры AE.
+          Датчики, форточки и цели дня/ночи.
         </p>
       </div>
       <div
@@ -104,8 +104,7 @@
               Привязка нод
             </div>
             <p class="mt-1 text-xs text-[color:var(--text-muted)]">
-              Сначала выберите greenhouse climate nodes, затем сохраните профиль.
-              Общая метеостанция площадки выбирается отдельно и не привязывается к теплице.
+            Сначала выберите климатические ноды теплицы, затем сохраните профиль.
             </p>
           </div>
 
@@ -114,7 +113,7 @@
               Общая метеостанция
             </div>
             <label
-              class="text-xs text-[color:var(--text-muted)]"
+              class="climate-wide-field text-xs text-[color:var(--text-muted)]"
               title="Разрешить climate tick брать outdoor-телеметрию с независимой site-level станции"
             >
               Использовать общую метеостанцию
@@ -200,7 +199,7 @@
               Базовый профиль
             </div>
             <p class="mt-1 text-xs text-[color:var(--text-muted)]">
-              Режим runtime, дневные/ночные цели и лимиты форточек.
+            Режим, цели дня/ночи и лимиты форточек.
             </p>
           </div>
           <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
@@ -441,7 +440,7 @@
               >
             </label>
             <label
-              class="text-xs text-[color:var(--text-muted)] md:col-span-2"
+              class="climate-wide-field text-xs text-[color:var(--text-muted)] md:col-span-2"
               :title="fieldHelp('climate.manualOverrideEnabled')"
             >
               Ручной override климата
@@ -580,20 +579,20 @@
               class="text-xs text-[color:var(--text-muted)]"
               :title="fieldHelp('climate.targetPolicy')"
             >
-              Target policy
+              Источник целей
               <select
                 v-model="climateForm.targetPolicy"
                 class="input-select mt-1 w-full"
                 :disabled="!canConfigure"
               >
                 <option value="greenhouse_targets">
-                  Greenhouse targets
+                  Цели теплицы
                 </option>
                 <option value="primary_zone">
-                  Primary zone
+                  Основная зона
                 </option>
                 <option value="active_zones_strictest">
-                  Active zones strictest
+                  Самые строгие зоны
                 </option>
               </select>
             </label>
@@ -601,7 +600,7 @@
               class="text-xs text-[color:var(--text-muted)]"
               :title="fieldHelp('climate.primaryZoneId')"
             >
-              Primary zone ID
+              Основная зона
               <input
                 :value="nullableNumberFieldValue('primaryZoneId')"
                 type="number"
@@ -954,16 +953,43 @@ const selectedBindingsCount = computed(() => {
 
 <style scoped>
 .greenhouse-climate-configuration :deep(label.text-xs) {
-  display: grid;
-  gap: 0.32rem;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
   line-height: 1.35;
+  min-width: 0;
+}
+
+.greenhouse-climate-configuration :deep(label.text-xs > span),
+.greenhouse-climate-configuration :deep(label.text-xs) {
+  min-width: 0;
 }
 
 .greenhouse-climate-configuration :deep(.input-field),
 .greenhouse-climate-configuration :deep(.input-select) {
-  height: 2.2rem;
-  padding: 0 0.7rem;
+  width: 8.5rem;
+  max-width: 42%;
+  flex: 0 0 auto;
+  height: 2.1rem;
+  margin-top: 0;
+  padding: 0 0.55rem;
   font-size: 0.78rem;
-  border-radius: 0.72rem;
+  border-radius: 0.55rem;
+}
+
+.greenhouse-climate-configuration :deep(.climate-wide-field) {
+  display: grid;
+  gap: 0.32rem;
+  align-items: stretch;
+  justify-content: stretch;
+}
+
+.greenhouse-climate-configuration :deep(.climate-wide-field .input-field),
+.greenhouse-climate-configuration :deep(.climate-wide-field .input-select) {
+  width: 100%;
+  max-width: none;
+  flex: none;
 }
 </style>

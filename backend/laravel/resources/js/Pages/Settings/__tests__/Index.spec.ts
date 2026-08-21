@@ -269,8 +269,8 @@ describe('Settings/Index.vue', () => {
 
     expect(getDocumentMock).toHaveBeenCalledWith('system', 0, 'system.runtime')
     expect(getDocumentMock).toHaveBeenCalledWith('system', 0, 'system.alert_policies')
-    expect(wrapper.text()).toContain('Automation Engine')
-    expect(wrapper.text()).toContain('AE3 Alert Policies')
+    expect(wrapper.text()).toContain('Планировщик задач')
+    expect(wrapper.text()).toContain('Закрытие тревог автоматики')
     expect(wrapper.text()).toContain('Scheduler')
     expect(wrapper.text()).toContain('Due grace')
     expect(wrapper.text()).not.toContain('Legacy props snapshot')
@@ -301,7 +301,7 @@ describe('Settings/Index.vue', () => {
       expect(wrapper.find('[data-testid="settings-system-authority-card"]').exists()).toBe(false)
       expect(wrapper.find('[data-testid="settings-automation-engine-reset"]').exists()).toBe(false)
       expect(wrapper.find('[data-testid="settings-alert-policy-reset"]').exists()).toBe(false)
-      expect(wrapper.text()).not.toContain('Политики алертов')
+      expect(wrapper.text()).not.toContain('Закрытие тревог')
       expect(getDocumentMock).not.toHaveBeenCalled()
     },
   )
@@ -317,7 +317,7 @@ describe('Settings/Index.vue', () => {
       expect(wrapper.find('[data-testid="settings-automation-engine-card"]').exists()).toBe(true)
       expect(wrapper.find('[data-testid="settings-alert-policies-card"]').exists()).toBe(true)
       expect(wrapper.find('[data-testid="settings-automation-engine-reset"]').exists()).toBe(true)
-      expect(wrapper.text()).toContain('Политики алертов')
+      expect(wrapper.text()).toContain('Закрытие тревог')
       expect(wrapper.find('[role="tab"][aria-selected="true"]').text()).toBe('Мой профиль')
       expect(getDocumentMock).toHaveBeenCalledWith('system', 0, 'system.runtime')
       expect(getDocumentMock).toHaveBeenCalledWith('system', 0, 'system.alert_policies')

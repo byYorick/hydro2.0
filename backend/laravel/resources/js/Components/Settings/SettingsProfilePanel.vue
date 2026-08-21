@@ -1,43 +1,38 @@
 <template>
   <SettingsSectionShell
     title="Мой профиль"
-    description="Основные данные вашей учётной записи. Редактирование имени и email — через администратора."
+    description="Основные данные вашей учётной записи. Имя и email меняет администратор."
     icon="👤"
     test-id="settings-section-profile"
   >
-    <div class="space-y-6">
-      <dl class="grid gap-3 sm:grid-cols-2">
-        <div class="settings-field-card">
-          <dt class="settings-field-card__label">
-            Имя
-          </dt>
-          <dd class="mt-2 text-sm font-medium text-[color:var(--text-primary)]">
-            {{ name }}
-          </dd>
-        </div>
-        <div class="settings-field-card">
-          <dt class="settings-field-card__label">
-            Email
-          </dt>
-          <dd class="mt-2 text-sm font-medium text-[color:var(--text-primary)] break-all">
-            {{ email }}
-          </dd>
-        </div>
-        <div class="settings-field-card sm:col-span-2">
-          <dt class="settings-field-card__label">
-            Роль в системе
-          </dt>
-          <dd class="mt-2">
-            <Badge :variant="roleBadgeVariant">
-              {{ roleLabel }}
-            </Badge>
-          </dd>
-        </div>
-      </dl>
+    <div class="space-y-4">
+      <div class="settings-rows settings-rows--split">
+        <SettingsFieldRow
+          label="Имя"
+          test-id="settings-profile-name"
+        >
+          <span class="settings-row__readonly">{{ name || '—' }}</span>
+        </SettingsFieldRow>
+        <SettingsFieldRow
+          label="Email"
+          test-id="settings-profile-email"
+        >
+          <span class="settings-row__readonly">{{ email || '—' }}</span>
+        </SettingsFieldRow>
+        <SettingsFieldRow
+          label="Роль"
+          test-id="settings-profile-role"
+        >
+          <Badge :variant="roleBadgeVariant">
+            {{ roleLabel }}
+          </Badge>
+        </SettingsFieldRow>
+        <SettingsThemeToggle />
+      </div>
 
-      <SettingsThemeToggle />
-
-      <UpdatePasswordForm class="max-w-xl" />
+      <div class="max-w-md">
+        <UpdatePasswordForm />
+      </div>
     </div>
   </SettingsSectionShell>
 </template>
@@ -45,6 +40,7 @@
 <script setup lang="ts">
 import Badge from '@/Components/Badge.vue'
 import SettingsSectionShell from '@/Components/Settings/SettingsSectionShell.vue'
+import SettingsFieldRow from '@/Components/Settings/SettingsFieldRow.vue'
 import SettingsThemeToggle from '@/Components/Settings/SettingsThemeToggle.vue'
 import UpdatePasswordForm from '@/Pages/Profile/Partials/UpdatePasswordForm.vue'
 

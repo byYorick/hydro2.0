@@ -1,43 +1,45 @@
 <template>
-  <button
-    type="button"
-    class="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)] text-[10px] font-semibold text-[color:var(--text-muted)] hover:border-[color:var(--accent-green)] hover:text-[color:var(--accent-green)] transition-colors"
-    :aria-label="`Подробнее: ${title}`"
-    :data-testid="testId"
-    @click.stop="open = true"
-  >
-    ?
-  </button>
+  <span class="inline-flex shrink-0">
+    <button
+      type="button"
+      class="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)] text-[10px] font-semibold text-[color:var(--text-muted)] hover:border-[color:var(--accent-green)] hover:text-[color:var(--accent-green)] transition-colors"
+      :aria-label="`Подробнее: ${title}`"
+      :data-testid="testId"
+      @click.stop="open = true"
+    >
+      ?
+    </button>
 
-  <Modal
-    :open="open"
-    :title="title"
-    size="large"
-    hide-default-cancel
-    :data-testid="`${testId}-modal`"
-    @close="open = false"
-  >
-    <div class="space-y-3 text-sm text-[color:var(--text-primary)]">
-      <p
-        v-if="summary"
-        class="text-xs text-[color:var(--text-dim)]"
-      >
-        {{ summary }}
-      </p>
-      <div class="whitespace-pre-line leading-relaxed">
-        {{ bodyText }}
+    <Modal
+      :open="open"
+      :title="title"
+      size="large"
+      hide-default-cancel
+      :data-testid="`${testId}-modal`"
+      @close="open = false"
+    >
+      <div class="space-y-3 text-sm text-[color:var(--text-primary)]">
+        <p
+          v-if="summary"
+          class="text-xs text-[color:var(--text-dim)]"
+        >
+          {{ summary }}
+        </p>
+        <div class="whitespace-pre-line leading-relaxed">
+          {{ bodyText }}
+        </div>
       </div>
-    </div>
-    <template #footer>
-      <Button
-        size="sm"
-        :data-testid="`${testId}-close`"
-        @click="open = false"
-      >
-        Понятно
-      </Button>
-    </template>
-  </Modal>
+      <template #footer>
+        <Button
+          size="sm"
+          :data-testid="`${testId}-close`"
+          @click="open = false"
+        >
+          Понятно
+        </Button>
+      </template>
+    </Modal>
+  </span>
 </template>
 
 <script setup lang="ts">

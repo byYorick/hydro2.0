@@ -78,34 +78,14 @@
     </div>
 
     <!-- PRESET STRIP -->
-    <div class="flex flex-wrap items-center gap-1.5">
-      <span class="text-[10px] font-bold uppercase tracking-widest text-[var(--text-dim)] mr-1">
-        Пресет
-      </span>
-      <button
-        v-for="preset in presetOptions"
-        :key="preset.key"
-        type="button"
-        :data-testid="`pid-config-preset-${preset.key}`"
-        :disabled="presetSwitching || loading"
-        :class="[
-          'h-7 px-2.5 rounded-md text-xs font-medium border transition-colors',
-          selectedPresetKey === preset.key
-            ? 'bg-brand text-white border-brand'
-            : 'bg-[var(--bg-surface)] text-[var(--text-primary)] border-[var(--border-muted)] hover:border-brand',
-          (presetSwitching || loading) ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer',
-        ]"
-        @click="onPresetPillClick(preset.key)"
-      >
-        {{ preset.name }}
-      </button>
-      <span
-        v-if="selectedPresetDescription"
-        class="text-[11px] text-[var(--text-dim)] ml-1.5"
-      >
-        · {{ selectedPresetDescription }}
-      </span>
-    </div>
+    <PresetPillStrip
+      :items="presetPillItems"
+      :model-value="selectedPresetKey"
+      :description="selectedPresetDescription"
+      :disabled="presetSwitching || loading"
+      test-id="pid-config-preset-strip"
+      @select="onPresetPillClick"
+    />
 
     <!-- LOOP TABS -->
     <div class="flex gap-0.5 border-b border-[var(--border-muted)]">
@@ -185,11 +165,11 @@
       <summary :class="summaryCls">
         <span class="text-sm font-semibold">Зоны отклонения</span>
         <span class="text-[11px] text-[var(--text-dim)]">
-          dead / close / far · границы реакций PID
+          мёртвая / ближняя / дальняя · когда PID реагирует
         </span>
       </summary>
       <div class="p-3 grid grid-cols-1 md:grid-cols-4 gap-3">
-        <Field
+        <Field compact
           label="Цель"
           :hint="phaseTargetAvailable ? phaseTargetSourceHint : 'runtime не подставит значения по умолчанию'"
         >
@@ -214,7 +194,7 @@
             readonly
           />
         </Field>
-        <Field
+        <Field compact
           label="Мёртвая зона"
           hint="0..2 · игнорируется мелкое отклонение"
         >
@@ -234,7 +214,7 @@
             :title="fieldHelp('dead_zone')"
           />
         </Field>
-        <Field
+        <Field compact
           label="Ближняя зона"
           hint="должна быть > мёртвой"
         >
@@ -254,7 +234,7 @@
             :title="fieldHelp('close_zone')"
           />
         </Field>
-        <Field
+        <Field compact
           label="Дальняя зона"
           hint="должна быть > ближней"
         >
@@ -288,7 +268,7 @@
         <span class="text-[11px] text-[var(--text-dim)]">мягкая коррекция около target</span>
       </summary>
       <div class="p-3 grid grid-cols-1 md:grid-cols-3 gap-3">
-        <Field label="Kp">
+        <Field compact label="Kp">
           <template
             v-if="isCoeffDirty('close', 'kp')"
             #right
@@ -305,7 +285,7 @@
             :title="fieldHelp('close.kp')"
           />
         </Field>
-        <Field label="Ki">
+        <Field compact label="Ki">
           <template
             v-if="isCoeffDirty('close', 'ki')"
             #right
@@ -322,7 +302,7 @@
             :title="fieldHelp('close.ki')"
           />
         </Field>
-        <Field label="Kd">
+        <Field compact label="Kd">
           <template
             v-if="isCoeffDirty('close', 'kd')"
             #right
@@ -353,7 +333,7 @@
         <span class="text-[11px] text-[var(--text-dim)]">агрессивная коррекция при большом отклонении</span>
       </summary>
       <div class="p-3 grid grid-cols-1 md:grid-cols-3 gap-3">
-        <Field label="Kp">
+        <Field compact label="Kp">
           <template
             v-if="isCoeffDirty('far', 'kp')"
             #right
@@ -370,7 +350,7 @@
             :title="fieldHelp('far.kp')"
           />
         </Field>
-        <Field label="Ki">
+        <Field compact label="Ki">
           <template
             v-if="isCoeffDirty('far', 'ki')"
             #right
@@ -387,7 +367,7 @@
             :title="fieldHelp('far.ki')"
           />
         </Field>
-        <Field label="Kd">
+        <Field compact label="Kd">
           <template
             v-if="isCoeffDirty('far', 'kd')"
             #right
@@ -415,10 +395,10 @@
     >
       <summary :class="summaryCls">
         <span class="text-sm font-semibold">Предел интеграла</span>
-        <span class="text-[11px] text-[var(--text-dim)]">max_integral · защита от переполнения</span>
+        <span class="text-[11px] text-[var(--text-dim)]">защита от накопления ошибки</span>
       </summary>
       <div class="p-3 grid grid-cols-1 md:grid-cols-3 gap-3">
-        <Field
+        <Field compact
           label="Предел интеграла"
           hint="pH обычно 12–20 · EC 20–100"
         >
@@ -482,6 +462,7 @@ import Button from '@/Components/Button.vue'
 import ConfirmModal from '@/Components/ConfirmModal.vue'
 import { useConfirmDialog } from '@/composables/useConfirmDialog'
 import { Chip, Field, Stat } from '@/Components/Shared/Primitives'
+import PresetPillStrip, { type PresetPillItem, type PresetPillKey } from '@/Components/Shared/PresetPillStrip.vue'
 import Ic from '@/Components/Icons/Ic.vue'
 import { resolveRecipePhasePidTargets, type RecipePhasePidTargets } from '@/composables/recipePhasePidTargets'
 import { usePidConfig } from '@/composables/usePidConfig'
@@ -511,9 +492,9 @@ const emit = defineEmits<{
 }>()
 
 const inputCls =
-  'block w-full h-8 rounded-md border border-[var(--border-muted)] bg-[var(--bg-surface)] text-[var(--text-primary)] px-2.5 text-sm font-mono outline-none focus-visible:ring-2 focus-visible:ring-brand'
+  'block w-full max-w-[8.5rem] h-8 rounded-md border border-[var(--border-muted)] bg-[var(--bg-surface)] text-[var(--text-primary)] px-2 text-sm font-mono outline-none focus-visible:ring-2 focus-visible:ring-brand'
 const readonlyCls =
-  'block w-full h-8 rounded-md border border-[var(--border-muted)] bg-[var(--bg-elevated)] text-[var(--text-muted)] px-2.5 text-sm font-mono outline-none cursor-not-allowed'
+  'block w-full max-w-[8.5rem] h-8 rounded-md border border-[var(--border-muted)] bg-[var(--bg-elevated)] text-[var(--text-muted)] px-2 text-sm font-mono outline-none cursor-not-allowed'
 const summaryCls =
   'flex items-baseline gap-2 px-3 py-2 cursor-pointer bg-[var(--bg-elevated)] border-b border-[var(--border-muted)] hover:bg-[var(--bg-surface-strong)] [&::-webkit-details-marker]:hidden [&::marker]:content-none'
 
@@ -596,6 +577,16 @@ const selectedPreset = computed(() => selectedRuntimeTuningPreset(runtimeTuningB
 const presetOptions = computed(() => runtimeTuningBundle.value?.presets ?? [])
 const selectedPresetName = computed(() => selectedPreset.value?.name ?? 'Системный пресет')
 const selectedPresetDescription = computed(() => selectedPreset.value?.description ?? 'Канонические стартовые значения PID и калибровки процесса для зоны.')
+const presetPillItems = computed<PresetPillItem[]>(() =>
+  presetOptions.value.map((preset) => ({
+    key: preset.key,
+    label: preset.key === 'system_default' ? 'Системный пресет' : preset.name,
+    meta: preset.key === 'system_default' ? 'system' : 'custom',
+    locked: preset.key === 'system_default',
+    title: preset.description ?? undefined,
+    testId: `pid-config-preset-${preset.key}`,
+  })),
+)
 
 const needsConfirmation = computed(
   () => form.value.zone_coeffs.close.kp > 200 || form.value.zone_coeffs.far.kp > 200,
@@ -638,10 +629,11 @@ function toggleSection(key: string, event: Event): void {
   openSections.value = next
 }
 
-async function onPresetPillClick(key: string): Promise<void> {
-  if (!runtimeTuningBundle.value) return
-  if (selectedPresetKey.value === key) return
-  selectedPresetKey.value = key
+async function onPresetPillClick(key: PresetPillKey): Promise<void> {
+  if (!runtimeTuningBundle.value || key === null) return
+  const presetKey = String(key)
+  if (selectedPresetKey.value === presetKey) return
+  selectedPresetKey.value = presetKey
   await applySelectedPreset()
 }
 

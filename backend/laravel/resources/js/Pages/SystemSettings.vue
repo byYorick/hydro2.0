@@ -4,40 +4,22 @@
       <header class="ui-hero p-4 space-y-3">
         <div class="min-w-0">
           <p class="text-[11px] uppercase tracking-[0.28em] text-[color:var(--text-dim)]">
-            authority / system
+            система / автоматика
           </p>
           <h1 class="text-xl font-semibold tracking-tight text-[color:var(--text-primary)] mt-0.5">
             Системные настройки автоматики
           </h1>
           <p class="text-sm text-[color:var(--text-muted)] max-w-3xl mt-0.5">
-            Калибровки, дефолты, шаблоны relay-команд и пороги observability — единый source of truth для automation bundle.
+            Общие для всей теплицы значения: калибровки, стартовые параметры зон и пороги предупреждений.
+            Настройки конкретной зоны задаются на её странице.
           </p>
-        </div>
-        <div
-          class="settings-kpi-strip settings-kpi-strip--3"
-          data-testid="system-settings-kpi-strip"
-        >
-          <div
-            class="settings-kpi-chip"
-            title="Текущий authority namespace"
+          <p
+            class="text-xs text-[color:var(--text-dim)] mt-1"
+            data-testid="system-settings-kpi-strip"
           >
-            <span class="settings-kpi-chip__label">Активный раздел</span>
-            <span class="settings-kpi-chip__value settings-kpi-chip__value--sm">{{ namespaceLabel(activeNamespace) }}</span>
-          </div>
-          <div
-            class="settings-kpi-chip"
-            title="Редактируемых параметров"
-          >
-            <span class="settings-kpi-chip__label">Полей в разделе</span>
-            <span class="settings-kpi-chip__value">{{ activeFields.length }}</span>
-          </div>
-          <div
-            class="settings-kpi-chip"
-            title="Локальный draft формы"
-          >
-            <span class="settings-kpi-chip__label">Статус</span>
-            <span class="settings-kpi-chip__value">{{ loading ? 'Сохранение...' : 'Готово' }}</span>
-          </div>
+            {{ namespaceLabel(activeNamespace) }} · {{ activeFields.length }} параметров
+            <span v-if="loading"> · сохранение…</span>
+          </p>
         </div>
       </header>
 
@@ -60,59 +42,17 @@
           :icon="namespaceIcon(activeNamespace)"
           test-id="system-settings-active-card"
         >
-          <AuthorityFieldCatalogForm
-            v-if="usesSectionedForm"
-            v-model="draft"
-            :sections="activeSections"
-          />
-
           <CommandTemplatesSettingsForm
-            v-else-if="usesCommandTemplatesForm"
+            v-if="usesCommandTemplatesForm"
             v-model="commandTemplatesDraft"
             :fields="activeFields"
           />
 
-          <div
+          <AuthorityFieldCatalogForm
             v-else
-            class="settings-fields-stack"
-          >
-            <SettingsFieldCard
-              v-for="field in activeFields"
-              :key="field.path"
-              :label="field.label"
-              :description="field.description"
-              :help="field.help"
-              :test-id="`system-settings-field-card-${field.path}`"
-              :help-test-id="`system-settings-field-help-${field.path}`"
-              :show-description="false"
-            >
-              <label
-                v-if="field.type === 'boolean'"
-                class="flex items-center gap-2 rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)] px-3 py-2.5 text-sm"
-              >
-                <input
-                  v-model="draft[field.path]"
-                  type="checkbox"
-                />
-                <span class="text-[color:var(--text-primary)]">{{ field.description }}</span>
-              </label>
-              <textarea
-                v-else-if="field.type === 'json'"
-                v-model="draft[field.path]"
-                rows="8"
-                class="input-field w-full font-mono text-xs"
-              />
-              <input
-                v-else
-                v-model="draft[field.path]"
-                :type="field.type === 'string' ? 'text' : 'number'"
-                :step="field.step ?? (field.type === 'integer' ? 1 : 'any')"
-                :min="field.min"
-                :max="field.max"
-                class="input-field w-full"
-              />
-            </SettingsFieldCard>
-          </div>
+            v-model="draft"
+            :sections="activeSections"
+          />
 
           <template #footer>
             <Button
@@ -146,7 +86,6 @@ import Button from '@/Components/Button.vue'
 import Tabs from '@/Components/Tabs.vue'
 import AuthorityFieldCatalogForm from '@/Components/Settings/AuthorityFieldCatalogForm.vue'
 import CommandTemplatesSettingsForm from '@/Components/Settings/CommandTemplatesSettingsForm.vue'
-import SettingsFieldCard from '@/Components/Settings/SettingsFieldCard.vue'
 import SettingsSectionShell from '@/Components/Settings/SettingsSectionShell.vue'
 import { useAutomationConfig, type AutomationDocument } from '@/composables/useAutomationConfig'
 import { normalizeAutomationCommandTemplates } from '@/composables/useAutomationCommandTemplates'
@@ -158,7 +97,6 @@ import type {
   SystemSettingsSection,
 } from '@/types/SystemSettings'
 
-const SECTIONED_NAMESPACES = new Set(['observability_thresholds'])
 const COMMAND_TEMPLATES_NAMESPACE = 'automation_command_templates'
 
 type DraftScalar = string | number | boolean | undefined
@@ -174,12 +112,12 @@ const SYSTEM_NAMESPACE_MAP: Record<string, string> = {
 }
 
 const NAMESPACE_LABELS: Record<string, string> = {
-  automation_defaults: 'Дефолты автоматики',
+  automation_defaults: 'Значения по умолчанию',
   automation_command_templates: 'Шаблоны команд',
   process_calibration_defaults: 'Калибровка процессов',
   pump_calibration: 'Калибровка насосов',
-  sensor_calibration: 'Калибровка сенсоров',
-  observability_thresholds: 'Пороги observability',
+  sensor_calibration: 'Калибровка датчиков',
+  observability_thresholds: 'Пороги диагностики',
 }
 
 const NAMESPACE_ICONS: Record<string, string> = {
@@ -192,12 +130,12 @@ const NAMESPACE_ICONS: Record<string, string> = {
 }
 
 const NAMESPACE_DESCRIPTIONS: Record<string, string> = {
-  automation_defaults: 'Системные дефолты для мастера автоматики: климат, вода, освещение.',
-  automation_command_templates: 'Последовательности set_relay для two-tank workflow.',
-  process_calibration_defaults: 'Стартовые коэффициенты process calibration UI.',
-  pump_calibration: 'Лимиты и качество калибровки насосов.',
-  sensor_calibration: 'Эталоны и пороги для мастера калибровки сенсоров.',
-  observability_thresholds: 'Пороги diagnostic hints для AE3 и stale fallback Laravel.',
+  automation_defaults: 'С этих значений начинается настройка новой зоны: климат, полив, освещение.',
+  automation_command_templates: 'Последовательности включения реле для двухбаковой схемы.',
+  process_calibration_defaults: 'Стартовые коэффициенты отклика раствора на дозирование.',
+  pump_calibration: 'Допустимые пределы и оценка качества калибровки насосов.',
+  sensor_calibration: 'Эталонные растворы и сроки повторной калибровки датчиков.',
+  observability_thresholds: 'После какого времени система считает процесс зависшим и предупреждает оператора.',
 }
 
 type SystemAuthorityDocument = AutomationDocument<Record<string, unknown>, {
@@ -226,7 +164,6 @@ const systemSettingsTabs = computed(() =>
 const activePayload = computed(() => payloads.value[activeNamespace.value] || null)
 const activeSections = computed<SystemSettingsSection[]>(() => activePayload.value?.meta.field_catalog ?? [])
 const activeFields = computed<SystemSettingsField[]>(() => activeSections.value.flatMap((section) => section.fields))
-const usesSectionedForm = computed(() => SECTIONED_NAMESPACES.has(activeNamespace.value))
 const usesCommandTemplatesForm = computed(() => activeNamespace.value === COMMAND_TEMPLATES_NAMESPACE)
 
 function namespaceLabel(namespace: string): string {

@@ -58,7 +58,7 @@ const updatePassword = () => {
     </header>
 
     <form
-      class="mt-6 space-y-6"
+      class="mt-3 space-y-3"
       @submit.prevent="updatePassword"
     >
       <div>

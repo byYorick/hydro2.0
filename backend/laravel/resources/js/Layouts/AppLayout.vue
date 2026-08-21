@@ -157,11 +157,49 @@
             <MobileNavigation />
           </main>
 
-          <aside class="hidden xl:flex w-80 shrink-0 border-l border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] glass-panel flex-col h-screen">
-            <div class="h-16 flex items-center px-4 border-b border-[color:var(--border-muted)] shrink-0">
-              <span class="text-sm text-[color:var(--text-dim)] uppercase tracking-[0.2em]">события</span>
+          <aside
+            class="hidden xl:flex shrink-0 border-l border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] glass-panel flex-col h-screen transition-[width] duration-300 relative z-20"
+            :class="eventsCollapsed ? 'w-12' : 'w-80'"
+            data-testid="events-rail"
+          >
+            <div
+              class="h-16 flex items-center border-b border-[color:var(--border-muted)] shrink-0 gap-2"
+              :class="eventsCollapsed ? 'justify-center px-1' : 'justify-between px-4'"
+            >
+              <span
+                v-if="!eventsCollapsed"
+                class="text-sm text-[color:var(--text-dim)] uppercase tracking-[0.2em]"
+              >события</span>
+              <button
+                type="button"
+                class="p-1.5 rounded-lg text-[color:var(--text-dim)] hover:text-[color:var(--text-primary)] hover:bg-[color:var(--bg-elevated)] transition-colors"
+                :title="eventsCollapsed ? 'Развернуть события' : 'Свернуть события'"
+                data-testid="events-rail-toggle"
+                :aria-expanded="!eventsCollapsed"
+                aria-controls="events-rail-body"
+                @click="toggleEventsRail"
+              >
+                <svg
+                  class="h-4 w-4 transition-transform duration-300"
+                  :class="eventsCollapsed ? '' : 'rotate-180'"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.5"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M9 18l6-6-6-6" />
+                </svg>
+              </button>
             </div>
-            <div class="flex-1 min-h-0 flex flex-col overflow-hidden">
+
+            <div
+              v-if="!eventsCollapsed"
+              id="events-rail-body"
+              class="flex-1 min-h-0 flex flex-col overflow-hidden"
+            >
               <div class="p-4 space-y-4 shrink-0">
                 <FavoritesWidget />
                 <HistoryWidget />
@@ -169,6 +207,15 @@
               <div class="flex-1 min-h-0 px-4 pb-4 overflow-hidden">
                 <slot name="context"></slot>
               </div>
+            </div>
+
+            <div
+              v-else
+              class="flex-1 flex flex-col items-center pt-3 gap-2"
+            >
+              <span
+                class="text-[10px] uppercase tracking-[0.18em] text-[color:var(--text-dim)] [writing-mode:vertical-rl] rotate-180 select-none"
+              >события</span>
             </div>
           </aside>
         </div>
@@ -196,14 +243,23 @@ const page = usePage()
 const showBreadcrumbs = computed(() => !String(page.url || '').startsWith('/launch'))
 const showMobileMenu = ref(false)
 const collapsed = ref(false)
+const eventsCollapsed = ref(false)
+
+const EVENTS_RAIL_STORAGE_KEY = 'events-rail-collapsed'
 
 function toggleSidebar() {
   collapsed.value = !collapsed.value
   localStorage.setItem('sidebar-collapsed', String(collapsed.value))
 }
 
+function toggleEventsRail() {
+  eventsCollapsed.value = !eventsCollapsed.value
+  localStorage.setItem(EVENTS_RAIL_STORAGE_KEY, String(eventsCollapsed.value))
+}
+
 onMounted(() => {
   collapsed.value = localStorage.getItem('sidebar-collapsed') === 'true'
+  eventsCollapsed.value = localStorage.getItem(EVENTS_RAIL_STORAGE_KEY) === 'true'
   useKeyboardShortcuts()
 })
 
