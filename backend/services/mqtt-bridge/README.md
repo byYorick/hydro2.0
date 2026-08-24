@@ -1,8 +1,8 @@
 # mqtt-bridge
 
-Роль: **ops probe + Prometheus metrics**, не command path.
+Роль: **ops probe + Prometheus metrics**, не command/config path.
 
-Ops/probe FastAPI-сервис (порт **9000**). Device-команды в MQTT не публикует: `POST /bridge/{zones|nodes}/commands` → **410**. Канон команд: `history-logger` `POST /commands`.
+Ops/probe FastAPI-сервис (порт **9000**). Device-команды и NodeConfig в MQTT не публикует. Канон команд и config: `history-logger` (`POST /commands`, `POST /nodes/{uid}/config`).
 
 ## Endpoints
 
@@ -10,9 +10,6 @@ Ops/probe FastAPI-сервис (порт **9000**). Device-команды в MQT
 |-------|------|------------|
 | GET | `/metrics` | Prometheus |
 | GET | `/bridge/nodes/{node_uid}/live-status` | MQTT probe online/retained status (без чтения Laravel DB) |
-| POST | `/bridge/nodes/{node_uid}/config` | Legacy/ops push NodeConfig в MQTT (**канон publish:** HL `POST /nodes/{uid}/config` из Laravel `PublishNodeConfigJob`) |
-| POST | `/bridge/zones/{zone_id}/commands` | **410** `endpoint_deprecated_use_history_logger` |
-| POST | `/bridge/nodes/{node_uid}/commands` | **410** `endpoint_deprecated_use_history_logger` |
 
 Auth: Bearer `PY_API_TOKEN` (localhost без токена — только dev).
 

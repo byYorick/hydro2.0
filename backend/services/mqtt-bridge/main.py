@@ -1,21 +1,16 @@
 from fastapi import FastAPI, Path
 from fastapi import HTTPException, Request
-from fastapi import Body, Query, Response
+from fastapi import Query, Response
 from contextlib import asynccontextmanager
-from pydantic import BaseModel, Field
-from typing import Optional
 import asyncio
 import hmac
 import logging
 import os
-from publisher import Publisher
 from prometheus_client import Counter, generate_latest, CONTENT_TYPE_LATEST
 from common.env import get_settings
-from common.db import fetch
-from common.simulation_events import record_simulation_event
 from common.service_logs import send_service_log
 from common.logging_setup import setup_standard_logging, install_exception_handlers
-from common.trace_context import clear_trace_id, get_trace_id, set_trace_id, set_trace_id_from_headers
+from common.trace_context import clear_trace_id, set_trace_id_from_headers
 from status_probe import probe_node_status
 
 # Настройка логирования
@@ -25,15 +20,10 @@ logger = logging.getLogger(__name__)
 
 REQ_COUNTER = Counter("bridge_requests_total", "Bridge HTTP requests", ["path"])
 
-# Глобальная переменная для Publisher
-publisher: Optional[Publisher] = None
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan context manager для управления startup и shutdown событиями."""
-    global publisher
-    
     # Startup
     logger.info("Starting MQTT Bridge service")
     send_service_log(
@@ -42,37 +32,11 @@ async def lifespan(app: FastAPI):
         message="MQTT Bridge service starting",
         context={"stage": "startup"},
     )
-    
-    try:
-        publisher = Publisher()
-        publisher.start()  # Запускаем подключение и фоновые ретраи
-        logger.info("Publisher initialized, MQTT connection in progress...")
-        send_service_log(
-            service="mqtt-bridge",
-            level="info",
-            message="MQTT Bridge Publisher initialized",
-            context={"mqtt_ready": publisher.is_ready()},
-        )
-    except Exception as e:
-        logger.error(f"Failed to initialize Publisher: {e}", exc_info=True)
-        send_service_log(
-            service="mqtt-bridge",
-            level="critical",
-            message=f"Failed to initialize Publisher: {e}",
-            context={"error": str(e)},
-        )
-        publisher = None
-    
+
     yield
-    
+
     # Shutdown
     logger.info("Stopping MQTT Bridge service")
-    if publisher:
-        try:
-            publisher.stop()
-        except Exception as e:
-            logger.error(f"Error stopping Publisher: {e}", exc_info=True)
-    
     logger.info("MQTT Bridge service stopped")
     send_service_log(
         service="mqtt-bridge",
@@ -95,11 +59,6 @@ async def trace_middleware(request: Request, call_next):
     if trace_id:
         response.headers["X-Trace-Id"] = trace_id
     return response
-
-
-def _ensure_trace_for_command(cmd_id: Optional[str]) -> None:
-    if cmd_id:
-        set_trace_id(cmd_id, allow_generate=False)
 
 
 def _auth(request: Request):
@@ -207,110 +166,3 @@ async def live_node_status(
         raise HTTPException(status_code=500, detail=f"live_status_probe_failed: {e!s}") from e
 
     return {"status": "ok", "data": result}
-
-
-@app.post("/bridge/zones/{zone_id}/commands")
-async def send_zone_command(
-    request: Request,
-    zone_id: int = Path(..., ge=1),
-):
-    _auth(request)
-    REQ_COUNTER.labels(path="/bridge/zones/{zone_id}/commands").inc()
-    raise HTTPException(
-        status_code=410,
-        detail="endpoint_deprecated_use_history_logger",
-    )
-
-
-@app.post("/bridge/nodes/{node_uid}/commands")
-async def send_node_command(
-    request: Request,
-    node_uid: str = Path(..., min_length=1),
-):
-    _auth(request)
-    REQ_COUNTER.labels(path="/bridge/nodes/{node_uid}/commands").inc()
-    raise HTTPException(
-        status_code=410,
-        detail="endpoint_deprecated_use_history_logger",
-    )
-
-
-from common.schemas import NodeConfigModel
-
-class NodeConfigRequest(BaseModel):
-    node_uid: str = Field(..., min_length=1, max_length=128)
-    hardware_id: Optional[str] = Field(None, max_length=128)  # Для временного топика
-    zone_id: Optional[int] = Field(None, ge=1)
-    greenhouse_uid: Optional[str] = Field(None, max_length=128)
-    config: NodeConfigModel
-
-
-@app.post("/bridge/nodes/{node_uid}/config")
-async def publish_node_config(
-    request: Request,
-    node_uid: str = Path(..., min_length=1),
-    req: NodeConfigRequest = Body(...),
-):
-    """Публиковать NodeConfig в MQTT."""
-    _auth(request)
-    REQ_COUNTER.labels(path="/bridge/nodes/{node_uid}/config").inc()
-    
-    # Проверяем готовность bridge
-    if not publisher or not publisher.is_ready():
-        raise HTTPException(
-            status_code=503,
-            detail="bridge_not_ready"
-        )
-    
-    # Получаем zone_id и gh_uid из запроса или из БД
-    zone_id = req.zone_id
-    gh_uid = req.greenhouse_uid
-    
-    # Если не указаны, пытаемся получить из БД
-    if not zone_id or not gh_uid:
-        rows = await fetch(
-            """
-            SELECT n.zone_id, g.uid as gh_uid, n.lifecycle_state
-            FROM nodes n
-            LEFT JOIN zones z ON n.zone_id = z.id
-            LEFT JOIN greenhouses g ON z.greenhouse_id = g.id
-            WHERE n.uid = $1
-            """,
-            node_uid,
-        )
-        if rows and len(rows) > 0:
-            if not zone_id:
-                zone_id = rows[0].get("zone_id")
-            if not gh_uid:
-                gh_uid = rows[0].get("gh_uid")
-    
-    if not zone_id:
-        raise HTTPException(status_code=400, detail="zone_id is required (node must be assigned to a zone)")
-    if not gh_uid:
-        raise HTTPException(status_code=400, detail="greenhouse_uid is required (zone must have a greenhouse)")
-    
-    # Получаем node_preconfig из БД (lifecycle_state = REGISTERED_BACKEND)
-    node_preconfig = False
-    node_rows = await fetch(
-        """
-        SELECT lifecycle_state
-        FROM nodes
-        WHERE uid = $1
-        """,
-        node_uid,
-    )
-    if node_rows and len(node_rows) > 0:
-        lifecycle_state = node_rows[0].get("lifecycle_state")
-        # Узлы в состоянии REGISTERED_BACKEND еще не получили конфигурацию
-        node_preconfig = (lifecycle_state == "REGISTERED_BACKEND")
-    
-    try:
-        logger.info(f"Publishing config for node {node_uid}, zone_id: {zone_id}, gh_uid: {gh_uid}, hardware_id: {req.hardware_id}, node_preconfig: {node_preconfig}")
-        # Преобразуем Pydantic модель в dict для публикации
-        config_dict = req.config.model_dump() if hasattr(req.config, 'model_dump') else req.config.dict() if hasattr(req.config, 'dict') else dict(req.config)
-        publisher.publish_config(gh_uid, zone_id, node_uid, config_dict, hardware_id=req.hardware_id, node_preconfig=node_preconfig)
-        logger.info(f"Config published successfully for node {node_uid}")
-        return {"status": "ok", "data": {"published": True, "topic": f"hydro/{gh_uid}/zn-{zone_id}/{node_uid}/config"}}
-    except Exception as e:
-        logger.error(f"Failed to publish config for node {node_uid}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to publish config: {str(e)}")

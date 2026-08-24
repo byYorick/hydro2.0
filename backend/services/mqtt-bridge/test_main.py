@@ -1,25 +1,19 @@
 """Tests for canonical mqtt-bridge endpoints."""
 import pytest
 from httpx import ASGITransport, AsyncClient
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import patch
 
 from common.env import Settings
 from main import app
+
+LIVE_STATUS_PATH = "/bridge/nodes/nd-irrig-1/live-status"
+LIVE_STATUS_PARAMS = {"greenhouse_uid": "gh-1", "zone_segment": "zn-1"}
 
 
 @pytest.fixture
 def mock_auth():
     with patch("main._auth") as mock:
         yield mock
-
-
-@pytest.fixture
-def mock_publisher():
-    publisher = Mock()
-    publisher.is_ready.return_value = True
-    publisher.publish_config.return_value = True
-    with patch("main.publisher", publisher):
-        yield publisher
 
 
 @pytest.mark.asyncio
@@ -32,7 +26,7 @@ async def test_metrics_endpoint():
 
 
 @pytest.mark.asyncio
-async def test_send_zone_command_returns_410_gone(mock_auth):
+async def test_send_zone_command_returns_404_not_found(mock_auth):
     mock_auth.return_value = None
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
@@ -48,12 +42,11 @@ async def test_send_zone_command_returns_410_gone(mock_auth):
             headers={"Authorization": "Bearer test-token"},
         )
 
-    assert response.status_code == 410
-    assert response.json()["detail"] == "endpoint_deprecated_use_history_logger"
+    assert response.status_code == 404
 
 
 @pytest.mark.asyncio
-async def test_send_node_command_returns_410_gone(mock_auth):
+async def test_send_node_command_returns_404_not_found(mock_auth):
     mock_auth.return_value = None
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
@@ -69,75 +62,72 @@ async def test_send_node_command_returns_410_gone(mock_auth):
             headers={"Authorization": "Bearer test-token"},
         )
 
-    assert response.status_code == 410
-    assert response.json()["detail"] == "endpoint_deprecated_use_history_logger"
+    assert response.status_code == 404
 
 
 @pytest.mark.asyncio
-async def test_publish_node_config_success(mock_auth, mock_publisher):
+async def test_publish_node_config_returns_404_not_found(mock_auth):
     mock_auth.return_value = None
 
-    with patch("main.fetch", new_callable=AsyncMock) as mock_fetch:
-        mock_fetch.return_value = []
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/bridge/nodes/nd-test/config",
+            json={
+                "node_uid": "nd-test",
+                "greenhouse_uid": "gh-1",
+                "zone_id": 1,
+                "config": {"version": 1},
+            },
+            headers={"Authorization": "Bearer test-token"},
+        )
 
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_live_node_status_ok(mock_auth):
+    mock_auth.return_value = None
+    probe_result = {"reachable": True, "reason": None}
+
+    with patch("main.probe_node_status", return_value=probe_result):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            response = await client.post(
-                "/bridge/nodes/nd-test/config",
-                json={
-                    "node_uid": "nd-test",
-                    "greenhouse_uid": "gh-1",
-                    "zone_id": 1,
-                    "config": {"version": 1},
-                },
+            response = await client.get(
+                LIVE_STATUS_PATH,
+                params=LIVE_STATUS_PARAMS,
                 headers={"Authorization": "Bearer test-token"},
             )
 
     assert response.status_code == 200
-    assert response.json()["data"]["published"] is True
-    mock_publisher.publish_config.assert_called_once()
+    body = response.json()
+    assert body["status"] == "ok"
+    assert body["data"]["reachable"] is True
 
 
 @pytest.mark.asyncio
 async def test_auth_requires_token_when_configured():
     settings = Settings(bridge_api_token="required-token-123")
+    probe_result = {"reachable": True, "reason": None}
 
-    with patch("main.get_settings", return_value=settings):
+    with patch("main.get_settings", return_value=settings), \
+         patch("main.probe_node_status", return_value=probe_result):
         transport = ASGITransport(app=app, client=("10.0.0.2", 1234))
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            response = await client.post(
-                "/bridge/zones/1/commands",
-                json={
-                    "cmd": "run_pump",
-                    "greenhouse_uid": "gh-1",
-                    "node_uid": "nd-irrig-1",
-                    "channel": "default",
-                },
-            )
+            response = await client.get(LIVE_STATUS_PATH, params=LIVE_STATUS_PARAMS)
             assert response.status_code == 401
 
-            response = await client.post(
-                "/bridge/zones/1/commands",
-                json={
-                    "cmd": "run_pump",
-                    "greenhouse_uid": "gh-1",
-                    "node_uid": "nd-irrig-1",
-                    "channel": "default",
-                },
+            response = await client.get(
+                LIVE_STATUS_PATH,
+                params=LIVE_STATUS_PARAMS,
                 headers={"Authorization": "Bearer wrong-token"},
             )
             assert response.status_code == 401
 
-            response = await client.post(
-                "/bridge/zones/1/commands",
-                json={
-                    "cmd": "run_pump",
-                    "greenhouse_uid": "gh-1",
-                    "node_uid": "nd-irrig-1",
-                    "channel": "default",
-                },
+            response = await client.get(
+                LIVE_STATUS_PATH,
+                params=LIVE_STATUS_PARAMS,
                 headers={"Authorization": "Bearer required-token-123"},
             )
-            assert response.status_code == 410
+            assert response.status_code == 200
 
 
 @pytest.mark.asyncio
@@ -147,15 +137,7 @@ async def test_auth_rejects_non_localhost_without_token():
     with patch("main.get_settings", return_value=settings):
         transport = ASGITransport(app=app, client=("10.0.0.2", 1234))
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            response = await client.post(
-                "/bridge/zones/1/commands",
-                json={
-                    "cmd": "run_pump",
-                    "greenhouse_uid": "gh-1",
-                    "node_uid": "nd-irrig-1",
-                    "channel": "default",
-                },
-            )
+            response = await client.get(LIVE_STATUS_PATH, params=LIVE_STATUS_PARAMS)
 
     assert response.status_code == 401
     assert "Unauthorized" in response.json()["detail"]
