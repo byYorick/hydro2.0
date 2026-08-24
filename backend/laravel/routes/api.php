@@ -50,6 +50,7 @@ use App\Http\Controllers\ZoneAutomationPresetController;
 use App\Http\Controllers\ZoneAutomationStartIrrigationController;
 use App\Http\Controllers\ZoneAutomationStartSolutionChangeController;
 use App\Http\Controllers\ZoneAutomationStartSolutionTopupController;
+use App\Http\Controllers\ZoneAutomationOperatorUnblockController;
 use App\Http\Controllers\ZoneAutomationStartCycleController;
 use App\Http\Controllers\ZoneAutomationStateController;
 use App\Http\Controllers\ZoneCommandController;
@@ -402,6 +403,8 @@ Route::middleware([
     Route::post('zones/{zone}/start-solution-change', [ZoneAutomationStartSolutionChangeController::class, 'store'])
         ->middleware('role:operator,admin,agronomist,engineer');
     Route::post('zones/{zone}/start-cycle', [ZoneAutomationStartCycleController::class, 'store'])
+        ->middleware('role:operator,admin,agronomist,engineer');
+    Route::post('zones/{zone}/operator-unblock', [ZoneAutomationOperatorUnblockController::class, 'store'])
         ->middleware('role:operator,admin,agronomist,engineer');
     Route::get('zones/{zone}/schedule-workspace', [ScheduleWorkspaceController::class, 'show']);
     Route::get('zones/{zone}/manual-schedules', [ZoneManualScheduleController::class, 'index']);

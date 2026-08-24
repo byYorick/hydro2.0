@@ -91,6 +91,15 @@ class ControlModeRequest(BaseModel):
     reason: Optional[str] = Field(default=None, max_length=500)
 
 
+class OperatorUnblockRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source: str = Field(default="laravel_api", min_length=1, max_length=64)
+    reason: Optional[str] = Field(default=None, max_length=500)
+    user_id: Optional[int] = Field(default=None, ge=0)
+    user_role: Optional[str] = Field(default=None, min_length=1, max_length=32)
+
+
 class ManualStepRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -996,6 +1005,26 @@ def create_app(config: Optional[Ae3RuntimeConfig] = None) -> FastAPI:
         result = await bundle.get_zone_control_state_use_case.run(zone_id=zone_id)
         bundle.worker.kick()
         return {"status": "ok", "data": {**result, "zone_id": zone_id}}
+
+    @app.post("/zones/{zone_id}/operator-unblock")
+    async def operator_unblock_zone(
+        zone_id: Annotated[int, Path(gt=0)],
+        request: Request,
+        req: OperatorUnblockRequest,
+    ) -> dict[str, Any]:
+        """Fail-safe OFF, fail active task, reset workflow to idle/startup."""
+        await _validate_scheduler_security_baseline(request)
+        await validate_scheduler_zone(zone_id, fetch_fn=fetch, logger=logger)
+        result = await bundle.operator_unblock_use_case.run(
+            zone_id=zone_id,
+            now=_utcnow(),
+            source=req.source,
+            reason=req.reason,
+            user_id=req.user_id,
+            user_role=req.user_role,
+        )
+        bundle.worker.kick()
+        return {"status": "ok", "data": result}
 
     @app.post("/zones/{zone_id}/manual-step")
     async def request_zone_manual_step(zone_id: Annotated[int, Path(gt=0)], request: Request, req: ManualStepRequest) -> dict[str, Any]:

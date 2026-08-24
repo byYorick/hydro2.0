@@ -149,6 +149,7 @@ class ErrorCodes:
     START_CYCLE_MISSING_IDEMPOTENCY_KEY = "start_cycle_missing_idempotency_key"
     START_CYCLE_BLOCKED_BY_ALERT = "start_cycle_blocked_by_alert"
     START_IRRIGATION_SETUP_PENDING = "start_irrigation_setup_pending"
+    OPERATOR_UNBLOCKED = "operator_unblocked"
 
     # API / инфраструктура
     AE3_API_UNHANDLED_EXCEPTION = "ae3_api_unhandled_exception"

@@ -6,7 +6,11 @@
     >
       <ZoneAutomationBlockBanner
         :block="automationBlock"
+        :can-unblock="canOperateZone"
+        :unblocking="unblockingZone"
+        :error-text="unblockError"
         @open-alerts="activeTab = 'alerts'"
+        @unblock="onOperatorUnblock"
       />
       <ZonePageHeader
         :zone-name="zone.name"
@@ -235,6 +239,7 @@ import ZoneDetailModals from "@/Pages/Zones/ZoneDetailModals.vue";
 import ZoneAutomationBlockBanner from "@/Components/ZoneAutomationBlockBanner.vue";
 import { useZoneShowPage } from "@/composables/useZoneShowPage";
 import { computeAutomationBlock } from "@/utils/automationBlock";
+import { zonesApi } from "@/services/api/zones";
 import { normalizeDurationHours } from "@/utils/growCycleProgress";
 import { translateStatus } from "@/utils/i18n";
 
@@ -346,10 +351,31 @@ const headerStatusVariant = computed(() => {
 
 
 const automationStateRefreshSeq = ref(0);
+const unblockingZone = ref(false);
+const unblockError = ref<string | null>(null);
 
 function onPolicyAlertResolved(): void {
   automationStateRefreshSeq.value += 1;
   router.reload({ only: ['alerts'], preserveUrl: true });
+}
+
+async function onOperatorUnblock(payload: { reason: string; confirm: true }): Promise<void> {
+  const id = zoneId.value;
+  if (!id) return;
+  unblockingZone.value = true;
+  unblockError.value = null;
+  try {
+    await zonesApi.operatorUnblock(id, payload);
+    refreshZoneState();
+    router.reload({ only: ['alerts', 'events'], preserveUrl: true });
+  } catch (err) {
+    const message = err && typeof err === 'object' && 'message' in err
+      ? String((err as { message?: unknown }).message ?? '')
+      : '';
+    unblockError.value = message || 'Не удалось разблокировать зону';
+  } finally {
+    unblockingZone.value = false;
+  }
 }
 
 /**

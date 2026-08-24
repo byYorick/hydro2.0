@@ -15,6 +15,7 @@ from ae3lite.application.use_cases import (
     GuardSolutionTankStartupResetUseCase,
     GetZoneAutomationStateUseCase,
     GetZoneControlStateUseCase,
+    OperatorUnblockZoneUseCase,
     RequestManualStepUseCase,
     SetControlModeUseCase,
     StartupRecoveryUseCase,
@@ -56,6 +57,7 @@ class Ae3RuntimeBundle:
     get_zone_control_state_use_case: GetZoneControlStateUseCase
     request_manual_step_use_case: RequestManualStepUseCase
     set_control_mode_use_case: SetControlModeUseCase
+    operator_unblock_use_case: OperatorUnblockZoneUseCase
     get_zone_automation_state_use_case: GetZoneAutomationStateUseCase
     task_status_read_model: PgTaskStatusReadModel
     zone_intent_repository: PgZoneIntentRepository
@@ -223,6 +225,15 @@ def build_ae3_runtime_bundle(
         task_repository=task_repository,
         command_gateway=command_gateway,
     )
+    operator_unblock_use_case = OperatorUnblockZoneUseCase(
+        task_repository=task_repository,
+        workflow_repository=workflow_repository,
+        lease_repository=zone_lease_repository,
+        zone_intent_repository=zone_intent_repository,
+        command_gateway=command_gateway,
+        pid_state_repository=pid_state_repository,
+        fetch_fn=fetch,
+    )
     solution_tank_startup_guard_use_case = GuardSolutionTankStartupResetUseCase(
         runtime_monitor=runtime_monitor,
         workflow_repository=workflow_repository,
@@ -248,6 +259,7 @@ def build_ae3_runtime_bundle(
         get_zone_control_state_use_case=get_zone_control_state_use_case,
         request_manual_step_use_case=request_manual_step_use_case,
         set_control_mode_use_case=set_control_mode_use_case,
+        operator_unblock_use_case=operator_unblock_use_case,
         get_zone_automation_state_use_case=get_zone_automation_state_use_case,
         task_status_read_model=task_status_read_model,
         zone_intent_repository=zone_intent_repository,

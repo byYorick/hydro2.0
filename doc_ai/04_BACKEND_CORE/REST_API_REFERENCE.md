@@ -642,6 +642,13 @@ Laravel публикует `ExecutionChainUpdated` на приватный ка�
 - Laravel proxy и merge-правила live/stale — `API_SPEC_FRONTEND_BACKEND_FULL.md` §3.5.7;
 - `scheduler_intent_*` hints на AE3-path **не** генерируются (только Laravel enrichment).
 
+Инварианты `POST /zones/{id}/operator-unblock` (Laravel proxy → AE3):
+- роль `operator|admin|agronomist|engineer`; тело `reason` (min 3) + `confirm=true`;
+- AE3: fail-safe OFF irrig-актуаторов через history-logger, `ae_tasks` → `failed` (`operator_unblocked`),
+  release lease, terminal intents, `zone_workflow_state` → `idle`/`startup`, audit `OPERATOR_UNBLOCKED`;
+- Laravel после 200 закрывает только blocking-алерты задачи/hang-hints, **не** config-дыры (pid/correction/targets);
+- не DELETE `zone_workflow_state`; safety-critical железо-алерты не ack.
+
 Инварианты `POST /zones/{id}/start-cycle`:
 - endpoint не несет device-level payload (минимальный wake-up контракт);
 - endpoint принимает только `source` и `idempotency_key`;

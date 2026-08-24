@@ -260,6 +260,7 @@ ERROR_SEEDS: list[tuple[str, str, str]] = [
     ("solution_topup_timeout", "Таймаут автодолива", "Автодолив не завершился за отведённое время."),
     ("start_solution_topup_cooldown_active", "Cooldown автодолива", "Повторный автодолив отклонён: ещё действует пауза после предыдущего."),
     ("start_solution_topup_not_ready", "Зона не в ready", "Автодолив доступен только в workflow_phase=ready."),
+    ("operator_unblocked", "Зона разблокирована оператором", "Оператор остановил текущую задачу AE3 и сбросил workflow в idle."),
 ]
 
 # (code, title, description, recommendation, severity, category, source)

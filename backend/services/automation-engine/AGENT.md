@@ -31,7 +31,8 @@ Canonical spec: `doc_ai/04_BACKEND_CORE/ae3lite.md`.
     `POST /zones/{id}/start-irrigation`, `POST /zones/{id}/start-lighting-tick`,
     `POST /zones/{id}/start-solution-topup`, `POST /zones/{id}/start-solution-change`,
     `POST /greenhouses/{id}/start-climate-tick`
-    (плюс internal `GET /internal/tasks/{task_id}`).
+    (плюс internal `GET /internal/tasks/{task_id}` и operator
+    `POST /zones/{id}/operator-unblock` — fail-safe + idle, не task_type).
 11. Hardcoded default targets запрещены (spec §5.3.4); отсутствие target → `PlannerConfigurationError`.
 12. CAS-промах в `zone_workflow_state.upsert_phase` → `Ae3LiteError` (не silent None).
 

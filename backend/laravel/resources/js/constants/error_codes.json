@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "updated_at": "2026-08-24T11:35:17Z",
+  "updated_at": "2026-08-24T11:48:38Z",
   "codes": [
     {
       "code": "actuator_apply_failed",
@@ -745,6 +745,11 @@
       "code": "not_in_live_mode",
       "title": "Не в live режиме",
       "message": "Действие доступно только в config_mode=live."
+    },
+    {
+      "code": "operator_unblocked",
+      "title": "Зона разблокирована оператором",
+      "message": "Оператор остановил текущую задачу AE3 и сбросил workflow в idle."
     },
     {
       "code": "overcurrent",
