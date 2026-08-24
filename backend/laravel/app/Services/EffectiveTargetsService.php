@@ -2,23 +2,24 @@
 
 namespace App\Services;
 
+use App\Models\AutomationEffectiveBundle;
 use App\Models\GrowCycle;
 use App\Models\GrowCyclePhase;
 use App\Models\RecipeRevisionPhase;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Log;
 
 class EffectiveTargetsService
 {
     public function __construct(
-        private readonly ZoneLogicProfileService $automationLogicProfiles,
         private readonly AutomationConfigDocumentService $documents,
     ) {}
 
     /**
-     * Получить эффективные целевые параметры для цикла выращивания
+     * Read-model для UI/scheduler: химия текущей фазы + execution из compiled bundle.
      *
-     * @return array Структурированный JSON согласно контракту
+     * @return array<string, mixed>
      *
      * @throws \Illuminate\Database\Eloquent\ModelNotFoundException
      */
@@ -35,7 +36,7 @@ class EffectiveTargetsService
             'currentPhase.magnesiumProduct',
             'currentPhase.microProduct',
             'recipeRevision',
-            'zone',
+            'zone.greenhouse',
         ])->findOrFail($growCycleId);
 
         if (! $cycle->currentPhase) {
@@ -50,13 +51,14 @@ class EffectiveTargetsService
         // Получаем активные перекрытия
         $overrides = $this->getActiveOverrides($cycle);
 
-        // Сливаем перекрытия с базовыми параметрами
+        // Сливаем перекрытия с базовыми параметрами (химия ph/ec/solution_temp пропускается).
         $effectiveTargets = $this->mergeOverrides($phaseTargets, $overrides);
 
-        // Накладываем runtime-настройки автоматики из активного profile-mode зоны.
-        $runtimeProfile = $this->resolveRuntimeProfileForCycle($cycle);
+        // Execution irrigation/lighting/climate — из уже скомпилированного bundle, не из live logic_profile.
+        $runtimeProfile = $this->resolveRuntimeProfileFromCompiledBundle($cycle);
         $effectiveTargets = $this->mergeCycleSettings($effectiveTargets, $runtimeProfile['subsystems'] ?? null);
         $effectiveTargets = $this->appendRuntimeProfileMeta($effectiveTargets, $runtimeProfile);
+        $effectiveTargets = $this->appendDayNightEffectiveNow($effectiveTargets, $cycle, $phase);
 
         // Вычисляем due_at для фазы
         $phaseDueAt = $this->calculatePhaseDueAt($cycle, $phase);
@@ -376,24 +378,71 @@ class EffectiveTargetsService
         ], true);
     }
 
-    protected function resolveRuntimeProfileForCycle(GrowCycle $cycle): ?array
+    /**
+     * @return array{source: string, mode: mixed, updated_at: mixed, subsystems: array<string, mixed>}|null
+     */
+    protected function resolveRuntimeProfileFromCompiledBundle(GrowCycle $cycle): ?array
     {
-        $profile = $this->automationLogicProfiles->resolveActiveProfileForZone($cycle->zone_id);
-        if ($profile && is_array($profile->subsystems) && ! empty($profile->subsystems)) {
-            return [
-                'source' => 'zone_automation_logic_profile',
-                'mode' => $profile->mode,
-                'updated_at' => $profile->updatedAt?->toIso8601String(),
-                'subsystems' => $profile->subsystems,
-            ];
+        $resolved = $this->resolveCompiledBundleConfig($cycle);
+        if ($resolved === null) {
+            $this->reportMissingCompiledBundle($cycle);
+
+            return null;
+        }
+
+        $activeProfile = data_get($resolved['config'], 'zone.logic_profile.active_profile');
+        $subsystems = is_array($activeProfile) && is_array($activeProfile['subsystems'] ?? null)
+            ? $activeProfile['subsystems']
+            : null;
+        if (! is_array($subsystems) || $subsystems === []) {
+            return null;
+        }
+
+        return [
+            'source' => 'automation_effective_bundle',
+            'mode' => data_get($resolved['config'], 'zone.logic_profile.active_mode'),
+            'updated_at' => is_string($activeProfile['updated_at'] ?? null) ? $activeProfile['updated_at'] : null,
+            'subsystems' => $subsystems,
+        ];
+    }
+
+    /**
+     * @return array{config: array<string, mixed>, scope: string}|null
+     */
+    protected function resolveCompiledBundleConfig(GrowCycle $cycle): ?array
+    {
+        $cycleBundle = AutomationEffectiveBundle::query()
+            ->where('scope_type', AutomationConfigRegistry::SCOPE_GROW_CYCLE)
+            ->where('scope_id', (int) $cycle->id)
+            ->first();
+        $cycleConfig = $cycleBundle?->config;
+        if (is_array($cycleConfig) && $cycleConfig !== [] && ! array_is_list($cycleConfig)) {
+            return ['config' => $cycleConfig, 'scope' => AutomationConfigRegistry::SCOPE_GROW_CYCLE];
+        }
+
+        $zoneBundle = AutomationEffectiveBundle::query()
+            ->where('scope_type', AutomationConfigRegistry::SCOPE_ZONE)
+            ->where('scope_id', (int) $cycle->zone_id)
+            ->first();
+        $zoneConfig = $zoneBundle?->config;
+        if (is_array($zoneConfig) && $zoneConfig !== [] && ! array_is_list($zoneConfig)) {
+            return ['config' => $zoneConfig, 'scope' => AutomationConfigRegistry::SCOPE_ZONE];
         }
 
         return null;
     }
 
+    protected function reportMissingCompiledBundle(GrowCycle $cycle): void
+    {
+        Log::warning('EffectiveTargets: compiled automation bundle missing; irrigation/lighting execution not overlaid', [
+            'grow_cycle_id' => (int) $cycle->id,
+            'zone_id' => (int) $cycle->zone_id,
+        ]);
+    }
+
     /**
-     * Наложить runtime-настройки подсистем на effective targets.
-     * Приоритет: phase -> overrides -> runtime settings.
+     * Проекция bundle subsystems → ET (не второй compiler и не live logic_profile).
+     * Приоритет: phase columns -> non-chemical overrides -> bundle execution.
      */
     protected function mergeCycleSettings(array $targets, mixed $subsystems): array
     {
@@ -426,6 +475,103 @@ class EffectiveTargetsService
         $targets['extensions'] = $extensions;
 
         return $targets;
+    }
+
+    /**
+     * Day/night — функция от колонок фазы + extensions.day_night + TZ теплицы.
+     * Совпадает с AE3 `_build_day_night_config` + `_is_day_now` (не третий канон).
+     *
+     * @param  array<string, mixed>  $targets
+     * @return array<string, mixed>
+     */
+    protected function appendDayNightEffectiveNow(array $targets, GrowCycle $cycle, GrowCyclePhase|RecipeRevisionPhase $phase): array
+    {
+        $enabled = (bool) ($phase->day_night_enabled ?? false);
+        $extensions = is_array($targets['extensions'] ?? null) ? $targets['extensions'] : [];
+        $dayNightExt = is_array($extensions['day_night'] ?? null) ? $extensions['day_night'] : [];
+        $lightingExt = is_array($dayNightExt['lighting'] ?? null) ? $dayNightExt['lighting'] : [];
+        $lightingPhase = is_array($targets['lighting'] ?? null) ? $targets['lighting'] : [];
+
+        $dayStart = is_string($lightingExt['day_start_time'] ?? null) && trim((string) $lightingExt['day_start_time']) !== ''
+            ? trim((string) $lightingExt['day_start_time'])
+            : (is_string($lightingPhase['start_time'] ?? null) ? (string) $lightingPhase['start_time'] : null);
+        $dayHours = $this->toFloat($lightingExt['day_hours'] ?? null);
+        if ($dayHours === null) {
+            $dayHours = $this->toFloat($lightingPhase['photoperiod_hours'] ?? null);
+        }
+
+        $timezone = $cycle->zone?->greenhouse?->timezone;
+        $timezone = is_string($timezone) && trim($timezone) !== '' ? trim($timezone) : 'UTC';
+        $isDay = $this->isDayNow($dayStart, $dayHours, $timezone);
+
+        $targets['day_night'] = [
+            'enabled' => $enabled,
+            'is_day' => $isDay,
+        ];
+
+        foreach (['ph', 'ec'] as $metric) {
+            if (! is_array($targets[$metric] ?? null)) {
+                continue;
+            }
+            $section = is_array($dayNightExt[$metric] ?? null) ? $dayNightExt[$metric] : [];
+            $base = $this->toFloat($targets[$metric]['target'] ?? null);
+            $day = $this->toFloat($section['day'] ?? null) ?? $base;
+            $night = $this->toFloat($section['night'] ?? null) ?? $base;
+            $targets[$metric]['day'] = $day;
+            $targets[$metric]['night'] = $night;
+            $effective = $base;
+            if ($enabled) {
+                $effective = $isDay ? $day : $night;
+            }
+            if ($effective !== null) {
+                $targets[$metric]['effective_now'] = $effective;
+            }
+        }
+
+        return $targets;
+    }
+
+    protected function isDayNow(?string $dayStartTime, ?float $dayHours, string $timezone): bool
+    {
+        if ($dayStartTime === null || trim($dayStartTime) === '' || $dayHours === null) {
+            return true;
+        }
+        $parts = explode(':', trim($dayStartTime));
+        if (count($parts) < 2) {
+            return true;
+        }
+        if (! is_numeric($parts[0]) || ! is_numeric($parts[1])) {
+            return true;
+        }
+        $startH = (int) $parts[0];
+        $startM = (int) $parts[1];
+        if ($startH < 0 || $startH > 23 || $startM < 0 || $startM > 59) {
+            return true;
+        }
+        if ($dayHours <= 0) {
+            return false;
+        }
+        if ($dayHours >= 24) {
+            return true;
+        }
+
+        try {
+            $nowLocal = Carbon::now()->copy()->setTimezone($timezone);
+        } catch (\Throwable) {
+            $nowLocal = Carbon::now();
+        }
+
+        $startMin = ((int) $startH) * 60 + (int) $startM;
+        $endMin = ($startMin + (int) round($dayHours * 60)) % (24 * 60);
+        $nowMin = ((int) $nowLocal->hour) * 60 + (int) $nowLocal->minute;
+        if ($startMin === $endMin) {
+            return true;
+        }
+        if ($startMin < $endMin) {
+            return $startMin <= $nowMin && $nowMin < $endMin;
+        }
+
+        return $nowMin >= $startMin || $nowMin < $endMin;
     }
 
     protected function mergeIrrigationSubsystem(array $targets, array $subsystems): array
@@ -485,22 +631,8 @@ class EffectiveTargetsService
         $lighting = is_array($targets['lighting'] ?? null) ? $targets['lighting'] : [];
 
         if (is_array($lightingTargets)) {
-            $photoperiodHours = $this->toFloat($lightingTargets['photoperiod_hours'] ?? null);
-            if ($photoperiodHours === null && is_array($lightingTargets['photoperiod'] ?? null)) {
-                $photoperiodHours = $this->toFloat($lightingTargets['photoperiod']['hours_on'] ?? null);
-            }
-            if ($photoperiodHours !== null) {
-                $lighting['photoperiod_hours'] = $photoperiodHours;
-            }
-
-            $startTime = $this->resolveScheduleStartTime($lightingTargets['schedule'] ?? null);
-            if ($startTime === null) {
-                $startTime = $this->normalizeTimeString($lightingTargets['start_time'] ?? null);
-            }
-            if ($startTime !== null) {
-                $lighting['start_time'] = $startTime;
-            }
-
+            // photoperiod_hours / start_time — колонки фазы (как AE3 _build_day_night_config).
+            // Bundle execution может нести interval/force_skip, но не окно дня.
             $intervalSec = $this->resolveIntervalSeconds($lightingTargets);
             if ($intervalSec !== null) {
                 $lighting['interval_sec'] = $intervalSec;

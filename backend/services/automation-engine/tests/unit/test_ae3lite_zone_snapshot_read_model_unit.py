@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
 import pytest
 
+from ae3lite.config.runtime_plan_builder import _resolve_phase_target
 from ae3lite.domain.errors import ErrorCodes, SnapshotBuildError
 from ae3lite.infrastructure.read_models.zone_snapshot_read_model import PgZoneSnapshotReadModel
 
@@ -227,6 +229,89 @@ def test_build_phase_targets_preserves_phase_extensions_for_runtime_consumers() 
     assert result["extensions"]["subsystems"]["irrigation"]["targets"]["soil_moisture"]["max"] == 48.0
     assert result["extensions"]["subsystems"]["irrigation"]["targets"]["soil_moisture"]["target"] == 43.0
     assert result["extensions"]["subsystems"]["irrigation"]["targets"]["soil_moisture"]["unit"] == "pct"
+
+
+def test_build_phase_targets_does_not_overlay_chemical_keys_from_extensions() -> None:
+    read_model = PgZoneSnapshotReadModel()
+
+    result = read_model._build_phase_targets(
+        zone_row={
+            "ph_target": 5.8,
+            "ph_min": 5.6,
+            "ph_max": 6.0,
+            "ec_target": 1.4,
+            "ec_min": 1.2,
+            "ec_max": 1.6,
+            "phase_extensions": {
+                "targets": {
+                    "ph": {"target": 9.9, "min": 9.0, "max": 10.0},
+                    "ec": {"target": 8.8, "min": 8.0, "max": 9.0},
+                    "solution_temp": {"target": 99.0, "min": 90.0, "max": 100.0},
+                    "diagnostics": {"execution": {"target_ph": 9.9}},
+                }
+            },
+        }
+    )
+
+    assert result["ph"] == {"target": 5.8, "min": 5.6, "max": 6.0}
+    assert result["ec"] == {"target": 1.4, "min": 1.2, "max": 1.6}
+    assert "solution_temp" not in result
+    assert result["extensions"]["targets"]["ph"]["target"] == 9.9
+    assert result["diagnostics"]["execution"]["target_ph"] == 9.9
+
+
+def test_apply_overrides_skips_recipe_phase_chemical_parameters() -> None:
+    read_model = PgZoneSnapshotReadModel()
+    payload = {
+        "ph": {"target": 5.8, "min": 5.6, "max": 6.0},
+        "ec": {"target": 1.4, "min": 1.2, "max": 1.6},
+        "irrigation": {"interval_sec": 3600},
+    }
+
+    result = read_model._apply_overrides(
+        payload=payload,
+        override_rows=[
+            {"parameter": "ph.target", "value": 6.2},
+            {"parameter": "ph.min", "value": 4.0},
+            {"parameter": "ec.max", "value": 9.9},
+            {"parameter": "solution_temp.target", "value": 22.0},
+            {"parameter": "irrigation.interval_sec", "value": 120},
+        ],
+    )
+
+    assert result["ph"] == {"target": 5.8, "min": 5.6, "max": 6.0}
+    assert result["ec"] == {"target": 1.4, "min": 1.2, "max": 1.6}
+    assert "solution_temp" not in result
+    assert result["irrigation"]["interval_sec"] == 120
+
+
+def test_chemical_overlay_and_override_do_not_change_runtime_plan_targets() -> None:
+    read_model = PgZoneSnapshotReadModel()
+    zone_row = {
+        "ph_target": 5.8,
+        "ph_min": 5.6,
+        "ph_max": 6.0,
+        "ec_target": 1.4,
+        "ec_min": 1.2,
+        "ec_max": 1.6,
+        "phase_extensions": {
+            "targets": {
+                "ph": {"target": 9.9},
+                "ec": {"target": 8.8},
+            }
+        },
+    }
+    phase_targets = read_model._build_phase_targets(zone_row=zone_row)
+    merged_targets = read_model._apply_overrides(
+        payload=phase_targets,
+        override_rows=[{"parameter": "ph.target", "value": 6.2}, {"parameter": "ec.target", "value": 3.3}],
+    )
+    snapshot = SimpleNamespace(phase_targets=phase_targets)
+
+    assert merged_targets["ph"]["target"] == 5.8
+    assert merged_targets["ec"]["target"] == 1.4
+    assert _resolve_phase_target(snapshot=snapshot, zone_id=1, key="ph") == 5.8
+    assert _resolve_phase_target(snapshot=snapshot, zone_id=1, key="ec") == 1.4
 
 
 def test_build_process_calibrations_normalizes_legacy_mode_aliases() -> None:

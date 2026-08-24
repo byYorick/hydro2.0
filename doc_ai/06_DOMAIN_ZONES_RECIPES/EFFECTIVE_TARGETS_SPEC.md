@@ -3,11 +3,11 @@
 
 Документ описывает формальную спецификацию **effective-targets** — структурированных целевых значений и параметров управления для зон выращивания.
 
-Актуализация authority / AE3 (2026-03-24):
-- **разведение authority:** Laravel effective-targets = UI / diagnostics / business-model canon; AE3 runtime = SQL read-model + compiled bundle only (без runtime HTTP к `/api/internal/effective-targets/*`);
-- effective-targets остаются канонической бизнес-моделью Laravel;
-- automation-engine в runtime использует direct SQL read-model и не зависит от runtime вызовов `/api/internal/effective-targets/*`;
-- структура effective-targets используется как эталон семантики для SQL parity.
+Актуализация authority / AE3 (2026-08-24):
+- **два непересекающихся канона** — см. §0. Агрохимия (pH/EC/`solution_temp`) ≠ автоматика (PID/correction/plans). Это не два канона на одни и те же числа;
+- AE3 runtime **не** ходит в HTTP `/api/internal/effective-targets/*`; химию читает SQL `grow_cycle_phases` по `grow_cycles.current_phase_id`;
+- `EffectiveTargetsService` — read-model UI/diagnostics/scheduler, **не** движок AE3 и **не** SoT химии отдельно от колонок фазы;
+- compiled `automation_effective_bundles` — SoT автоматики, **не** химии.
 
 Актуализация канона pH/EC targets (2026-03-27):
 - `targets.ph.target|min|max` и `targets.ec.target|min|max` берутся только из активной recipe phase / phase snapshot grow cycle;
@@ -60,29 +60,120 @@ Breaking-change: обратная совместимость со старыми
 
 ---
 
+## 0. Матрица SoT (поле → путь → кто пишет → кто читает)
+
+Граница канонов **жёсткая**: одно поле принадлежит ровно одному канону.
+
+1. **Агрохимия** — `ph` / `ec` / `solution_temp` (`min`/`max`/`target`).
+   SoT = строка **`grow_cycle_phases` активной фазы** (`grow_cycles.current_phase_id`).
+   Снапшот рецепта на момент фазы. Никто не имеет права переопределять
+   (`cycle.phase_overrides`, `cycle.manual_overrides`, `zone.logic_profile`,
+   `phase.extensions.targets`, compiled bundle).
+2. **Автоматика** — PID, correction, command_plans, fail-safe, irrigation/lighting
+   *execution*. SoT = **`automation_effective_bundles`** (compiler `system → zone → cycle`).
+   AE3 уже так читает `zone.pid` / `zone.correction` / plans.
+
+Day/night — **не третий канон**: функция от (1) + `day_night_enabled` + timezone теплицы.
+Целевое место расчёта — сборка `RuntimePlan` (`runtime_plan_builder._build_day_night_config`);
+то же число должно уходить в UI. Сейчас night override применяется в handler
+(`_effective_ph_target` / `_effective_ec_target`), UI видит day/base.
+
+`cycle.start_snapshot` **не SoT химии**. Документ пишется в `GrowCycleConfigSyncer`
+с **первой** фазы (`orderBy phase_index`) **без** ключей `ph_*`/`ec_*`.
+AE3 для `RuntimePlan.target_ph/ec` этот документ **не читает**.
+
+`EffectiveTargetsService` — **read-model** (UI / `GET …/effective-targets` / scheduler),
+не движок runtime. Химия совпадает с колонками текущей фазы; irrigation/climate
+execution — с compiled bundle; lighting photoperiod/start — колонки фазы
+(как AE3 `_build_day_night_config`).
+
+### 0.1. AE3 SQL SELECT текущей фазы
+
+Канон химии AE3 = эти колонки `grow_cycle_phases` (JOIN `gcp.id = gc.current_phase_id`)
+в `PgZoneSnapshotReadModel.load` → `build_base_targets` → `snapshot.phase_targets` →
+`runtime_plan_builder._resolve_phase_target` → `RuntimePlan.target_ph/ec`.
+
+| SQL-колонка (`gcp.*` / join) | Куда кладёт `build_base_targets` |
+|------------------------------|----------------------------------|
+| `ph_target`, `ph_min`, `ph_max` | `phase_targets.ph.{target,min,max}` |
+| `ec_target`, `ec_min`, `ec_max` | `phase_targets.ec.{target,min,max}` |
+| `irrigation_mode`, `irrigation_interval_sec`, `irrigation_duration_sec`, `irrigation_system_type`, `substrate_type` | `phase_targets.irrigation.*` |
+| `day_night_enabled` | `phase_targets.day_night_enabled` |
+| `g.timezone` (теплица, не фаза) | `phase_targets.greenhouse_timezone` |
+| `lighting_photoperiod_hours`, `lighting_start_time` | `phase_targets.lighting.{photoperiod_hours,start_time}` |
+| `temp_air_target`, `humidity_target`, `co2_target` | `phase_targets.climate_request.*` |
+| `mist_interval_sec`, `mist_duration_sec`, `mist_mode` | `phase_targets.mist.*` |
+| `extensions` | `phase_targets.extensions` |
+
+`solution_temp_*` в этом SELECT **нет**: Laravel ET читает колонки фазы, AE3 snapshot — нет.
+Это gap матрицы, не второй канон.
+
+Поля автоматики из bundle (не из таблицы фазы): `zone.pid`, `zone.correction`,
+`zone.process_calibration`, `command_plans`, pump_calibration на актуаторе.
+
+### 0.2. Матрица: поле → путь → пишет → читает
+
+| Поле | Таблица / bundle path | Пишет | Читает runtime (AE3) | Читает UI / scheduler |
+|------|----------------------|-------|----------------------|------------------------|
+| `ph.target\|min\|max` | `grow_cycle_phases.ph_*` текущей фазы | recipe snapshot / `advancePhase` | `phase_targets.ph` → `RuntimePlan.target_ph*` | ET `extractPhaseTargets`; карточка зоны |
+| `ec.target\|min\|max` | `grow_cycle_phases.ec_*` текущей фазы | то же | `phase_targets.ec` → `RuntimePlan.target_ec*` | то же |
+| `solution_temp.*` | `grow_cycle_phases.solution_temp_*` | то же | **не SELECT** в snapshot (gap) | ET `extractPhaseTargets` |
+| day/night pH/EC | колонки фазы + `extensions.day_night` + `greenhouses.timezone` | фаза / extensions (не override химии колонок) | `RuntimePlan.day_night_config`; **доза** — `_effective_*` в handler | UI сейчас base/day, без `target_ph_effective_now` |
+| irrigation interval/duration (рецепт) | колонки фазы | фаза | `phase_targets.irrigation` | ET колонки фазы |
+| irrigation *execution* | bundle `zone.logic_profile` / command_plans | compiler | bundle + snapshot.targets (после merge) | ET `mergeCycleSettings` из compiled bundle |
+| lighting photoperiod / start | колонки фазы | фаза | `phase_targets.lighting` + `_build_day_night_config` | ET колонки; scheduler — `ScheduleLoader` → ET |
+| lighting *execution* (duty/desired) | bundle lighting + AE3 day/night | compiler + RuntimePlan | `RuntimePlan` | scheduler: ET photoperiod фазы → `LightingScheduleParser` |
+| PID kp/ki/kd | bundle `zone.pid.{ph,ec}` | compiler / LiveEdit зоны | только bundle | nested `controllers` в ET — **legacy**, не AE3 SoT |
+| max_dose / min_interval | bundle `zone.correction.controllers.*` | compiler | bundle `correction_config` | nested ET controller — legacy |
+| process gains | bundle `zone.process_calibration` | compiler | snapshot/process_calibrations | — |
+| pump_calibration | NodeConfig / `actuators.pump_calibration` | калибровка узла | snapshot.actuators | UI калибровки |
+| `cycle.start_snapshot.phase` | document → bundle `cycle.start_snapshot` | `GrowCycleConfigSyncer` (первая фаза, **без** ph_*/ec_*) | **не читает** как химию | не UI; identity фазы/irrigation |
+
+PHP skip химии: `EffectiveTargetsService::isRecipePhaseChemicalTargetParameter`
+(`ph/ec/solution_temp` `.target|.min|.max`). AE3: тот же список в
+`PgZoneSnapshotReadModel._is_recipe_phase_chemical_target_parameter` —
+и в `_normalize_override_rows`, и в `_apply_overrides`.
+`_build_phase_targets` не мержит `extensions.targets.{ph,ec,solution_temp}` поверх колонок фазы
+(overlay остаётся в `targets.extensions`).
+
+### 0.3. Закрытый drift (код)
+
+| Слой | Канон в коде |
+|------|----------------|
+| `_build_phase_targets` | не мержит `extensions.targets.{ph,ec,solution_temp}` поверх колонок |
+| `_apply_overrides` | skip того же списка, что PHP `isRecipePhaseChemicalTargetParameter` |
+| `EffectiveTargetsService` | химия = текущая фаза; irrigation/climate execution = compiled bundle; lighting photoperiod/start = колонки фазы |
+| `cycle.start_snapshot.phase` | **без** `ph_*` / `ec_*`; не SoT химии |
+| Day/night в ET | `targets.ph.effective_now` / `targets.day_night` — та же формула окна, что AE3 `_is_day_now` |
+| Scheduler lighting | `ScheduleLoader` → ET с photoperiod фазы (как `_build_day_night_config`) |
+
+`ZoneSnapshot.targets` (полный merge для CommandPlan) ≠ `ZoneSnapshot.phase_targets`
+(вход `RuntimePlan`). Химия RuntimePlan идёт только из `phase_targets`.
+
+Handler `_effective_ph_target` по-прежнему применяет night override при дозе;
+ET/UI показывают то же `effective_now` без второго канона чисел.
+
+---
+
 ## 1. Назначение Effective Targets
 
-**Effective targets** — это каноническая Laravel business/read-model семантика для контроллеров зон, которая определяет:
-- Текущие целевые значения (pH, EC, температура и т.д.)
-- Допустимые диапазоны отклонений
-- Режимы работы систем (полив, освещение, климат)
-- Расписания и параметры автоматизации
+**Effective targets** — Laravel **read-model** для UI, diagnostics и scheduler
+(`GET/POST …/effective-targets`). Это не второй вычислитель химии и не runtime AE3.
 
-**Принцип работы:**
-1. Laravel вычисляет effective targets на основе:
-   - Активного grow cycle зоны
-   - Текущей фазы цикла (VEG, FLOWER и т.д.)
-   - Revision рецепта
-   - Authority-конфигов `system.*`, `zone.*`, `cycle.*`
-   - Operational facts и bind/calibration контекста зоны
+Read-model показывает:
+- Химию текущей фазы (`grow_cycle_phases` по `current_phase_id`) — те же числа, что AE3
+- Операционные параметры подсистем (полив, свет, климат) — цель: из compiled bundle, без второго merge
+- Не вкладывать nested PID/correction как SoT (legacy в схеме ET, см. актуализацию PID)
 
-2. Laravel и интеграции могут получать targets через REST API
-3. Контроллеры AE3 используют эквивалентную семантику через SQL read-model и compiled bundles, а не через runtime HTTP к effective-targets API
+**Принцип работы (канон §0):**
+1. Химия — только колонки активной `GrowCyclePhase`; AE3 — тот же SQL JOIN в `PgZoneSnapshotReadModel`.
+2. Laravel отдаёт ET через REST для UI/интеграций. AE3 **не** вызывает этот API в runtime.
+3. Автоматика (PID, correction, plans) — compiled bundle. ET не подменяет `zone.pid`.
 
 Для `pH/EC` действует отдельное жёсткое правило:
-- canonical source of truth для `target|min|max` — только active recipe phase;
+- SoT `target|min|max` — только active recipe phase (`grow_cycle_phases`);
 - runtime merge допускается только для operational/execution-настроек подсистем, но не для chemical setpoints;
-- отсутствие `ph/ec target` во phase snapshot считается конфигурационной ошибкой и должно fail-closed в correction runtime.
+- отсутствие `ph/ec target` в текущей фазе — конфигурационная ошибка, fail-closed в correction runtime.
 
 ---
 
@@ -898,9 +989,9 @@ function computeEffectiveTargets(Zone $zone): array
 
 ### 6.3. Кэширование
 
-**Важно:** Effective targets **НЕ кэшируются** постоянно как единственный SoT:
-- при смене фазы / update recipe / compile bundle revision меняется;
-- AE3 читает snapshot + bundle на загрузке task/stage (SQL read-model), без runtime HTTP к Laravel;
+**Важно:** Effective targets **НЕ кэшируются** как SoT химии (SoT — колонки текущей фазы, §0):
+- при смене фазы / update recipe / compile bundle revision read-model пересчитывается;
+- AE3 на загрузке task/stage читает SQL snapshot текущей фазы (`PgZoneSnapshotReadModel`) + compiled bundle автоматики, без runtime HTTP к Laravel; **не** `cycle.start_snapshot` как химию;
 - Laravel/UI пересчитывает при phase/recipe/authority изменениях (см. `AutomationConfigCompiler`).
 
 ---

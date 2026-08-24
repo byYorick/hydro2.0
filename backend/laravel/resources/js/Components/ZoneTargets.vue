@@ -1,4 +1,11 @@
 <template>
+  <div class="space-y-2">
+    <div
+      v-if="phaseCaption"
+      class="text-xs text-[color:var(--text-muted)]"
+    >
+      {{ phaseCaption }}
+    </div>
   <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
     <!-- pH -->
     <Card 
@@ -260,6 +267,7 @@
       </div>
     </Card>
   </div>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -272,20 +280,34 @@ type BadgeVariant = 'success' | 'warning' | 'danger' | 'info' | 'neutral'
 
 type TargetRange = { min?: number; max?: number; target?: number }
 
+interface DayNightMeta {
+  enabled?: boolean
+  is_day?: boolean
+}
+
+interface ChemicalTarget extends TargetRange {
+  effective_now?: number
+  day?: number
+  night?: number
+}
+
 interface Props {
   telemetry?: ZoneTelemetry
+  phaseName?: string | null
   targets?: Partial<ZoneTargets> & {
-    ph?: TargetRange
-    ec?: TargetRange
+    ph?: ChemicalTarget
+    ec?: ChemicalTarget
     temp?: TargetRange
     humidity?: TargetRange
     climate_request?: { temp_air_target?: number; humidity_target?: number; co2_target?: number }
+    day_night?: DayNightMeta
   }
 }
 
 const props = withDefaults(defineProps<Props>(), {
   telemetry: () => ({ ph: null, ec: null, temperature: null, humidity: null }),
-  targets: () => ({})
+  targets: () => ({}),
+  phaseName: null,
 })
 
 // Бэкенд присылает { ph:{min,max,target}, ec:{...}, climate_request:{temp_air_target, humidity_target} }
@@ -294,15 +316,35 @@ const targets = computed(() => {
   const t = (props.targets ?? {}) as Record<string, any>
   const cr = (t.climate_request ?? {}) as Record<string, any>
   return {
-    ph: (t.ph ?? null) as TargetRange | null,
-    ec: (t.ec ?? null) as TargetRange | null,
+    ph: (t.ph ?? null) as ChemicalTarget | null,
+    ec: (t.ec ?? null) as ChemicalTarget | null,
     temp: (t.temp ?? (cr.temp_air_target != null
       ? { target: cr.temp_air_target as number }
       : null)) as TargetRange | null,
     humidity: (t.humidity ?? (cr.humidity_target != null
       ? { target: cr.humidity_target as number }
       : null)) as TargetRange | null,
+    day_night: (t.day_night ?? null) as DayNightMeta | null,
   }
+})
+
+const phaseCaption = computed(() => {
+  const name = (props.phaseName ?? '').trim()
+  const dayNight = targets.value.day_night
+  const ph = targets.value.ph
+  const parts: string[] = []
+  if (name) {
+    parts.push(`фаза рецепта ${name}`)
+  }
+  if (dayNight?.enabled && ph?.effective_now != null) {
+    const period = dayNight.is_day ? 'день' : 'ночь'
+    const dayVal = ph.day ?? ph.target
+    const nightVal = ph.night ?? ph.target
+    if (dayVal != null && nightVal != null && dayVal !== nightVal) {
+      parts.push(`сейчас (${period}) ${ph.effective_now} / день ${dayVal}`)
+    }
+  }
+  return parts.join(' · ')
 })
 
 // Вычисляем индикатор (зеленый/желтый/красный)

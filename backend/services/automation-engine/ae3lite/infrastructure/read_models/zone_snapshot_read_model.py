@@ -562,7 +562,9 @@ class PgZoneSnapshotReadModel:
             targets["extensions"] = merge_recursive(dict(existing_extensions), dict(phase_extensions))
             phase_extension_targets = phase_extensions.get("targets")
             if isinstance(phase_extension_targets, Mapping):
-                targets = merge_recursive(targets, dict(phase_extension_targets))
+                overlay = self._without_chemical_target_overlay(phase_extension_targets)
+                if overlay:
+                    targets = merge_recursive(targets, overlay)
 
         return clean_null_values(targets)
 
@@ -732,7 +734,22 @@ class PgZoneSnapshotReadModel:
         return normalized
 
     @staticmethod
+    def _without_chemical_target_overlay(payload: Mapping[str, Any]) -> Dict[str, Any]:
+        """Non-chemical keys from ``extensions.targets`` may overlay (diagnostics).
+
+        ``ph`` / ``ec`` / ``solution_temp`` stay in ``targets.extensions`` and never
+        replace SQL columns of the current recipe phase.
+        """
+        chemical_sections = {"ph", "ec", "solution_temp"}
+        return {
+            key: value
+            for key, value in payload.items()
+            if str(key).strip().lower() not in chemical_sections
+        }
+
+    @staticmethod
     def _is_recipe_phase_chemical_target_parameter(parameter: str) -> bool:
+        """Parity with PHP ``EffectiveTargetsService::isRecipePhaseChemicalTargetParameter``."""
         return parameter in {
             "ph.target",
             "ph.min",
@@ -740,6 +757,9 @@ class PgZoneSnapshotReadModel:
             "ec.target",
             "ec.min",
             "ec.max",
+            "solution_temp.target",
+            "solution_temp.min",
+            "solution_temp.max",
         }
 
     def _build_telemetry_last(self, rows: List[Mapping[str, Any]]) -> Dict[str, Any]:
@@ -923,6 +943,8 @@ class PgZoneSnapshotReadModel:
                     continue
                 parameter = parameter[len(prefix):]
             if not parameter:
+                continue
+            if self._is_recipe_phase_chemical_target_parameter(parameter):
                 continue
             self._set_nested_value(payload=merged, dotted_key=parameter, value=row.get("value"))
         return merged

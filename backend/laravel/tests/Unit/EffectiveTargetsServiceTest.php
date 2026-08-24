@@ -3,6 +3,8 @@
 namespace Tests\Unit;
 
 use App\Enums\GrowCycleStatus;
+use App\Models\AutomationConfigDocument;
+use App\Models\Greenhouse;
 use App\Models\GrowCycle;
 use App\Models\GrowCyclePhase;
 use App\Models\NutrientProduct;
@@ -13,6 +15,7 @@ use App\Models\Zone;
 use App\Services\AutomationConfigDocumentService;
 use App\Services\AutomationConfigRegistry;
 use App\Services\EffectiveTargetsService;
+use Illuminate\Support\Carbon;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\RefreshDatabase;
 use Tests\TestCase;
@@ -417,8 +420,8 @@ class EffectiveTargetsServiceTest extends TestCase
         $this->assertSame(45, $result['targets']['irrigation']['duration_sec']);
         $this->assertSame('nft', $result['targets']['irrigation']['system_type']);
 
-        $this->assertSame(10.0, $result['targets']['lighting']['photoperiod_hours']);
-        $this->assertSame('08:00', $result['targets']['lighting']['start_time']);
+        $this->assertEquals(16, $result['targets']['lighting']['photoperiod_hours']);
+        $this->assertSame('06:00:00', $result['targets']['lighting']['start_time']);
         $this->assertSame(7200, $result['targets']['lighting']['interval_sec']);
         $this->assertTrue($result['targets']['lighting']['execution']['force_skip']);
 
@@ -788,6 +791,222 @@ class EffectiveTargetsServiceTest extends TestCase
         $this->assertEquals(20.0, $result['targets']['solution_temp']['target']);
         $this->assertEquals(18.0, $result['targets']['solution_temp']['min']);
         $this->assertEquals(22.0, $result['targets']['solution_temp']['max']);
+    }
+
+    #[Test]
+    public function chemical_targets_follow_sql_current_phase_not_first_phase_snapshot(): void
+    {
+        $zone = Zone::factory()->create();
+        $recipe = Recipe::factory()->create();
+        $revision = RecipeRevision::factory()->create([
+            'recipe_id' => $recipe->id,
+            'status' => 'PUBLISHED',
+        ]);
+        $vegTemplate = RecipeRevisionPhase::factory()->create([
+            'recipe_revision_id' => $revision->id,
+            'phase_index' => 0,
+            'name' => 'VEG',
+            'ph_target' => 5.80,
+            'ph_min' => 5.60,
+            'ph_max' => 6.00,
+            'ec_target' => 1.40,
+            'ec_min' => 1.20,
+            'ec_max' => 1.60,
+        ]);
+        $flowerTemplate = RecipeRevisionPhase::factory()->create([
+            'recipe_revision_id' => $revision->id,
+            'phase_index' => 1,
+            'name' => 'FLOWER',
+            'ph_target' => 6.20,
+            'ph_min' => 6.00,
+            'ph_max' => 6.40,
+            'ec_target' => 2.00,
+            'ec_min' => 1.80,
+            'ec_max' => 2.20,
+        ]);
+
+        $cycle = GrowCycle::factory()->create([
+            'zone_id' => $zone->id,
+            'recipe_revision_id' => $revision->id,
+            'status' => GrowCycleStatus::RUNNING,
+        ]);
+        $veg = GrowCyclePhase::factory()->create([
+            'grow_cycle_id' => $cycle->id,
+            'recipe_revision_phase_id' => $vegTemplate->id,
+            'phase_index' => 0,
+            'name' => 'VEG',
+            'ph_target' => 5.80,
+            'ph_min' => 5.60,
+            'ph_max' => 6.00,
+            'ec_target' => 1.40,
+            'ec_min' => 1.20,
+            'ec_max' => 1.60,
+        ]);
+        $flower = GrowCyclePhase::factory()->create([
+            'grow_cycle_id' => $cycle->id,
+            'recipe_revision_phase_id' => $flowerTemplate->id,
+            'phase_index' => 1,
+            'name' => 'FLOWER',
+            'ph_target' => 6.20,
+            'ph_min' => 6.00,
+            'ph_max' => 6.40,
+            'ec_target' => 2.00,
+            'ec_min' => 1.80,
+            'ec_max' => 2.20,
+        ]);
+
+        $cycle->update(['current_phase_id' => $veg->id]);
+        $vegTargets = $this->service->getEffectiveTargets($cycle->id)['targets'];
+        $this->assertSame(5.80, (float) data_get($vegTargets, 'ph.target'));
+        $this->assertSame(1.40, (float) data_get($vegTargets, 'ec.target'));
+
+        $cycle->update(['current_phase_id' => $flower->id]);
+        $flowerTargets = $this->service->getEffectiveTargets($cycle->id)['targets'];
+        $this->assertSame(6.20, (float) data_get($flowerTargets, 'ph.target'));
+        $this->assertSame(2.00, (float) data_get($flowerTargets, 'ec.target'));
+        $this->assertSame(6.00, (float) data_get($flowerTargets, 'ph.min'));
+        $this->assertSame(2.20, (float) data_get($flowerTargets, 'ec.max'));
+    }
+
+    #[Test]
+    public function day_night_effective_now_uses_night_target_outside_photoperiod(): void
+    {
+        $frozen = Carbon::parse('2026-08-24 21:00:00', 'UTC');
+        Carbon::setTestNow($frozen);
+        \Carbon\CarbonImmutable::setTestNow($frozen);
+        $greenhouse = Greenhouse::factory()->create(['timezone' => 'UTC']);
+        $zone = Zone::factory()->create(['greenhouse_id' => $greenhouse->id]);
+        $recipe = Recipe::factory()->create();
+        $revision = RecipeRevision::factory()->create([
+            'recipe_id' => $recipe->id,
+            'status' => 'PUBLISHED',
+        ]);
+        $phase = RecipeRevisionPhase::factory()->create([
+            'recipe_revision_id' => $revision->id,
+            'phase_index' => 0,
+            'name' => 'DayNight',
+            'ph_target' => 5.80,
+            'ec_target' => 1.40,
+            'day_night_enabled' => true,
+            'lighting_photoperiod_hours' => 12,
+            'lighting_start_time' => '06:00:00',
+            'extensions' => [
+                'day_night' => [
+                    'lighting' => ['day_start_time' => '06:00', 'day_hours' => 12],
+                    'ph' => ['day' => 5.80, 'night' => 6.40],
+                    'ec' => ['day' => 1.40, 'night' => 1.10],
+                ],
+            ],
+        ]);
+        $cycle = GrowCycle::factory()->create([
+            'zone_id' => $zone->id,
+            'recipe_revision_id' => $revision->id,
+            'status' => GrowCycleStatus::RUNNING,
+        ]);
+        $snapshotPhase = GrowCyclePhase::factory()->create([
+            'grow_cycle_id' => $cycle->id,
+            'recipe_revision_phase_id' => $phase->id,
+            'phase_index' => 0,
+            'name' => 'DayNight',
+            'ph_target' => 5.80,
+            'ec_target' => 1.40,
+            'day_night_enabled' => true,
+            'lighting_photoperiod_hours' => 12,
+            'lighting_start_time' => '06:00:00',
+            'extensions' => [
+                'day_night' => [
+                    'lighting' => ['day_start_time' => '06:00', 'day_hours' => 12],
+                    'ph' => ['day' => 5.80, 'night' => 6.40],
+                    'ec' => ['day' => 1.40, 'night' => 1.10],
+                ],
+            ],
+        ]);
+        $cycle->update(['current_phase_id' => $snapshotPhase->id]);
+
+        $result = $this->service->getEffectiveTargets($cycle->id);
+
+        $this->assertFalse((bool) data_get($result, 'targets.day_night.is_day'));
+        $this->assertTrue((bool) data_get($result, 'targets.day_night.enabled'));
+        $this->assertSame(5.80, (float) data_get($result, 'targets.ph.target'));
+        $this->assertSame(6.40, (float) data_get($result, 'targets.ph.effective_now'));
+        $this->assertSame(6.40, (float) data_get($result, 'targets.ph.night'));
+        $this->assertSame(1.10, (float) data_get($result, 'targets.ec.effective_now'));
+        Carbon::setTestNow();
+        \Carbon\CarbonImmutable::setTestNow();
+    }
+
+    #[Test]
+    public function irrigation_execution_comes_from_compiled_bundle_not_live_logic_profile_document(): void
+    {
+        $zone = Zone::factory()->create();
+        $recipe = Recipe::factory()->create();
+        $revision = RecipeRevision::factory()->create([
+            'recipe_id' => $recipe->id,
+            'status' => 'PUBLISHED',
+        ]);
+        $phase = RecipeRevisionPhase::factory()->create([
+            'recipe_revision_id' => $revision->id,
+            'phase_index' => 0,
+            'name' => 'Bundle SoT',
+            'ph_target' => 6.0,
+            'irrigation_mode' => 'SUBSTRATE',
+            'irrigation_interval_sec' => 3600,
+            'irrigation_duration_sec' => 300,
+        ]);
+        $cycle = GrowCycle::factory()->create([
+            'zone_id' => $zone->id,
+            'recipe_revision_id' => $revision->id,
+            'status' => GrowCycleStatus::RUNNING,
+        ]);
+        $this->storeZoneLogicProfile($zone->id, 'working', [
+            'irrigation' => [
+                'enabled' => true,
+                'execution' => [
+                    'interval_minutes' => 20,
+                    'duration_seconds' => 45,
+                ],
+            ],
+            'lighting' => [
+                'enabled' => true,
+                'execution' => [
+                    'photoperiod' => ['hours_on' => 10],
+                    'start_time' => '08:00',
+                ],
+            ],
+        ], true);
+
+        $snapshotPhase = GrowCyclePhase::factory()->create([
+            'grow_cycle_id' => $cycle->id,
+            'recipe_revision_phase_id' => $phase->id,
+            'phase_index' => 0,
+            'name' => 'Bundle SoT',
+            'ph_target' => 6.0,
+            'irrigation_mode' => 'SUBSTRATE',
+            'irrigation_interval_sec' => 3600,
+            'irrigation_duration_sec' => 300,
+            'lighting_photoperiod_hours' => 16,
+            'lighting_start_time' => '06:00:00',
+        ]);
+        $cycle->update(['current_phase_id' => $snapshotPhase->id]);
+
+        $document = AutomationConfigDocument::query()
+            ->where('namespace', AutomationConfigRegistry::NAMESPACE_ZONE_LOGIC_PROFILE)
+            ->where('scope_type', AutomationConfigRegistry::SCOPE_ZONE)
+            ->where('scope_id', $zone->id)
+            ->firstOrFail();
+        $payload = is_array($document->payload) ? $document->payload : [];
+        data_set($payload, 'profiles.working.subsystems.irrigation.execution.interval_minutes', 99);
+        data_set($payload, 'profiles.working.subsystems.lighting.execution.photoperiod.hours_on', 4);
+        $document->payload = $payload;
+        $document->save();
+
+        $result = $this->service->getEffectiveTargets($cycle->id);
+
+        $this->assertSame(1200, data_get($result, 'targets.irrigation.interval_sec'));
+        $this->assertSame(45, data_get($result, 'targets.irrigation.duration_sec'));
+        $this->assertEquals(16, data_get($result, 'targets.lighting.photoperiod_hours'));
+        $this->assertSame('06:00:00', data_get($result, 'targets.lighting.start_time'));
+        $this->assertSame('automation_effective_bundle', data_get($result, 'targets.extensions.automation_logic.source'));
     }
 
     /**

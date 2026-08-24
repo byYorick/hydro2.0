@@ -72,6 +72,7 @@
       <ZoneTargets
         :telemetry="telemetry"
         :targets="targets"
+        :phase-name="activeGrowCycle?.currentPhase?.name ?? null"
       />
 
       <!-- Прогресс фаз -->

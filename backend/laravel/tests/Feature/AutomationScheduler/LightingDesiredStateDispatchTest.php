@@ -5,6 +5,10 @@ namespace Tests\Feature\AutomationScheduler;
 use App\Enums\GrowCycleStatus;
 use App\Models\Greenhouse;
 use App\Models\GrowCycle;
+use App\Models\GrowCyclePhase;
+use App\Models\Recipe;
+use App\Models\RecipeRevision;
+use App\Models\RecipeRevisionPhase;
 use App\Models\Zone;
 use App\Services\AutomationScheduler\ScheduleCycleContext;
 use App\Services\AutomationScheduler\ScheduleDispatcher;
@@ -66,6 +70,46 @@ class LightingDesiredStateDispatchTest extends TestCase
 
             return ($payload['desired_state'] ?? null) === 'off'
                 && ($payload['brightness_pct'] ?? null) === 0;
+        });
+        Carbon::setTestNow();
+    }
+
+    public function test_window_exit_uses_recipe_phase_photoperiod_without_et_mock(): void
+    {
+        Carbon::setTestNow(CarbonImmutable::parse('2026-08-17 15:00:00', 'UTC'));
+        [$zone, $cycle] = $this->createZoneAndCycleWithLightingPhase(
+            startTime: '08:00:00',
+            photoperiodHours: 10,
+        );
+        $this->seedZoneCursor($zone->id, CarbonImmutable::parse('2026-08-17 14:30:00', 'UTC'));
+
+        Http::fake(function (Request $request) use ($zone) {
+            if ($request->method() === 'POST' && str_ends_with($request->url(), '/zones/'.$zone->id.'/start-lighting-tick')) {
+                return Http::response([
+                    'status' => 'ok',
+                    'data' => [
+                        'task_id' => '5109',
+                        'zone_id' => $zone->id,
+                        'accepted' => true,
+                    ],
+                ], 200);
+            }
+
+            return Http::response(['status' => 'error'], 500);
+        });
+
+        /** @var SchedulerCycleService $service */
+        $service = $this->app->make(SchedulerCycleService::class);
+        $stats = $service->runCycle($this->schedulerConfig(), [$zone->id]);
+
+        $this->assertGreaterThanOrEqual(1, (int) ($stats['successful_dispatches'] ?? 0));
+        Http::assertSent(function (Request $request) use ($zone): bool {
+            if (! str_ends_with($request->url(), '/zones/'.$zone->id.'/start-lighting-tick')) {
+                return false;
+            }
+            $payload = $request->data();
+
+            return ($payload['desired_state'] ?? null) === 'off';
         });
         Carbon::setTestNow();
     }
@@ -434,6 +478,44 @@ class LightingDesiredStateDispatchTest extends TestCase
         );
 
         return [$zone, $cycle];
+    }
+
+    /**
+     * @return array{0: Zone, 1: GrowCycle}
+     */
+    private function createZoneAndCycleWithLightingPhase(string $startTime, float $photoperiodHours): array
+    {
+        [$zone, $cycle] = $this->createZoneAndCycle();
+        $recipe = Recipe::factory()->create();
+        $revision = RecipeRevision::factory()->create([
+            'recipe_id' => $recipe->id,
+            'status' => 'PUBLISHED',
+        ]);
+        $template = RecipeRevisionPhase::factory()->create([
+            'recipe_revision_id' => $revision->id,
+            'phase_index' => 0,
+            'name' => 'Lighting',
+            'ph_target' => 5.8,
+            'ec_target' => 1.4,
+            'lighting_photoperiod_hours' => $photoperiodHours,
+            'lighting_start_time' => $startTime,
+        ]);
+        $snapshot = GrowCyclePhase::factory()->create([
+            'grow_cycle_id' => $cycle->id,
+            'recipe_revision_phase_id' => $template->id,
+            'phase_index' => 0,
+            'name' => 'Lighting',
+            'ph_target' => 5.8,
+            'ec_target' => 1.4,
+            'lighting_photoperiod_hours' => $photoperiodHours,
+            'lighting_start_time' => $startTime,
+        ]);
+        $cycle->update([
+            'recipe_revision_id' => $revision->id,
+            'current_phase_id' => $snapshot->id,
+        ]);
+
+        return [$zone, $cycle->fresh()];
     }
 
     private function seedZoneCursor(int $zoneId, CarbonImmutable $cursorAt): void

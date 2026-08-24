@@ -11,9 +11,14 @@ use App\Services\AutomationConfigRegistry;
 use App\Services\ZoneService;
 
 /**
- * Синхронизирует automation config documents (cycle_start_snapshot, phase_overrides,
- * config_overrides) при создании/изменении цикла — AE3 читает эти документы через
- * effective bundle.
+ * Синхронизирует automation config documents (cycle.start_snapshot, phase_overrides,
+ * config_overrides) при создании/изменении цикла. Compiler кладёт их в
+ * automation_effective_bundles.
+ *
+ * cycle.start_snapshot пишется с первой фазы цикла (orderBy phase_index), не с
+ * current_phase_id. Химические ключи (ph_target/ec_target и min/max) в документ не входят: SoT
+ * агрохимии — колонки grow_cycle_phases текущей фазы. AE3 runtime читает pH/EC
+ * из SQL JOIN (PgZoneSnapshotReadModel), не из cycle.start_snapshot.phase.
  */
 class GrowCycleConfigSyncer
 {
@@ -41,12 +46,6 @@ class GrowCycleConfigSyncer
             'phase_id' => $firstPhase->recipe_revision_phase_id,
             'phase_index' => $firstPhase->phase_index,
             'name' => $firstPhase->name,
-            'ph_target' => $firstPhase->ph_target,
-            'ph_min' => $firstPhase->ph_min,
-            'ph_max' => $firstPhase->ph_max,
-            'ec_target' => $firstPhase->ec_target,
-            'ec_min' => $firstPhase->ec_min,
-            'ec_max' => $firstPhase->ec_max,
             'irrigation_mode' => $firstPhase->irrigation_mode,
             'irrigation_interval_sec' => $firstPhase->irrigation_interval_sec,
             'irrigation_duration_sec' => $firstPhase->irrigation_duration_sec,

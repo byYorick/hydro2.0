@@ -146,6 +146,23 @@ describe('ZoneTargets.vue', () => {
     expect(wrapper.text()).toContain('5.8')
   })
 
+  it('показывает фазу рецепта и ночной effective_now', () => {
+    const wrapper = mount(ZoneTargets, {
+      props: {
+        phaseName: 'FLOWER',
+        telemetry: { ph: 6.3 },
+        targets: {
+          ph: { target: 5.8, min: 5.6, max: 6.4, day: 5.8, night: 6.4, effective_now: 6.4 },
+          day_night: { enabled: true, is_day: false },
+        },
+      },
+    })
+
+    expect(wrapper.text()).toContain('фаза рецепта FLOWER')
+    expect(wrapper.text()).toContain('сейчас (ночь) 6.4')
+    expect(wrapper.text()).toContain('день 5.8')
+  })
+
   it('отображает все метрики при наличии целей', () => {
     const wrapper = mount(ZoneTargets, {
       props: {
