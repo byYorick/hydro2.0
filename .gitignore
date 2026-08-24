@@ -37,6 +37,7 @@ tests/e2e/reports/junit.xml
 tests/e2e/reports/timeline.json
 tests/e2e/reports/*.xml
 tests/e2e/reports/*.json
+tests/e2e/reports/smoke/
 
 # CMake / ESP-IDF
 build/

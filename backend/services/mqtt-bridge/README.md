@@ -1,6 +1,8 @@
 # mqtt-bridge
 
-Ops/probe FastAPI-сервис (порт **9000**). **Не** публикует device-команды в MQTT — канон команд: `history-logger` `POST /commands`.
+Роль: **ops probe + Prometheus metrics**, не command path.
+
+Ops/probe FastAPI-сервис (порт **9000**). Device-команды в MQTT не публикует: `POST /bridge/{zones|nodes}/commands` → **410**. Канон команд: `history-logger` `POST /commands`.
 
 ## Endpoints
 

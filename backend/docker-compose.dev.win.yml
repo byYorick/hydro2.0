@@ -356,6 +356,8 @@ services:
       - "8003:8003"
       - "9403:9403"  # Prometheus metrics
     restart: unless-stopped
+    profiles:
+      - sim
 
   node-sim-manager:
     build:
@@ -372,6 +374,8 @@ services:
     ports:
       - "9100:9100"
     restart: unless-stopped
+    profiles:
+      - sim
 
   telemetry-aggregator:
     build:

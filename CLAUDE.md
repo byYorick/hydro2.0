@@ -2,6 +2,8 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+> **канон правил = AGENTS.md.** Этот файл — тонкий адаптер: operational-команды (Docker, ESP-IDF, make, порты). SoT/freeze не дублировать; при конфликте следовать `AGENTS.md`.
+
 ## Язык общения
 
 **ВАЖНО: Всегда общайся на русском языке (русский язык) при взаимодействии с пользователем.**
@@ -27,13 +29,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Основная документация
 
 **ВСЕГДА читай это в первую очередь при работе над задачей:**
-- `doc_ai/INDEX.md` — главный индекс документации (source of truth)
+- `AGENTS.md` — канон правил (SoT, freeze, инварианты)
+- `doc_ai/INDEX.md` — главный индекс документации
 - `doc_ai/SYSTEM_ARCH_FULL.md` — архитектура системы
 - `doc_ai/ARCHITECTURE_FLOWS.md` — **архитектурные схемы и пайплайны** (визуализация потоков данных)
 - `doc_ai/DEV_CONVENTIONS.md` — конвенции разработки
 - `README.md` — быстрые ссылки и обзор структуры
 
-**Примечание:** `doc_ai/` — это единственный source of truth для документации. Папка `docs/` удалена; все её уникальные материалы перенесены в `doc_ai/13_TESTING/`, `doc_ai/12_ANDROID_APP/` и `doc_ai/07_FRONTEND/ui_refs/`.
+**Примечание:** поведение runtime — код; защищённые контракты — canonical в `doc_ai/`. Папка `docs/` удалена; уникальные материалы — в `doc_ai/13_TESTING/`, `doc_ai/12_ANDROID_APP/` и `doc_ai/07_FRONTEND/ui_refs/`.
 
 ### Документация по компонентам
 
@@ -54,7 +57,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### Сборка и запуск
 
 ```bash
-# Запустить dev окружение (из корня проекта)
+# Core: laravel, mqtt-bridge, history-logger, automation-engine, postgres, redis, mosquitto
+# digital-twin / feature-builder / node-emulator — не часть default up
 make up
 # Или: docker compose -f backend/docker-compose.dev.yml up -d --pull missing
 # Пересборка образов (Dockerfile/зависимости): make up-build
@@ -271,12 +275,12 @@ Laravel scheduler-dispatch → REST → Automation-Engine → REST → History-L
 - Pytest для тестирования
 - Расположены в `backend/services/`
 
-### Подход "Документация в первую очередь"
+### Source of Truth и документация
 
-Из `DEV_CONVENTIONS.md`:
-1. **Сначала документация** — обнови/создай спецификацию (Markdown)
-2. **Определи интерфейс** — заголовки, API контракты, MQTT схемы
-3. **Реализуй** — напиши фактический код
+Канон: `AGENTS.md` / `doc_ai/DEV_CONVENTIONS.md`.
+- Поведение runtime — код (`code = SoT`).
+- Защищённые контракты (MQTT, команды, схема БД, HL API, AE3 ingress/FSM, retention) — canonical в `doc_ai/`; doc-first **только** при их изменении.
+- Новые Python-сервисы / AE3 `task_type` / authority document types — запрещены без явного запроса.
 
 ### Политика Breaking Changes
 
@@ -291,7 +295,7 @@ Laravel scheduler-dispatch → REST → Automation-Engine → REST → History-L
 
 ### Приоритет правил (от общего к частному)
 
-1. Корневой `AGENTS.md` / `CLAUDE.md`
+1. Корневой `AGENTS.md` (канон). `CLAUDE.md` — адаптер.
 2. Спецификации слоя в `doc_ai/0X_.../*`
 3. Локальный `AGENTS.md` в подкаталоге задачи
 4. Гайды ИИ в `doc_ai/10_AI_DEV_GUIDES/`
@@ -315,7 +319,9 @@ Laravel scheduler-dispatch → REST → Automation-Engine → REST → History-L
 
 ### Источники истины
 
-- **`doc_ai/`** — единственный source of truth, всегда редактируй здесь (включая `13_TESTING/` для E2E-документации)
+- **Канон правил** — `AGENTS.md`.
+- **Поведение runtime** — код (`code = SoT`).
+- **Защищённые контракты** — `doc_ai/` (включая `13_TESTING/` для E2E); обязаны совпадать с кодом.
 - **Локальные `AGENTS.md`** — всегда проверяй их наличие в подкаталогах перед работой
 
 ### Чек-лист при изменении протоколов/данных
@@ -389,7 +395,8 @@ Laravel scheduler-dispatch → REST → Automation-Engine → REST → History-L
 ### Поведение ИИ-агента
 
 - Следовать `doc_ai/10_AI_DEV_GUIDES/AI_ASSISTANT_DEV_GUIDE.md` как базовому чек-листу
-- **Не придумывать архитектуру заново** и не игнорировать спецификации `doc_ai/`
+- **Не придумывать архитектуру заново.** Runtime сверять с кодом; `doc_ai/` — канон защищённых контрактов
+- Не добавлять Python-сервисы / AE3 `task_type` / authority types без явного запроса
 - Если изменение затрагивает пайплайн `ESP32 → MQTT → Python → PG → Laravel → Vue` или схемы взаимодействия и выглядит **несовместимым или неочевидным** — **остановиться и запросить подтверждение** у пользователя
 - Если данных недостаточно — требовать список вопросов, а не домысливать
 - Для сложных задач — сначала предоставить план и список затронутых файлов, потом реализация

@@ -1,7 +1,7 @@
 # Архив промежуточных отчётов и legacy-документов
 
 **Статус:** `archive` — не source of truth.  
-**Дата обновления:** 2026-08-02
+**Дата обновления:** 2026-08-24
 
 Исторические материалы. Для актуальной работы используйте:
 
@@ -32,6 +32,9 @@
 
 - `AUDIT_2026_05_28_BUGFIX_PLAN.md`
 - `AUDIT_2026_07_07_RELIABILITY_PLAN.md`
+- `DEVELOPMENT_PRIORITIES.md` — устаревший спринт-план (firmware «5% / блокер»)
+
+`08_SECURITY_AND_OPS/` stub → `REPORTS/SECURITY_AND_SYNC_ISSUES.md` (ссылки на удалённые `pid_config_service` / `correction_controller`).
 
 Система / backend / frontend — см. файлы в этой папке; stubs на прежних путях в `01_SYSTEM/`, `04_BACKEND_CORE/`, `07_FRONTEND/`.
 

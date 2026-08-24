@@ -16,13 +16,8 @@ Schedule::command('telemetry:cleanup-raw --days='.config('hydro.telemetry_retent
     ->dailyAt('02:00')
     ->description('Очистка старых raw данных телеметрии');
 
-// Агрегация данных: каждые 15 минут
-// ВНИМАНИЕ: Python telemetry-aggregator (сервис) выполняет ту же агрегацию в фоне.
-// Оба используют ON CONFLICT (1m - DO UPDATE SET, Laravel - DO NOTHING), данные не дублируются.
-// При наличии Python-сервиса эта команда избыточна, но безопасна.
-Schedule::command('telemetry:aggregate')
-    ->everyFifteenMinutes()
-    ->description('Агрегация телеметрии в таблицы 1m, 1h, daily');
+// Непрерывный writer агрегатов = Python telemetry-aggregator (default compose, ON CONFLICT DO UPDATE).
+// Artisan telemetry:aggregate не в Schedule: seed/backfill (TelemetrySeeder, ручной backfill), ON CONFLICT DO NOTHING.
 
 // Генерация прогнозов AI: каждые 15 минут
 Schedule::job(new \App\Jobs\GeneratePredictionsJob)

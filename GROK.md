@@ -1,14 +1,12 @@
 # GROK.md
 # Правила для Grok (Hydro 2.0)
 
-**Дата обновления:** 2026-07-15  
-**Версия:** 1.0  
-**Статус:** Свод правил для Grok Build / Grok agent (аналог `CLAUDE.md` + выжимка `AGENTS.md`)
+**Дата обновления:** 2026-08-24  
+**Версия:** 1.1  
+**Статус:** Тонкий адаптер для Grok Build / Grok agent
 
-> Этот файл — operational guide для Grok.  
-> Общие правила репозитория: `AGENTS.md`.  
-> Подробный operational guide для Claude Code: `CLAUDE.md` (Grok тоже может его читать).  
-> Source of truth документации: **`doc_ai/`**.
+> **канон правил = AGENTS.md.** Этот файл — operational guide (Docker, ESP-IDF, make, порты). При конфликте следовать `AGENTS.md`.
+> Claude Code: `CLAUDE.md` (тот же канон).
 
 ---
 
@@ -17,7 +15,8 @@
 - **Всегда общайся с пользователем на русском.**
 - Английский — только код, идентификаторы API/MQTT, имена файлов, технические термины (`docker compose`, `pytest`, `HMAC`).
 - Сообщения коммитов и обновления документации — **на русском**.
-- Не придумывать архитектуру заново; не игнорировать `doc_ai/`.
+- Не придумывать архитектуру заново. Runtime сверять с кодом; `doc_ai/` — канон защищённых контрактов.
+- Новые Python-сервисы / AE3 `task_type` / authority types — запрещены без явного запроса.
 - Если данных мало — **спросить**, а не домысливать.
 - Для сложных задач: сначала **план + список файлов**, потом код.
 - Если изменение ломает пайплайн `ESP32 → MQTT → Python → PG → Laravel → Vue` или неочевидно — **остановиться и спросить подтверждение**.
@@ -27,7 +26,7 @@
 
 ## 1) Приоритет правил
 
-1. Корневой `AGENTS.md` / `GROK.md` / `CLAUDE.md`
+1. Корневой `AGENTS.md` (канон). `GROK.md` / `CLAUDE.md` — адаптеры.
 2. Спецификации слоя в `doc_ai/0X_.../*`
 3. Локальный `AGENTS.md` / `AGENT.md` в подкаталоге
 4. Гайды ИИ в `doc_ai/10_AI_DEV_GUIDES/`
@@ -89,7 +88,7 @@ Laravel и AE **не** публикуют MQTT напрямую.
 ## 4) Dev-команды (Make)
 
 ```bash
-make up              # поднять dev-стек (backend/docker-compose.dev.yml)
+make up              # core: laravel, mqtt-bridge, history-logger, automation-engine, postgres, redis, mosquitto
 make down            # остановить
 make migrate         # миграции + DevBootstrapSeeder
 make seed            # полный seed
@@ -271,11 +270,9 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - I2C через общий mutex; NVS только через `node_config`
 - ESP-IDF path: `/home/georgiy/esp/esp-idf/`, version **v5.5.2**
 
-### Документация first
+### Source of Truth
 
-1. Спека в `doc_ai/`  
-2. Интерфейс / контракт  
-3. Код  
+Канон: `AGENTS.md`. Поведение runtime — код. Doc-first — только защищённые контракты. Новые Python-сервисы / AE3 `task_type` / authority types — запрещены без явного запроса.
 
 ---
 
@@ -366,9 +363,9 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 | Файл | Роль |
 |------|------|
 | `AGENTS.md` | канон правил для всех ИИ-агентов |
-| `CLAUDE.md` | расширенный guide для Claude Code (совместим с Grok) |
-| `GROK.md` | этот файл — свод для Grok |
+| `CLAUDE.md` | адаптер Claude Code (команды/порты) |
+| `GROK.md` | этот файл — адаптер Grok |
 | `.grok/rules/*.md` | автозагрузка Grok (жёсткие инварианты) |
-| `doc_ai/` | единственный source of truth домена |
+| `doc_ai/` | canonical защищённых контрактов (обязан совпадать с кодом) |
 
 **Не дублировать** длинные спеки сюда — ссылаться на `doc_ai/` и читать по месту.

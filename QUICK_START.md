@@ -34,6 +34,8 @@
 make up
 ```
 
+Опционально: `make up-sim` поднимает digital-twin + node-sim-manager (profile `sim`); `make up-ml` — feature-builder (profile `ml`).
+
 Для полного чистого dev-refresh с удалением volume, сервисных image и пересборкой без cache.
 После `refresh` в local dev в БД остаются только `admin@example.com` и `agronomist@example.com`:
 

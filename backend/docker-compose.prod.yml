@@ -567,6 +567,8 @@ services:
       retries: 3
       start_period: 30s
     restart: unless-stopped
+    profiles:
+      - sim
   # node-sim-manager — только для dev/e2e (симулятор узлов), в production не включается
   telemetry-aggregator:
     build:

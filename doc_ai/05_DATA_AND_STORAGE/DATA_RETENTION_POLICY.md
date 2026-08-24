@@ -98,12 +98,10 @@ telemetry_raw   (= telemetry_samples — актуальное имя табли�
 | `telemetry_agg_1h` | **365 дней** |
 | `telemetry_daily` | **без авто-retention** (cold archive — planned) |
 
-> **Реализация (двойной механизм агрегации):**
-> - Laravel `telemetry:aggregate` — каждые 15 минут, использует `ON CONFLICT DO NOTHING`
-> - Python `telemetry-aggregator` — непрерывно в фоне, использует `ON CONFLICT DO UPDATE SET`
->
-> Данные не дублируются: Python-сервис перезаписывает агрегаты при конфликте, Laravel пропускает.
-> При наличии Python-сервиса Laravel-команда избыточна, но безопасна.
+> **Реализация агрегации (один непрерывный writer):**
+> - Непрерывный writer в dev/prod compose: Python `telemetry-aggregator` — фоновый цикл, `ON CONFLICT DO UPDATE SET`.
+> - Laravel `telemetry:aggregate` **не** в Schedule. Команда оставлена для seed/backfill (`TelemetrySeeder`, ручной `--from/--to`). Использует `ON CONFLICT DO NOTHING`.
+> - Laravel `telemetry:cleanup-raw` остаётся в Schedule (ежедневно 02:00) — retention raw samples, не агрегация.
 
 Имя `telemetry_agg_daily` встречалось в старых черновиках; **актуальное имя в миграциях — `telemetry_daily`** (`2025_11_16_184939_create_telemetry_aggregated_tables.php`). В коде Laravel и Python используется только `telemetry_daily`.
 
@@ -286,7 +284,9 @@ pg_dump + compression + encryption
 
 # 10. Архивирование (Archiving Engine)
 
-Архивация и прогрессия агрегатов выполняются **по расписанию приложения** (команды Laravel вроде `telemetry:cleanup-raw` / `telemetry:aggregate`, политики Timescale/БД).
+Retention raw samples: Laravel `telemetry:cleanup-raw` по расписанию + Timescale policy на `telemetry_samples`.
+Прогрессия агрегатов (`raw → agg_1m → agg_1h → daily`) — непрерывный Python `telemetry-aggregator` (единственный writer в проде).
+Laravel `telemetry:aggregate` — seed/backfill, не production schedule.
 
 ```
 raw → agg_1m → agg_1h → daily → cold archive

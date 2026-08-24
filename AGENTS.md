@@ -1,9 +1,9 @@
 # AGENTS.md
 # Правила для ИИ‑агентов (Hydro 2.0, весь репозиторий)
 
-**Дата обновления:** 2026-08-18  
-**Версия:** 2.0  
-**Статус:** Основной документ правил для ИИ‑агентов
+**Дата обновления:** 2026-08-24  
+**Версия:** 2.1  
+**Статус:** Основной документ правил для ИИ‑агентов (канон)
 
 ## Цель
 
@@ -20,7 +20,9 @@
 - Общаться с пользователем только на русском языке.
 - Перед работой открыть минимум: `doc_ai/INDEX.md`, `doc_ai/SYSTEM_ARCH_FULL.md`,
   `doc_ai/ARCHITECTURE_FLOWS.md`, `doc_ai/DEV_CONVENTIONS.md`.
-- `doc_ai/` — единственный source of truth; папка `docs/` удалена.
+- **Поведение runtime — код** (`code = SoT`). Защищённые контракты (MQTT, команды, схема БД, HL API, AE3 ingress/FSM, retention) — canonical в `doc_ai/`, обязаны совпадать с кодом; при drift правим docs **или** явно чиним код. Doc-first — только для этих контрактов, не для любой фичи. Папка `docs/` удалена.
+- Новые Python-сервисы, новые AE3 `task_type`, новые authority document types — **запрещены без явного запроса** пользователя.
+- Default `make up` = core: laravel, mqtt-bridge, history-logger, automation-engine, postgres, redis, mosquitto (+ prometheus/grafana по желанию). `digital-twin`, `feature-builder`, `node-emulator` — не часть default up.
 - Команды к узлам не публикуются напрямую в MQTT из Laravel или automation-engine (только через history-logger):
   единая точка публикации в MQTT — `history-logger`.
 - Базовый поток команд: `Laravel scheduler-dispatch -> Automation-Engine -> History-Logger -> MQTT -> ESP32`.
@@ -32,7 +34,7 @@
 ## Связанные документы
 
 - `doc_ai/DEV_CONVENTIONS.md` — общие конвенции разработки и оформления документации.
-- `doc_ai/SYSTEM_ARCH_FULL.md` — архитектурная истина.
+- `doc_ai/SYSTEM_ARCH_FULL.md` — архитектурный обзор (runtime — код).
 - `doc_ai/ARCHITECTURE_FLOWS.md` — визуализация ключевых потоков и пайплайнов.
 - `doc_ai/TASKS_FOR_AI_AGENTS.md` — правила постановки задач для ИИ.
 - `doc_ai/04_BACKEND_CORE/HISTORY_LOGGER_API.md` — контракт REST API публикации команд.
@@ -54,9 +56,17 @@
 
 ## 1) Источники истины и контекст
 
-- Архитектурная истина — в `doc_ai/SYSTEM_ARCH_FULL.md` и `doc_ai/01_SYSTEM/*`.
-- Документация в `doc_ai/` — единственный источник истины (source of truth). Папка `docs/` удалена; уникальные материалы перенесены в `doc_ai/13_TESTING/`, `doc_ai/12_ANDROID_APP/`, `doc_ai/07_FRONTEND/ui_refs/`.
-- Спецификации по слоям:
+Формула SoT (канон, согласован с `doc_ai/DEV_CONVENTIONS.md`):
+
+1. **Поведение runtime — код** (`code = SoT`).
+2. Защищённые контракты (MQTT, команды, схема БД, HL API, AE3 ingress/FSM, retention) — canonical в `doc_ai/`; обязаны совпадать с кодом. При drift правим docs **или** явно чиним код.
+3. Doc-first остаётся **только** для изменения этих контрактов, не для любой фичи.
+4. Новые Python-сервисы, новые AE3 `task_type`, новые authority document types — **запрещены без явного запроса** пользователя.
+5. Default `make up` = core: laravel, mqtt-bridge, history-logger, automation-engine, postgres, redis, mosquitto (+ prometheus/grafana по желанию). `digital-twin`, `feature-builder`, `node-emulator` — не часть default up.
+
+- Архитектура и обзор — `doc_ai/SYSTEM_ARCH_FULL.md` и `doc_ai/01_SYSTEM/*` (не подменяют runtime-код).
+- Папка `docs/` удалена; уникальные материалы перенесены в `doc_ai/13_TESTING/`, `doc_ai/12_ANDROID_APP/`, `doc_ai/07_FRONTEND/ui_refs/`.
+- Спецификации по слоям (canonical контрактов и гайды):
   - прошивки/железо: `doc_ai/02_HARDWARE_FIRMWARE`
   - MQTT/транспорт: `doc_ai/03_TRANSPORT_MQTT`
   - бэкенд/core: `doc_ai/04_BACKEND_CORE`
@@ -72,11 +82,14 @@
   (`tests/e2e/AGENTS.md` — обязателен для YAML E2E / realhw `test_node`).
 - Открыть 2-3 ключевых документа своего слоя из списка выше.
 - Realhw на ESP32: `doc_ai/13_TESTING/REALHW_TEST_NODE_AGENT_GUIDE.md` (не Playwright, не HIL 8080/1883).
+- Не добавлять новые Python-сервисы / AE3 `task_type` / authority document types без явного запроса.
+- Не поднимать `digital-twin`, `feature-builder`, `node-emulator` как часть обычного `make up`.
 
 ## 1.2) Среда разработки
 
 - Backend/Laravel, Python-сервисы, БД и e2e запускать в Docker; команды выполнять внутри контейнеров проекта.
 - Прошивки ESP32 собирать в окружении ESP-IDF (вне Docker, если иное не указано локальными инструкциями).
+- Default `make up` поднимает **core** (см. §1); опциональные сервисы — только по запросу.
 - Основные Docker-файлы:
   - `backend/docker-compose.dev.yml`
   - `backend/docker-compose.dev.win.yml`
@@ -135,7 +148,7 @@
 - БД (PostgreSQL):
   - все изменения через Laravel‑миграции; ручной DDL запрещён
     (см. `doc_ai/10_AI_DEV_GUIDES/DATABASE_SCHEMA_AI_GUIDE.md`).
-  - новые сущности/поля сначала описывать в `doc_ai/05_DATA_AND_STORAGE/DATA_MODEL_REFERENCE.md`.
+  - новые сущности/поля схемы (защищённый контракт) описывать в `doc_ai/05_DATA_AND_STORAGE/DATA_MODEL_REFERENCE.md` вместе с миграцией.
   - не менять типы полей телеметрии без согласования всех слоёв.
   - избегать циклических FK‑зависимостей.
 - MQTT:
@@ -195,7 +208,9 @@
 ## 5) Поведение ИИ
 
 - Следовать `doc_ai/10_AI_DEV_GUIDES/AI_ASSISTANT_DEV_GUIDE.md` как базовому чек‑листу.
-- Не придумывать архитектуру заново и не игнорировать спецификации.
+- Не придумывать архитектуру заново. Поведение runtime сверять с кодом; `doc_ai/` — канон защищённых контрактов, не замена runtime.
+- Doc-first не применять к обычным фичам и багфиксам — только при изменении защищённых контрактов.
+- Новые Python-сервисы, AE3 `task_type`, authority document types — **запрещены без явного запроса**.
 - Если изменение затрагивает пайплайн/схемы взаимодействия и похоже на несовместимое или неочевидно,
   остановиться и запросить подтверждение.
 - Всегда отвечать на русском языке; англоязычные термины использовать только как технические

@@ -61,7 +61,8 @@ Breaking-change: HTTP-транспорт задач планировщика у�
 
 ### 2.4 `mqtt-bridge` (ops / probe)
 
-Порт: `9000` (REST + `/metrics`).
+Роль: **ops probe + metrics**, не command path. Порт: `9000` (REST + `/metrics`).
+`POST /bridge/zones/{zone_id}/commands` и `POST /bridge/nodes/{node_uid}/commands` отвечают **410** (`endpoint_deprecated_use_history_logger`). Канон публикации команд — `history-logger` `POST /commands`.
 
 | Метод | Путь | Статус |
 |-------|------|--------|

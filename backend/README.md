@@ -31,7 +31,7 @@ Laravel выполняет роль API Gateway и предоставляет:
 - `history-logger` — подписка на MQTT, запись телеметрии в PostgreSQL; **единственная** публикация команд в MQTT (REST + metrics **9300**/`/metrics`)
 - `automation-engine` (AE3) — автоматизация зон, коррекции; device-команды только через REST `history-logger` (REST **9405**, метрики `http://...:9405/metrics/`)
 - расписания поливов/света из фаз рецепта — **Laravel** (`automation:dispatch-schedules`, см. `doc_ai/06_DOMAIN_ZONES_RECIPES/SCHEDULER_ENGINE.md`)
-- `device-registry` — реестр устройств (статус: PLANNED)
+- реестр устройств — **Laravel** (отдельного Python `device-registry` нет)
 
 **Документация сервисов:** `services/<service>/README.md`
 

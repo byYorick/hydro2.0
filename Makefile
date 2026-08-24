@@ -22,7 +22,9 @@ DOCKER_COMPOSE ?= $(shell if command -v docker-compose >/dev/null 2>&1; then ech
 .PHONY: help
 help:
 	@echo "hydro2.0 - targets:"
-	@echo "  up             - start dev stack (code via bind-mount, no image rebuild)"
+	@echo "  up             - start default (combat) dev stack (no sim/ml profiles)"
+	@echo "  up-sim         - start default stack + digital-twin + node-sim-manager (profile sim)"
+	@echo "  up-ml          - start default stack + feature-builder (profile ml)"
 	@echo "  up-build       - start and rebuild images (Dockerfile / deps)"
 	@echo "  up-offline     - start from local images (no registry pull, no rebuild)"
 	@echo "  down           - stop dev stack"
@@ -116,8 +118,17 @@ prod-logs:
 .PHONY: up
 # Код Laravel/Python уже bind-mount — пересборка образа не нужна.
 # --pull missing: не дёргать :latest в registry, если образ уже есть.
+# digital-twin/node-sim-manager — profile sim; feature-builder — profile ml.
 up:
 	@$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) up -d --pull missing
+
+.PHONY: up-sim
+up-sim:
+	@COMPOSE_PROFILES=sim $(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) up -d --pull missing
+
+.PHONY: up-ml
+up-ml:
+	@COMPOSE_PROFILES=ml $(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) up -d --pull missing
 
 .PHONY: up-build
 up-build:
@@ -225,6 +236,7 @@ test-agg: up
 
 .PHONY: test-fb
 test-fb: up
+	@COMPOSE_PROFILES=ml $(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) up -d --pull missing feature-builder
 	@$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) exec -T \
 		feature-builder pytest $(PYTEST_ARGS)
 

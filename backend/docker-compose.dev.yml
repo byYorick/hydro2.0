@@ -554,6 +554,8 @@ services:
       retries: 10
       start_period: 30s
     restart: unless-stopped
+    profiles:
+      - sim
 
   node-sim-manager:
     build:
@@ -573,6 +575,8 @@ services:
     ports:
       - "9100:9100"
     restart: unless-stopped
+    profiles:
+      - sim
 
   telemetry-aggregator:
     build:
@@ -643,6 +647,8 @@ services:
       retries: 10
       start_period: 30s
     restart: unless-stopped
+    profiles:
+      - ml
 
   python-tests:
     build:

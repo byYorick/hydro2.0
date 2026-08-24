@@ -12,7 +12,7 @@ Python Core (MVP 1a)
   - `history-logger` — подписка на MQTT, запись телеметрии в PostgreSQL, **единственная точка публикации команд в MQTT** (порт 9300)
   - `automation-engine` — AE3 рантайм зон, wake-up `start-cycle`, управление mode/manual-step, публикация команд через history-logger REST API (порт 9405: REST API + `/metrics/`)
   - `Laravel scheduler-dispatch` — owner planning/dispatch intents и wake-up в `automation-engine` (через `automation:dispatch-schedules`)
-  - `device-registry` — PLANNED (см. `device-registry/README.md`)
+  - реестр устройств — Laravel (отдельного Python `device-registry` нет)
 
 ## Переменные окружения (dev)
 

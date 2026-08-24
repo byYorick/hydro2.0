@@ -4,7 +4,7 @@
 Документ описывает путь телеметрии от узла ESP32 до UI/Android.
 
 
-**Дата обновления:** 2026-08-02
+**Дата обновления:** 2026-08-24
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 Breaking-change: обратная совместимость со старыми форматами и алиасами не поддерживается.
@@ -112,6 +112,16 @@ Backend предоставляет API:
 
 - последние N дней/месяцев — в основной БД;
 - старые данные могут архивироваться/агрегироваться.
+
+### 6.1. Агрегация: один непрерывный writer
+
+Непрерывный writer агрегатов (`telemetry_agg_1m` / `telemetry_agg_1h` / `telemetry_daily`) — Python `telemetry-aggregator` (default compose, `ON CONFLICT DO UPDATE`).
+
+Laravel `telemetry:aggregate` **не** крутится в Schedule. Команда жива для seed/backfill (`TelemetrySeeder`, ручной `--from/--to`) и пишет `ON CONFLICT DO NOTHING`.
+
+Laravel `telemetry:cleanup-raw` остаётся в Schedule (ежедневно 02:00) — это retention raw samples (`TELEMETRY_RETENTION_DAYS`, дефолт 30), не второй aggregator.
+
+Не описывать Laravel и Python как одинаковых прод-агрегаторов: в проде пишет Python; artisan — backfill.
 
 ---
 

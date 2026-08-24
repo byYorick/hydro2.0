@@ -211,18 +211,14 @@ backend/
 │  ├─ tests/
 │  └─ ...
 ├─ services/
-│  ├─ api-gateway/             # НЕ ИСПОЛЬЗУЕТСЯ — роль API Gateway выполняет Laravel
-│  │  ├─ README.md             # Пояснение статуса каталога
-│  │  └─ Dockerfile            # Placeholder
-│  ├─ mqtt-bridge/             # MQTT-мост: подписка на ноды, публикация команд
+│  ├─ mqtt-bridge/             # MQTT-мост: FastAPI REST→MQTT / ops (порт 9000)
 │  │  ├─ main.py               # Основной код (FastAPI)
-│  │  ├─ publisher.py           # Публикация в MQTT
+│  │  ├─ publisher.py           # Публикация в MQTT (не device-commands; канон команд — history-logger)
 │  │  ├─ requirements.txt
 │  │  ├─ Dockerfile
 │  │  └─ README.md
-│  ├─ device-registry/         # НЕ ИСПОЛЬЗУЕТСЯ — функционал реализован в Laravel
-│  ├─ automation-engine/       # Правила автоматизации (по расписанию/датчикам)
-│  ├─ history-logger/          # Логирование телеметрии в БД/TSDB
+│  ├─ automation-engine/       # AE3 (`ae3lite/`): зоны, коррекции; device-команды через HL REST
+│  ├─ history-logger/          # Телеметрия + единственная публикация команд в MQTT
 │  └─ common/                  # Общие библиотеки для Python-сервисов (модели, DTO, клиенты MQTT/БД)
 ├─ configs/
 │  ├─ dev/
@@ -257,7 +253,7 @@ backend/
 - `history-logger`:
   - пишет телеметрию в PostgreSQL + TimescaleDB (основной стек dev/prod); отдельная TSDB возможна в иных деплоях.
 
-**Примечание:** Каталоги `api-gateway` и `device-registry` не используются в рантайме — их функционал полностью реализован в Laravel.
+**Примечание:** отдельных деревьев `api-gateway` / `device-registry` нет — роль API Gateway и реестра устройств выполняет Laravel.
 
 ---
 
@@ -402,7 +398,7 @@ tools/
      - уходит в `SAFE_MODE` при критических ситуациях.
 3. В `backend/`:
    - поднят MQTT-мост и он строго следует `../03_TRANSPORT_MQTT/BACKEND_NODE_CONTRACT_FULL.md`,
-   - есть device-registry, automation-engine и history-logger,
+   - есть Laravel (реестр устройств + API Gateway), automation-engine и history-logger,
    - настроено логирование и базовый мониторинг.
 4. В `mobile/`:
    - можно:

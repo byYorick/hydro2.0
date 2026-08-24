@@ -1,42 +1,42 @@
 # Индекс документации hydro 2.0
 
-**Версия:** 2.4
-**Дата обновления:** 2026-08-17 (scheduler/AE3/IRR code-first: lighting hybrid, zone_busy, irrigation `run_pump`; см. `SYNC_PLAN.md`)
+**Версия:** 2.5  
+**Дата обновления:** 2026-08-24
 
-Этот документ служит главной точкой входа в документацию проекта hydro 2.0.
+Точка входа — четыре документа (остальное — по слою задачи, не «прочитать всё»):
 
+1. **этот INDEX** — карта разделов
+2. [SYSTEM_ARCH_FULL.md](SYSTEM_ARCH_FULL.md) — архитектура (`canonical`)
+3. [ARCHITECTURE_FLOWS.md](ARCHITECTURE_FLOWS.md) — пайплайны и инварианты (`canonical`)
+4. [DEV_CONVENTIONS.md](DEV_CONVENTIONS.md) — конвенции (`canonical`)
 
-Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
+Правила агентов: корневой `AGENTS.md`. Формула SoT — там и в `DEV_CONVENTIONS.md` (не дублировать): runtime = код; защищённые контракты — `doc_ai/`.
+
+Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.  
 Breaking-change: обратная совместимость со старыми форматами и алиасами не поддерживается.
 
-**Статусы в навигации:** `canonical` · `guide` · `plan` · `superseded` · `archive` — см. [README_STRUCTURE.md](README_STRUCTURE.md).
+**Статусы в навигации:** `canonical` · `guide` · `plan` · `superseded` · `archive` — [README_STRUCTURE.md](README_STRUCTURE.md).
 
 ---
 
-## 🗺️ Быстрая навигация
+## Быстрая навигация
 
-### Начало работы
-- **[SYSTEM_ARCH_FULL.md](SYSTEM_ARCH_FULL.md)** — главный входной документ по архитектуре (`canonical`)
-- **[ARCHITECTURE_FLOWS.md](ARCHITECTURE_FLOWS.md)** — защищённые pipeline и инварианты AE3 (`canonical`)
-- **[README_STRUCTURE.md](README_STRUCTURE.md)** — описание структуры документации
-- **[DEV_CONVENTIONS.md](DEV_CONVENTIONS.md)** — конвенции разработки (`canonical`)
-- **[11_WEBSOCKET_ARCHITECTURE.md](11_WEBSOCKET_ARCHITECTURE.md)** — WebSocket (Reverb) и real-time UI (`canonical`)
-- **[IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md)** — сводный статус реализации (`guide`)
+- [SYSTEM_ARCH_FULL.md](SYSTEM_ARCH_FULL.md) — архитектура (`canonical`)
+- [ARCHITECTURE_FLOWS.md](ARCHITECTURE_FLOWS.md) — защищённые pipeline и инварианты AE3 (`canonical`)
+- [DEV_CONVENTIONS.md](DEV_CONVENTIONS.md) — конвенции разработки (`canonical`)
+- [README_STRUCTURE.md](README_STRUCTURE.md) — структура папок `doc_ai/`
+- [11_WEBSOCKET_ARCHITECTURE.md](11_WEBSOCKET_ARCHITECTURE.md) — WebSocket (Reverb) (`canonical`)
+- [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) — live / planned / frozen (`guide`, не SoT runtime)
+- [TASKS_FOR_AI_AGENTS.md](TASKS_FOR_AI_AGENTS.md) — постановка задач для ИИ (`guide`)
 
-### Работа с ИИ-агентами
-- **[TASKS_FOR_AI_AGENTS.md](TASKS_FOR_AI_AGENTS.md)** — правила постановки задач для ИИ-агентов (`guide`)
+Планы (`plan`, не runtime SoT): `ROADMAP_2.0.md`, `AGRO_AUTONOMY_MASTER_PLAN.md` (product-gaps), `FIRMWARE_OPTIMIZATION_PLAN.md`.  
+`SYNC_PLAN.md` — code-first drift backlog; не structural plan и не противоречит P0 SoT.
 
-### Планы и roadmap (корень, `plan`)
-- `ROADMAP_2.0.md`, `DEVELOPMENT_PRIORITIES.md`, `AGRO_AUTONOMY_MASTER_PLAN.md`
-- `SYNC_PLAN.md` (code-first drift backlog), `FIRMWARE_OPTIMIZATION_PLAN.md`
-
-### Архив
-- **[00_ARCHIVE/](00_ARCHIVE/)** — отчёты, superseded-полные тексты, закрытые plans (`archive`); не SoT. См. [00_ARCHIVE/README.md](00_ARCHIVE/README.md)
-- Audit plans (`AUDIT_2026_*`) — stubs в корне → полные тексты в `00_ARCHIVE/PLANS/`
+`00_ARCHIVE/` — не SoT.
 
 ---
 
-## 📚 Структура документации по разделам
+## Структура документации по разделам
 
 ### [01_SYSTEM](01_SYSTEM/) — Системная архитектура
 Высокоуровневая архитектура, логика, потоки данных.
@@ -193,14 +193,14 @@ Breaking-change: обратная совместимость со старыми
 - `08_SECURITY_AND_OPS/RUNBOOKS.md` — процедуры восстановления
 - `08_SECURITY_AND_OPS/TESTING_AND_CICD_STRATEGY.md` — стратегия тестирования и CI/CD
 - `08_SECURITY_AND_OPS/MIGRATION_SQUASH_PROCEDURE.md` — процедура squash миграций (отложена из-за TimescaleDB) (`plan`)
-- `08_SECURITY_AND_OPS/SECURITY_AND_SYNC_ISSUES.md` — найденные sync/race issues (исторический audit-notes; сверять с актуальным AE3) (`plan`)
 
 **См. также:** [README](08_SECURITY_AND_OPS/README.md)
 
 ---
 
-### [09_AI_AND_DIGITAL_TWIN](09_AI_AND_DIGITAL_TWIN/) — AI и цифровой двойник
-AI-архитектура, оптимизация, симуляция, цифровой двойник.
+### [09_AI_AND_DIGITAL_TWIN](09_AI_AND_DIGITAL_TWIN/) — AI и цифровой двойник (`plan`, не default runtime)
+
+Раздел **не** входит в default `make up` (`digital-twin` / `feature-builder` / `node-emulator` — только по запросу). Документы — `plan` / engine draft, не SoT runtime.
 
 **Ключевые документы:**
 - `09_AI_AND_DIGITAL_TWIN/AI_ARCH_FULL.md` — полная архитектура AI-слоя
@@ -271,60 +271,23 @@ E2E-сценарии, симулятор узлов, realhw `test_node`, trouble
 
 ---
 
-## 🔍 Поиск по темам
+## Поиск по темам
 
-### Начало работы с проектом
-1. Прочитайте `SYSTEM_ARCH_FULL.md`
-2. Изучите `01_SYSTEM/LOGIC_ARCH.md` для понимания модели данных
-3. Ознакомьтесь с `DEV_CONVENTIONS.md` для правил разработки
+Не чеклист «прочитать всё» — слой задачи → 2–3 документа.
 
-### Разработка прошивок ESP32
-1. `02_HARDWARE_FIRMWARE/NODE_ARCH_FULL.md`
-2. `02_HARDWARE_FIRMWARE/FIRMWARE_STRUCTURE.md`
-3. `02_HARDWARE_FIRMWARE/NODE_CHANNELS_REFERENCE.md`
-4. `03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md`
-
-### Разработка backend
-1. `04_BACKEND_CORE/BACKEND_ARCH_FULL.md`
-2. `04_BACKEND_CORE/AUTOMATION_CONFIG_AUTHORITY.md`
-3. `04_BACKEND_CORE/PYTHON_SERVICES_ARCH.md`
-4. `05_DATA_AND_STORAGE/DATA_MODEL_REFERENCE.md`
-
-### Разработка фронтенда
-1. `07_FRONTEND/FRONTEND_ARCH_FULL.md`
-2. `07_FRONTEND/FRONTEND_UI_UX_SPEC.md`
-3. `07_FRONTEND/FRONTEND_TESTING.md`
-
-### Тестирование и E2E
-1. `13_TESTING/TESTING_OVERVIEW.md`
-2. `13_TESTING/E2E_GUIDE.md`
-3. `13_TESTING/E2E_SCENARIOS.md` + `13_TESTING/NODE_SIM.md`
-4. Физическая `test_node`: `13_TESTING/REALHW_TEST_NODE_AGENT_GUIDE.md` + `tests/e2e/AGENTS.md`
-5. `13_TESTING/TROUBLESHOOTING.md`
-
-### Работа с ИИ-агентами
-1. `TASKS_FOR_AI_AGENTS.md`
-2. `10_AI_DEV_GUIDES/AI_ASSISTANT_DEV_GUIDE.md`
-3. Разделы `10_AI_DEV_GUIDES/` по конкретным компонентам
+| Слой | Куда |
+|------|------|
+| Прошивки ESP32 | `02_HARDWARE_FIRMWARE/NODE_ARCH_FULL.md`, `FIRMWARE_STRUCTURE.md`, `NODE_CHANNELS_REFERENCE.md`, `03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md` |
+| Backend | `04_BACKEND_CORE/BACKEND_ARCH_FULL.md`, `AUTOMATION_CONFIG_AUTHORITY.md`, `PYTHON_SERVICES_ARCH.md`, `05_DATA_AND_STORAGE/DATA_MODEL_REFERENCE.md` |
+| Frontend | `07_FRONTEND/FRONTEND_ARCH_FULL.md`, `FRONTEND_UI_UX_SPEC.md`, `FRONTEND_TESTING.md` |
+| E2E | `13_TESTING/TESTING_OVERVIEW.md`, `E2E_GUIDE.md`; realhw: `REALHW_TEST_NODE_AGENT_GUIDE.md` + `tests/e2e/AGENTS.md` |
+| Задачи для ИИ | `TASKS_FOR_AI_AGENTS.md`, `10_AI_DEV_GUIDES/AI_ASSISTANT_DEV_GUIDE.md` |
 
 ---
 
-## 💡 Советы по использованию
+## Примечания
 
-1. **Начинайте с `SYSTEM_ARCH_FULL.md`** — это главный входной документ
-2. **Используйте поиск** — большинство документов содержат перекрестные ссылки
-3. **Читайте гайды для ИИ** — если работаете с ИИ-агентами, изучите `10_AI_DEV_GUIDES/`
-
----
-
-## 📝 Примечания
-
-- Документация в `doc_ai/` является **единственным source of truth** и редактируется только здесь
-- Все ссылки в документации должны быть относительными от корня `doc_ai/`
-- Папка `docs/` удалена; уникальные материалы по тестированию перенесены в `13_TESTING/`, mobile UI — в `12_ANDROID_APP/`, UI-референсы — в `07_FRONTEND/ui_refs/`
-- Исторические отчёты — в `00_ARCHIVE/` (`archive`); не использовать как SoT
-- Планы (`plan`) и `superseded` документы остаются в рабочих разделах для discoverability, но не подменяют `canonical`
-
----
-
-**Последнее обновление:** 2026-08-02
+- Формула SoT — корневой `AGENTS.md` / `DEV_CONVENTIONS.md`: runtime = код; защищённые контракты canonical в `doc_ai/` и обязаны совпадать с кодом. `doc_ai/` **не** единственный SoT на всё.
+- Ссылки в документации — относительные от корня `doc_ai/`.
+- Папка `docs/` удалена; уникальные материалы — `13_TESTING/`, `12_ANDROID_APP/`, `07_FRONTEND/ui_refs/`.
+- Планы (`plan`) и `superseded` не подменяют `canonical` и не подменяют код.
