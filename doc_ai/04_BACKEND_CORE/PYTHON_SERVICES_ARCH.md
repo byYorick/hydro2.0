@@ -1,9 +1,9 @@
 # PYTHON_SERVICES_ARCH.md
 # Архитектура Python-сервисов hydro2.0 (AE3)
 
-**Версия:** 3.6
-**Дата обновления:** 2026-08-02
-**Статус:** Актуально (канонично для runtime; sync 2026-08-02: solution_* ingress, LISTEN channels, Ae3RuntimeWorker, HL metrics port)
+**Версия:** 3.7
+**Дата обновления:** 2026-08-24
+**Статус:** Актуально (канонично для runtime; sync 2026-08-24: mqtt-bridge = ops leftover, feature-builder = skeleton)
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 Breaking-change: HTTP-транспорт задач планировщика удалён из runtime; обратная совместимость не поддерживается.
@@ -59,18 +59,24 @@ Breaking-change: HTTP-транспорт задач планировщика у�
 - `digital-twin`, `telemetry-aggregator` (и прочие вспомогательные сервисы из `docker-compose`) работают в своих доменах.
 - Никакой сервис, кроме `history-logger`, не публикует device-команды напрямую в MQTT.
 
-### 2.4 `mqtt-bridge` (ops / probe)
+### 2.4 `mqtt-bridge` (ops leftover / probe)
 
-Роль: **ops probe + metrics**, не command path. Порт: `9000` (REST + `/metrics`).
-`POST /bridge/zones/{zone_id}/commands` и `POST /bridge/nodes/{node_uid}/commands` отвечают **410** (`endpoint_deprecated_use_history_logger`). Канон публикации команд — `history-logger` `POST /commands`.
+Роль: **ops leftover / probe + metrics**, **не** command path и **не** канон NodeConfig.
+Порт: `9000` (REST + `/metrics`). Входит в default `make up` как leftover; боевой путь команд и конфигов — только `history-logger`.
+
+Канон:
+- команды к узлам — `history-logger` `POST /commands` (порт `9300`);
+- NodeConfig — `history-logger` `POST /nodes/{uid}/config` из Laravel `PublishNodeConfigJob`.
+
+`POST /bridge/{zones|nodes}/commands` отвечают **410** (`endpoint_deprecated_use_history_logger`) и **пока живы до P1** (удаление роутов — отдельная фаза). Не использовать как мост команд.
 
 | Метод | Путь | Статус |
 |-------|------|--------|
-| GET | `/metrics` | active |
+| GET | `/metrics` | active — ops probe |
 | GET | `/bridge/nodes/{node_uid}/live-status` | active — MQTT live probe |
-| POST | `/bridge/nodes/{node_uid}/config` | legacy/ops — **канон NodeConfig publish:** HL `POST /nodes/{uid}/config` (`PublishNodeConfigJob`) |
-| POST | `/bridge/zones/{zone_id}/commands` | **410** deprecated → history-logger |
-| POST | `/bridge/nodes/{node_uid}/commands` | **410** deprecated → history-logger |
+| POST | `/bridge/nodes/{node_uid}/config` | **legacy**; канон уже HL `POST /nodes/{uid}/config` (`PublishNodeConfigJob`) |
+| POST | `/bridge/zones/{zone_id}/commands` | **410** (жив до P1) → history-logger |
+| POST | `/bridge/nodes/{node_uid}/commands` | **410** (жив до P1) → history-logger |
 
 README: `backend/services/mqtt-bridge/README.md`.
 
@@ -86,8 +92,8 @@ Live: `/simulations/live/start|stop` (связь с `node-sim-manager` `:9100`).
 
 ### 2.6 `feature-builder` / `node-sim-manager`
 
-- `feature-builder` — skeleton ML feature pipeline (порт **9410** health/metrics); фазы — `ML_FEATURE_PIPELINE.md`.
-- `node-sim-manager` — управление node_sim для live-sim / HIL (порт **9100**).
+- `feature-builder` — **skeleton**, не writer витрин в runtime. Не часть default `make up` (compose profile `ml`, `make up-ml`). Порт **9410** health/metrics; фазы — `ML_FEATURE_PIPELINE.md`. Не расширять без явного запроса.
+- `node-sim-manager` — управление node_sim для live-sim / HIL (порт **9100`); не часть default `make up` (profile `sim`).
 
 ---
 

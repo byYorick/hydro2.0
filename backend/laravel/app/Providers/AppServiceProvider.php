@@ -3,9 +3,7 @@
 namespace App\Providers;
 
 use App\Events\NodeConfigUpdated;
-use App\Events\ZoneUpdated;
 use App\Listeners\PublishNodeConfigOnUpdate;
-use App\Listeners\PublishZoneConfigUpdate;
 use App\Models\Command;
 use App\Models\Greenhouse;
 use App\Models\User;
@@ -18,10 +16,10 @@ use App\Observers\ZoneEventObserver;
 use App\Observers\ZoneObserver;
 use App\Support\RequestAwareVite;
 use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Foundation\Vite as FoundationVite;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\RateLimiter;
-use Illuminate\Foundation\Vite as FoundationVite;
 use Illuminate\Support\Facades\Vite;
 use Illuminate\Support\ServiceProvider;
 
@@ -136,10 +134,6 @@ class AppServiceProvider extends ServiceProvider
         });
 
         // Регистрация слушателей событий
-        Event::listen(
-            ZoneUpdated::class,
-            PublishZoneConfigUpdate::class
-        );
         Event::listen(
             NodeConfigUpdated::class,
             PublishNodeConfigOnUpdate::class

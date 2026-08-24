@@ -389,45 +389,6 @@ class PythonBridgeService
     }
 
     /**
-     * Уведомить Python-сервис об обновлении конфигурации зоны
-     */
-    public function notifyConfigUpdate(Zone $zone): void
-    {
-        $baseUrl = Config::get('services.python_bridge.base_url');
-        $token = Config::get('services.python_bridge.token');
-
-        if (! $baseUrl) {
-            // Если URL не настроен, просто логируем
-            \Illuminate\Support\Facades\Log::info('Python bridge URL not configured, skipping config update notification');
-
-            return;
-        }
-
-        try {
-            $headers = $token ? ['Authorization' => "Bearer {$token}"] : [];
-
-            // Отправляем уведомление о необходимости перезагрузить конфигурацию
-            // Python-сервис должен сделать запрос к /api/system/config/full
-            Http::withHeaders($headers)
-                ->timeout(5)
-                ->post("{$baseUrl}/bridge/config/zone-updated", [
-                    'zone_id' => $zone->id,
-                    'greenhouse_uid' => optional($zone->greenhouse)->uid,
-                ]);
-
-            \Illuminate\Support\Facades\Log::info('Python service notified about zone config update', [
-                'zone_id' => $zone->id,
-            ]);
-        } catch (\Exception $e) {
-            // Не бросаем исключение, чтобы не прерывать основной процесс
-            \Illuminate\Support\Facades\Log::warning('Failed to notify Python service about zone config update', [
-                'zone_id' => $zone->id,
-                'error' => $e->getMessage(),
-            ]);
-        }
-    }
-
-    /**
      * Отправляет HTTP запрос с повторными попытками при ошибках
      */
     private function sendWithRetry(string $url, array $headers, array $data, Command $command): void
