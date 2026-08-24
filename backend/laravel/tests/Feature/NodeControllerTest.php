@@ -486,13 +486,13 @@ class NodeControllerTest extends TestCase
             ->assertJsonPath('status', 'error');
     }
 
-    public function test_node_live_mqtt_status_proxies_mqtt_bridge(): void
+    public function test_node_live_mqtt_status_proxies_history_logger(): void
     {
         config(['services.python_bridge.mqtt_zone_format' => 'id']);
-        config(['services.python_bridge.base_url' => 'http://mqtt-bridge.test']);
+        config(['services.history_logger.url' => 'http://history-logger:9300']);
 
         Http::fake(function (Request $request) {
-            if (str_contains($request->url(), '/bridge/nodes/') && str_contains($request->url(), '/live-status')) {
+            if (str_contains($request->url(), '/nodes/') && str_contains($request->url(), '/live-status')) {
                 return Http::response([
                     'status' => 'ok',
                     'data' => [
@@ -525,7 +525,7 @@ class NodeControllerTest extends TestCase
 
         Http::assertSent(function (Request $request) use ($zone, $node): bool {
             $url = $request->url();
-            if (! str_contains($url, '/bridge/nodes/'.rawurlencode($node->uid).'/live-status')) {
+            if (! str_contains($url, 'http://history-logger:9300/nodes/'.rawurlencode($node->uid).'/live-status')) {
                 return false;
             }
             parse_str(parse_url($url, PHP_URL_QUERY) ?? '', $q);

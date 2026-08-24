@@ -260,7 +260,7 @@ class NodeController extends Controller
     }
 
     /**
-     * Проверка доступности узла по MQTT (retained/online на …/status), не из БД телеметрии.
+     * Проверка доступности узла по MQTT через history-logger live-status probe, не из БД телеметрии.
      */
     public function liveMqttStatus(Request $request, DeviceNode $node): JsonResponse
     {

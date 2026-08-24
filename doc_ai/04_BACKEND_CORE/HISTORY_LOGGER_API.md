@@ -3,7 +3,7 @@
 
 Документ описывает REST API endpoints history-logger сервиса — **единственной точки публикации команд в MQTT** в архитектуре hydro2.0.
 
-**Дата обновления:** 2026-08-18 (`set_fault_mode` lease bypass только для `test_node`).
+**Дата обновления:** 2026-08-24 (`GET /nodes/{node_uid}/live-status` MQTT probe).
 
 **Связанные документы:**
 - `PYTHON_SERVICES_ARCH.md` — общая архитектура Python-сервисов
@@ -53,6 +53,7 @@ Laravel scheduler-dispatch → REST (9405) → Automation-Engine → REST (9300)
 | POST | `/commands` | Универсальная публикация команды (см. §2.1) |
 | POST | `/zones/{zone_id}/commands` | Zone-scoped публикация команды (см. §2.1.1) — используется Laravel `PythonBridgeService` |
 | POST | `/nodes/{node_uid}/commands` | Node-scoped публикация команды (см. §2.1.2) |
+| GET | `/nodes/{node_uid}/live-status` | MQTT live probe узла (retained/status/lwt, без publish; см. §2.1.2a) |
 | POST | `/nodes/{node_uid}/config` | Push NodeConfig в MQTT (см. §2.1.3) |
 | POST | `/ingest/telemetry` | HTTP-ingest телеметрии (batch, см. §2.1.4) |
 | GET | `/health` | Health check (см. §2.2) |
@@ -224,6 +225,42 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 **URL:** `POST /nodes/{node_uid}/commands`
 
 Payload как у `POST /commands`, но `node_uid` берётся из URL. Поле **`channel` обязательно** (HL topic всегда включает сегмент channel). Для `restart`/`state` и system-команд (`activate_sensor_mode` / `deactivate_sensor_mode`) передавайте `channel="system"` (или иной channel из NodeConfig), а не опускайте поле.
+
+### 2.1.2a. GET /nodes/{node_uid}/live-status
+
+**Описание:** Разовый MQTT live-status probe узла для Laravel Devices UI (`PythonBridgeService::fetchNodeLiveMqttStatus`). Подписка на retained `status` / `lwt` / `heartbeat` / `+/telemetry`. **Публикация команд не выполняется.**
+
+**URL:** `GET /nodes/{node_uid}/live-status`
+
+**Query:**
+- `greenhouse_uid` (string, required)
+- `zone_segment` (string, required) — сегмент зоны в MQTT-топике (`zn-{id}` или `zones.uid`)
+- `timeout_sec` (number, optional, 1–15, default 5)
+
+**Auth:** как у `/commands` (`Authorization: Bearer` + `HISTORY_LOGGER_API_TOKEN` / `PY_INGEST_TOKEN`).
+
+**Response (200 OK):**
+```json
+{
+  "status": "ok",
+  "data": {
+    "topic": "hydro/gh-1/zn-7/nd-1/status",
+    "lwt_topic": "hydro/gh-1/zn-7/nd-1/lwt",
+    "reachable": true,
+    "retained": false,
+    "mqtt_status": "ONLINE",
+    "reason": null
+  }
+}
+```
+
+Envelope `{ "status": "ok", "data": ... }` совместим с Laravel `fetchNodeLiveMqttStatus`. Probe живёт в `history-logger/live_status_probe.py` (логика как у `mqtt-bridge/status_probe.py`; до merge P2b оба endpoint могут существовать).
+
+**Пример:**
+```bash
+curl -H "Authorization: Bearer $HISTORY_LOGGER_API_TOKEN" \
+  "http://localhost:9300/nodes/nd-1/live-status?greenhouse_uid=gh-1&zone_segment=zn-7&timeout_sec=5"
+```
 
 ### 2.1.3. POST /nodes/{node_uid}/config
 

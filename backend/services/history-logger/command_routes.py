@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Body, HTTPException, Request
+from fastapi import APIRouter, Body, HTTPException, Path, Query, Request
 
 from auth import _auth_ingest
 from command_service import (
@@ -42,6 +43,7 @@ from commands.validation import (
     ensure_node_secret,
     validate_command_request_contract,
 )
+from live_status_probe import probe_node_status
 from models import CommandRequest, NodeConfigPublishRequest
 logger = logging.getLogger(__name__)
 
@@ -319,6 +321,35 @@ async def publish_zone_command(
         node_uid=req.node_uid,
         channel=req.channel,
     )
+
+
+@router.get("/nodes/{node_uid}/live-status")
+async def live_node_status(
+    request: Request,
+    node_uid: str = Path(..., min_length=1),
+    greenhouse_uid: str = Query(..., min_length=1),
+    zone_segment: str = Query(..., min_length=1),
+    timeout_sec: float = Query(5.0, ge=1.0, le=15.0),
+):
+    """MQTT live probe узла: подписка на retained/status/lwt/heartbeat/telemetry, без publish."""
+    _auth_ingest(request)
+
+    loop = asyncio.get_event_loop()
+    try:
+        result = await loop.run_in_executor(
+            None,
+            lambda: probe_node_status(
+                greenhouse_uid.strip(),
+                zone_segment.strip(),
+                node_uid,
+                float(timeout_sec),
+            ),
+        )
+    except Exception as e:
+        logger.error("live_node_status probe failed: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"live_status_probe_failed: {e!s}") from e
+
+    return {"status": "ok", "data": result}
 
 
 @router.post("/nodes/{node_uid}/commands")

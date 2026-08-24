@@ -534,7 +534,7 @@ class PythonBridgeService
     }
 
     /**
-     * Разовая проверка статуса узла по MQTT через mqtt-bridge (без чтения состояния из БД).
+     * Разовая проверка статуса узла по MQTT через history-logger (без чтения состояния из БД).
      *
      * @return array<string, mixed>
      */
@@ -544,12 +544,12 @@ class PythonBridgeService
         string $zoneSegment,
         float $timeoutSec = 5.0,
     ): array {
-        $baseUrl = rtrim((string) Config::get('services.python_bridge.base_url'), '/');
+        $baseUrl = rtrim((string) Config::get('services.history_logger.url'), '/');
         if ($baseUrl === '') {
-            throw new \RuntimeException('Python bridge base URL not configured');
+            throw new \RuntimeException('History Logger URL not configured');
         }
 
-        $token = Config::get('services.python_bridge.token');
+        $token = Config::get('services.history_logger.token') ?? Config::get('services.python_bridge.token');
         $timeoutBounded = min(15.0, max(1.0, $timeoutSec));
         $query = http_build_query([
             'greenhouse_uid' => $greenhouseUid,
@@ -557,7 +557,7 @@ class PythonBridgeService
             'timeout_sec' => $timeoutBounded,
         ], '', '&', PHP_QUERY_RFC3986);
 
-        $url = $baseUrl.'/bridge/nodes/'.rawurlencode($nodeUid).'/live-status?'.$query;
+        $url = $baseUrl.'/nodes/'.rawurlencode($nodeUid).'/live-status?'.$query;
 
         $headers = [];
         if (is_string($token) && $token !== '') {
@@ -584,7 +584,7 @@ class PythonBridgeService
 
         $json = $response->json();
         if (! is_array($json) || ($json['status'] ?? '') !== 'ok') {
-            $msg = is_array($json) ? (string) ($json['message'] ?? 'bridge_invalid_response') : 'bridge_invalid_response';
+            $msg = is_array($json) ? (string) ($json['message'] ?? 'live_status_invalid_response') : 'live_status_invalid_response';
             throw new \RuntimeException($msg);
         }
 
