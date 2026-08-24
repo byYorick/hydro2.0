@@ -246,6 +246,20 @@ ERROR_SEEDS: list[tuple[str, str, str]] = [
     ("probe_exhausted", "Исчерпан probe", "Исчерпан лимит повторных probe."),
     ("hw_error", "Ошибка железа", "Ошибка исполнительного оборудования на узле."),
     ("fail", "Ошибка", "Операция завершилась с ошибкой."),
+    ("ae3_claim_rollback_failed", "Откат claim не удался", "AE3 не смог откатить claim задачи после ошибки."),
+    ("ae3_ec_actuator_component_unresolved", "Не найден актуатор EC", "Не удалось сопоставить компонент EC с исполнительным каналом."),
+    ("ae3_foreign_lease_stale", "Чужой lease устарел", "Обнаружен чужой несвежий lease зоны — задача отклонена fail-closed."),
+    ("ae3_irrigation_replay_create_failed", "Не создан replay полива", "Не удалось создать задачу replay после сбоя полива."),
+    ("ae3_running_transition_cas_miss", "CAS перехода running", "Конкурентное обновление задачи: переход в running не применился."),
+    ("ae3_stale_waiting_command", "Зависшее ожидание команды", "Задача слишком долго в waiting_command без terminal-статуса."),
+    ("ae3_workflow_state_sync_failed", "Не синхронизирован workflow", "Не удалось записать zone_workflow_state после этапа AE3."),
+    ("drain_abandon", "Drain прерван", "Очередь команд history-logger прервала drain без завершения."),
+    ("greenhouse_climate_stale_running", "Завис climate tick", "Greenhouse climate tick остался в running дольше допустимого."),
+    ("solution_topup_leak_detected", "Утечка при доливе", "Автодолив остановлен: сработал датчик утечки."),
+    ("solution_topup_source_empty", "Источник долива пуст", "Автодолив остановлен: бак чистой воды пуст."),
+    ("solution_topup_timeout", "Таймаут автодолива", "Автодолив не завершился за отведённое время."),
+    ("start_solution_topup_cooldown_active", "Cooldown автодолива", "Повторный автодолив отклонён: ещё действует пауза после предыдущего."),
+    ("start_solution_topup_not_ready", "Зона не в ready", "Автодолив доступен только в workflow_phase=ready."),
 ]
 
 # (code, title, description, recommendation, severity, category, source)
@@ -262,6 +276,18 @@ ALERT_SEEDS: list[tuple[str, str, str, str, str, str, str]] = [
     ("biz_irr_probe_streak_exhausted", "Исчерпан streak probe IRR",
      "AE3 исчерпал лимит подряд идущих отложенных probe irr_state.",
      "Проверьте связь с irrig-нодой и irr_state_max_age_sec.", "warning", "operations", "biz"),
+    ("biz_ae3_correction_interrupt_pending_verify", "Коррекция прервана, ждём verify",
+     "Цикл коррекции прерван (E-STOP/failsafe); ожидается проверка состояния исполнительных каналов.",
+     "Проверьте E-STOP, полив и irr_state; не запускайте новую дозу до verify.", "warning", "operations", "biz"),
+    ("history_logger_command_status_dlq_moved", "Статус команды ушёл в DLQ",
+     "history-logger перенёс обработку статуса команды в dead-letter queue.",
+     "Разберите DLQ статусов команд и причину повторных сбоев ingest.", "error", "operations", "infra"),
+    ("infra_command_queue_drain_sustained_fail", "Устойчивый сбой drain очереди",
+     "Очередь команд history-logger не дренируется дольше порога.",
+     "Проверьте MQTT, нагрузку HL и метрики command queue.", "error", "operations", "infra"),
+    ("solution_temp_out_of_band", "Температура раствора вне диапазона",
+     "Температура раствора вышла за допустимую полосу.",
+     "Проверьте датчик температуры раствора и контур охлаждения/подогрева.", "warning", "operations", "biz"),
 ]
 
 # Коды, которые не являются error_code (статусы FSM, шаблоны фаз, тестовые заглушки)

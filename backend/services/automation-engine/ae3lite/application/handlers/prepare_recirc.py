@@ -14,6 +14,7 @@ from ae3lite.domain.errors import TaskExecutionError
 from common.db import create_zone_event
 
 _logger = logging.getLogger(__name__)
+_PID_RESET_ATTEMPTS = 2
 
 
 class PrepareRecircCheckHandler(BaseStageHandler):
@@ -252,7 +253,7 @@ class PrepareRecircCheckHandler(BaseStageHandler):
             return
         zone_id = int(task.zone_id)
         last_exc: Exception | None = None
-        for attempt in (1, 2):
+        for attempt in range(1, _PID_RESET_ATTEMPTS + 1):
             try:
                 await self._pid_state_repository.reset_no_effect_counts(zone_id=zone_id)
                 _logger.info(

@@ -116,20 +116,9 @@ Canonical recipe UX:
 
 **Status: Unified Dashboard.** Production-UI — единый `Pages/Dashboard/Index.vue`, который рендерится одинаково для всех ролей. Контроллер: `UnifiedDashboardController` → `UnifiedDashboardService`. Доступ к действиям, видимость пунктов меню и колонок управляется через `useRole()` composable и `RoleBasedNavigation.vue`.
 
-### Status: planned / not implemented — отдельные ролевые дашборды
+### Status: removed — отдельные ролевые дашборды
 
-Компоненты ролевых дашбордов **существуют в `Pages/Dashboard/Dashboards/`**:
-- `AgronomistDashboard.vue` — для агрономов (фокус на рецептах и аналитике)
-- `AdminDashboard.vue` — для администраторов (полный контроль системы)
-- `EngineerDashboard.vue` — для инженеров (диагностика устройств)
-- `OperatorDashboard.vue` — для операторов (мониторинг зон)
-- `ViewerDashboard.vue` — для зрителей (read-only)
-
-…но они **не подключены к маршрутам** и не используются в production. UI единый.
-
-Решение по будущему направлению (подключать ролевые дашборды или удалить файлы) — отдельная продуктовая задача. До принятия решения новый код **не должен ссылаться на ролевые дашборды как на canonical**; используйте Unified Dashboard + `useRole()`.
-  - `ViewerDashboard` - для наблюдателей (только просмотр)
-  - Дефолтный дашборд - для пользователей без роли
+Файлы `Pages/Dashboard/Dashboards/*Dashboard.vue` **удалены**. Production home — Unified Dashboard + `useRole()`. Не восстанавливать отдельные ролевые страницы без явного запроса.
 
 ### Содержимое (общее для всех ролей):
 - Общее состояние теплицы:

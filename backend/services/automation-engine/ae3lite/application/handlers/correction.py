@@ -126,6 +126,9 @@ _AE_CORRECTION_ALERT_BLOCK_MAX_RETRIES = max(
 # Retry cadence while corrections are blocked by an active alert (operational backoff).
 _ALERT_BLOCK_RETRY_DELAY_SEC = 60
 _ALERT_BLOCK_SNAPSHOT_PREFIX = ALERT_BLOCK_SNAPSHOT_CMD_PREFIX
+_DEFAULT_DILUTE_PULSE_SEC = 10
+_DEFAULT_DILUTE_SETTLE_SEC = 30
+_PID_RESET_ATTEMPTS = 2
 
 
 def _alert_block_retry_count(corr: CorrectionState) -> int:
@@ -2207,7 +2210,10 @@ class CorrectionHandler(BaseStageHandler):
             )
         result = await self._run_command_batch_checked(task=task, commands=start_cmds, now=now)
         current_task = result.get("task") or task
-        pulse_sec = int(getattr(getattr(runtime, "recirc", None), "dilute_pulse_sec", 10) or 10)
+        pulse_sec = int(
+            getattr(getattr(runtime, "recirc", None), "dilute_pulse_sec", _DEFAULT_DILUTE_PULSE_SEC)
+            or _DEFAULT_DILUTE_PULSE_SEC
+        )
         next_corr = replace(corr, corr_step="corr_dilute_settle")
         return self._enter_correction_after_delay_or_interrupt(
             task=task,
@@ -2241,7 +2247,10 @@ class CorrectionHandler(BaseStageHandler):
             corr=corr,
             context="RECIRC_DILUTE",
         )
-        settle_sec = int(getattr(getattr(runtime, "recirc", None), "dilute_settle_sec", 30) or 30)
+        settle_sec = int(
+            getattr(getattr(runtime, "recirc", None), "dilute_settle_sec", _DEFAULT_DILUTE_SETTLE_SEC)
+            or _DEFAULT_DILUTE_SETTLE_SEC
+        )
         next_corr = replace(corr, corr_step="corr_check")
         await self._log_correction_event(
             zone_id=task.zone_id,
@@ -3756,7 +3765,7 @@ class CorrectionHandler(BaseStageHandler):
             return
         zone_id = int(task.zone_id)
         last_exc: Exception | None = None
-        for attempt in (1, 2):
+        for attempt in range(1, _PID_RESET_ATTEMPTS + 1):
             try:
                 await self._pid_state_repository.reset_no_effect_counts(zone_id=zone_id)
                 return

@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "updated_at": "2026-07-08T07:15:18Z",
+  "updated_at": "2026-08-24T11:35:17Z",
   "description": "Коды error_code из command_response ESP32 и MQTT (фаза 5). Source of truth для слоя узлов.",
   "codes": [
     {
@@ -134,6 +134,13 @@
       "title": "Неверная подпись",
       "message": "HMAC-подпись команды не прошла проверку.",
       "category": "security",
+      "layer": "firmware_mqtt"
+    },
+    {
+      "code": "irrigation_timeout",
+      "title": "Irrigation Timeout",
+      "message": "Irrigation Timeout. Проверьте NodeConfig, журнал узла и состояние канала.",
+      "category": "firmware",
       "layer": "firmware_mqtt"
     },
     {

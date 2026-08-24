@@ -5,8 +5,8 @@
 **Версия:** 1.3
 **Статус:** Намерение ролей. Production-канон внедрения — [`ROLE_BASED_UX_IMPROVEMENT_PLAN.md`](ROLE_BASED_UX_IMPROVEMENT_PLAN.md).
 
-> **Status: wontfix (отдельные ролевые dashboards как маршруты):**
-> Компоненты `Dashboards/*` помечены `@deprecated` и **не подключаются**. Production home — `Pages/Dashboard/Index.vue` с views `operations|agronomy|engineering|admin`. Примеры с `DefaultDashboard.vue` ниже — hypothetical, не реализовывать.
+> **Status: removed (отдельные ролевые dashboards):**
+> Vue-файлы `Dashboards/*` удалены. Production home — `Pages/Dashboard/Index.vue` с views `operations|agronomy|engineering|admin`. Примеры с `DefaultDashboard.vue` ниже — hypothetical, не реализовывать.
 >
 > **Status: implemented (роль-based access, итерации 1–3 плана UX):**
 > Реально работают:

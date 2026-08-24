@@ -40,12 +40,6 @@ UI должен быть:
 ```
 resources/js/Pages/
  Dashboard/Index.vue          ← production entry (UnifiedDashboardController)
- Dashboard/Dashboards/        ← planned/unwired ролевые варианты (не production entry)
-   - AgronomistDashboard.vue
-   - AdminDashboard.vue
-   - EngineerDashboard.vue
-   - OperatorDashboard.vue
-   - ViewerDashboard.vue
  Zones/Index.vue
  Zones/Show.vue + Zones/Tabs/*
  Devices/Index.vue, Show.vue, Add.vue
@@ -61,7 +55,7 @@ resources/js/Pages/
 
 ### Правило для ИИ:
 - каждая новая страница — в `Pages/` через Inertia;
-- production Dashboard = `Dashboard/Index.vue` (Unified); ролевые `Dashboards/*` не подключать как entry без явной задачи;
+- production Dashboard = `Dashboard/Index.vue` (Unified); отдельные ролевые `Dashboards/*` удалены;
 - тема: `document.documentElement.dataset.theme` + CSS tokens (`useTheme`), не обязательные Tailwind `dark:`.
 
 ---

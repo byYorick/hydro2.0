@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "updated_at": "2026-08-18T13:10:00Z",
+  "updated_at": "2026-08-24T11:35:17Z",
   "codes": [
     {
       "code": "actuator_apply_failed",
@@ -30,6 +30,11 @@
       "message": "Фоновая задача AE3 завершилась с ошибкой."
     },
     {
+      "code": "ae3_claim_rollback_failed",
+      "title": "Откат claim не удался",
+      "message": "AE3 не смог откатить claim задачи после ошибки."
+    },
+    {
       "code": "ae3_command_no_routing",
       "title": "Нет маршрута команды",
       "message": "Не настроен маршрут для command stage."
@@ -55,6 +60,11 @@
       "message": "Не удалось войти в окно коррекции."
     },
     {
+      "code": "ae3_ec_actuator_component_unresolved",
+      "title": "Не найден актуатор EC",
+      "message": "Не удалось сопоставить компонент EC с исполнительным каналом."
+    },
+    {
       "code": "ae3_empty_command_plan",
       "title": "Пустой command plan",
       "message": "Command plan не содержит шагов."
@@ -75,6 +85,11 @@
       "message": "AE3 не смог подтвердить OFF-состояние насосов/клапанов после stop-команды."
     },
     {
+      "code": "ae3_foreign_lease_stale",
+      "title": "Чужой lease устарел",
+      "message": "Обнаружен чужой несвежий lease зоны — задача отклонена fail-closed."
+    },
+    {
       "code": "ae3_intent_sync_failed",
       "title": "Сбой синхронизации intent",
       "message": "AE3 не смог синхронизировать статус intent с задачей после исчерпания retry."
@@ -88,6 +103,11 @@
       "code": "ae3_invalid_planned_command",
       "title": "Некорректная PlannedCommand",
       "message": "PlannedCommand без обязательных cmd/params."
+    },
+    {
+      "code": "ae3_irrigation_replay_create_failed",
+      "title": "Не создан replay полива",
+      "message": "Не удалось создать задачу replay после сбоя полива."
     },
     {
       "code": "ae3_legacy_command_not_found",
@@ -128,6 +148,11 @@
       "code": "ae3_required_node_offline",
       "title": "Узел зоны offline",
       "message": "Обязательный узел зоны недоступен (offline). Проверьте питание, Wi‑Fi и MQTT, затем дождитесь online в мониторинге."
+    },
+    {
+      "code": "ae3_running_transition_cas_miss",
+      "title": "CAS перехода running",
+      "message": "Конкурентное обновление задачи: переход в running не применился."
     },
     {
       "code": "ae3_running_transition_failed",
@@ -225,6 +250,11 @@
       "message": "Задача застряла в claimed/running и переведена в failed фоновым janitor'ом."
     },
     {
+      "code": "ae3_stale_waiting_command",
+      "title": "Зависшее ожидание команды",
+      "message": "Задача слишком долго в waiting_command без terminal-статуса."
+    },
+    {
       "code": "ae3_task_complete_failed",
       "title": "Ошибка завершения задачи",
       "message": "Не удалось перевести задачу в completed."
@@ -318,6 +348,11 @@
       "code": "ae3_water_baseline_invalid",
       "title": "Нет замера чистой воды текущего цикла",
       "message": "Нет замера чистой воды текущего цикла подготовки — замер другого цикла использовать нельзя. Запустите подготовку заново, чтобы снять новые показания EC и pH чистой воды."
+    },
+    {
+      "code": "ae3_workflow_state_sync_failed",
+      "title": "Не синхронизирован workflow",
+      "message": "Не удалось записать zone_workflow_state после этапа AE3."
     },
     {
       "code": "ae3_zone_lease_held",
@@ -485,6 +520,11 @@
       "message": "Контур полива зоны ещё не инициализирован."
     },
     {
+      "code": "drain_abandon",
+      "title": "Drain прерван",
+      "message": "Очередь команд history-logger прервала drain без завершения."
+    },
+    {
       "code": "emergency_stop_activated",
       "title": "Активирован E-STOP",
       "message": "Аварийная остановка активирована, безопасное состояние не подтверждено.",
@@ -520,6 +560,11 @@
       "code": "greenhouse_climate_busy",
       "title": "Climate tick: теплица занята",
       "message": "Запуск climate tick отклонён: предыдущий tick ещё выполняется."
+    },
+    {
+      "code": "greenhouse_climate_stale_running",
+      "title": "Завис climate tick",
+      "message": "Greenhouse climate tick остался в running дольше допустимого."
     },
     {
       "code": "greenhouse_climate_tick_failed",
@@ -636,6 +681,12 @@
       "code": "irrigation_solution_min_replay_exhausted",
       "title": "Исчерпан бюджет replay полива",
       "message": "Исчерпан бюджет повторных запусков после срабатываний нижнего уровня раствора."
+    },
+    {
+      "code": "irrigation_timeout",
+      "title": "Irrigation Timeout",
+      "message": "Irrigation Timeout. Проверьте NodeConfig, журнал узла и состояние канала.",
+      "source_layer": "firmware_mqtt"
     },
     {
       "code": "irrigation_wait_ready_timeout",
@@ -940,6 +991,21 @@
       "source_layer": "firmware_mqtt"
     },
     {
+      "code": "solution_topup_leak_detected",
+      "title": "Утечка при доливе",
+      "message": "Автодолив остановлен: сработал датчик утечки."
+    },
+    {
+      "code": "solution_topup_source_empty",
+      "title": "Источник долива пуст",
+      "message": "Автодолив остановлен: бак чистой воды пуст."
+    },
+    {
+      "code": "solution_topup_timeout",
+      "title": "Таймаут автодолива",
+      "message": "Автодолив не завершился за отведённое время."
+    },
+    {
       "code": "stage_timeout",
       "title": "Таймаут стадии",
       "message": "Стадия выполнения превысила допустимое время.",
@@ -1029,6 +1095,16 @@
       "code": "start_solution_change_zone_busy",
       "title": "Подмена раствора: зона занята",
       "message": "Зона занята — подмену раствора нельзя начать сейчас."
+    },
+    {
+      "code": "start_solution_topup_cooldown_active",
+      "title": "Cooldown автодолива",
+      "message": "Повторный автодолив отклонён: ещё действует пауза после предыдущего."
+    },
+    {
+      "code": "start_solution_topup_not_ready",
+      "title": "Зона не в ready",
+      "message": "Автодолив доступен только в workflow_phase=ready."
     },
     {
       "code": "startup_recovery_correction_interrupted",

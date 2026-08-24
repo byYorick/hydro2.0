@@ -856,7 +856,7 @@ async function onPresetPillClick(key: PresetPillKey): Promise<void> {
   try {
     await persistRuntimeTuningBundle({
       ...runtimeTuningBundle.value,
-      selected_preset_key: key,
+      selected_preset_key: presetKey,
     })
     await loadCalibrations()
     showToast(`Пресет «${selectedPresetName.value}» применён`, 'success')

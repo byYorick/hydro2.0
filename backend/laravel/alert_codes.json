@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "updated_at": "2026-07-10T05:36:00Z",
+  "updated_at": "2026-08-24T11:35:17Z",
   "codes": [
     {
       "code": "ae3_api_http_5xx",
@@ -313,6 +313,16 @@
       "node_related": false
     },
     {
+      "code": "biz_ae3_correction_interrupt_pending_verify",
+      "source": "biz",
+      "category": "operations",
+      "severity": "warning",
+      "title": "Коррекция прервана, ждём verify",
+      "description": "Цикл коррекции прерван (E-STOP/failsafe); ожидается проверка состояния исполнительных каналов.",
+      "recommendation": "Проверьте E-STOP, полив и irr_state; не запускайте новую дозу до verify.",
+      "node_related": false
+    },
+    {
       "code": "biz_ae3_task_failed",
       "source": "biz",
       "category": "operations",
@@ -363,16 +373,6 @@
       "node_related": true
     },
     {
-      "code": "biz_flow_stop_failed_hardware_may_be_active",
-      "source": "biz",
-      "category": "safety",
-      "severity": "critical",
-      "title": "Не удалось остановить поток",
-      "description": "Automation-engine не подтвердил остановку потока — насос или клапан могут оставаться активными.",
-      "recommendation": "Немедленно проверьте физическое состояние насосов и клапанов зоны. При необходимости остановите оборудование вручную (E-STOP или отключение питания). Проверьте ответы узла на команды остановки, реле/драйвер и датчик потока.",
-      "node_related": true
-    },
-    {
       "code": "biz_ec_correction_no_effect",
       "source": "biz",
       "category": "agronomy",
@@ -380,6 +380,16 @@
       "title": "Коррекция EC не даёт эффекта",
       "description": "После дозирования удобрений электропроводность раствора не изменилась в ожидаемую сторону.",
       "recommendation": "Проверьте насосы компонентов EC (NPK, кальций, магний, микро): работают ли они, есть ли реагент. Убедитесь, что раствор перемешивается и датчик EC даёт свежие показания. Перекалибруйте насосы при подозрении на неверный расход.",
+      "node_related": true
+    },
+    {
+      "code": "biz_flow_stop_failed_hardware_may_be_active",
+      "source": "biz",
+      "category": "safety",
+      "severity": "critical",
+      "title": "Не удалось остановить поток",
+      "description": "Automation-engine не подтвердил остановку потока — насос или клапан могут оставаться активными.",
+      "recommendation": "Немедленно проверьте физическое состояние насосов и клапанов зоны. При необходимости остановите оборудование вручную (E-STOP или отключение питания). Проверьте ответы узла на команды остановки, реле/драйвер и датчик потока.",
       "node_related": true
     },
     {
@@ -563,56 +573,6 @@
       "node_related": false
     },
     {
-      "code": "biz_solution_temp_high",
-      "source": "biz",
-      "category": "agronomy",
-      "severity": "warning",
-      "title": "Высокая температура раствора",
-      "description": "Температура питательного раствора выше целевого диапазона активной фазы рецепта.",
-      "recommendation": "Проверьте охлаждение раствора, циркуляцию и работу датчика solution_temp_c. При перегреве снизьте температуру теплицы или включите охлаждение/обмен раствора. Убедитесь, что показания стабильны и датчик откалиброван.",
-      "node_related": false
-    },
-    {
-      "code": "biz_solution_temp_low",
-      "source": "biz",
-      "category": "agronomy",
-      "severity": "warning",
-      "title": "Низкая температура раствора",
-      "description": "Температура питательного раствора ниже целевого диапазона активной фазы рецепта.",
-      "recommendation": "Проверьте обогрев раствора, температуру теплицы и работу датчика solution_temp_c. При холодном растворе усильте обогрев или сократите приток холодного воздуха. Убедитесь, что датчик online и показания актуальны.",
-      "node_related": false
-    },
-    {
-      "code": "biz_solution_topup_timeout",
-      "source": "biz",
-      "category": "agronomy",
-      "severity": "warning",
-      "title": "Таймаут автодолива раствора",
-      "description": "Автодолив бака раствора не завершился за отведённое время.",
-      "recommendation": "Проверьте насос долива, клапаны, уровень чистой воды и датчики level_switch. Убедитесь, что нет утечки и зона не в E-STOP. При необходимости выполните долив вручную.",
-      "node_related": true
-    },
-    {
-      "code": "biz_solution_topup_source_empty",
-      "source": "biz",
-      "category": "agronomy",
-      "severity": "error",
-      "title": "Пустой бак чистой воды при автодоливе",
-      "description": "Во время автодолива раствора закончилась чистая вода в баке подачи.",
-      "recommendation": "Немедленно долейте бак чистой воды и проверьте датчик clean_min. Убедитесь, что клапан подачи чистой воды открывается и магистраль не пережата.",
-      "node_related": true
-    },
-    {
-      "code": "biz_solution_topup_leak",
-      "source": "biz",
-      "category": "agronomy",
-      "severity": "error",
-      "title": "Утечка при автодоливе раствора",
-      "description": "При автодоливе пропал нижний уровень раствора — возможна утечка контура.",
-      "recommendation": "Остановите долив, осмотрите бак раствора, соединения и дренаж. Проверьте level_switch solution_min/max и отсутствие перелива.",
-      "node_related": true
-    },
-    {
       "code": "biz_no_flow",
       "source": "biz",
       "category": "safety",
@@ -690,6 +650,56 @@
       "title": "Таймаут наполнения бака раствором",
       "description": "Бак питательного раствора не наполнился за отведённое время этапа.",
       "recommendation": "Проверьте подачу воды/раствора: насос, клапаны, наличие исходной жидкости. Убедитесь, что датчики уровня бака раствора работают корректно. Осмотрите магистраль на засорение.",
+      "node_related": true
+    },
+    {
+      "code": "biz_solution_temp_high",
+      "source": "biz",
+      "category": "agronomy",
+      "severity": "warning",
+      "title": "Высокая температура раствора",
+      "description": "Температура питательного раствора выше целевого диапазона активной фазы рецепта.",
+      "recommendation": "Проверьте охлаждение раствора, циркуляцию и работу датчика solution_temp_c. При перегреве снизьте температуру теплицы или включите охлаждение/обмен раствора. Убедитесь, что показания стабильны и датчик откалиброван.",
+      "node_related": false
+    },
+    {
+      "code": "biz_solution_temp_low",
+      "source": "biz",
+      "category": "agronomy",
+      "severity": "warning",
+      "title": "Низкая температура раствора",
+      "description": "Температура питательного раствора ниже целевого диапазона активной фазы рецепта.",
+      "recommendation": "Проверьте обогрев раствора, температуру теплицы и работу датчика solution_temp_c. При холодном растворе усильте обогрев или сократите приток холодного воздуха. Убедитесь, что датчик online и показания актуальны.",
+      "node_related": false
+    },
+    {
+      "code": "biz_solution_topup_leak",
+      "source": "biz",
+      "category": "agronomy",
+      "severity": "error",
+      "title": "Утечка при автодоливе раствора",
+      "description": "При автодоливе пропал нижний уровень раствора — возможна утечка контура.",
+      "recommendation": "Остановите долив, осмотрите бак раствора, соединения и дренаж. Проверьте level_switch solution_min/max и отсутствие перелива.",
+      "node_related": true
+    },
+    {
+      "code": "biz_solution_topup_source_empty",
+      "source": "biz",
+      "category": "agronomy",
+      "severity": "error",
+      "title": "Пустой бак чистой воды при автодоливе",
+      "description": "Во время автодолива раствора закончилась чистая вода в баке подачи.",
+      "recommendation": "Немедленно долейте бак чистой воды и проверьте датчик clean_min. Убедитесь, что клапан подачи чистой воды открывается и магистраль не пережата.",
+      "node_related": true
+    },
+    {
+      "code": "biz_solution_topup_timeout",
+      "source": "biz",
+      "category": "agronomy",
+      "severity": "warning",
+      "title": "Таймаут автодолива раствора",
+      "description": "Автодолив бака раствора не завершился за отведённое время.",
+      "recommendation": "Проверьте насос долива, клапаны, уровень чистой воды и датчики level_switch. Убедитесь, что нет утечки и зона не в E-STOP. При необходимости выполните долив вручную.",
       "node_related": true
     },
     {
@@ -790,6 +800,16 @@
       "title": "History Logger Command Status Delivery Dropped",
       "description": "History Logger Command Status Delivery Dropped: требуется проверка по журналам и метрикам.",
       "recommendation": "Проверьте логи сервисов, метрики Prometheus и состояние зоны.",
+      "node_related": false
+    },
+    {
+      "code": "history_logger_command_status_dlq_moved",
+      "source": "infra",
+      "category": "operations",
+      "severity": "error",
+      "title": "Статус команды ушёл в DLQ",
+      "description": "history-logger перенёс обработку статуса команды в dead-letter queue.",
+      "recommendation": "Разберите DLQ статусов команд и причину повторных сбоев ingest.",
       "node_related": false
     },
     {
@@ -1061,6 +1081,16 @@
       "description": "Перед отправкой команды automation-engine не смог проверить соответствие node_uid и zone_id.",
       "recommendation": "Проверьте доступность PostgreSQL — возможен сбой read-model. Убедитесь, что automation-engine подключён к БД. При повторении перезапустите automation-engine и проверьте миграции.",
       "node_related": true
+    },
+    {
+      "code": "infra_command_queue_drain_sustained_fail",
+      "source": "infra",
+      "category": "operations",
+      "severity": "error",
+      "title": "Устойчивый сбой drain очереди",
+      "description": "Очередь команд history-logger не дренируется дольше порога.",
+      "recommendation": "Проверьте MQTT, нагрузку HL и метрики command queue.",
+      "node_related": false
     },
     {
       "code": "infra_command_send_failed",
@@ -1620,6 +1650,16 @@
       "title": "Сервис не отдаёт метрики health",
       "description": "Prometheus не получает метрики up=1 с одного из сервисов платформы (automation-engine, history-logger, mqtt-bridge, laravel-scheduler).",
       "recommendation": "Определите какой job недоступен в Prometheus (Status → Targets). Проверьте контейнер: docker compose ps и docker compose logs <service>. Перезапустите сервис после устранения причины падения.",
+      "node_related": false
+    },
+    {
+      "code": "solution_temp_out_of_band",
+      "source": "biz",
+      "category": "operations",
+      "severity": "warning",
+      "title": "Температура раствора вне диапазона",
+      "description": "Температура раствора вышла за допустимую полосу.",
+      "recommendation": "Проверьте датчик температуры раствора и контур охлаждения/подогрева.",
       "node_related": false
     },
     {

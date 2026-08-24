@@ -15,6 +15,8 @@ from common.biz_alerts import send_biz_alert
 from common.db import create_zone_event
 
 _logger = logging.getLogger(__name__)
+_DEFAULT_TOPUP_COOLDOWN_SEC = 300
+_RECENT_EVENT_MAX_AGE_SEC = 86400
 
 
 class SolutionTopupGuardHandler(BaseStageHandler):
@@ -82,7 +84,10 @@ class SolutionTopupGuardHandler(BaseStageHandler):
             if isinstance(payload, Mapping):
                 mode = str(payload.get("mode") or "normal").strip().lower()
         if mode != "force":
-            cooldown_sec = int(getattr(runtime, "solution_topup_cooldown_sec", 300) or 300)
+            cooldown_sec = int(
+                getattr(runtime, "solution_topup_cooldown_sec", _DEFAULT_TOPUP_COOLDOWN_SEC)
+                or _DEFAULT_TOPUP_COOLDOWN_SEC
+            )
             if await self._cooldown_active(task=task, now=now, cooldown_sec=max(0, cooldown_sec)):
                 return StageOutcome(
                     kind="fail",
@@ -146,7 +151,7 @@ class SolutionTopupCheckHandler(BaseStageHandler):
                 "SOLUTION_TOPUP_COMPLETED",
                 "EMERGENCY_STOP_ACTIVATED",
             ),
-            max_age_sec=86400,
+            max_age_sec=_RECENT_EVENT_MAX_AGE_SEC,
         )
         recent_event_type = str((recent_storage_event or {}).get("event_type") or "").strip().upper()
         if recent_event_type == "SOLUTION_TOPUP_SOURCE_EMPTY":
@@ -183,7 +188,7 @@ class SolutionTopupCheckHandler(BaseStageHandler):
                 raced_completion_event = await self._read_recent_storage_event(
                     task=task,
                     event_types=("SOLUTION_TOPUP_COMPLETED",),
-                    max_age_sec=86400,
+                    max_age_sec=_RECENT_EVENT_MAX_AGE_SEC,
                 )
                 raced_event_type = str((raced_completion_event or {}).get("event_type") or "").strip().upper()
                 if raced_event_type == "SOLUTION_TOPUP_COMPLETED":

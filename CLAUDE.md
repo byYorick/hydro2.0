@@ -512,7 +512,7 @@ Laravel scheduler-dispatch → REST → Automation-Engine → REST → History-L
 - Events UI группирует по causal-context: `correction_window_id → task_id → snapshot_event_id/caused_by_event_id`.
 - Automation tab **не смешивает** operator flow с scheduler/execution detail view.
 - Manual-step controls рендерятся **только** из `allowed_manual_steps`, не из хардкода.
-- **Роли / Dashboard:** production UI — Unified Dashboard (`Dashboard/Index.vue` через `UnifiedDashboardController`). Ролевые страницы `AgronomistDashboard`/`AdminDashboard`/`EngineerDashboard`/`OperatorDashboard`/`ViewerDashboard` — planned/unwired (не production entry). Для меню и capability-gates использовать `useRole()`; пункты меню условно рендерятся, не удаляются.
+- **Роли / Dashboard:** production UI — Unified Dashboard (`Dashboard/Index.vue` через `UnifiedDashboardController`). Отдельные Vue-файлы ролевых дашбордов удалены; доступ — `useRole()`, пункты меню условно рендерятся.
 - **Стили:** Tailwind 3 classes (только v3-совместимые); gap utilities вместо margins. Тема через `document.documentElement.dataset.theme` + CSS tokens (`:root[data-theme='light'|'dark']` в `app.css`, composable `useTheme()`); не требовать обязательные `dark:` как единственный путь.
 - **Deferred props** — всегда с animated skeleton empty state.
 - **Тесты:** Vitest + Vue Test Utils; один тест = одна проверка; моки минимальные (только внешние зависимости); Playwright E2E — реальные HTTP/WebSocket.
