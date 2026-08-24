@@ -54,6 +54,7 @@ curl http://localhost:9405/metrics/  # Automation engine
 curl http://localhost:8080/api/system/scheduler/metrics  # метрики Laravel scheduler-dispatch (Prometheus text)
 
 # Проверка Grafana (если доступна)
+# Grafana/Prometheus не в default: COMPOSE_PROFILES=obs или make up-obs.
 curl http://localhost:3000/api/health
 ```
 

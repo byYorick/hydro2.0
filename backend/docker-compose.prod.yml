@@ -4,6 +4,7 @@ name: hydro-prod
 # Named network for all services. Not `internal: true` so outbound
 # (image pulls, Grafana plugins, apt) still works. Host publish only for
 # laravel/mqtt/grafana — see ports: below.
+# Grafana/Prometheus/exporters are compose profile obs (COMPOSE_PROFILES=obs).
 networks:
   hydro_prod:
     name: hydro_prod
@@ -423,6 +424,8 @@ services:
     volumes:
       - ./configs/blackbox/blackbox.yml:/etc/blackbox/blackbox.yml:ro
     restart: unless-stopped
+    profiles:
+      - obs
   postgres-exporter:
     image: prometheuscommunity/postgres-exporter:v0.20.1
     container_name: hydro-prod-postgres-exporter
@@ -433,6 +436,8 @@ services:
       db:
         condition: service_healthy
     restart: unless-stopped
+    profiles:
+      - obs
   redis-exporter:
     image: oliver006/redis_exporter:v1.87.0
     container_name: hydro-prod-redis-exporter
@@ -444,6 +449,8 @@ services:
       redis:
         condition: service_healthy
     restart: unless-stopped
+    profiles:
+      - obs
   prometheus:
     image: prom/prometheus:v3.13.1
     container_name: hydro-prod-prometheus
@@ -480,6 +487,8 @@ services:
       retries: 3
       start_period: 30s
     restart: unless-stopped
+    profiles:
+      - obs
   grafana:
     image: grafana/grafana:11.5.2
     container_name: hydro-prod-grafana
@@ -511,6 +520,8 @@ services:
       retries: 3
       start_period: 40s
     restart: unless-stopped
+    profiles:
+      - obs
   alertmanager:
     image: prom/alertmanager:v0.28.1
     container_name: hydro-prod-alertmanager
@@ -539,6 +550,8 @@ services:
       retries: 3
       start_period: 20s
     restart: unless-stopped
+    profiles:
+      - obs
   digital-twin:
     build:
       context: ./services

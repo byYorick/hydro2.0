@@ -298,6 +298,8 @@ services:
       - automation-engine
       - mqtt-bridge
     restart: unless-stopped
+    profiles:
+      - obs
   grafana:
     image: grafana/grafana:latest
     container_name: grafana
@@ -320,6 +322,8 @@ services:
       - prometheus
       - db
     restart: unless-stopped
+    profiles:
+      - obs
   alertmanager:
     image: prom/alertmanager:latest
     container_name: alertmanager
@@ -335,6 +339,8 @@ services:
       - prometheus
       - laravel
     restart: unless-stopped
+    profiles:
+      - obs
 
   digital-twin:
     build:

@@ -22,9 +22,10 @@ DOCKER_COMPOSE ?= $(shell if command -v docker-compose >/dev/null 2>&1; then ech
 .PHONY: help
 help:
 	@echo "hydro2.0 - targets:"
-	@echo "  up             - start default (combat) dev stack (no sim/ml profiles)"
+	@echo "  up             - start default (combat) dev stack (no sim/ml/obs profiles)"
 	@echo "  up-sim         - start default stack + digital-twin + node-sim-manager (profile sim)"
 	@echo "  up-ml          - start default stack + feature-builder (profile ml)"
+	@echo "  up-obs         - start default stack + Grafana/Prometheus/exporters (profile obs)"
 	@echo "  up-build       - start and rebuild images (Dockerfile / deps)"
 	@echo "  up-offline     - start from local images (no registry pull, no rebuild)"
 	@echo "  down           - stop dev stack"
@@ -65,7 +66,7 @@ help:
 	@echo "Production (backend/docker-compose.prod.yml + backend/.env.prod):"
 	@echo "  prod-setup        - generate backend/.env.prod and MQTT passwords"
 	@echo "  prod-check        - validate prod env and docker compose config"
-	@echo "  prod-up           - start production stack (runs prod-check first)"
+	@echo "  prod-up           - start production stack (без Grafana/Prometheus; COMPOSE_PROFILES=obs)"
 	@echo "  prod-down         - stop production stack"
 	@echo "  prod-migrate      - run Laravel migrations in prod"
 	@echo "  prod-seed         - seed base users (PROD_SEEDER_CLASS=$(PROD_SEEDER_CLASS))"
@@ -118,7 +119,8 @@ prod-logs:
 .PHONY: up
 # Код Laravel/Python уже bind-mount — пересборка образа не нужна.
 # --pull missing: не дёргать :latest в registry, если образ уже есть.
-# digital-twin/node-sim-manager — profile sim; feature-builder — profile ml.
+# digital-twin/node-sim-manager — profile sim; feature-builder — profile ml;
+# Grafana/Prometheus/alertmanager/exporters — profile obs.
 up:
 	@$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) up -d --pull missing
 
@@ -129,6 +131,10 @@ up-sim:
 .PHONY: up-ml
 up-ml:
 	@COMPOSE_PROFILES=ml $(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) up -d --pull missing
+
+.PHONY: up-obs
+up-obs:
+	@COMPOSE_PROFILES=obs $(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) up -d --pull missing
 
 .PHONY: up-build
 up-build:

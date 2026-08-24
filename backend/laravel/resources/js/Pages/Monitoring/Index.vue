@@ -11,12 +11,24 @@
             target="_blank"
             rel="noopener noreferrer"
             class="btn btn-outline h-9 px-3 text-xs"
+            :class="{ 'pointer-events-none opacity-50': !grafanaAvailable }"
+            :aria-disabled="!grafanaAvailable"
+            :tabindex="grafanaAvailable ? undefined : -1"
+            data-testid="obs-grafana"
+            :title="grafanaAvailable ? undefined : 'Grafana не запущена — поднимите make up-obs'"
+            @click="onObsLinkClick($event, grafanaAvailable)"
           >Grafana</a>
           <a
             href="http://localhost:9090"
             target="_blank"
             rel="noopener noreferrer"
             class="btn btn-outline h-9 px-3 text-xs"
+            :class="{ 'pointer-events-none opacity-50': !prometheusAvailable }"
+            :aria-disabled="!prometheusAvailable"
+            :tabindex="prometheusAvailable ? undefined : -1"
+            data-testid="obs-prometheus"
+            :title="prometheusAvailable ? undefined : 'Prometheus не запущен — поднимите make up-obs'"
+            @click="onObsLinkClick($event, prometheusAvailable)"
           >Prometheus</a>
           <Button
             size="sm"
@@ -179,6 +191,8 @@ const { isEngineer } = useRole()
 const refreshing = ref(false)
 const detailsOpen = ref(false)
 const healthPayload = ref<SystemHealthPayload | null>(null)
+const grafanaAvailable = ref(false)
+const prometheusAvailable = ref(false)
 let autoRefreshInterval: ReturnType<typeof setInterval> | null = null
 
 const {
@@ -317,6 +331,34 @@ async function loadHealthDetails(): Promise<void> {
   }
 }
 
+function onObsLinkClick(event: MouseEvent, available: boolean): void {
+  if (!available) {
+    event.preventDefault()
+  }
+}
+
+async function probeObsEndpoint(url: string): Promise<boolean> {
+  const controller = new AbortController()
+  const timer = window.setTimeout(() => controller.abort(), 1500)
+  try {
+    await fetch(url, { mode: 'no-cors', signal: controller.signal })
+    return true
+  } catch {
+    return false
+  } finally {
+    window.clearTimeout(timer)
+  }
+}
+
+async function probeObsLinks(): Promise<void> {
+  const [grafana, prometheus] = await Promise.all([
+    probeObsEndpoint('http://localhost:3000/api/health'),
+    probeObsEndpoint('http://localhost:9090/-/healthy'),
+  ])
+  grafanaAvailable.value = grafana
+  prometheusAvailable.value = prometheus
+}
+
 async function refreshStatus(): Promise<void> {
   refreshing.value = true
   try {
@@ -332,6 +374,7 @@ async function refreshStatus(): Promise<void> {
 
 onMounted(() => {
   refreshStatus()
+  void probeObsLinks()
   autoRefreshInterval = setInterval(() => {
     refreshStatus()
   }, 30000)

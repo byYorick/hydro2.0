@@ -93,9 +93,11 @@ describe('Monitoring/Index.vue', () => {
       history_logger: 'ok',
       automation_engine: 'fail',
     })
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('obs down')))
   })
 
   afterEach(() => {
+    vi.unstubAllGlobals()
     vi.useRealTimers()
   })
 
@@ -136,6 +138,27 @@ describe('Monitoring/Index.vue', () => {
     const wrapper = mountPage('engineer')
     await flushPromises()
     expect(wrapper.text()).not.toContain('БД → MQTT → WebSocket → UI')
+    wrapper.unmount()
+  })
+
+  it('при недоступном obs отключает ссылки Grafana/Prometheus', async () => {
+    const wrapper = mountPage('admin')
+    await flushPromises()
+    const grafana = wrapper.get('[data-testid="obs-grafana"]')
+    const prometheus = wrapper.get('[data-testid="obs-prometheus"]')
+    expect(grafana.attributes('aria-disabled')).toBe('true')
+    expect(prometheus.attributes('aria-disabled')).toBe('true')
+    expect(grafana.attributes('title')).toContain('make up-obs')
+    expect(prometheus.attributes('title')).toContain('make up-obs')
+    wrapper.unmount()
+  })
+
+  it('при доступном obs включает ссылки Grafana/Prometheus', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({}))
+    const wrapper = mountPage('admin')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="obs-grafana"]').attributes('aria-disabled')).toBe('false')
+    expect(wrapper.get('[data-testid="obs-prometheus"]').attributes('aria-disabled')).toBe('false')
     wrapper.unmount()
   })
 })
