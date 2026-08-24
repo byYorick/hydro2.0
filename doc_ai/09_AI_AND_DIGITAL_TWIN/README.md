@@ -2,6 +2,9 @@
 
 Этот раздел содержит документацию по AI-архитектуре, оптимизации, симуляции и цифровому двойнику.
 
+> **Status: `plan` / `frozen` — не runtime.** Все CHARTER и engine-drafts раздела (AR, yield, IPM, energy, climate, nutrient, digital twin, …) — намерение, не production. Файлы **не удалять**.
+>
+> **Runtime AI сейчас:** линейный Laravel `PredictionService` + опциональный skeleton `feature-builder` (compose profile `ml`). Не трактовать charters как внедрённый слой.
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 Breaking-change: обратная совместимость со старыми форматами и алиасами не поддерживается.

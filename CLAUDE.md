@@ -219,7 +219,7 @@ Laravel scheduler-dispatch → REST → Automation-Engine → REST → History-L
 - **Политики хранения (SoT):** `doc_ai/05_DATA_AND_STORAGE/DATA_RETENTION_POLICY.md`
   - Сырая телеметрия hot: **30 дней** (`TELEMETRY_RETENTION_DAYS` / `RETENTION_SAMPLES_DAYS`)
   - Агрегаты warm: 6–12 месяцев; cold archive: 5 лет
-- **Автоматическая агрегация:** Laravel `telemetry:cleanup-raw` / `telemetry:aggregate` (+ Python aggregator)
+- **Автоматическая агрегация:** Python `telemetry-aggregator` — writer `telemetry_agg_*` (`ON CONFLICT DO UPDATE`). Laravel `telemetry:aggregate` — seed/backfill (`ON CONFLICT DO NOTHING`), не schedule-writer.
 
 ### Стек мониторинга
 
@@ -485,7 +485,7 @@ Laravel scheduler-dispatch → REST → Automation-Engine → REST → History-L
 | Алерты | 365 дней | — | автоудаление resolved/acknowledged/TTL |
 | Логи | 7–30 дней | ~1 год (gz) | до 5 лет |
 
-- `telemetry:aggregate` — каждые 15 мин (Laravel `ON CONFLICT DO NOTHING`); Python aggregator — `ON CONFLICT DO UPDATE`.
+- Python `telemetry-aggregator` — непрерывный writer `telemetry_agg_*` (`ON CONFLICT DO UPDATE`). Laravel `telemetry:aggregate` — seed/backfill (`ON CONFLICT DO NOTHING`), не «каждые 15 мин» в Schedule.
 - При удалении зоны: `telemetry_last`/raw удаляются; agg/daily **анонимизируются**; events/logs **архивируются**.
 - Менять сроки — только через DATA_RETENTION_POLICY.md + compose/env + миграции/cron.
 

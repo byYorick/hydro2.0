@@ -1,12 +1,16 @@
 # Спецификация ролевых интерфейсов UI/UX
 
 **Дата создания:** 2025-01-27
-**Дата обновления:** 2026-08-19 (production = Unified Index + ролевые views; отдельные Dashboards-маршруты wontfix)
-**Версия:** 1.3
-**Статус:** Намерение ролей. Production-канон внедрения — [`ROLE_BASED_UX_IMPROVEMENT_PLAN.md`](ROLE_BASED_UX_IMPROVEMENT_PLAN.md).
+**Дата обновления:** 2026-08-24 (канон production = Unified Dashboard; ролевые Dashboards/*.vue и `/admin/{zones,recipes}` — overlay/superseded)
+**Версия:** 1.4
+**Статус:** Намерение ролей. Production-канон UI — Unified Dashboard. План UX — [`ROLE_BASED_UX_IMPROVEMENT_PLAN.md`](ROLE_BASED_UX_IMPROVEMENT_PLAN.md).
 
+> **Канон production UI:** Unified Dashboard `Pages/Dashboard/Index.vue` (views `operations|agronomy|engineering|admin`) через `UnifiedDashboardController`. Отдельные `AgronomistDashboard` / `AdminDashboard` / `EngineerDashboard` / `OperatorDashboard` / `ViewerDashboard` — **superseded** (Vue-файлы удалены). Примеры с ними и с `DefaultDashboard.vue` ниже — historical / hypothetical, **не реализовывать**.
+>
+> **Overlay / не канон:** `/admin/zones` и `/admin/recipes` — дубль операторского UI. Код маршрутов может ещё быть до merge P4; **не предлагать** как целевой UX и не развивать.
+>
 > **Status: removed (отдельные ролевые dashboards):**
-> Vue-файлы `Dashboards/*` удалены. Production home — `Pages/Dashboard/Index.vue` с views `operations|agronomy|engineering|admin`. Примеры с `DefaultDashboard.vue` ниже — hypothetical, не реализовывать.
+> Vue-файлы `Dashboards/*` удалены. Production home — `Pages/Dashboard/Index.vue`.
 >
 > **Status: implemented (роль-based access, итерации 1–3 плана UX):**
 > Реально работают:
