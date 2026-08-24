@@ -25,6 +25,8 @@ __attribute__((weak)) void relay_driver_append_active_channels_json(cJSON *relay
 static const char *TAG = "node_link_loss";
 
 #define LINK_LOSS_SNAPSHOT_MAX_BYTES 1024
+/* Fail-closed default when NodeConfig omits link_loss_timeout_sec (0 used to disable the timer). */
+#define NODE_LINK_LOSS_TIMEOUT_SEC_DEFAULT 30u
 
 static struct {
     bool initialized;
@@ -70,6 +72,12 @@ static void link_loss_reload_timeout_from_config(void) {
     }
 
     cJSON_Delete(config);
+
+    if (s_link_loss.timeout_sec == 0) {
+        s_link_loss.timeout_sec = NODE_LINK_LOSS_TIMEOUT_SEC_DEFAULT;
+        ESP_LOGI(TAG, "link_loss_timeout_sec missing in NodeConfig — using default %u s",
+                 (unsigned)NODE_LINK_LOSS_TIMEOUT_SEC_DEFAULT);
+    }
 }
 
 static void link_loss_build_snapshot_json(char *out, size_t out_size) {

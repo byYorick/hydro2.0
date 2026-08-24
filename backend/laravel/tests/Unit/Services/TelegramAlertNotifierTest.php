@@ -134,6 +134,18 @@ class TelegramAlertNotifierTest extends TestCase
         Http::assertSentCount(1);
     }
 
+    public function test_send_test_message_posts_to_bot_api(): void
+    {
+        Http::fake([
+            'api.telegram.org/*' => Http::response(['ok' => true], 200),
+        ]);
+
+        $ok = app(TelegramAlertNotifier::class)->sendTestMessage('hydro test');
+        $this->assertTrue($ok);
+        Http::assertSent(fn ($request) => str_contains($request->url(), 'sendMessage')
+            && $request['text'] === 'hydro test');
+    }
+
     public function test_skips_notification_when_telegram_not_configured(): void
     {
         Http::fake();

@@ -115,8 +115,10 @@
     "solution_fill_solution_min_check_delay_ms": 60000,
     "recirculation_solution_min_guard_enabled": true,
     "irrigation_solution_min_guard_enabled": true,
-    "estop_debounce_ms": 80
+    "estop_debounce_ms": 80,
+    "link_loss_timeout_sec": 30
   },
+  "link_loss_timeout_sec": 30,
   "wifi": {
     "ssid": "HydroFarm",
     "pass": "12345678"

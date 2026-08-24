@@ -222,7 +222,26 @@ class NodeConfigServiceTest extends TestCase
             'recirculation_solution_min_guard_enabled' => false,
             'irrigation_solution_min_guard_enabled' => true,
             'estop_debounce_ms' => 120,
+            'link_loss_timeout_sec' => 30,
         ], $config['fail_safe_guards']);
+        $this->assertSame(30, $config['link_loss_timeout_sec']);
+    }
+
+    public function test_generate_node_config_sets_default_link_loss_timeout_for_ph_node(): void
+    {
+        $node = DeviceNode::factory()->create([
+            'type' => 'ph',
+            'config' => [
+                'node_id' => 'nd-ph-1',
+                'version' => 3,
+                'type' => 'ph',
+                'channels' => [],
+            ],
+        ]);
+
+        $config = $this->app->make(NodeConfigService::class)->generateNodeConfig($node, null, true, false);
+
+        $this->assertSame(30, $config['link_loss_timeout_sec']);
     }
 
     public function test_generate_node_config_does_not_fallback_to_app_key_in_production(): void

@@ -48,6 +48,7 @@ class NodeConfigService
         }
 
         $config = $this->mergeIrrigationFailSafeMirror($node, $config);
+        $config = $this->mergeLinkLossTimeout($node, $config);
 
         return $config;
     }
@@ -284,6 +285,12 @@ class NodeConfigService
                 20,
                 5000
             );
+            $failSafeGuards['link_loss_timeout_sec'] = $this->toBoundedInt(
+                $profileGuards['link_loss_timeout_sec'] ?? null,
+                $failSafeGuards['link_loss_timeout_sec'],
+                5,
+                3600
+            );
         }
 
         $config['fail_safe_guards'] = $failSafeGuards;
@@ -303,7 +310,34 @@ class NodeConfigService
             'recirculation_solution_min_guard_enabled' => true,
             'irrigation_solution_min_guard_enabled' => true,
             'estop_debounce_ms' => 80,
+            'link_loss_timeout_sec' => 30,
         ];
+    }
+
+    /**
+     * Таймаут link-loss fail-safe на всех актуаторных нодах (не только irrig).
+     * Firmware читает top-level `link_loss_timeout_sec`, затем fail_safe_guards.
+     *
+     * @param  array<string, mixed>  $config
+     * @return array<string, mixed>
+     */
+    private function mergeLinkLossTimeout(DeviceNode $node, array $config): array
+    {
+        $fromGuards = is_array($config['fail_safe_guards'] ?? null)
+            ? ($config['fail_safe_guards']['link_loss_timeout_sec'] ?? null)
+            : null;
+        $timeout = $this->toBoundedInt(
+            $config['link_loss_timeout_sec'] ?? $fromGuards,
+            30,
+            5,
+            3600
+        );
+        $config['link_loss_timeout_sec'] = $timeout;
+        if (isset($config['fail_safe_guards']) && is_array($config['fail_safe_guards'])) {
+            $config['fail_safe_guards']['link_loss_timeout_sec'] = $timeout;
+        }
+
+        return $config;
     }
 
     private function toBoundedInt(mixed $value, int $fallback, int $min, int $max): int

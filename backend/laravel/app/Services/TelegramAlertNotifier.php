@@ -75,6 +75,38 @@ class TelegramAlertNotifier
         return ! Cache::add($key, 1, $ttl);
     }
 
+    /**
+     * Ручная проверка канала (artisan alerts:telegram-test).
+     */
+    public function sendTestMessage(string $text): bool
+    {
+        if (! $this->isConfigured()) {
+            return false;
+        }
+
+        $token = (string) config('services.telegram.bot_token');
+        $chatIds = config('services.telegram.chat_ids', []);
+        $url = sprintf('https://api.telegram.org/bot%s/sendMessage', $token);
+        $ok = false;
+
+        foreach ($chatIds as $chatId) {
+            if (! is_string($chatId) || trim($chatId) === '') {
+                continue;
+            }
+
+            $response = Http::timeout(5)
+                ->acceptJson()
+                ->post($url, [
+                    'chat_id' => trim($chatId),
+                    'text' => $text,
+                    'disable_web_page_preview' => true,
+                ]);
+            $ok = $ok || $response->successful();
+        }
+
+        return $ok;
+    }
+
     public function dedupCacheKey(string $code, ?int $zoneId): string
     {
         $zoneSegment = $zoneId === null ? 'global' : (string) $zoneId;

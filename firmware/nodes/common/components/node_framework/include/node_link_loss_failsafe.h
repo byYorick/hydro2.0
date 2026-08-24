@@ -1,6 +1,9 @@
 /**
  * @file node_link_loss_failsafe.h
  * @brief Link-loss fail-safe policy: stop actuators after MQTT disconnect timeout.
+ *
+ * Timeout from NodeConfig `link_loss_timeout_sec` / `fail_safe_guards.link_loss_timeout_sec`.
+ * If omitted, firmware uses 30 s (fail-closed).
  */
 
 #ifndef NODE_LINK_LOSS_FAILSAFE_H
