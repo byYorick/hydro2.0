@@ -110,7 +110,7 @@ health_status VARCHAR(16)
 hardware_profile JSONB
 capabilities JSONB
 settings JSONB
-automation_runtime VARCHAR(16) NOT NULL DEFAULT 'ae3' CHECK (automation_runtime IN ('ae3'))
+automation_runtime VARCHAR(16) NOT NULL DEFAULT 'ae3' CHECK (automation_runtime IN ('ae3', 'ae4'))
 control_mode VARCHAR(16) NOT NULL DEFAULT 'auto' CHECK (control_mode IN ('auto','semi','manual'))
 -- Phase 5: config modes (locked/live)
 config_mode VARCHAR(16) NOT NULL DEFAULT 'locked' CHECK (config_mode IN ('locked','live'))

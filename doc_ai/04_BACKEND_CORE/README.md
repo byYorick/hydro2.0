@@ -12,6 +12,9 @@ Breaking-change: несовместимые изменения в защищён
 План исполнения AE4 (оркестратор и агенты, не runtime SoT):
 - `AE4_AGENT_EXECUTION_PLAN.md`
 
+Контракт runtime AE 1.0.0 (значение, два claim, `due_at`, FSM; формулы не здесь):
+- `ae4.md`
+
 Канонический документ по automation/runtime authority:
 - `AUTOMATION_CONFIG_AUTHORITY.md`
 

@@ -630,10 +630,11 @@ CAS update по `version` обязателен для workflow mutation.
 ### 6.5 `zones`
 
 Для rollout достаточно одного поля:
-1. `automation_runtime TEXT NOT NULL DEFAULT 'ae3' CHECK (automation_runtime IN ('ae3'))`
+1. `automation_runtime TEXT NOT NULL DEFAULT 'ae3' CHECK (automation_runtime IN ('ae3', 'ae4'))`
 
 Правило:
-1. switch на `ae3` запрещён, если у зоны есть active task или active lease
+1. смена `automation_runtime` запрещена, если у зоны есть active task или active lease
+2. claim AE3 берёт pending-задачу только при `automation_runtime = 'ae3'` и `due_at <= now`
 
 ### 6.6 Config modes (Phase 5, 2026-04-15)
 

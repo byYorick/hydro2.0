@@ -126,6 +126,14 @@ class Ae3LiteSchemaTest extends TestCase
     {
         $zone = Zone::factory()->create(['status' => 'online']);
 
+        DB::table('zones')
+            ->where('id', $zone->id)
+            ->update(['automation_runtime' => 'ae4']);
+        $this->assertSame(
+            'ae4',
+            DB::table('zones')->where('id', $zone->id)->value('automation_runtime')
+        );
+
         $this->assertInsertFails(function () use ($zone): void {
             DB::table('zones')
                 ->where('id', $zone->id)

@@ -2,17 +2,17 @@
 
 namespace Tests\Feature;
 
+use App\Exceptions\ZoneRuntimeSwitchDeniedException;
 use App\Models\User;
 use App\Models\Zone;
+use App\Services\ZoneService;
 use Illuminate\Support\Facades\DB;
 use Tests\RefreshDatabase;
 use Tests\TestCase;
 
 /**
- * После AE3-cutover единственный допустимый runtime — 'ae3'.
- * Тесты проверяют:
- *  - Попытка установить non-ae3 runtime → 422 (валидация)
- *  - No-op switch ae3→ae3 при idle-зоне → 200
+ * Допустимые runtime: ae3 и ae4. Неизвестное значение — 422.
+ * Свободная зона принимает ae4. Задача или lease оставляют ZoneRuntimeSwitchDeniedException.
  */
 class Ae3LiteRuntimeSwitchGuardTest extends TestCase
 {
@@ -86,5 +86,58 @@ class Ae3LiteRuntimeSwitchGuardTest extends TestCase
         DB::table('zones')
             ->where('id', $zone->id)
             ->update(['automation_runtime' => 'legacy']);
+    }
+
+    public function test_e215_idle_zone_accepts_ae4(): void
+    {
+        $token = $this->token();
+        $zone = Zone::factory()->create(['status' => 'online']);
+
+        $resp = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->patchJson("/api/zones/{$zone->id}", ['automation_runtime' => 'ae4']);
+
+        $resp->assertOk();
+        $this->assertSame('ae4', $zone->fresh()->automation_runtime);
+    }
+
+    public function test_e215_active_task_denies_runtime_switch(): void
+    {
+        $zone = Zone::factory()->create(['status' => 'online']);
+        DB::table('ae_tasks')->insert([
+            'zone_id' => $zone->id,
+            'task_type' => 'cycle_start',
+            'status' => 'pending',
+            'idempotency_key' => 'e215-task-'.$zone->id,
+            'scheduled_for' => now(),
+            'due_at' => now(),
+        ]);
+
+        try {
+            app(ZoneService::class)->update($zone, ['automation_runtime' => 'ae4']);
+            $this->fail('Ожидался ZoneRuntimeSwitchDeniedException.');
+        } catch (ZoneRuntimeSwitchDeniedException $exception) {
+            $this->assertSame('active_task', $exception->details()['blocker']);
+        }
+
+        $this->assertSame('ae3', $zone->fresh()->automation_runtime);
+    }
+
+    public function test_e215_active_lease_denies_runtime_switch(): void
+    {
+        $zone = Zone::factory()->create(['status' => 'online']);
+        DB::table('ae_zone_leases')->insert([
+            'zone_id' => $zone->id,
+            'owner' => 'e215-lease',
+            'leased_until' => now()->addMinute(),
+        ]);
+
+        try {
+            app(ZoneService::class)->update($zone, ['automation_runtime' => 'ae4']);
+            $this->fail('Ожидался ZoneRuntimeSwitchDeniedException.');
+        } catch (ZoneRuntimeSwitchDeniedException $exception) {
+            $this->assertSame('active_lease', $exception->details()['blocker']);
+        }
+
+        $this->assertSame('ae3', $zone->fresh()->automation_runtime);
     }
 }

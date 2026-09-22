@@ -537,15 +537,18 @@ class PgAutomationTaskRepository:
         normalized_now = self._normalize_timestamp(now)
         async with self._connection() as conn:
             async with conn.transaction():
+                # FOR UPDATE OF tasks: блокировка строки zones не должна прятать задачу.
                 row = await conn.fetchrow(
                     """
                     WITH candidate AS (
-                        SELECT id
-                        FROM ae_tasks
-                        WHERE status = 'pending'
-                          AND due_at <= $1
-                        ORDER BY due_at ASC, created_at ASC, id ASC
-                        FOR UPDATE SKIP LOCKED
+                        SELECT tasks.id
+                        FROM ae_tasks AS tasks
+                        JOIN zones ON zones.id = tasks.zone_id
+                        WHERE tasks.status = 'pending'
+                          AND tasks.due_at <= $1
+                          AND zones.automation_runtime = 'ae3'
+                        ORDER BY tasks.due_at ASC, tasks.created_at ASC, tasks.id ASC
+                        FOR UPDATE OF tasks SKIP LOCKED
                         LIMIT 1
                     )
                     UPDATE ae_tasks tasks
