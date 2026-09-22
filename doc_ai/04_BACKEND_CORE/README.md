@@ -9,6 +9,9 @@ Breaking-change: несовместимые изменения в защищён
 Канонический документ по AE3:
 - `ae3lite.md`
 
+План исполнения AE4 (оркестратор и агенты, не runtime SoT):
+- `AE4_AGENT_EXECUTION_PLAN.md`
+
 Канонический документ по automation/runtime authority:
 - `AUTOMATION_CONFIG_AUTHORITY.md`
 
