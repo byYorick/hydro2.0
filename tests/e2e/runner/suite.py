@@ -118,38 +118,14 @@ class TestSuite:
     def _get_suite_scenarios(self, suite_name: str) -> List[str]:
         """Get scenarios for a suite."""
         base_path = Path(__file__).parent.parent / "scenarios"
-        ae3lite_contract = [
-            str(base_path / "ae3lite" / "E95_ae3_start_cycle_done_completed.yaml"),
-            str(base_path / "ae3lite" / "E96_ae3_start_cycle_timeout_failed.yaml"),
-            str(base_path / "ae3lite" / "E97_ae3_restart_waiting_command_recovered.yaml"),
-            str(base_path / "ae3lite" / "E98_ae3_runtime_switch_denied_busy_zone.yaml"),
-            str(base_path / "ae3lite" / "E99_ae3_double_execution_guard.yaml"),
-            str(base_path / "ae3lite" / "E110_ae3_node_runtime_event_contract.yaml"),
+        ae4_node_sim = [
+            str(base_path / "ae4" / "AE4_SIM_01_node_sim_planned_shot.yaml"),
+            str(base_path / "ae4" / "AE4_SIM_02_node_sim_both_tanks_empty.yaml"),
         ]
-        ae3lite_testnode_realhw_core = [
-            str(base_path / "ae3lite" / "E100_ae3_two_tank_realhw_smoke.yaml"),
-            str(base_path / "ae3lite" / "E101_ae3_two_tank_realhw_ready_during_fill.yaml"),
-            str(base_path / "ae3lite" / "E101_ae3_two_tank_realhw_setup_ready.yaml"),
-            str(base_path / "ae3lite" / "E103_ae3_recirculation_retry_limit_alert_resolve_ready_realhw.yaml"),
-            str(base_path / "ae3lite" / "E104_ae3_two_tank_realhw_hot_reload_correction_config.yaml"),
-            str(base_path / "ae3lite" / "E105_ae3_two_tank_fail_closed_missing_command_plan_realhw.yaml"),
-            str(base_path / "ae3lite" / "E106_ae3_two_tank_realhw_piggyback_ec_ph_cycle.yaml"),  # sequential nutrient pipeline (legacy filename)
-            str(base_path / "ae3lite" / "E112_ae3_per_phase_ec_target_realhw.yaml"),
-            str(base_path / "ae3lite" / "E113_ae3_prepare_recirc_solution_low_to_setup_realhw.yaml"),
-            str(base_path / "ae3lite" / "E114_ae3_reactive_solution_topup_level_switch_realhw.yaml"),
-            str(base_path / "ae3lite" / "E115_ae3_solution_change_operator_gate_realhw.yaml"),
-            str(base_path / "ae3lite" / "E116_ae3_estop_failsafe_events_realhw.yaml"),
-            str(base_path / "ae3lite" / "E118_ae3_water_baseline_and_ca_fill_realhw.yaml"),
-            str(base_path / "ae3lite" / "E119_ae3_prepare_pipeline_sequence_realhw.yaml"),
-            str(base_path / "ae3lite" / "E120_ae3_recirc_dilute_overshoot_realhw.yaml"),
+        ae4_realhw = [
+            str(base_path / "ae4" / "AE4_HW_01_test_node_planned_shot.yaml"),
+            str(base_path / "ae4" / "AE4_HW_02_test_node_both_tanks_empty.yaml"),
         ]
-        ae3lite_testnode_realhw_irrigation = [
-            str(base_path / "ae3lite" / "E107_ae3_irrigation_runtime_test_node.yaml"),
-            str(base_path / "ae3lite" / "E108_ae3_soil_moisture_telemetry_contract.yaml"),
-            str(base_path / "ae3lite" / "E109_ae3_irrigation_inline_correction_test_node.yaml"),
-        ]
-        ae3lite_v1 = list(ae3lite_contract)
-        ae3lite_realhw = ae3lite_testnode_realhw_core + ae3lite_testnode_realhw_irrigation
         calibration_realhw = [
             str(base_path / "calibration" / "E110_sensor_calibration_realhw_create_cancel.yaml"),
             str(base_path / "calibration" / "E111_sensor_calibration_realhw_force_invalid.yaml"),
@@ -211,7 +187,7 @@ class TestSuite:
                 str(base_path / "automation_engine" / "E65_phase_transition_api.yaml"),
                 str(base_path / "automation_engine" / "E74_node_zone_mismatch_guard.yaml"),
             ],
-            "automation_engine_realhw": list(ae3lite_realhw),
+            "automation_engine_realhw": list(ae4_realhw),
             "workflow": [
                 str(base_path / "workflow" / "E96_reactive_solution_topup_level_switch.yaml"),
                 str(base_path / "workflow" / "E97_solution_change_operator_gate.yaml"),
@@ -220,16 +196,10 @@ class TestSuite:
                 str(base_path / "scheduler" / "E80_irrigation_schedule_happy.yaml"),
                 str(base_path / "scheduler" / "E81_water_change_schedule.yaml"),
                 str(base_path / "scheduler" / "E82_dry_run_protection.yaml"),
-                str(base_path / "scheduler" / "E93_start_cycle_intent_executor_path.yaml"),
-                str(base_path / "scheduler" / "E94_start_lighting_tick_intent_executor_path.yaml"),
                 str(base_path / "scheduler" / "E95_lighting_off_photoperiod_boundary.yaml"),
             ],
-            "ae3lite": ae3lite_contract + ae3lite_realhw,
-            "ae3lite_contract": ae3lite_contract,
-            "ae3lite_v1": ae3lite_v1,
-            "ae3lite_realhw": ae3lite_realhw,
-            "ae3lite_testnode_realhw_core": ae3lite_testnode_realhw_core,
-            "ae3lite_testnode_realhw_irrigation": ae3lite_testnode_realhw_irrigation,
+            "ae4": list(ae4_node_sim),
+            "ae4_realhw": list(ae4_realhw),
             "calibration_realhw": calibration_realhw,
             "snapshot": [
                 str(base_path / "snapshot" / "E30_snapshot_contains_last_event_id.yaml"),
@@ -241,7 +211,7 @@ class TestSuite:
                 str(base_path / "chaos" / "E71_db_flaky.yaml"),
                 str(base_path / "chaos" / "E72_ws_down_snapshot_recover.yaml"),
             ],
-            "prod_readiness_realhw": ae3lite_realhw + calibration_realhw,
+            "prod_readiness_realhw": list(calibration_realhw),
             "full": self._get_all_scenarios(),
         }
 
@@ -286,8 +256,7 @@ class TestSuite:
             # Check if it's a predefined suite
             if path in ["smoke", "core", "commands", "alerts", "infrastructure",
                        "grow_cycle", "automation_engine", "automation_engine_realhw",
-                       "workflow", "scheduler", "ae3lite", "ae3lite_contract", "ae3lite_v1", "ae3lite_realhw",
-                       "ae3lite_testnode_realhw_core", "ae3lite_testnode_realhw_irrigation",
+                       "workflow", "scheduler", "ae4", "ae4_realhw",
                        "calibration_realhw", "snapshot", "chaos", "prod_readiness_realhw", "full"]:
                 scenarios.extend(self._get_suite_scenarios(path))
                 continue
@@ -392,8 +361,8 @@ class TestSuite:
             tags.append('grow_cycle')
         if 'automation_engine' in path_parts:
             tags.append('automation_engine')
-        if 'ae3lite' in path_parts:
-            tags.append('ae3lite')
+        if 'ae4' in path_parts:
+            tags.append('ae4')
         if 'calibration' in path_parts:
             tags.append('calibration')
         if 'workflow' in path_parts:
@@ -494,8 +463,7 @@ Examples:
             "--suite", "-s",
             choices=["smoke", "core", "commands", "alerts", "infrastructure",
                     "grow_cycle", "automation_engine", "automation_engine_realhw",
-                    "workflow", "scheduler", "ae3lite", "ae3lite_contract", "ae3lite_v1", "ae3lite_realhw",
-                    "ae3lite_testnode_realhw_core", "ae3lite_testnode_realhw_irrigation",
+                    "workflow", "scheduler", "ae4", "ae4_realhw",
                     "calibration_realhw", "snapshot", "chaos", "prod_readiness_realhw", "full"],
             help="Run predefined test suite"
         )
@@ -717,8 +685,7 @@ Examples:
         print("Available test suites:")
         suites = ["smoke", "core", "commands", "alerts", "infrastructure",
                  "grow_cycle", "automation_engine", "automation_engine_realhw",
-                 "workflow", "scheduler", "ae3lite", "ae3lite_contract", "ae3lite_v1", "ae3lite_realhw",
-                 "ae3lite_testnode_realhw_core", "ae3lite_testnode_realhw_irrigation",
+                 "workflow", "scheduler", "ae4", "ae4_realhw",
                  "calibration_realhw", "snapshot", "chaos", "prod_readiness_realhw", "full"]
         for suite in suites:
             scenarios = self._get_suite_scenarios(suite)

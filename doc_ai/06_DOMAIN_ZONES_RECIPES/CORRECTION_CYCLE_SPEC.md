@@ -1375,7 +1375,7 @@ Inline Ca/NPK на поливе — **поддерживающий** top-up, н�
 Ingress (целевой контракт):
 
 - **Ручной:** `POST /zones/{id}/start-solution-change` (`source`, `idempotency_key`, опционально `trigger=operator|scheduler`).
-- **По расписанию:** Laravel `ScheduleDispatcher` создаёт intent `SOLUTION_CHANGE_TICK` и вызывает тот же endpoint; в v1 task **не начинает drain** до первого operator confirm (см. §10.4).
+- **По расписанию / тику:** в AE 1.0.0 момент смены раствора не будит Laravel `ScheduleDispatcher` (класса нет). Подтверждение оператора на визите — см. §10.4; суточный тик полную подмену не стартует (`ae4.md` §2.1 / §11).
 
 Команды на узлы — только через `history-logger` → MQTT (инвариант AE3).
 
@@ -1537,7 +1537,7 @@ Terminal failure обязан: fail-safe OFF актуаторов, sync `workflo
 
 - `ARCHITECTURE_FLOWS.md` — архитектурные схемы и пайплайны
 - `EFFECTIVE_TARGETS_SPEC.md` — спецификация effective-targets
-- `doc_ai/04_BACKEND_CORE/ae3lite.md` — runtime AE3, ingress `start-solution-change`
+- `doc_ai/04_BACKEND_CORE/ae4.md` — AE 1.0.0; ingress `start-solution-change` нет (тик воркера)
 - `doc_ai/06_DOMAIN_ZONES_RECIPES/WATER_FLOW_ENGINE.md` — гидравлические подсистемы
 - `doc_ai/06_DOMAIN_ZONES_RECIPES/CONTROL_MODES_SPEC.md` — manual steps baseline
 - `../03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md` — MQTT протокол

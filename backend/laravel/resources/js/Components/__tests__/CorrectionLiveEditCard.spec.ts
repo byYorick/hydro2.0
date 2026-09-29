@@ -26,7 +26,11 @@ const correctionDocument = {
   zone_id: 7,
   version: 4,
   base_config: {
-    timing: { stabilization_sec: 8 },
+    timing: {
+      stabilization_sec: 8,
+      stale_ec_allows_shot: 'deny',
+      ec_clean: 0.2,
+    },
     retry: { telemetry_stale_retry_sec: 30 },
     controllers: {
       ec: {
@@ -38,7 +42,11 @@ const correctionDocument = {
   phase_overrides: {},
   resolved_config: {
     base: {
-      timing: { stabilization_sec: 8 },
+      timing: {
+        stabilization_sec: 8,
+        stale_ec_allows_shot: 'deny',
+        ec_clean: 0.2,
+      },
       retry: { telemetry_stale_retry_sec: 30 },
       controllers: {
         ec: {
@@ -94,6 +102,22 @@ const correctionDocument = {
             type: 'integer',
             min: 0,
             max: 3600,
+          },
+          {
+            path: 'timing.stale_ec_allows_shot',
+            label: 'Кадр при протухшем EC',
+            description: 'allow or deny',
+            type: 'enum',
+            options: ['allow', 'deny'],
+          },
+          {
+            path: 'timing.ec_clean',
+            label: 'EC чистой воды',
+            description: 'EC_clean for drain share',
+            type: 'number',
+            min: 0,
+            max: 20,
+            step: 0.01,
           },
         ],
       },
@@ -271,5 +295,12 @@ describe('CorrectionLiveEditCard', () => {
       .toBeDefined()
     expect(wrapper.find('[data-testid="correction-live-blocker"]').text())
       .toContain('Базовую correction-конфигурацию и process calibration нельзя отправить одним запросом')
+  })
+
+  it('e252 shows stale ec and ec clean fields in open correction form', async () => {
+    const wrapper = mount(CorrectionLiveEditCard, { props: { zoneId: 7 } })
+    await flushPromises()
+
+    expect(wrapper.text()).toMatch(/Кадр при протухшем EC[\s\S]*EC чистой воды/)
   })
 })

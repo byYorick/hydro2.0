@@ -73,10 +73,13 @@ Python-сервис:
 1. Принимает сообщение из MQTT.
 2. Валидирует структуру JSON (формат, диапазоны).
 3. Резолвит `sensor_id` через таблицу `sensors` (по `zone_id`, `node_id`, `metric_type`, `channel`, `scope`).
-4. Преобразует во внутреннюю структуру (sensor_id, ts, value, quality, metadata, zone_id/cycle_id).
-5. Записывает:
+4. Преобразует во внутреннюю структуру (sensor_id, ts, value, quality, metadata, zone_id).
+5. Резолвит `cycle_id` на ingest по `zone_id`: ровно одна активная посадка
+   (`grow_cycles.status IN ('PLANNED','RUNNING','PAUSED')`) → её `id`; нет посадки → `NULL`;
+   больше одной → `NULL` и ошибка в лог. Поле в MQTT payload не добавляется.
+6. Записывает:
 
- - в таблицу `telemetry_samples` — полная история;
+ - в таблицу `telemetry_samples` — полная история (включая `cycle_id`, если резолв дал id);
  - в таблицу `telemetry_last` — последнее значение по `sensor_id`.
 
 Пример записи в `telemetry_samples` (логика, не SQL):
@@ -85,7 +88,7 @@ Python-сервис:
 - `sensor_id`
 - `ts`
 - `zone_id` (optional)
-- `cycle_id` (optional)
+- `cycle_id` (optional; только ingest-резолв, не из MQTT)
 - `value`
 - `quality`
 - `metadata`

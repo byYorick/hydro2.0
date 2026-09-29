@@ -247,6 +247,10 @@ class AutomationConfigDocumentService
                 $currentPayload
             ),
             AutomationConfigRegistry::NAMESPACE_ZONE_RUNTIME_TUNING_BUNDLE => $this->normalizeRuntimeTuningBundlePayload($payload),
+            AutomationConfigRegistry::NAMESPACE_SYSTEM_ALERT_POLICIES => $this->normalizeAlertPoliciesPayload(
+                $payload,
+                $currentPayload
+            ),
             default => $payload,
         };
     }
@@ -268,6 +272,26 @@ class AutomationConfigDocumentService
             'last_applied_at' => $payload['last_applied_at'] ?? null,
             'last_applied_version' => isset($payload['last_applied_version']) ? (int) $payload['last_applied_version'] : null,
         ];
+    }
+
+    /**
+     * Settings UI шлёт только mode — результат alerts:telegram-test не затираем.
+     *
+     * @param  array<string, mixed>  $payload
+     * @param  array<string, mixed>  $currentPayload
+     * @return array<string, mixed>
+     */
+    private function normalizeAlertPoliciesPayload(array $payload, array $currentPayload): array
+    {
+        $out = $payload;
+        if (! array_key_exists('telegram_test_ok', $out) && array_key_exists('telegram_test_ok', $currentPayload)) {
+            $out['telegram_test_ok'] = $currentPayload['telegram_test_ok'];
+        }
+        if (! array_key_exists('telegram_test_at', $out) && array_key_exists('telegram_test_at', $currentPayload)) {
+            $out['telegram_test_at'] = $currentPayload['telegram_test_at'];
+        }
+
+        return $out;
     }
 
     /**

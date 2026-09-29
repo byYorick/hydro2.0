@@ -14,7 +14,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 
 ## 1. Цель
 
-Физическая `test_node` (один ESP32, шесть виртуальных UID `nd-test-*`) гоняет AE3 two-tank / irrigation / calibration **без node-sim**. Launcher сам поднимает e2e-стек и **останавливает** сервисы `node-sim*`.
+Физическая `test_node` (один ESP32, шесть виртуальных UID `nd-test-*`) гоняет AE 1.0.0 кадр полива и пустые баки, плюс калибровку сенсоров, **без node-sim**. Launcher сам поднимает e2e-стек и **останавливает** сервисы `node-sim*`.
 
 Агент обязан:
 
@@ -111,18 +111,16 @@ Override: `TEST_NODE_GH_UID` / `TEST_NODE_ZONE_UID` / `TEST_NODE_UID` / `MQTT_EX
 
 ```bash
 # Сначала список — не запускать вслепую
-tests/e2e/run_automation_engine_real_hardware.sh --set=ae3lite --list
-tests/e2e/run_automation_engine_real_hardware.sh --set=full --list
+tests/e2e/run_automation_engine_real_hardware.sh --set=ae4 --list
 
 # Узкий прогон (предпочтительно для агента)
-E2E_SCENARIO_INCLUDE_REGEX='E100_ae3_two_tank_realhw_smoke' \
-  tests/e2e/run_automation_engine_real_hardware.sh --set=ae3lite
+E2E_SCENARIO_INCLUDE_REGEX='AE4_HW_01' \
+  tests/e2e/run_automation_engine_real_hardware.sh --set=ae4
 
 # Наборы
-tests/e2e/run_automation_engine_real_hardware.sh --set=ae3lite            # 15 two-tank
-tests/e2e/run_automation_engine_real_hardware.sh --set=smart_irrigation   # E107–E109
-tests/e2e/run_automation_engine_real_hardware.sh --set=calibration        # E110, E111, E117
-tests/e2e/run_automation_engine_real_hardware.sh --set=full               # 21 = 15+3+3
+tests/e2e/run_automation_engine_real_hardware.sh --set=ae4            # кадр и оба пустых бака
+tests/e2e/run_automation_engine_real_hardware.sh --set=calibration    # E110, E111, E117
+tests/e2e/run_automation_engine_real_hardware.sh --set=full           # ae4 + calibration
 ```
 
 Launcher:

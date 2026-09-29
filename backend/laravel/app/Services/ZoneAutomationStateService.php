@@ -584,11 +584,19 @@ class ZoneAutomationStateService
     {
         $stateDetails = is_array($payload['state_details'] ?? null) ? $payload['state_details'] : null;
         if ($stateDetails !== null) {
-            $presentation = $this->errorCodeCatalog->present(
-                is_string($stateDetails['error_code'] ?? null) ? $stateDetails['error_code'] : null,
-                is_string($stateDetails['error_message'] ?? null) ? $stateDetails['error_message'] : null,
-            );
-            $stateDetails['human_error_message'] = $presentation['message'];
+            // Runtime AE4 уже кладёт русский human_error_message — каталог его не затирает.
+            $runtimeHuman = is_string($stateDetails['human_error_message'] ?? null)
+                ? trim((string) $stateDetails['human_error_message'])
+                : '';
+            if ($runtimeHuman === '') {
+                $presentation = $this->errorCodeCatalog->present(
+                    is_string($stateDetails['error_code'] ?? null) ? $stateDetails['error_code'] : null,
+                    is_string($stateDetails['error_message'] ?? null) ? $stateDetails['error_message'] : null,
+                );
+                $stateDetails['human_error_message'] = $presentation['message'];
+            } else {
+                $stateDetails['human_error_message'] = $runtimeHuman;
+            }
             $payload['state_details'] = $stateDetails;
         }
 
@@ -640,6 +648,16 @@ class ZoneAutomationStateService
 
         $stateDetails = is_array($payload['state_details'] ?? null) ? $payload['state_details'] : [];
         if (($stateDetails['failed'] ?? false) !== true) {
+            // Пауза политики (failed=false / planting_decision) не трогаем.
+            return $payload;
+        }
+
+        // Свежий сбой AE4 (коды failure_report: ae4_*) не входит в whitelist biz_ae3_*.
+        // Без этой ветки decorate стирал бы русский human_error_message до экрана.
+        $errorCode = is_string($stateDetails['error_code'] ?? null)
+            ? strtolower(trim((string) $stateDetails['error_code']))
+            : '';
+        if (str_starts_with($errorCode, 'ae4_')) {
             return $payload;
         }
 

@@ -1,13 +1,10 @@
-"""E216: claim AE3 не берёт зону ae4, claim AE4 не берёт зону ae3."""
+"""E216: после сноса claim AE4 не берёт зону с явным runtime ae3."""
 
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
-from ae3lite.infrastructure.repositories.automation_task_repository import (
-    PgAutomationTaskRepository as Ae3TaskRepository,
-)
 from ae4.infrastructure.repositories.automation_task_repository import (
     PgAutomationTaskRepository as Ae4TaskRepository,
 )
@@ -118,6 +115,10 @@ async def _restore_due_at(parked: list[tuple[int, datetime]]) -> None:
         )
 
 
+def _test_config() -> Ae4RuntimeConfig:
+    return Ae4RuntimeConfig.from_env()
+
+
 async def test_e216_workers_claim_only_their_runtime() -> None:
     now = datetime.now(timezone.utc).replace(microsecond=0)
     greenhouse_id: int | None = None
@@ -135,18 +136,10 @@ async def test_e216_workers_claim_only_their_runtime() -> None:
         task_ae3 = await _insert_task(zone_ae3, due_at=now)
         future_ae4 = await _insert_task(zone_ae4_later, due_at=now + timedelta(days=1))
         parked = await _park_other_due_tasks([task_ae3, task_ae4, future_ae4], now)
-        ae3_repo = Ae3TaskRepository()
         ae4_worker = Ae4RuntimeWorker(
-            config=Ae4RuntimeConfig(reconcile_poll_interval_sec=0.5),
+            config=_test_config(),
             repository=Ae4TaskRepository(),
         )
-
-        claimed_ae3 = await ae3_repo.claim_next_pending(owner="ae3-runtime-worker", now=now)
-        if claimed_ae3 is not None and int(claimed_ae3.id) != task_ae3:
-            await _release_claim(int(claimed_ae3.id), "ae3-runtime-worker")
-        assert claimed_ae3 is not None
-        assert int(claimed_ae3.id) == task_ae3
-        assert int(claimed_ae3.zone_id) == zone_ae3
 
         claimed_ae4 = await ae4_worker.claim_next(now=now)
         if claimed_ae4 is not None and claimed_ae4.id != task_ae4:
@@ -156,8 +149,10 @@ async def test_e216_workers_claim_only_their_runtime() -> None:
         assert claimed_ae4.zone_id == zone_ae4
         assert claimed_ae4.claimed_by == AE4_WORKER_OWNER
 
-        assert await ae3_repo.claim_next_pending(owner="ae3-runtime-worker", now=now) is None
+        # Зона с явным ae3 не обслуживается новым воркером.
         assert await ae4_worker.claim_next(now=now) is None
+        ae3_rows = await fetch("SELECT status FROM ae_tasks WHERE id = $1", task_ae3)
+        assert ae3_rows[0]["status"] == "pending"
 
         future_rows = await fetch("SELECT status, due_at FROM ae_tasks WHERE id = $1", future_ae4)
         assert future_rows[0]["status"] == "pending"

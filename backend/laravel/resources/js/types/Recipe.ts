@@ -24,6 +24,11 @@ export interface RecipePhaseTargets {
   light_hours?: number
   irrigation_interval_sec?: number
   irrigation_duration_sec?: number
+  soil_moisture_min?: number | null
+  soil_moisture_max?: number | null
+  vpd_min?: number | null
+  vpd_max?: number | null
+  light_integral_per_shot?: number | null
   irrigation?: Record<string, unknown>
   mist?: {
     mode?: string | null
@@ -132,6 +137,11 @@ export interface RecipePhase {
   irrigation_mode?: string | null
   irrigation_interval_sec?: number | null
   irrigation_duration_sec?: number | null
+  soil_moisture_min?: number | null
+  soil_moisture_max?: number | null
+  vpd_min?: number | null
+  vpd_max?: number | null
+  light_integral_per_shot?: number | null
   irrigation_system_type?: string | null
   substrate_type?: string | null
   mist_mode?: string | null

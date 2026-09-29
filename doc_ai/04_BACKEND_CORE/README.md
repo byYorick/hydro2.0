@@ -6,8 +6,8 @@
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 Breaking-change: несовместимые изменения в защищённом pipeline запрещены; authority cutover завершён, прежний стек automation config не используется в runtime read-path.
 
-Канонический документ по AE3:
-- `ae3lite.md`
+Канонический документ по AE 1.0.0:
+- `ae4.md`
 
 План исполнения AE4 (оркестратор и агенты, не runtime SoT):
 - `AE4_AGENT_EXECUTION_PLAN.md`
@@ -69,20 +69,20 @@ Breaking-change: несовместимые изменения в защищён
 
 ### Специализированные документы
 
-#### [ae3lite.md](ae3lite.md)
-Каноническая спецификация AE3-Lite (`DB-first`, `LISTEN/NOTIFY + fallback polling`, ручной rollout/rollback — раздел 10).
+#### [ae4.md](ae4.md)
+Каноническая спецификация AE 1.0.0-Lite (`DB-first`, `LISTEN/NOTIFY + fallback polling`, ручной rollout/rollback — раздел 10).
 
-#### [AE3_IRR_LEVEL_SWITCH_EVENT_CONTRACT.md](AE3_IRR_LEVEL_SWITCH_EVENT_CONTRACT.md)
-Детализирующий контракт интеграции AE3 с channel-level `level_* /event` от `storage_irrigation_node`.
+#### [AE 1.0.0_IRR_LEVEL_SWITCH_EVENT_CONTRACT.md](AE 1.0.0_IRR_LEVEL_SWITCH_EVENT_CONTRACT.md)
+Детализирующий контракт интеграции AE 1.0.0 с channel-level `level_* /event` от `storage_irrigation_node`.
 
-#### [AE3_IRR_FAILSAFE_AND_ESTOP_CONTRACT.md](AE3_IRR_FAILSAFE_AND_ESTOP_CONTRACT.md)
-Контракт дублирования в AE3 защитной логики IRR-ноды: fail-safe guards, `E-Stop`, mirror конфигов и stop-semantics.
+#### [AE 1.0.0_IRR_FAILSAFE_AND_ESTOP_CONTRACT.md](AE 1.0.0_IRR_FAILSAFE_AND_ESTOP_CONTRACT.md)
+Контракт дублирования в AE 1.0.0 защитной логики IRR-ноды: fail-safe guards, `E-Stop`, mirror конфигов и stop-semantics.
 
 #### [HISTORY_LOGGER_API.md](HISTORY_LOGGER_API.md)
 Контракт REST API публикации команд в MQTT через history-logger.
 
 #### [ERROR_CODE_CATALOG.md](ERROR_CODE_CATALOG.md)
-Каталог кодов ошибок backend/AE3 для API и UI.
+Каталог кодов ошибок backend/AE 1.0.0 для API и UI.
 
 #### [END_TO_END_WORKFLOW_GUIDE.md](END_TO_END_WORKFLOW_GUIDE.md)
 Сквозные сценарии и точки интеграции стека.
@@ -93,23 +93,23 @@ Breaking-change: несовместимые изменения в защищён
 #### [FULL_STACK_DEPLOY_DOCKER.md](FULL_STACK_DEPLOY_DOCKER.md)
 Деплой полного стека через Docker (Laravel + Python-сервисы mqtt-bridge / history-logger / automation-engine)
 
-#### [LARAVEL_AE3_READ_MODEL_CONTRACT.md](LARAVEL_AE3_READ_MODEL_CONTRACT.md)
-Snapshot-контракт read-model Laravel↔AE3 (`canonical`)
+#### [LARAVEL_AE 1.0.0_READ_MODEL_CONTRACT.md](LARAVEL_AE 1.0.0_READ_MODEL_CONTRACT.md)
+Snapshot-контракт read-model Laravel↔AE 1.0.0 (`canonical`)
 
 ### Living plans (`plan`)
 
-- [AE3_STARTUP_RECOVERY_IMPROVEMENT_PLAN.md](AE3_STARTUP_RECOVERY_IMPROVEMENT_PLAN.md)
-- [AE3_NODE_AVAILABILITY_DETECTION_PLAN.md](AE3_NODE_AVAILABILITY_DETECTION_PLAN.md)
-- [AE3_SETUP_BEFORE_IRRIGATION_PLAN.md](AE3_SETUP_BEFORE_IRRIGATION_PLAN.md)
+- [AE 1.0.0_STARTUP_RECOVERY_IMPROVEMENT_PLAN.md](AE 1.0.0_STARTUP_RECOVERY_IMPROVEMENT_PLAN.md)
+- [AE 1.0.0_NODE_AVAILABILITY_DETECTION_PLAN.md](AE 1.0.0_NODE_AVAILABILITY_DETECTION_PLAN.md)
+- [AE 1.0.0_SETUP_BEFORE_IRRIGATION_PLAN.md](AE 1.0.0_SETUP_BEFORE_IRRIGATION_PLAN.md)
 
 ### Архив plans (`archive` stubs → [`../00_ARCHIVE/PLANS/`](../00_ARCHIVE/PLANS/))
 
-- [AE3_RELIABILITY_AUDIT_AND_REMEDIATION_PLAN.md](AE3_RELIABILITY_AUDIT_AND_REMEDIATION_PLAN.md)
-- [AE3_REFACTORING_PLAN_FOR_AI_AGENTS.md](AE3_REFACTORING_PLAN_FOR_AI_AGENTS.md)
+- [AE 1.0.0_RELIABILITY_AUDIT_AND_REMEDIATION_PLAN.md](AE 1.0.0_RELIABILITY_AUDIT_AND_REMEDIATION_PLAN.md)
+- [AE 1.0.0_REFACTORING_PLAN_FOR_AI_AGENTS.md](AE 1.0.0_REFACTORING_PLAN_FOR_AI_AGENTS.md)
 - [BACKEND_REFACTOR_PLAN.md](BACKEND_REFACTOR_PLAN.md)
 - [REFACTORING_PLAN.md](REFACTORING_PLAN.md)
 
-Норматив runtime AE3 — `ae3lite.md` (+ IRR/event contracts); plans его не переопределяют.
+Норматив runtime AE 1.0.0 — `ae4.md` (+ IRR/event contracts); plans его не переопределяют.
 
 ---
 
@@ -131,13 +131,13 @@ Snapshot-контракт read-model Laravel↔AE3 (`canonical`)
 
 Важно: при вопросах ownership scheduler/runtime использовать
 `PYTHON_SERVICES_ARCH.md`,
-`ae3lite.md`
+`ae4.md`
 и `AUTOMATION_CONFIG_AUTHORITY.md`
 как приоритетные источники.
 
-Для AE3 единственный нормативный документ в этом разделе: `ae3lite.md` (см. также `../ARCHITECTURE_FLOWS.md`).
-`AE3_IRR_LEVEL_SWITCH_EVENT_CONTRACT.md` уточняет integration-contract и не переопределяет `ae3lite.md`.
-`AE3_IRR_FAILSAFE_AND_ESTOP_CONTRACT.md` дополняет его правилами дублирования fail-safe логики в AE3.
+Для автоматики единственный нормативный документ в этом разделе: `ae4.md` (см. также `../ARCHITECTURE_FLOWS.md`).
+`AE 1.0.0_IRR_LEVEL_SWITCH_EVENT_CONTRACT.md` уточняет integration-contract и не переопределяет `ae4.md`.
+`AE 1.0.0_IRR_FAILSAFE_AND_ESTOP_CONTRACT.md` дополняет его правилами дублирования fail-safe логики в AE 1.0.0.
 
 ---
 

@@ -120,7 +120,7 @@
             <div class="rounded-lg border border-[color:var(--border-muted)] p-2">
               <div class="flex items-center justify-between gap-2 mb-1.5">
                 <h5 class="text-[10px] font-semibold uppercase tracking-wide text-[color:var(--text-dim)]">
-                  Задачи диспетчера
+                  Последние задачи
                 </h5>
                 <span class="text-[10px] text-[color:var(--text-muted)]">{{ diagnostics.dispatcher_tasks.length }}</span>
               </div>

@@ -25,7 +25,6 @@
         :can-manage-cycle="canManageCycle"
         :pause-loading="loading.cyclePause"
         :next-phase-loading="loading.nextPhase"
-        @water="openActionModal('START_IRRIGATION')"
         @pause="onCyclePause"
         @next-phase="onNextPhase"
         @open-actions="activeTab = 'automation'"
@@ -138,11 +137,8 @@
         :pump-calibration-save-seq="pumpCalibrationSaveSeq"
         :pump-calibration-run-seq="pumpCalibrationRunSeq"
         :automation-state-refresh-seq="automationStateRefreshSeq"
-        :irrigation-action-loading="loading.actionSubmit && (currentActionType === 'START_IRRIGATION' || currentActionType === 'FORCE_IRRIGATION')"
         @open-pump-calibration="openPumpCalibrationModal"
         @refresh-automation-state="onPolicyAlertResolved"
-        @start-irrigation="openActionModal('START_IRRIGATION')"
-        @force-irrigation="openActionModal('FORCE_IRRIGATION')"
       />
       <ZoneSchedulerTab
         v-else-if="activeTab === 'scheduler'"

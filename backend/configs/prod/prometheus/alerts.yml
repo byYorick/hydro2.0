@@ -643,3 +643,34 @@ groups:
         annotations:
           summary: "Zone telemetry_last is stale"
           description: "telemetry_last_age_seconds max is {{ $value }}s (threshold 600s) for 5 minutes."
+
+  - name: ae4_runtime_alerts
+    interval: 30s
+    rules:
+      - alert: AE4WorkerSilent
+        expr: ae4_pending_tasks > 0 and rate(ae4_tick_duration_seconds_count[5m]) == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "AE4 worker silent with pending tasks"
+          description: "В очереди есть pending-задачи AE4, но worker не выполняет ticks 5+ минут."
+
+      - alert: AE4OldestActiveTask
+        expr: ae4_oldest_active_task_age_seconds > 900
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "AE4 active task older than 15 minutes"
+          description: "ae4_oldest_active_task_age_seconds is {{ $value }}s (threshold 900s)."
+
+      - alert: AE4ZoneLeaseLost
+        expr: rate(ae4_zone_lease_lost_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "AE4 zone lease lost (zone {{ $labels.zone_id }})"
+          description: "Zone {{ $labels.zone_id }} lease could not be claimed by AE4 worker."
+

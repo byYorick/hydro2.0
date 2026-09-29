@@ -411,6 +411,8 @@ services:
     volumes:
     - ../../tests/node_sim:/app
     - ./node-sim-config.yaml:/app/config/sim.yaml:ro
+    # active.yaml пишет раннер сценария и перезапускает контейнер. Пустой каталог — дефолтный sim.yaml.
+    - ./runtime:/app/config/runtime
     depends_on:
       mosquitto:
         condition: service_healthy
@@ -418,7 +420,10 @@ services:
         condition: service_healthy
       laravel:
         condition: service_healthy
-    command: python -m node_sim.cli run --config /app/config/sim.yaml
+    command:
+    - sh
+    - -c
+    - if [ -s /app/config/runtime/active.yaml ]; then exec python -m node_sim.cli run --config /app/config/runtime/active.yaml; fi; exec python -m node_sim.cli run --config /app/config/sim.yaml
     networks:
     - backend
   node-sim-workflow:

@@ -30,6 +30,11 @@ class RecipePhaseController extends Controller
             'targets.light_hours' => ['nullable', 'integer', 'between:0,24'],
             'targets.irrigation_interval_sec' => ['nullable', 'integer', 'min:1'],
             'targets.irrigation_duration_sec' => ['nullable', 'integer', 'min:1'],
+            'targets.soil_moisture_min' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'targets.soil_moisture_max' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'targets.vpd_min' => ['nullable', 'numeric', 'min:0'],
+            'targets.vpd_max' => ['nullable', 'numeric', 'min:0'],
+            'targets.light_integral_per_shot' => ['nullable', 'numeric', 'min:0'],
         ]);
         $phase = $this->recipeService->addPhase($recipe, $data);
 
@@ -52,6 +57,11 @@ class RecipePhaseController extends Controller
             'targets.light_hours' => ['nullable', 'integer', 'between:0,24'],
             'targets.irrigation_interval_sec' => ['nullable', 'integer', 'min:1'],
             'targets.irrigation_duration_sec' => ['nullable', 'integer', 'min:1'],
+            'targets.soil_moisture_min' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'targets.soil_moisture_max' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'targets.vpd_min' => ['nullable', 'numeric', 'min:0'],
+            'targets.vpd_max' => ['nullable', 'numeric', 'min:0'],
+            'targets.light_integral_per_shot' => ['nullable', 'numeric', 'min:0'],
         ]);
         $phase = $this->recipeService->updatePhase($recipePhase, $data);
 

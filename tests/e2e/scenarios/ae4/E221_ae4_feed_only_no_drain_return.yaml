@@ -1,0 +1,30 @@
+# E221: feed_only не шлёт команд слива и возврата стока.
+
+name: E221_ae4_feed_only_no_drain_return
+description: |
+  Контракт AE4 волны 3:
+  кадр feed_to_plants (контур feed_only) публикует только irrigation_start/stop,
+  payload содержит pump_main/run_pump/duration_ms, не имя plan,
+  команд слива и возврата стока нет, solution_drain и tank_filling в трассе нет.
+  Realhw не требуется.
+
+tags:
+  - ae4
+  - wave3
+  - feed_only
+
+meta:
+  id: E221
+  wave: 3
+  runtime: ae4
+  requires_physical_node: false
+  proves: |
+    feed_only frame has no drain/return commands;
+    pump_main run_pump duration_ms in payload;
+    plan name irrigation_start is not sent as cmd;
+    no solution_drain and no tank_filling stage in trace
+
+actions:
+  - step: document_contract
+    type: set
+    note: behaviour proven by pytest tests/unit/ae4/test_e221_feed_only_no_drain.py

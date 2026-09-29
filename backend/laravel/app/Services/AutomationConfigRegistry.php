@@ -459,7 +459,12 @@ class AutomationConfigRegistry
             throw new InvalidArgumentException('system.alert_policies must be an object.');
         }
 
-        $allowedKeys = ['ae3_operational_resolution_mode'];
+        // telegram_test_* пишет alerts:telegram-test (флаг §11.7 unattended).
+        $allowedKeys = [
+            'ae3_operational_resolution_mode',
+            'telegram_test_ok',
+            'telegram_test_at',
+        ];
         foreach (array_keys($payload) as $key) {
             if (! is_string($key) || ! in_array($key, $allowedKeys, true)) {
                 throw new InvalidArgumentException("system.alert_policies.{$key} is not supported.");
@@ -472,6 +477,16 @@ class AutomationConfigRegistry
                 'system.alert_policies.ae3_operational_resolution_mode must be one of: '
                 .implode(', ', AlertPolicyService::MODES)
             );
+        }
+
+        if (array_key_exists('telegram_test_ok', $payload) && ! is_bool($payload['telegram_test_ok'])) {
+            throw new InvalidArgumentException('system.alert_policies.telegram_test_ok must be a boolean.');
+        }
+
+        if (array_key_exists('telegram_test_at', $payload)
+            && $payload['telegram_test_at'] !== null
+            && ! is_string($payload['telegram_test_at'])) {
+            throw new InvalidArgumentException('system.alert_policies.telegram_test_at must be a string or null.');
         }
     }
 

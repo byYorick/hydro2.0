@@ -1,0 +1,32 @@
+mqtt:
+  host: mosquitto
+  port: 1883
+  username: null
+  password: null
+  tls: false
+  keepalive: 60
+
+node:
+  gh_uid: gh-ae4-sim
+  zone_uid: zn-ae4-sim
+  node_uid: nd-ae4-sim
+  hardware_id: esp32-ae4-sim-001
+  node_type: pump
+  mode: configured
+  channels: []
+  actuators:
+    - pump_main
+    - valve_solution_supply
+    - valve_irrigation
+    - valve_clean_fill
+    - valve_solution_fill
+
+telemetry:
+  interval_seconds: 3600
+  heartbeat_interval_seconds: 30
+
+failure_mode:
+  delay_response: false
+  delay_ms: 0
+  drop_response: false
+  duplicate_response: false

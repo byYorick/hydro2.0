@@ -233,41 +233,13 @@ export function useZoneAutomationScheduler(props: ZoneAutomationTabProps, deps: 
   const solutionChangeLoading = ref(false)
 
   async function runDiagnostics(): Promise<boolean> {
-    if (!props.zoneId || diagnosticsLoading.value) return false
-
-    diagnosticsLoading.value = true
-    try {
-      await api.zones.startCycle(props.zoneId, { source: 'frontend' })
-      showToast('Диагностика запущена.', 'success')
-      await fetchAutomationControlMode()
-      onControlModeChanged?.()
-      return true
-    } catch (error: unknown) {
-      logger.warn('[ZoneAutomationTab] Failed to run diagnostics', { error, zoneId: props.zoneId })
-      showToast(extractHumanErrorMessage(error, 'Не удалось запустить диагностику.'), 'error')
-      return false
-    } finally {
-      diagnosticsLoading.value = false
-    }
+    showToast('Диагностика через старый ingress удалена. Тик автоматики ведёт полив сам.', 'info')
+    return false
   }
 
   async function runSolutionChange(): Promise<boolean> {
-    if (!props.zoneId || solutionChangeLoading.value) return false
-
-    solutionChangeLoading.value = true
-    try {
-      await api.zones.startSolutionChange(props.zoneId, { source: 'frontend', trigger: 'operator' })
-      showToast('Подмена раствора запущена — ожидается подтверждение оператора.', 'success')
-      await fetchAutomationControlMode()
-      onControlModeChanged?.()
-      return true
-    } catch (error: unknown) {
-      logger.warn('[ZoneAutomationTab] Failed to start solution change', { error, zoneId: props.zoneId })
-      showToast(extractHumanErrorMessage(error, 'Не удалось запустить подмену раствора.'), 'error')
-      return false
-    } finally {
-      solutionChangeLoading.value = false
-    }
+    showToast('Подмена раствора — на плановом визите, не через суточный запуск.', 'info')
+    return false
   }
 
   async function refreshRuntimeState(): Promise<void> {

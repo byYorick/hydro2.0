@@ -1,0 +1,25 @@
+# E239: не-DONE показывает тот же русский текст на состоянии зоны.
+
+name: E239_ae4_non_done_zone_state_message
+description: |
+  Не-DONE mutating-команды оставляет тот же русский human_error_message
+  в state_details зоны, который экран уже читает.
+
+tags:
+  - ae4
+  - wave2
+  - failure
+
+meta:
+  id: E239
+  wave: 2
+  runtime: ae4
+  requires_physical_node: false
+  proves: |
+    report_failure writes human_error_message into AE4_STATE_DETAILS;
+    /zones/{id}/state overlay exposes the same text
+
+actions:
+  - step: document_contract
+    type: set
+    note: behaviour proven by pytest tests/unit/ae4/test_e238_e239_e240_failure_report.py

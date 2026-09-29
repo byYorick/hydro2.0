@@ -73,8 +73,15 @@ is_unusable_node_host() {
 }
 
 detect_lan_host() {
-  local src=""
-  src="$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for (i = 1; i <= NF; i++) if ($i == "src") { print $(i + 1); exit }}')"
+  local dev="" src=""
+  # main table: VPN policy route (tun0 / 172.18) нода в LAN не видит.
+  dev="$(ip -4 route show default table main 2>/dev/null | awk '{for (i = 1; i <= NF; i++) if ($i == "dev") { print $(i + 1); exit }}')"
+  case "${dev}" in
+    ""|tun*|tap*|docker*|br-*|veth*|lo) dev="" ;;
+  esac
+  if [ -n "${dev}" ]; then
+    src="$(ip -4 -o addr show dev "${dev}" scope global 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -1)"
+  fi
   if [ -n "${src}" ] && ! is_unusable_node_host "${src}"; then
     printf '%s\n' "${src}"
     return 0

@@ -210,13 +210,11 @@ test-db-reset: up
 	@$(MAKE) test-db-init
 
 .PHONY: test-ae-crash-windows
-test-ae-crash-windows: test-db-init
-	@$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) exec -T \
-		-e AE3_PYTEST_DB=$(LARAVEL_TEST_DB) \
-		automation-engine pytest -q tests/unit/test_ae3lite_startup_recovery_crash_windows.py
+test-ae-crash-windows:
+	@echo "test-ae-crash-windows: AE3 startup recovery удалён вместе с ae3lite (волна 10)."
 
 .PHONY: test-ae
-test-ae: test-db-init test-ae-crash-windows
+test-ae: test-db-init
 	@$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) exec -T \
 		-e AE3_PYTEST_DB=$(LARAVEL_TEST_DB) \
 		automation-engine pytest $(PYTEST_ARGS)

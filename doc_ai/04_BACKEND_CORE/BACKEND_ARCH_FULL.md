@@ -180,26 +180,20 @@ UI/Operator → Laravel Controller → PythonBridgeService → history-logger (P
 4. Нода исполняет команду и публикует `command_response`. `history-logger` обновляет `commands.status` и `command_acks`.
 5. AE3 reconcile терминальных статусов команд — через polling (`SequentialCommandGateway.recover_waiting_command`). Laravel Scheduler Cockpit получает обновления через `LISTEN ae_command_status` (+ webhook `ExecutionChainUpdated` для causal chain).
 
-### 4.4. Scheduler-dispatch chain (автоматические команды по расписанию)
+### 4.4. Пробуждение зон (AE 1.0.0)
 
-Полная цепочка (`backend/laravel/app/Services/AutomationScheduler/`):
+Диспетчера Laravel (`automation:dispatch-schedules`, `ScheduleDispatcher`) нет. Момент кадра, света, долива и форточек назначает тик воркера `ae4/`:
 
 ```
-Schedule::command('automation:dispatch-schedules')          (routes/console.php)
-  → SchedulerCycleService
-    → SchedulerCycleOrchestrator
-      → ScheduleLoader (zones + EffectiveTargets + active GrowCycle)
-      → ZoneScheduleItemBuilder + LightingScheduleParser
-      → ScheduleDispatcher
-          ├─ INSERT … ON CONFLICT в zone_automation_intents
-          └─ Http::pool → AE3 (POST /zones/{id}/start-cycle | start-irrigation | start-lighting-tick)
-              ↓
-          AE3 claim intent → ExecuteTaskUseCase → device-команды через history-logger
+AE 1.0.0 worker tick
+  → мутация зоны (due_at=now) при необходимости
+  → один POST /greenhouses/{id}/start-climate-tick на теплицу
+  → device-команды только через history-logger POST /commands
 ```
 
-Терминальный sync intent после AE3: `AutomationIntentListener` слушает `scheduler_intent_terminal` (NOTIFY) + fallback `ActiveTaskPoller`. Headers Laravel→AE3: `Authorization: Bearer <token>`, `X-Trace-Id`, `X-Scheduler-Id`.
+Канон: `doc_ai/04_BACKEND_CORE/ae4.md`. Маршрутов `start-irrigation` / `start-lighting-tick` / `start-cycle` / `start-solution-*` нет.
 
-**Прямой publish из Laravel или AE3 в MQTT запрещён.** История publish ведёт только `history-logger`.
+**Прямой publish из Laravel или AE в MQTT запрещён.** История publish ведёт только `history-logger`.
 
 ---
 

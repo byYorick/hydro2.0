@@ -182,11 +182,9 @@ Auto-advance **блокируется**, если:
 - НЕ принимает Laravel scheduler intents (`IRRIGATE_ONCE`, `LIGHTING_TICK` для зоны игнорируются)
 - НЕ запускает cycle_start от scheduler (только HTTP от UI)
 
-Laravel side-check реализован в `ScheduleDispatcher::prepareDispatch`: для зоны с
-`control_mode = 'manual'` любой scheduler dispatch (irrigation / lighting /
-diagnostics) пропускается с reason `control_mode_manual` (skip, не ошибка —
-учитывается как backpressure в метриках). HTTP-эндпоинты `POST /start-cycle` и
-`POST /start-irrigation` от UI продолжают работать во всех режимах.
+В AE 1.0.0 диспетчера Laravel нет: тик воркера сам пропускает мутации при
+`control_mode = 'manual'` (зона не получает кадр/дозу от автоматики). Маршрутов
+`POST /start-cycle` / `POST /start-irrigation` нет.
 
 ---
 

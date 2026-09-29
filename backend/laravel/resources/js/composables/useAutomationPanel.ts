@@ -415,6 +415,39 @@ export function useAutomationPanel(
           human_error_message: typeof record.human_error_message === 'string' ? record.human_error_message : null,
         }
       })(),
+      planting_decision: (() => {
+        const raw = sourceAny.planting_decision
+        if (!raw || typeof raw !== 'object') return null
+        const record = raw as Record<string, unknown>
+        const reason = typeof record.reason_code === 'string' ? record.reason_code.trim() : ''
+        const human = typeof record.human_message === 'string' ? record.human_message.trim() : ''
+        if (!reason && !human) return null
+        return {
+          reason_code: reason,
+          human_message: human,
+          failed: false as const,
+        }
+      })(),
+      unattended_ready: (() => {
+        if (typeof sourceAny.unattended_ready === 'boolean') {
+          return sourceAny.unattended_ready
+        }
+        return null
+      })(),
+      unattended_blockers: (() => {
+        const raw = sourceAny.unattended_blockers
+        if (!Array.isArray(raw)) return null
+        return raw
+          .map((item) => {
+            if (!item || typeof item !== 'object') return null
+            const record = item as Record<string, unknown>
+            const reason = typeof record.reason_code === 'string' ? record.reason_code.trim() : ''
+            const human = typeof record.human_message === 'string' ? record.human_message.trim() : ''
+            if (!human && !reason) return null
+            return { reason_code: reason, human_message: human || reason }
+          })
+          .filter((item): item is { reason_code: string; human_message: string } => item != null)
+      })(),
       workflow_phase: (sourceAny.workflow_phase as string | null | undefined) ?? null,
       current_stage: (sourceAny.current_stage as string | null | undefined) ?? null,
       current_stage_label: (sourceAny.current_stage_label as string | null | undefined) ?? null,

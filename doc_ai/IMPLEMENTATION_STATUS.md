@@ -19,7 +19,7 @@ Product-gaps и агро-автономия: [`AGRO_AUTONOMY_MASTER_PLAN.md`](AG
 | Слой | Что в коде |
 |------|------------|
 | Laravel | API Gateway, Sanctum, Inertia/Vue, NodeConfig, recipes, scheduler-dispatch |
-| Python core (боевое ядро default `make up`) | mqtt, db, redis, laravel, `history-logger` (единственный MQTT-publish команд), `automation-engine`/`ae3lite`, `telemetry-aggregator` |
+| Python core (боевое ядро default `make up`) | mqtt, db, redis, laravel, `history-logger` (единственный MQTT-publish команд), `automation-engine`/`ae4` (AE 1.0.0), `telemetry-aggregator` |
 | `mqtt-bridge` | **ops leftover / probe**, не боевой command path (410 на command-роутах zones/nodes до P1) |
 | Firmware | `ph`/`ec`/`climate`/`pump`/`storage_irrigation`/`relay` + `light_node` **как сенсор** (`LIGHT`) + `test_node` — **MVP_DONE** |
 | Frontend | Unified Dashboard, Zones/Devices/Recipes/Alerts, WebSocket |

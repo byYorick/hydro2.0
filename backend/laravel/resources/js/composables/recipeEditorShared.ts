@@ -34,6 +34,11 @@ export interface RecipePhaseFormState {
   substrate_type: string | null
   irrigation_interval_sec: number | null
   irrigation_duration_sec: number | null
+  soil_moisture_min: number | null
+  soil_moisture_max: number | null
+  vpd_min: number | null
+  vpd_max: number | null
+  light_integral_per_shot: number | null
   nutrient_program_code: string | null
   nutrient_mode: 'ratio_ec_pid' | 'delta_ec_by_k' | 'dose_ml_l_only'
   nutrient_ec_dosing_mode: 'sequential' | 'parallel'
@@ -161,6 +166,11 @@ export function createDefaultRecipePhase(phaseIndex: number): RecipePhaseFormSta
     substrate_type: null,
     irrigation_interval_sec: 900,
     irrigation_duration_sec: 15,
+    soil_moisture_min: null,
+    soil_moisture_max: null,
+    vpd_min: null,
+    vpd_max: null,
+    light_integral_per_shot: null,
     nutrient_program_code: DEFAULT_NUTRIENT_PROGRAM_CODE,
     nutrient_mode: 'ratio_ec_pid',
     nutrient_ec_dosing_mode: 'sequential',
@@ -250,6 +260,11 @@ export function hydrateRecipePhaseForm(phase: Partial<RecipePhase> | null | unde
     substrate_type: typeof phase?.substrate_type === 'string' ? phase.substrate_type : null,
     irrigation_interval_sec: toNullableInt(phase?.irrigation_interval_sec ?? phase?.targets?.irrigation_interval_sec, base.irrigation_interval_sec),
     irrigation_duration_sec: toNullableInt(phase?.irrigation_duration_sec ?? phase?.targets?.irrigation_duration_sec, base.irrigation_duration_sec),
+    soil_moisture_min: toNullableNumber(phase?.soil_moisture_min ?? phase?.targets?.soil_moisture_min),
+    soil_moisture_max: toNullableNumber(phase?.soil_moisture_max ?? phase?.targets?.soil_moisture_max),
+    vpd_min: toNullableNumber(phase?.vpd_min ?? phase?.targets?.vpd_min),
+    vpd_max: toNullableNumber(phase?.vpd_max ?? phase?.targets?.vpd_max),
+    light_integral_per_shot: toNullableNumber(phase?.light_integral_per_shot ?? phase?.targets?.light_integral_per_shot),
     nutrient_program_code: typeof phase?.nutrient_program_code === 'string' && phase.nutrient_program_code.trim().length > 0
       ? phase.nutrient_program_code
       : base.nutrient_program_code,
@@ -413,6 +428,11 @@ export function buildRecipePhasePayload(phase: RecipePhaseFormState): Record<str
     irrigation_system_type: phase.irrigation_system_type,
     irrigation_interval_sec: toNullableInt(phase.irrigation_interval_sec),
     irrigation_duration_sec: toNullableInt(phase.irrigation_duration_sec),
+    soil_moisture_min: toNullableNumber(phase.soil_moisture_min),
+    soil_moisture_max: toNullableNumber(phase.soil_moisture_max),
+    vpd_min: toNullableNumber(phase.vpd_min),
+    vpd_max: toNullableNumber(phase.vpd_max),
+    light_integral_per_shot: toNullableNumber(phase.light_integral_per_shot),
     substrate_type: phase.substrate_type?.trim() || null,
     day_night_enabled: !!phase.day_night_enabled,
     nutrient_program_code: phase.nutrient_program_code?.trim() || null,

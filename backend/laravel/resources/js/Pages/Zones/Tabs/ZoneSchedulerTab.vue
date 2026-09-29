@@ -18,6 +18,13 @@
       @refresh="refreshWorkspace"
     />
 
+    <p
+      class="mx-2 text-xs text-[color:var(--text-muted)] md:mx-3"
+      data-testid="scheduler-no-dispatcher-promise"
+    >
+      Планировщик Laravel больше не назначает полив. Если в состоянии зоны уже есть последнее решение тика и due_at — они показаны в блоке автоматики.
+    </p>
+
     <CockpitLayout>
       <template #left>
         <HeroCountdown

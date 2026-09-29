@@ -47,11 +47,7 @@ use App\Http\Controllers\UnassignedNodeErrorController;
 use App\Http\Controllers\ZoneAutomationControlModeController;
 use App\Http\Controllers\ZoneAutomationManualStepController;
 use App\Http\Controllers\ZoneAutomationPresetController;
-use App\Http\Controllers\ZoneAutomationStartIrrigationController;
-use App\Http\Controllers\ZoneAutomationStartSolutionChangeController;
-use App\Http\Controllers\ZoneAutomationStartSolutionTopupController;
 use App\Http\Controllers\ZoneAutomationOperatorUnblockController;
-use App\Http\Controllers\ZoneAutomationStartCycleController;
 use App\Http\Controllers\ZoneAutomationStateController;
 use App\Http\Controllers\ZoneCommandController;
 use App\Http\Controllers\ZoneConfigModeController;
@@ -395,14 +391,6 @@ Route::middleware([
         ->middleware('role:admin,agronomist,engineer');
     Route::get('zones/{zone}/config-changes', [ZoneConfigModeController::class, 'changes']);
     Route::post('zones/{zone}/manual-step', [ZoneAutomationManualStepController::class, 'store'])
-        ->middleware('role:operator,admin,agronomist,engineer');
-    Route::post('zones/{zone}/start-irrigation', [ZoneAutomationStartIrrigationController::class, 'store'])
-        ->middleware('role:operator,admin,agronomist,engineer');
-    Route::post('zones/{zone}/start-solution-topup', [ZoneAutomationStartSolutionTopupController::class, 'store'])
-        ->middleware('role:operator,admin,agronomist,engineer');
-    Route::post('zones/{zone}/start-solution-change', [ZoneAutomationStartSolutionChangeController::class, 'store'])
-        ->middleware('role:operator,admin,agronomist,engineer');
-    Route::post('zones/{zone}/start-cycle', [ZoneAutomationStartCycleController::class, 'store'])
         ->middleware('role:operator,admin,agronomist,engineer');
     Route::post('zones/{zone}/operator-unblock', [ZoneAutomationOperatorUnblockController::class, 'store'])
         ->middleware('role:operator,admin,agronomist,engineer');

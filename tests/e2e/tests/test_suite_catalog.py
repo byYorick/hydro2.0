@@ -31,88 +31,36 @@ class TestSuiteCatalog(unittest.TestCase):
             msg=f"Scenario '{relative_suffix}' should not be in suite: {scenarios}",
         )
 
-    def test_scheduler_suite_contains_start_cycle_intent_path(self) -> None:
+    def test_scheduler_suite_does_not_call_removed_ae3_ingress(self) -> None:
         scenarios = self.suite._get_suite_scenarios("scheduler")
         self.assert_contains_scenario(
             scenarios,
-            "scenarios/scheduler/E93_start_cycle_intent_executor_path.yaml",
+            "scenarios/scheduler/E80_irrigation_schedule_happy.yaml",
         )
+        self.assertFalse(any("E93_start_cycle" in item or "E94_start_lighting" in item for item in scenarios))
 
-    def test_ae3lite_suite_contains_contract_and_realhw_paths(self) -> None:
-        scenarios = self.suite._get_suite_scenarios("ae3lite")
-        for suffix in [
-            "scenarios/ae3lite/E95_ae3_start_cycle_done_completed.yaml",
-            "scenarios/ae3lite/E99_ae3_double_execution_guard.yaml",
-            "scenarios/ae3lite/E110_ae3_node_runtime_event_contract.yaml",
-            "scenarios/ae3lite/E107_ae3_irrigation_runtime_test_node.yaml",
-            "scenarios/ae3lite/E108_ae3_soil_moisture_telemetry_contract.yaml",
-            "scenarios/ae3lite/E109_ae3_irrigation_inline_correction_test_node.yaml",
-            "scenarios/ae3lite/E100_ae3_two_tank_realhw_smoke.yaml",
-            "scenarios/ae3lite/E112_ae3_per_phase_ec_target_realhw.yaml",
-            "scenarios/ae3lite/E113_ae3_prepare_recirc_solution_low_to_setup_realhw.yaml",
-        ]:
-            self.assert_contains_scenario(scenarios, suffix)
-
-    def test_ae3lite_realhw_suite_contains_two_tank_smoke(self) -> None:
-        scenarios = self.suite._get_suite_scenarios("ae3lite_realhw")
-        for suffix in [
-            "scenarios/ae3lite/E100_ae3_two_tank_realhw_smoke.yaml",
-            "scenarios/ae3lite/E107_ae3_irrigation_runtime_test_node.yaml",
-            "scenarios/ae3lite/E108_ae3_soil_moisture_telemetry_contract.yaml",
-            "scenarios/ae3lite/E109_ae3_irrigation_inline_correction_test_node.yaml",
-        ]:
-            self.assert_contains_scenario(scenarios, suffix)
-        self.assert_missing_scenario(
+    def test_ae4_suite_contains_node_sim_scenarios(self) -> None:
+        scenarios = self.suite._get_suite_scenarios("ae4")
+        self.assertEqual(len(scenarios), 2)
+        self.assert_contains_scenario(
             scenarios,
-            "scenarios/ae3lite/E102_ae3_two_tank_realhw_ready_during_recirculation.yaml",
+            "scenarios/ae4/AE4_SIM_01_node_sim_planned_shot.yaml",
+        )
+        self.assert_contains_scenario(
+            scenarios,
+            "scenarios/ae4/AE4_SIM_02_node_sim_both_tanks_empty.yaml",
         )
 
-    def test_ae3lite_decomposed_suites_match_new_taxonomy(self) -> None:
-        contract = self.suite._get_suite_scenarios("ae3lite_contract")
-        realhw_core = self.suite._get_suite_scenarios("ae3lite_testnode_realhw_core")
-        realhw_irrigation = self.suite._get_suite_scenarios("ae3lite_testnode_realhw_irrigation")
-
-        self.assert_contains_scenario(contract, "scenarios/ae3lite/E95_ae3_start_cycle_done_completed.yaml")
-        self.assert_contains_scenario(contract, "scenarios/ae3lite/E99_ae3_double_execution_guard.yaml")
-        self.assert_contains_scenario(contract, "scenarios/ae3lite/E110_ae3_node_runtime_event_contract.yaml")
-        self.assert_contains_scenario(realhw_core, "scenarios/ae3lite/E100_ae3_two_tank_realhw_smoke.yaml")
-        self.assert_contains_scenario(
-            realhw_core,
-            "scenarios/ae3lite/E113_ae3_prepare_recirc_solution_low_to_setup_realhw.yaml",
-        )
-        self.assert_contains_scenario(
-            realhw_core,
-            "scenarios/ae3lite/E114_ae3_reactive_solution_topup_level_switch_realhw.yaml",
-        )
-        self.assert_contains_scenario(
-            realhw_core,
-            "scenarios/ae3lite/E115_ae3_solution_change_operator_gate_realhw.yaml",
-        )
-        self.assert_contains_scenario(
-            realhw_core,
-            "scenarios/ae3lite/E116_ae3_estop_failsafe_events_realhw.yaml",
-        )
-        self.assert_contains_scenario(
-            realhw_core,
-            "scenarios/ae3lite/E118_ae3_water_baseline_and_ca_fill_realhw.yaml",
-        )
-        self.assert_contains_scenario(
-            realhw_core,
-            "scenarios/ae3lite/E119_ae3_prepare_pipeline_sequence_realhw.yaml",
-        )
-        self.assert_contains_scenario(
-            realhw_core,
-            "scenarios/ae3lite/E120_ae3_recirc_dilute_overshoot_realhw.yaml",
-        )
-        self.assertEqual(len(realhw_core), 15)
-        self.assert_contains_scenario(
-            realhw_irrigation,
-            "scenarios/ae3lite/E107_ae3_irrigation_runtime_test_node.yaml",
-        )
-        self.assert_contains_scenario(
-            realhw_irrigation,
-            "scenarios/ae3lite/E109_ae3_irrigation_inline_correction_test_node.yaml",
-        )
+    def test_removed_ae3_suites_are_unknown(self) -> None:
+        for suite_name in (
+            "ae3lite",
+            "ae3lite_contract",
+            "ae3lite_v1",
+            "ae3lite_realhw",
+            "ae3lite_testnode_realhw_core",
+            "ae3lite_testnode_realhw_irrigation",
+        ):
+            self.assertEqual(self.suite._get_suite_scenarios(suite_name), [])
 
     def test_calibration_realhw_suite_contains_sensor_calibration_scenarios(self) -> None:
         scenarios = self.suite._get_suite_scenarios("calibration_realhw")
@@ -142,9 +90,9 @@ class TestSuiteCatalog(unittest.TestCase):
             self.assert_contains_scenario(scenarios, suffix)
         self.assertEqual(len(scenarios), 2)
 
-    def test_prod_readiness_realhw_maps_to_canonical_ae3_set(self) -> None:
+    def test_prod_readiness_realhw_is_calibration_only(self) -> None:
         scenarios = self.suite._get_suite_scenarios("prod_readiness_realhw")
-        self.assert_contains_scenario(scenarios, "scenarios/ae3lite/E100_ae3_two_tank_realhw_smoke.yaml")
+        self.assertEqual(len(scenarios), 3)
         self.assert_contains_scenario(
             scenarios,
             "scenarios/calibration/E110_sensor_calibration_realhw_create_cancel.yaml",
@@ -153,38 +101,17 @@ class TestSuiteCatalog(unittest.TestCase):
             scenarios,
             "scenarios/calibration/E117_sensor_calibration_realhw_happy_path.yaml",
         )
-        # ae3lite realhw (+E118/E119/E120) ∪ smart_irrigation ∪ calibration
-        self.assertEqual(len(scenarios), 21)
-        self.assert_contains_scenario(
-            scenarios,
-            "scenarios/ae3lite/E118_ae3_water_baseline_and_ca_fill_realhw.yaml",
-        )
-        self.assert_contains_scenario(
-            scenarios,
-            "scenarios/ae3lite/E119_ae3_prepare_pipeline_sequence_realhw.yaml",
-        )
-        self.assert_contains_scenario(
-            scenarios,
-            "scenarios/ae3lite/E120_ae3_recirc_dilute_overshoot_realhw.yaml",
-        )
+        self.assertFalse(any("ae3lite" in item for item in scenarios))
 
-    def test_discover_by_suite_alias_supports_ae3_suites(self) -> None:
-        discovered = self.suite.discover_scenarios(["ae3lite_v1", "ae3lite_realhw"])
+    def test_discover_by_suite_alias_supports_ae4(self) -> None:
+        discovered = self.suite.discover_scenarios(["ae4"])
         self.assert_contains_scenario(
             discovered,
-            "scenarios/ae3lite/E95_ae3_start_cycle_done_completed.yaml",
+            "scenarios/ae4/AE4_SIM_01_node_sim_planned_shot.yaml",
         )
         self.assert_contains_scenario(
             discovered,
-            "scenarios/ae3lite/E110_ae3_node_runtime_event_contract.yaml",
-        )
-        self.assert_contains_scenario(
-            discovered,
-            "scenarios/ae3lite/E108_ae3_soil_moisture_telemetry_contract.yaml",
-        )
-        self.assert_contains_scenario(
-            discovered,
-            "scenarios/ae3lite/E100_ae3_two_tank_realhw_smoke.yaml",
+            "scenarios/ae4/AE4_SIM_02_node_sim_both_tanks_empty.yaml",
         )
 
     def test_discover_by_suite_alias_supports_calibration_realhw_suite(self) -> None:
@@ -208,12 +135,7 @@ class TestSuiteCatalog(unittest.TestCase):
         choices = set(suite_option.choices or [])
 
         for suite_name in [
-            "ae3lite",
-            "ae3lite_contract",
-            "ae3lite_v1",
-            "ae3lite_realhw",
-            "ae3lite_testnode_realhw_core",
-            "ae3lite_testnode_realhw_irrigation",
+            "ae4",
             "calibration_realhw",
             "scheduler",
             "automation_engine",
@@ -221,16 +143,20 @@ class TestSuiteCatalog(unittest.TestCase):
             "prod_readiness_realhw",
         ]:
             self.assertIn(suite_name, choices)
+        for removed in (
+            "ae3lite",
+            "ae3lite_contract",
+            "ae3lite_v1",
+            "ae3lite_realhw",
+        ):
+            self.assertNotIn(removed, choices)
 
-    def test_full_suite_includes_canonical_ae3_and_sim_scenarios(self) -> None:
+    def test_full_suite_includes_sim_scenarios_without_ae3(self) -> None:
         scenarios = self.suite._get_suite_scenarios("full")
+        self.assertFalse(any("ae3lite" in item for item in scenarios))
         self.assert_contains_scenario(
             scenarios,
-            "scenarios/ae3lite/E100_ae3_two_tank_realhw_smoke.yaml",
-        )
-        self.assert_contains_scenario(
-            scenarios,
-            "scenarios/ae3lite/E108_ae3_soil_moisture_telemetry_contract.yaml",
+            "scenarios/ae4/AE4_SIM_01_node_sim_planned_shot.yaml",
         )
         self.assert_contains_scenario(
             scenarios,
@@ -248,28 +174,20 @@ class TestSuiteCatalog(unittest.TestCase):
     def test_full_suite_excludes_debug_scenarios(self) -> None:
         scenarios = self.suite._get_suite_scenarios("full")
         self.assertFalse(
-            any(
-                Path(item).as_posix().endswith(
-                    "scenarios/ae3lite/E106_debug_no_cleanup.yaml"
-                )
-                for item in scenarios
-            ),
+            any("debug" in Path(item).stem.lower() for item in scenarios),
             msg=f"Debug scenario leaked into full suite: {scenarios}",
         )
 
     def test_scheduler_tags_are_inferred_from_path(self) -> None:
-        scenario_path = E2E_ROOT / "scenarios" / "scheduler" / "E93_start_cycle_intent_executor_path.yaml"
+        scenario_path = E2E_ROOT / "scenarios" / "scheduler" / "E80_irrigation_schedule_happy.yaml"
         tags = self.suite._get_scenario_tags(str(scenario_path))
         self.assertIn("scheduler", tags)
-        self.assertIn("start_cycle", tags)
 
-    def test_ae3lite_realhw_tags_are_inferred_from_path(self) -> None:
-        scenario_path = E2E_ROOT / "scenarios" / "ae3lite" / "E100_ae3_two_tank_realhw_smoke.yaml"
+    def test_ae4_tags_are_inferred_from_path(self) -> None:
+        scenario_path = E2E_ROOT / "scenarios" / "ae4" / "AE4_SIM_01_node_sim_planned_shot.yaml"
         tags = self.suite._get_scenario_tags(str(scenario_path))
-        self.assertIn("ae3lite", tags)
-        self.assertIn("realhw", tags)
-        self.assertIn("two_tank", tags)
-        self.assertIn("smoke", tags)
+        self.assertIn("ae4", tags)
+        self.assertIn("mqtt", tags)
 
     def test_calibration_realhw_tags_are_inferred_from_path(self) -> None:
         scenario_path = (

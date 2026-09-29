@@ -99,10 +99,6 @@
           :workflow-phase="lastAutomationSnapshot?.workflow_phase ?? null"
           @select-mode="onControlModeSelect"
           @run-manual-step="runManualStep"
-          @start-irrigation="emit('start-irrigation')"
-          @force-irrigation="emit('force-irrigation')"
-          @run-diagnostics="runDiagnostics"
-          @start-solution-change="runSolutionChange"
         />
       </div>
 
@@ -454,8 +450,6 @@ const props = defineProps<ZoneAutomationTabProps>()
 const emit = defineEmits<{
   (e: 'refresh-automation-state'): void
   (e: 'open-pump-calibration'): void
-  (e: 'start-irrigation'): void
-  (e: 'force-irrigation'): void
 }>()
 const currentRecipePhaseTargets = computed(() => resolveRecipePhasePidTargets(props.currentRecipePhase ?? null))
 const { showToast } = useToast()

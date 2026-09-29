@@ -213,24 +213,20 @@ ESP32-прошивка, которая эмулирует несколько о�
 - Для возврата в автоматический режим используйте значение `< 0` (например, `-1`) у нужного `*_override`.
 - При изменении `*_override`, `ph_value`, `ec_value` или `soil_moisture_pct` тест-нода сразу публикует свежий telemetry snapshot, без ожидания следующего `2s` tick.
 
-Каноничное real-hardware использование:
+Канон для AE 1.0.0 на этой прошивке:
 
-- Water baseline перед fill: `storage_state/set_fault_mode` с `ec_value=0.45` (и при необходимости `ph_value≈7.0`)
-  до `solution_fill` / capture baseline AE3.
-- `E101/E103/E104/E105` обычно стартуют из дефолтного `reset_state` профиля (`pH=6.9`, `EC=0.6`).
-- `E106_ae3_two_tank_realhw_piggyback_ec_ph_cycle` дополнительно seed-ит recirculation раствор через
-  `storage_state/set_fault_mode` в `ph_value=5.68`, `ec_value=1.92` перед strict sequential correction check.
-- Overshoot/dilute: seed высокий EC (`ec_value>target`), затем AE3 открывает `valve_clean_supply`
-  на solution-fill path — test-node снижает EC к `water_ec_baseline`.
-- Это нужно не для послабления target, а чтобы сценарий после полного рестарта стенда
-  стабильно проверял порядок pipeline (`Ca → pH → Mg → …`), delayed/decaying response и финальное попадание в strict target window,
-  а не выносливость correction loop от cold-start точки `6.9/0.6`.
+- Уровни для сценариев `AE4_HW_*` задаёт `storage_state` / `set_fault_mode` (`level_*_override` = true|false). Пока override задан, модель воды его не перебивает.
+- `1` на `level_*_min` — датчик сработал, бак не пуст. `0` — бак пуст. Открытый клапан сам нижний датчик не замыкает.
+- Кадр: `valve_solution_supply` и `valve_irrigation` уже открыты, затем `pump_main` / `run_pump`. Иначе нода отвечает `ERROR` `pump_interlock_blocked`.
+- `set_fault_mode` принимается на каналах `storage_state` и `system`. Телеметрия уровней — `WATER_LEVEL_SWITCH`.
 
-## Локальный UI (ESP32-S3)
+## Локальный UI
 
-В `test_node` добавлена поддержка локального UI:
+Сборка по умолчанию — ESP32-D0WD, flash 8 МБ, без дисплея и энкодера (`CONFIG_TEST_NODE_UI_ENABLE` выключен). Код ILI9341 + LVGL + энкодер остаётся и включается через `menuconfig` → `Test Node UI` на плате, где они распаяны (раньше это был ESP32-S3).
+
+Когда UI включён:
 - дисплей `ILI9341` (SPI, через `esp_lcd` + `LVGL`);
-- энкодер (тип input `LV_INDEV_TYPE_ENCODER`).
+- энкодер (тип input `LV_INDEV_TYPE_ENCODER`);
 - экран инициализируется первым в `app_main`, затем на нем показываются шаги инициализации
   (сетевой стек, config storage, setup-портал, Wi‑Fi, MQTT, запуск worker-задач).
 

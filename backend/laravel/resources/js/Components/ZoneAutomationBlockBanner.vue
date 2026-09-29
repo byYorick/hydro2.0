@@ -79,7 +79,7 @@
           Разблокировать автоматику зоны
         </h4>
         <p class="mt-2 text-xs text-[color:var(--text-secondary)]">
-          Насосы и клапаны полива будут выключены через history-logger. Активная задача AE3 завершится ошибкой,
+          Насосы и клапаны полива будут выключены через history-logger. Активная задача завершится ошибкой,
           workflow сбросится в idle. Блокирующие алерты задачи закроются. Конфиг pH/EC/targets не чинится.
         </p>
         <label class="mt-3 block text-xs font-medium text-[color:var(--text-muted)]">

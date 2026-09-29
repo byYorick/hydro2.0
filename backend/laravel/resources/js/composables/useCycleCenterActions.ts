@@ -3,8 +3,6 @@ import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import { api } from '@/services/api'
 import type { ZoneSummary } from './useCycleCenterView'
 
-type ZoneActionType = 'START_IRRIGATION' | 'FORCE_IRRIGATION'
-
 interface UseCycleCenterActionsDeps {
   showToast: (message: string, type?: 'success' | 'error' | 'warning', timeout?: number) => void
   reloadCenter: () => Promise<void>
@@ -26,12 +24,6 @@ export function useCycleCenterActions({
     open: false,
     zone: null,
     notes: '',
-  })
-
-  const actionModal = reactive<{ open: boolean; zone: ZoneSummary | null; actionType: ZoneActionType }>({
-    open: false,
-    zone: null,
-    actionType: 'START_IRRIGATION',
   })
 
   function setActionLoading(zoneId: number, action: string, value: boolean): void {
@@ -136,41 +128,10 @@ export function useCycleCenterActions({
     }
   }
 
-  function openActionModal(zone: ZoneSummary, actionType: ZoneActionType): void {
-    actionModal.open = true
-    actionModal.zone = zone
-    actionModal.actionType = actionType
-  }
-
-  function closeActionModal(): void {
-    actionModal.open = false
-    actionModal.zone = null
-  }
-
-  async function submitAction(payload: { actionType: ZoneActionType; params: Record<string, number> }): Promise<void> {
-    if (!actionModal.zone) {
-      return
-    }
-    const durationSec = typeof payload.params.duration_sec === 'number' ? payload.params.duration_sec : undefined
-    await api.zones.startIrrigation(actionModal.zone.id, {
-      mode: payload.actionType === 'FORCE_IRRIGATION' ? 'force' : 'normal',
-      source: 'cycle_center',
-      requested_duration_sec: durationSec ?? null,
-    })
-    showToast(
-      payload.actionType === 'FORCE_IRRIGATION' ? 'Запущена forced-промывка' : 'Запущен обычный полив',
-      'success',
-      TOAST_TIMEOUT.NORMAL
-    )
-    await reloadCenter()
-    closeActionModal()
-  }
-
   return {
     actionLoading,
     harvestModal,
     abortModal,
-    actionModal,
     isActionLoading,
     pauseCycle,
     resumeCycle,
@@ -180,8 +141,5 @@ export function useCycleCenterActions({
     openAbortModal,
     closeAbortModal,
     confirmAbort,
-    openActionModal,
-    closeActionModal,
-    submitAction,
   }
 }

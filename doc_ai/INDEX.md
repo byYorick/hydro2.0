@@ -22,7 +22,7 @@ Breaking-change: обратная совместимость со старыми
 ## Быстрая навигация
 
 - [SYSTEM_ARCH_FULL.md](SYSTEM_ARCH_FULL.md) — архитектура (`canonical`)
-- [ARCHITECTURE_FLOWS.md](ARCHITECTURE_FLOWS.md) — защищённые pipeline и инварианты AE3 (`canonical`)
+- [ARCHITECTURE_FLOWS.md](ARCHITECTURE_FLOWS.md) — защищённые pipeline и инварианты AE 1.0.0 (`canonical`)
 - [DEV_CONVENTIONS.md](DEV_CONVENTIONS.md) — конвенции разработки (`canonical`)
 - [README_STRUCTURE.md](README_STRUCTURE.md) — структура папок `doc_ai/`
 - [11_WEBSOCKET_ARCHITECTURE.md](11_WEBSOCKET_ARCHITECTURE.md) — WebSocket (Reverb) (`canonical`)
@@ -104,21 +104,15 @@ Breaking-change: обратная совместимость со старыми
 - `04_BACKEND_CORE/BACKEND_ARCH_FULL.md` — архитектура backend
 - `04_BACKEND_CORE/AUTOMATION_CONFIG_AUTHORITY.md` — единый authority automation/runtime-конфигов
 - `04_BACKEND_CORE/PYTHON_SERVICES_ARCH.md` — архитектура Python-сервисов
-- `04_BACKEND_CORE/ae3lite.md` — каноническая спецификация AE3-Lite (automation-engine), rollout/rollback; §9.4.1 UI `observability` в `/state` (`canonical`)
-- `04_BACKEND_CORE/ae4.md` — контракт runtime AE 1.0.0: значение `ae4`, два claim, `due_at`, FSM (`canonical`)
-- `04_BACKEND_CORE/LARAVEL_AE3_READ_MODEL_CONTRACT.md` — snapshot-контракт read-model Laravel↔AE3 + CI-job (`canonical`)
-- `04_BACKEND_CORE/AE3_RUNTIME_EVENT_CONTRACT.md` — runtime-event контракт AE3 (`canonical`)
-- `04_BACKEND_CORE/AE3_IRR_FAILSAFE_AND_ESTOP_CONTRACT.md` — failsafe / E-Stop контракт irrigation (`canonical`)
-- `04_BACKEND_CORE/AE3_IRR_LEVEL_SWITCH_EVENT_CONTRACT.md` — channel-level events для level_switch (`canonical`)
+- `04_BACKEND_CORE/ae4.md` — канон автоматики AE 1.0.0: тик, формулы, неделя без визита, `due_at`, FSM (`canonical`)
 - `04_BACKEND_CORE/API_SPEC_FRONTEND_BACKEND_FULL.md` — API-спецификация
 - `04_BACKEND_CORE/REST_API_REFERENCE.md` — REST API справочник
 - `04_BACKEND_CORE/HISTORY_LOGGER_API.md` — контракт публикации команд и ingest (`canonical`)
-- `04_BACKEND_CORE/ERROR_CODE_CATALOG.md` — каталог кодов ошибок backend/AE3 (`canonical`)
+- `04_BACKEND_CORE/ERROR_CODE_CATALOG.md` — каталог кодов ошибок backend / AE 1.0.0 (`canonical`)
 - `04_BACKEND_CORE/END_TO_END_WORKFLOW_GUIDE.md` — сквозные сценарии и точки интеграции (`guide`)
 - `04_BACKEND_CORE/REALTIME_UPDATES_ARCH.md` — архитектура real-time обновлений
 - `04_BACKEND_CORE/FULL_STACK_DEPLOY_DOCKER.md` — деплой стека через Docker
 - `04_BACKEND_CORE/TECH_STACK_LARAVEL_INERTIA_VUE3_PG.md` — технологический стек
-- Living plans (`plan`): `AE4_AGENT_EXECUTION_PLAN.md` (исполнение AE4 оркестратором), `AE3_STARTUP_RECOVERY_IMPROVEMENT_PLAN.md`, `AE3_NODE_AVAILABILITY_DETECTION_PLAN.md`, `AE3_SETUP_BEFORE_IRRIGATION_PLAN.md`
 - Архив plans (stubs → `00_ARCHIVE/PLANS/`): `AE3_RELIABILITY_AUDIT_*`, `AE3_REFACTORING_PLAN_*`, `BACKEND_REFACTOR_PLAN`, `REFACTORING_PLAN`
 
 **См. также:** [README](04_BACKEND_CORE/README.md)
@@ -147,8 +141,6 @@ Breaking-change: обратная совместимость со старыми
 - `06_DOMAIN_ZONES_RECIPES/CORRECTION_CYCLE_SPEC.md` — спецификация циклов коррекции раствора (pH/EC)
 - `06_DOMAIN_ZONES_RECIPES/EFFECTIVE_TARGETS_SPEC.md` — спецификация effective-targets для контроллеров
 - `06_DOMAIN_ZONES_RECIPES/ZONES_AND_PRESETS.md` — зоны и пресеты культур
-- `06_DOMAIN_ZONES_RECIPES/SCHEDULER_ENGINE.md` — планировщик
-- `06_DOMAIN_ZONES_RECIPES/SCHEDULER_AE3_NON_IRRIGATION_DISPATCH.md` — dispatch не-полива для AE3 (lighting реализован, diagnostics через compat-path)
 - `06_DOMAIN_ZONES_RECIPES/GREENHOUSE_CLIMATE_CONTROL_PLAN.md` — план общего greenhouse climate runtime и алгоритма форточек
 - `06_DOMAIN_ZONES_RECIPES/PID_CONFIG_REFERENCE.md` — справочник PID-конфигов (`canonical`)
 - `06_DOMAIN_ZONES_RECIPES/CONTROL_MODES_SPEC.md` — режимы auto/semi/manual (`canonical`)

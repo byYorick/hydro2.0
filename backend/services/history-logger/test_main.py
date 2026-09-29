@@ -430,8 +430,8 @@ async def test_process_telemetry_batch_includes_ts_parameter():
         params = call_args[0][1:]
 
         assert "UNNEST" in query or "unnest" in query
-        assert "$6" in query
-        assert len(params) == 6
+        assert "$7" in query
+        assert len(params) == 7
 
         ts_array = params[1]
         assert isinstance(ts_array, (list, tuple))

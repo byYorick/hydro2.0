@@ -208,13 +208,14 @@ async def test_batch_insert_telemetry_samples_joins_sensors_to_avoid_fk_errors()
         ]
         assert telemetry_samples_queries
         query = telemetry_samples_queries[0]
-        assert "WITH incoming (sensor_id, ts, zone_id, value, quality, metadata) AS" in query
+        assert "WITH incoming (sensor_id, ts, zone_id, cycle_id, value, quality, metadata) AS" in query
         assert "FROM UNNEST(" in query
         assert "JOIN sensors s" in query
         assert "s.id = incoming.sensor_id" in query
         assert "s.zone_id = incoming.zone_id" in query
         assert "$1::bigint[]" in query
         assert "$3::bigint[]" in query
+        assert "$4::bigint[]" in query
 
 
 @pytest.mark.asyncio

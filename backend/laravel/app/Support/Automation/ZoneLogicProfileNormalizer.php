@@ -105,17 +105,28 @@ class ZoneLogicProfileNormalizer
 
         $steps = $this->resolveCommandPlanSteps($execution, $twoTankCommands);
 
+        $plans = [
+            'diagnostics' => [
+                'execution' => $execution,
+                'two_tank_commands' => $twoTankCommands,
+                'steps' => $steps,
+            ],
+        ];
+        foreach ($twoTankCommands as $planName => $planCommands) {
+            if (! is_string($planName) || ! is_array($planCommands) || ! array_is_list($planCommands)) {
+                continue;
+            }
+            $keyed = $this->normalizeCommandPlanSteps($planCommands);
+            if ($keyed !== []) {
+                $plans[$planName] = $keyed;
+            }
+        }
+
         return [
             'schema_version' => 1,
             'plan_version' => 1,
             'source' => $source,
-            'plans' => [
-                'diagnostics' => [
-                    'execution' => $execution,
-                    'two_tank_commands' => $twoTankCommands,
-                    'steps' => $steps,
-                ],
-            ],
+            'plans' => $plans,
         ];
     }
 
@@ -191,7 +202,7 @@ class ZoneLogicProfileNormalizer
                 continue;
             }
 
-            $steps[] = [
+            $step = [
                 'name' => isset($rawStep['name']) ? (string) $rawStep['name'] : 'step_'.((int) $index + 1),
                 'channel' => $channel,
                 'cmd' => $cmd,
@@ -200,6 +211,11 @@ class ZoneLogicProfileNormalizer
                 'allow_no_effect' => (bool) ($rawStep['allow_no_effect'] ?? false),
                 'dedupe_bypass' => (bool) ($rawStep['dedupe_bypass'] ?? false),
             ];
+            $nodeUid = trim((string) ($rawStep['node_uid'] ?? ''));
+            if ($nodeUid !== '') {
+                $step['node_uid'] = $nodeUid;
+            }
+            $steps[] = $step;
         }
 
         return $steps;
@@ -230,7 +246,7 @@ class ZoneLogicProfileNormalizer
                     continue;
                 }
 
-                $steps[] = [
+                $step = [
                     'name' => $planName.'_'.((int) $position + 1),
                     'channel' => $channel,
                     'cmd' => $cmd,
@@ -238,6 +254,11 @@ class ZoneLogicProfileNormalizer
                     'allow_no_effect' => (bool) ($rawStep['allow_no_effect'] ?? false),
                     'dedupe_bypass' => (bool) ($rawStep['dedupe_bypass'] ?? false),
                 ];
+                $nodeUid = trim((string) ($rawStep['node_uid'] ?? ''));
+                if ($nodeUid !== '') {
+                    $step['node_uid'] = $nodeUid;
+                }
+                $steps[] = $step;
             }
         }
 

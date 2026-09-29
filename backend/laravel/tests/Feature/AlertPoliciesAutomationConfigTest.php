@@ -66,4 +66,34 @@ class AlertPoliciesAutomationConfigTest extends TestCase
             ->assertJsonPath('status', 'ok')
             ->assertJsonPath('data.payload.ae3_operational_resolution_mode', AlertPolicyService::MODE_AUTO_RESOLVE_ON_RECOVERY);
     }
+
+    public function test_telegram_test_ok_persists_and_survives_mode_only_save(): void
+    {
+        $admin = User::factory()->create(['role' => 'admin']);
+        $documents = app(\App\Services\AutomationConfigDocumentService::class);
+
+        $documents->upsertDocument(
+            \App\Services\AutomationConfigRegistry::NAMESPACE_SYSTEM_ALERT_POLICIES,
+            \App\Services\AutomationConfigRegistry::SCOPE_SYSTEM,
+            0,
+            [
+                'ae3_operational_resolution_mode' => AlertPolicyService::MODE_MANUAL_ACK,
+                'telegram_test_ok' => true,
+                'telegram_test_at' => '2026-09-24T12:00:00+00:00',
+            ],
+            $admin->id,
+            'alerts:telegram-test',
+        );
+
+        $this->actingAs($admin)
+            ->putJson('/api/automation-configs/system/0/system.alert_policies', [
+                'payload' => [
+                    'ae3_operational_resolution_mode' => AlertPolicyService::MODE_AUTO_RESOLVE_ON_RECOVERY,
+                ],
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.payload.ae3_operational_resolution_mode', AlertPolicyService::MODE_AUTO_RESOLVE_ON_RECOVERY)
+            ->assertJsonPath('data.payload.telegram_test_ok', true)
+            ->assertJsonPath('data.payload.telegram_test_at', '2026-09-24T12:00:00+00:00');
+    }
 }

@@ -33,70 +33,21 @@ class TestRealHardwareLauncherContract(unittest.TestCase):
         self.assertIn("real-hardware harness видел только реальную test_node", self.script)
 
     def test_real_hardware_launcher_exposes_canonical_suites(self) -> None:
-        self.assertIn('AE3LITE_SCENARIOS=(', self.script)
+        self.assertIn('AE4_REALHW_SCENARIOS=(', self.script)
         self.assertIn(
-            '"scenarios/ae3lite/E100_ae3_two_tank_realhw_smoke.yaml"',
+            '"scenarios/ae4/AE4_HW_01_test_node_planned_shot.yaml"',
             self.script,
         )
         self.assertIn(
-            '"scenarios/ae3lite/E101_ae3_two_tank_realhw_setup_ready.yaml"',
+            '"scenarios/ae4/AE4_HW_02_test_node_both_tanks_empty.yaml"',
             self.script,
         )
-        self.assertIn(
-            '"scenarios/ae3lite/E103_ae3_recirculation_retry_limit_alert_resolve_ready_realhw.yaml"',
-            self.script,
-        )
-        self.assertIn(
-            '"scenarios/ae3lite/E114_ae3_reactive_solution_topup_level_switch_realhw.yaml"',
-            self.script,
-        )
-        self.assertIn(
-            '"scenarios/ae3lite/E115_ae3_solution_change_operator_gate_realhw.yaml"',
-            self.script,
-        )
-        self.assertIn(
-            '"scenarios/ae3lite/E116_ae3_estop_failsafe_events_realhw.yaml"',
-            self.script,
-        )
-        self.assertIn(
-            '"scenarios/ae3lite/E118_ae3_water_baseline_and_ca_fill_realhw.yaml"',
-            self.script,
-        )
-        self.assertIn(
-            '"scenarios/ae3lite/E119_ae3_prepare_pipeline_sequence_realhw.yaml"',
-            self.script,
-        )
-        self.assertIn(
-            '"scenarios/ae3lite/E120_ae3_recirc_dilute_overshoot_realhw.yaml"',
-            self.script,
-        )
-        # E118 before E119 before E120: launcher exits on first failure.
-        self.assertLess(
-            self.script.index('"scenarios/ae3lite/E118_ae3_water_baseline_and_ca_fill_realhw.yaml"'),
-            self.script.index('"scenarios/ae3lite/E119_ae3_prepare_pipeline_sequence_realhw.yaml"'),
-        )
-        self.assertLess(
-            self.script.index('"scenarios/ae3lite/E119_ae3_prepare_pipeline_sequence_realhw.yaml"'),
-            self.script.index('"scenarios/ae3lite/E120_ae3_recirc_dilute_overshoot_realhw.yaml"'),
-        )
-        self.assertNotIn("E102_ae3_two_tank_realhw_ready_during_recirculation", self.script)
-        self.assertNotIn("E102_ae3_recirculation_retry_limit_alert_reset", self.script)
+        self.assertNotIn("AE3LITE_SCENARIOS=(", self.script)
+        self.assertNotIn("scenarios/ae3lite/", self.script)
+        self.assertNotIn("SMART_IRRIGATION_SCENARIOS=(", self.script)
+        self.assertNotIn("INLINE_IRRIGATION_SCENARIOS=(", self.script)
         self.assertNotIn("AUTOMATION_SCENARIOS=(", self.script)
         self.assertNotIn("WORKFLOW_SCENARIOS=(", self.script)
-
-        self.assertIn('SMART_IRRIGATION_SCENARIOS=(', self.script)
-        self.assertIn(
-            '"scenarios/ae3lite/E107_ae3_irrigation_runtime_test_node.yaml"',
-            self.script,
-        )
-        self.assertIn(
-            '"scenarios/ae3lite/E108_ae3_soil_moisture_telemetry_contract.yaml"',
-            self.script,
-        )
-        self.assertIn(
-            '"scenarios/ae3lite/E109_ae3_irrigation_inline_correction_test_node.yaml"',
-            self.script,
-        )
         self.assertIn('CALIBRATION_SCENARIOS=(', self.script)
         self.assertIn(
             '"scenarios/calibration/E110_sensor_calibration_realhw_create_cancel.yaml"',
@@ -110,18 +61,7 @@ class TestRealHardwareLauncherContract(unittest.TestCase):
             '"scenarios/calibration/E117_sensor_calibration_realhw_happy_path.yaml"',
             self.script,
         )
-        self.assertIn('INLINE_IRRIGATION_SCENARIOS=(', self.script)
-        # Inline set is only the real inline-correction scenario (soil contract lives in smart_irrigation).
-        inline_block = self.script.split("INLINE_IRRIGATION_SCENARIOS=(")[1].split(")")[0]
-        self.assertIn(
-            '"scenarios/ae3lite/E109_ae3_irrigation_inline_correction_test_node.yaml"',
-            inline_block,
-        )
-        self.assertNotIn("E108_ae3_soil_moisture_telemetry_contract", inline_block)
-        self.assertIn(
-            "--set=<ae3lite|smart_irrigation|inline_irrigation|calibration|full>",
-            self.script,
-        )
+        self.assertIn("--set=<ae4|calibration|full>", self.script)
 
     def test_real_hardware_launcher_cleans_stale_blocking_ae3_alerts(self) -> None:
         self.assertIn("Удаляю stale AE3 blocking alerts для тестовой зоны", self.script)

@@ -1,0 +1,24 @@
+# E240: сбой публикации алерта не стирает текст на зоне.
+
+name: E240_ae4_alert_publish_failure_keeps_text
+description: |
+  Если send_biz_alert падает, текст журнала и state_details сохраняются.
+
+tags:
+  - ae4
+  - wave2
+  - failure
+
+meta:
+  id: E240
+  wave: 2
+  runtime: ae4
+  requires_physical_node: false
+  proves: |
+    alert exception is logged;
+    state_details.human_error_message remains
+
+actions:
+  - step: document_contract
+    type: set
+    note: behaviour proven by pytest tests/unit/ae4/test_e238_e239_e240_failure_report.py

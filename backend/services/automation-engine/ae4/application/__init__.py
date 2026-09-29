@@ -1,0 +1,1 @@
+"""Application-слой AE4."""

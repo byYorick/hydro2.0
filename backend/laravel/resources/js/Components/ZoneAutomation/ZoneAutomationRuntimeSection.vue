@@ -73,6 +73,44 @@
         :data-timestamp="runtimeMeta.dataTimestamp.value"
       />
 
+      <div
+        v-if="plantingDecisionMessage"
+        class="rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--surface-muted)]/30 px-3 py-2"
+        data-testid="zone-planting-decision"
+      >
+        <p class="text-sm text-[color:var(--text-primary)]">
+          {{ plantingDecisionMessage }}
+        </p>
+      </div>
+
+      <div
+        v-if="unattendedReady !== null"
+        class="rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--surface-muted)]/20 px-3 py-2 space-y-2"
+        data-testid="zone-unattended-ready"
+      >
+        <p
+          class="text-sm font-medium"
+          :class="unattendedReady
+            ? 'text-[color:var(--text-primary)]'
+            : 'text-[color:var(--warning)]'"
+          data-testid="zone-unattended-status"
+        >
+          {{ unattendedReady ? 'Можно уйти на неделю' : 'Уйти нельзя' }}
+        </p>
+        <ul
+          v-if="unattendedBlockerMessages.length > 0"
+          class="list-disc pl-5 space-y-1 text-sm text-[color:var(--text-primary)]"
+          data-testid="zone-unattended-blockers"
+        >
+          <li
+            v-for="(message, index) in unattendedBlockerMessages"
+            :key="`${index}-${message}`"
+          >
+            {{ message }}
+          </li>
+        </ul>
+      </div>
+
       <div class="grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(280px,0.65fr)]">
         <div class="min-w-0 rounded-xl border border-[color:var(--border-muted)]/50 bg-[color:var(--surface-card)]/30 p-2 md:p-3 flex items-center justify-center">
           <AutomationProcessDiagram
@@ -196,6 +234,36 @@ const { pumpHoverByChannel } = useCorrectionPumpHoverData(
 )
 
 const runtimeMeta = useAutomationRuntimeMeta(automationState)
+
+const plantingDecisionMessage = computed(() => {
+  const decision = automationState.value?.planting_decision
+  if (!decision || decision.failed === true) {
+    return null
+  }
+  const text = String(decision.human_message || '').trim()
+  return text || null
+})
+
+const unattendedReady = computed<boolean | null>(() => {
+  const value = automationState.value?.unattended_ready
+  return typeof value === 'boolean' ? value : null
+})
+
+const unattendedBlockerMessages = computed(() => {
+  const blockers = automationState.value?.unattended_blockers
+  if (!Array.isArray(blockers)) {
+    return [] as string[]
+  }
+  return blockers
+    .map((item) => {
+      const human = String(item.human_message || '').trim()
+      if (human) {
+        return human
+      }
+      return ''
+    })
+    .filter((text) => text !== '')
+})
 
 const stateBadgeVariant = computed<'neutral' | 'info' | 'warning' | 'success' | 'danger'>(() => {
   if (runtimeMeta.hasActiveFailure.value) {

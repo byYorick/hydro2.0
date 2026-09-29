@@ -42,10 +42,11 @@
   от `(target_ec_night − water_ec)` — см. §10;
 - compiled bundle обязан пересчитываться при `advancePhase`/`setPhase`/`changeRecipeRevision` (см. `RECIPE_ENGINE_FULL.md` §3.3).
 
-Актуализация освещения day/night + гарантированный OFF (2026-07-08, этап A `AGRO_AUTONOMY_MASTER_PLAN.md` §A.1):
-- в `targets.lighting` для режима `SCHEDULE` канонические поля фотопериода: `on_time`, `off_time`, `brightness` (день), `brightness_night` (ночь, default `0`);
-- вне окна `[on_time, off_time)` целевая яркость = `brightness_night` (обычно `0` — гарантированное выключение);
-- scheduler-dispatch `lighting_tick` передаёт в AE3 `desired_state` (`on`|`off`) и опционально `brightness_pct` — см. §4.4.1 и `SCHEDULER_AE3_NON_IRRIGATION_DISPATCH.md` §7.
+Освещение AE 1.0.0 (канон `ae4.md`):
+- в `targets.lighting` для режима `SCHEDULE` канонические поля окна: `on_time`, `off_time`, `brightness` (день), `brightness_night` (ночь, default `0`);
+- пары `on_time`/`off_time` нет — окно из `lighting_start_time` + `lighting_photoperiod_hours` (тот же смысл, что у `LightingScheduleParser`);
+- вне окна целевая яркость = `brightness_night` (обычно `0` — гарантированное выключение);
+- момент ON/OFF назначает тик воркера 1.0.0; OFF — класс безопасности (не ждёт мутацию воды/дозы); ingress `POST …/start-lighting-tick` нет — см. §4.4.1–4.4.2.
 
 **Связанные документы:**
 - `RECIPE_ENGINE_FULL.md` — engine рецептов и фаз
@@ -481,10 +482,12 @@ interface LightingTarget {
   brightness?: number;         // Целевая яркость внутри окна [on_time, off_time), % (0–100)
   brightness_night?: number;   // Целевая яркость вне окна; default 0 (выключено)
 
-  // Для режима PHOTOPERIOD (legacy / альтернативное задание окна)
-  photoperiod_hours?: number;  // Длительность светового дня (часы)
-  sunrise_time?: string;       // Время "восхода" (HH:MM)
-  start_time?: string;         // Алиас on_time (используется Laravel scheduler / LightingScheduleParser)
+  // Альтернативное задание окна (если пары on_time/off_time нет)
+  lighting_start_time?: string;          // Начало окна (HH:MM); колонка фазы
+  lighting_photoperiod_hours?: number;   // Длительность окна (часы)
+  photoperiod_hours?: number;            // Legacy-алиас длительности
+  sunrise_time?: string;                 // Legacy «восход» (HH:MM)
+  start_time?: string;                   // Legacy-алиас начала (LightingScheduleParser)
 
   // Дополнительные параметры
   dimming?: {
@@ -497,7 +500,7 @@ interface LightingTarget {
 
 #### 4.4.1. Окно фотопериода и целевая яркость
 
-Для `mode="SCHEDULE"` effective targets задают **полусуточное окно** фотопериода:
+Для `mode="SCHEDULE"` effective targets задают **окно** фотопериода. Новой колонки под окно нет — берётся уже существующая пара:
 
 | Поле | Семантика |
 |------|-----------|
@@ -505,6 +508,8 @@ interface LightingTarget {
 | `off_time` | Конец светового дня (исключительно), тот же формат |
 | `brightness` | PWM/relay duty внутри окна `[on_time, off_time)`, диапазон `0..100` |
 | `brightness_night` | PWM/relay duty **вне** окна; если не задан — **`0`** (свет выключен) |
+
+Пары `on_time` / `off_time` нет — окно из `lighting_start_time` + `lighting_photoperiod_hours` (тот же смысл, что у `LightingScheduleParser`). Оба края пустые — окна нет. Задан один край или начало равно концу — ошибка конфигурации. Второе окно из фотопериода поверх уже заданной пары `on_time` / `off_time` не строится.
 
 **Правило разрешения яркости** (локальное время зоны / теплицы):
 
@@ -517,30 +522,18 @@ interface LightingTarget {
 
 Интервал `[on_time, off_time)` — полуоткрытый: в момент `on_time` свет **включается**, в момент `off_time` — **выключается** (целевая яркость переходит на `brightness_night`).
 
-**Совместимость с существующим scheduler:**
+При сборке effective targets Laravel **нормализует** legacy `start_time` + `photoperiod_hours` / строку `lighting_schedule` (`"06:00-22:00"`) в канонические `on_time` / `off_time`, когда пара ещё не задана. Поля `pwm_duty` / `brightness_pct` в snapshot — runtime-алиасы яркости; источник истины — `brightness` / `brightness_night`.
 
-- `LightingScheduleParser` может строить окно из `start_time` + `photoperiod_hours` или из строки `lighting_schedule` (`"06:00-22:00"`); при сборке effective targets Laravel **нормализует** их в канонические `on_time` / `off_time`.
-- Поля `pwm_duty` / `brightness_pct` в snapshot — runtime-алиасы для AE3 planner; источник истины для scheduler-dispatch — `brightness` / `brightness_night` из effective targets.
+#### 4.4.2. ON/OFF света в AE 1.0.0
 
-#### 4.4.2. `lighting_tick`: desired_state ON/OFF
+Момент ON и OFF назначает **тик воркера 1.0.0** (`ae4/domain/light_policy.py`, класс безопасности / мутация — `ae4.md` §11.1). Ingress `POST /zones/{id}/start-lighting-tick`, задачи `lighting_tick` и диспетчера Laravel (`ScheduleDispatcher`) нет.
 
-Задача AE3 `lighting_tick` (ingress `POST /zones/{id}/start-lighting-tick`) исполняет **один** переход состояния освещения. Laravel `SchedulerCycleOrchestrator`:
+| Переход | Когда | Класс | Команда |
+|---------|-------|-------|---------|
+| ON | `now` внутри окна | мутация (может ждать, если тик занят водой/дозой) | `set_pwm {duty: brightness}` или `set_relay {state: true}` по шагам профиля |
+| OFF | `now` вне окна (граница `off_time` и далее) | **безопасность** — каждый проход, мутацию не занимает | `set_pwm {duty: 0}` / `set_relay {state: false}` (или `brightness_night`) |
 
-- **только окно** — dispatch на границе фотопериода (`desiredNow !== desiredLast`);
-- **только interval** — каждый due-тик с `desired_state=on`;
-- **гибрид окно+interval** — граница ON/OFF **и** interval ON внутри окна (иначе `off_time` не гасит свет).
-
-| `desired_state` | Когда dispatch | Команда AE3 |
-|-----------------|----------------|-------------|
-| `"on"` | Вход в окно `[on_time, off_time)` и/или interval-тик внутри окна | `set_pwm {duty: brightness_pct}` или `set_relay {state: true}` |
-| `"off"` | Выход из окна (переход `on → off` в `off_time`), в т.ч. в гибридном item | `set_pwm {duty: 0}` или `set_relay {state: false}` |
-
-Поля dispatch-payload (см. `StartLightingTickRequest`, `ScheduleDispatcher.php`):
-
-- `desired_state`: `"on"` \| `"off"`, default `"on"` (backward-compat для interval/time-spec без окна).
-- `brightness_pct`: опционально `0..100`; при `desired_state="on"` — явная яркость тика; если не передано, AE3 резолвит из effective targets / day-night config; fallback `100`.
-
-**Идемпотентность:** повторный tick с тем же `desired_state` и той же фактической яркостью на узле — no-op (`NO_EFFECT` допустим); граница окна dispatch'ится один раз на переход. Retryable 409 на OFF-tick не двигает cursor. Битый `desired_state` — fail-closed skip.
+Датчик света для политики ON/OFF не обязателен. Канал без гарантированного гашения на узле — блокер `unattended_ready` (`ae4.md` §11.7), но политика OFF всё равно публикует команду.
 
 **Пример (SCHEDULE + day/night):**
 ```json
@@ -1018,17 +1011,17 @@ function computeEffectiveTargets(Zone $zone): array
 
 ### 7.2. Default значения
 
-**ВАЖНО (актуализация 2026-05-28, sync с AE3 runtime):**
+**ВАЖНО (AE 1.0.0, канон `ae4.md`):**
 
-В **runtime AE3 (`ae3lite/`) defaults НЕ применяются**. Канон fail-closed:
+В **runtime AE 1.0.0 (`ae4/`) defaults НЕ применяются**. Канон fail-closed:
 - `target_ph/min/max` и `target_ec/min/max` берутся **только** из active recipe phase (`grow_cycle_phases` / `recipe_revision_phases`);
-- если поле отсутствует, `runtime_plan_builder._resolve_phase_target` / `_collect_missing_paths` raise'ят `PlannerConfigurationError`, и task завершается с `error_code='ZONE_RECIPE_PHASE_TARGETS_MISSING_CRITICAL'`;
+- отсутствие phase target — ошибка конфигурации (fail-closed), полив/химия не идут;
 - `cycle.phase_overrides`, `cycle.manual_overrides` и `zone.logic_profile` **не могут** переопределять canonical pH/EC setpoints (см. §1 канон pH/EC targets);
-- hardcoded default targets в AE3 запрещены (см. `ae3lite.md` §5.3.4).
+- hardcoded default targets в runtime запрещены.
 
-Дефолты ниже остаются как **diagnostics/integration baseline** (legacy effective-targets API `POST /api/internal/effective-targets/batch` / `GET .../{zone_id}`) и используются Laravel при отсутствии активного цикла или для UI-подсказок. Status: **Reference defaults — used by Laravel diagnostic API only, NOT by AE3 runtime.**
+Дефолты ниже остаются как **diagnostics/integration baseline** (legacy effective-targets API `POST /api/internal/effective-targets/batch` / `GET .../{zone_id}`) и используются Laravel при отсутствии активного цикла или для UI-подсказок. Status: **Reference defaults — used by Laravel diagnostic API only, NOT by AE 1.0.0 runtime.**
 
-Если targets не заданы в recipe, integration API возвращает следующие baseline-значения (для AE3 runtime отсутствие target всё равно даёт fail-closed):
+Если targets не заданы в recipe, integration API возвращает следующие baseline-значения (для runtime 1.0.0 отсутствие target всё равно даёт fail-closed):
 
 ```json
 {
@@ -1199,10 +1192,7 @@ Two-tank runtime spec собирает поля:
 
 ### 10.4. Late-binding в handler
 
-`backend/services/automation-engine/ae3lite/application/handlers/base.py`:
-- `_is_day_now(day_night_config)` — статический метод, использует `datetime.now()` (локальное время процесса AE3) и значения `day_start_time + day_hours`. При невалидных параметрах возвращает `True` (fallback на day-таргеты).
-- `_day_night_override(runtime, metric, kind, default)` — выбирает `day`/`night` ключи по результату `_is_day_now`.
-- `_effective_ph_target/min/max` и `_effective_ec_target/min/max` оборачивают базовое значение через override.
+Day/night late-binding в AE 1.0.0 читает окно и коридоры фазы через `ae4/` (phase loader + planting/light policy). Исторический путь `ae3lite/.../handlers/base.py` удалён вместе с пакетом.
 
 ### 10.5. Night override + water baseline
 

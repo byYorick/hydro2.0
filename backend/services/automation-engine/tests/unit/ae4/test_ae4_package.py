@@ -50,34 +50,17 @@ def test_reconcile_interval_uses_existing_env(monkeypatch: pytest.MonkeyPatch) -
     assert Ae4RuntimeConfig.from_env().reconcile_poll_interval_sec == 0.1
 
 
-async def test_main_starts_both_workers(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_main_starts_only_ae4_serve(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("AE_RECONCILE_POLL_INTERVAL_SEC", "1.25")
     started: list[str] = []
-    stop = asyncio.Event()
-
-    class RecordingWorker:
-        def __init__(self, *, config: Ae4RuntimeConfig) -> None:
-            assert config.reconcile_poll_interval_sec == 1.25
-            started.append("ae4-init")
-
-        async def run(self) -> None:
-            started.append("ae4-run")
-            await stop.wait()
-
-        async def shutdown(self) -> None:
-            started.append("ae4-stop")
-            stop.set()
 
     async def fake_serve() -> None:
-        started.append("ae3-serve")
+        started.append("ae4-serve")
 
     import main as process_main
 
-    monkeypatch.setattr(process_main, "Ae4RuntimeWorker", RecordingWorker)
     monkeypatch.setattr(process_main, "serve", fake_serve)
     await process_main.main()
 
-    assert "ae4-init" in started
-    assert "ae4-run" in started
-    assert "ae3-serve" in started
-    assert "ae4-stop" in started
+    assert started == ["ae4-serve"]
+    assert "ae3" not in " ".join(started)

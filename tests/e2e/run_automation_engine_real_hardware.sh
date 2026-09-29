@@ -133,33 +133,9 @@ sync_automation_engine_env
 export AUTOMATION_ENGINE_HOST AUTOMATION_ENGINE_API_PORT
 
 SERVICES=(automation-engine history-logger laravel mqtt-bridge digital-twin)
-# Канонический realhw-набор: только уникальные AE3/test_node сценарии.
-# Legacy aliases (E61/E66–E68/E80–E89/E94 → E100) и sim-only (E64/E65/E74/E96/E97)
-# из realhw launcher убраны — они живут в node_sim suites.
-AE3LITE_SCENARIOS=(
-  "scenarios/ae3lite/E100_ae3_two_tank_realhw_smoke.yaml"
-  "scenarios/ae3lite/E101_ae3_two_tank_realhw_ready_during_fill.yaml"
-  "scenarios/ae3lite/E101_ae3_two_tank_realhw_setup_ready.yaml"
-  "scenarios/ae3lite/E103_ae3_recirculation_retry_limit_alert_resolve_ready_realhw.yaml"
-  "scenarios/ae3lite/E104_ae3_two_tank_realhw_hot_reload_correction_config.yaml"
-  "scenarios/ae3lite/E105_ae3_two_tank_fail_closed_missing_command_plan_realhw.yaml"
-  "scenarios/ae3lite/E106_ae3_two_tank_realhw_piggyback_ec_ph_cycle.yaml"
-  "scenarios/ae3lite/E112_ae3_per_phase_ec_target_realhw.yaml"
-  "scenarios/ae3lite/E113_ae3_prepare_recirc_solution_low_to_setup_realhw.yaml"
-  "scenarios/ae3lite/E114_ae3_reactive_solution_topup_level_switch_realhw.yaml"
-  "scenarios/ae3lite/E115_ae3_solution_change_operator_gate_realhw.yaml"
-  "scenarios/ae3lite/E116_ae3_estop_failsafe_events_realhw.yaml"
-  "scenarios/ae3lite/E118_ae3_water_baseline_and_ca_fill_realhw.yaml"
-  "scenarios/ae3lite/E119_ae3_prepare_pipeline_sequence_realhw.yaml"
-  "scenarios/ae3lite/E120_ae3_recirc_dilute_overshoot_realhw.yaml"
-)
-SMART_IRRIGATION_SCENARIOS=(
-  "scenarios/ae3lite/E107_ae3_irrigation_runtime_test_node.yaml"
-  "scenarios/ae3lite/E108_ae3_soil_moisture_telemetry_contract.yaml"
-  "scenarios/ae3lite/E109_ae3_irrigation_inline_correction_test_node.yaml"
-)
-INLINE_IRRIGATION_SCENARIOS=(
-  "scenarios/ae3lite/E109_ae3_irrigation_inline_correction_test_node.yaml"
+AE4_REALHW_SCENARIOS=(
+  "scenarios/ae4/AE4_HW_01_test_node_planned_shot.yaml"
+  "scenarios/ae4/AE4_HW_02_test_node_both_tanks_empty.yaml"
 )
 CALIBRATION_SCENARIOS=(
   "scenarios/calibration/E110_sensor_calibration_realhw_create_cancel.yaml"
@@ -170,10 +146,10 @@ CALIBRATION_SCENARIOS=(
 usage() {
   cat <<'EOF'
 Usage:
-  tests/e2e/run_automation_engine_real_hardware.sh [--set ae3lite|smart_irrigation|inline_irrigation|calibration|full] [--list]
+  tests/e2e/run_automation_engine_real_hardware.sh [--set ae4|calibration|full] [--list]
 
 Env:
-  SCENARIO_SET=ae3lite|smart_irrigation|inline_irrigation|calibration|full   # default: full
+  SCENARIO_SET=ae4|calibration|full   # default: full = AE 1.0.0 test_node + calibration
   TEST_NODE_UID/TEST_WORKFLOW_NODE_UID/TEST_PH_NODE_UID/TEST_EC_NODE_UID/TEST_SOIL_NODE_UID=auto|<uid>
   REAL_HW_REBOOT_CMD=restart|reboot       # default: restart
   E2E_NODE_UID_REGEX=<regex>              # default: ^nd-test-
@@ -184,8 +160,7 @@ EOF
 
 collect_full_scenarios() {
   printf '%s\n' \
-    "${AE3LITE_SCENARIOS[@]}" \
-    "${SMART_IRRIGATION_SCENARIOS[@]}" \
+    "${AE4_REALHW_SCENARIOS[@]}" \
     "${CALIBRATION_SCENARIOS[@]}" \
     | LC_ALL=C sort -u
 }
@@ -220,14 +195,13 @@ apply_scenario_filters() {
 
 resolve_scenarios() {
   case "$SCENARIO_SET" in
-    ae3lite)
-      SCENARIOS=("${AE3LITE_SCENARIOS[@]}")
+    ae3lite|smart_irrigation|inline_irrigation)
+      echo "❌ SCENARIO_SET=$SCENARIO_SET удалён вместе с тестами AE3."
+      echo "   Используйте --set=ae4|calibration|full."
+      exit 1
       ;;
-    smart_irrigation)
-      SCENARIOS=("${SMART_IRRIGATION_SCENARIOS[@]}")
-      ;;
-    inline_irrigation)
-      SCENARIOS=("${INLINE_IRRIGATION_SCENARIOS[@]}")
+    ae4)
+      SCENARIOS=("${AE4_REALHW_SCENARIOS[@]}")
       ;;
     calibration)
       SCENARIOS=("${CALIBRATION_SCENARIOS[@]}")
@@ -237,7 +211,7 @@ resolve_scenarios() {
       ;;
     automation|workflow)
       echo "❌ SCENARIO_SET=$SCENARIO_SET удалён: legacy aliases на E100 больше не в realhw launcher."
-      echo "   Используйте --set=ae3lite|smart_irrigation|inline_irrigation|calibration|full"
+      echo "   Используйте --set=ae4|calibration|full"
       echo "   Sim-сценарии E64/E65/E74/E96/E97 — через tools/testing/run_e2e.sh (node_sim)."
       exit 1
       ;;
@@ -274,7 +248,7 @@ for arg in "$@"; do
       SCENARIO_SET="${arg#--set=}"
       ;;
     --set)
-      echo "❌ Используйте формат --set=<ae3lite|smart_irrigation|inline_irrigation|calibration|full>"
+      echo "❌ Используйте формат --set=<ae4|calibration|full>"
       exit 1
       ;;
     --list)
@@ -621,12 +595,10 @@ targets = [
         "base": sys.argv[1].rstrip("/"),
         "path": "/metrics/",
         "metrics": [
-            "ae3_active_tasks",
-            "ae3_tick_errors_total",
-            "ae3_command_terminal_total",
-            "ae3_stage_deadline_exceeded_total",
-            "ae3_correction_exhausted_total",
-            "ae3_startup_recovery_task_total",
+            "ae4_tick_duration_seconds",
+            "ae4_pending_tasks",
+            "ae4_oldest_active_task_age_seconds",
+            "ae4_zone_lease_lost_total",
         ],
     },
     {
@@ -1187,8 +1159,7 @@ wait_nodes_recreated_in_db() {
           AND (
             (zone_id IS NULL AND lifecycle_state = 'REGISTERED_BACKEND')
             OR (
-              '${test_zone_id}' <> ''
-              AND zone_id = CAST('${test_zone_id}' AS bigint)
+              zone_id = NULLIF('${test_zone_id}', '')::bigint
               AND lifecycle_state IN ('ASSIGNED_TO_ZONE', 'ACTIVE')
             )
           )
@@ -1569,7 +1540,9 @@ prepare_real_hardware_node() {
   " >/dev/null
 
   echo "🧹 Удаляю все ноды из БД перед тестом..."
-  db_query_line "TRUNCATE TABLE nodes RESTART IDENTITY CASCADE;" >/dev/null
+  # DELETE, не TRUNCATE CASCADE: у greenhouses есть FK на nodes,
+  # CASCADE сносит теплицы и зоны вместе с узлами.
+  db_query_line "DELETE FROM nodes;" >/dev/null
 
   local live_topics_file
   live_topics_file="$(mktemp /tmp/e2e_live_topics.XXXXXX)"

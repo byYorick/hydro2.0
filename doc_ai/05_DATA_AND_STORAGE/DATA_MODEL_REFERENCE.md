@@ -110,7 +110,7 @@ health_status VARCHAR(16)
 hardware_profile JSONB
 capabilities JSONB
 settings JSONB
-automation_runtime VARCHAR(16) NOT NULL DEFAULT 'ae3' CHECK (automation_runtime IN ('ae3', 'ae4'))
+automation_runtime VARCHAR(16) NOT NULL DEFAULT 'ae4' CHECK (automation_runtime IN ('ae3', 'ae4'))
 control_mode VARCHAR(16) NOT NULL DEFAULT 'auto' CHECK (control_mode IN ('auto','semi','manual'))
 -- Phase 5: config modes (locked/live)
 config_mode VARCHAR(16) NOT NULL DEFAULT 'locked' CHECK (config_mode IN ('locked','live'))
@@ -356,7 +356,7 @@ id BIGSERIAL PK
 sensor_id FK
 ts TIMESTAMP
 zone_id FK NULL
-cycle_id FK NULL          -- ⚠️ см. ниже: пока не заполняется на ingest path
+cycle_id FK NULL          -- AE 1.0.0 / волна 6: активная посадка зоны на ingest
 value DECIMAL
 quality ENUM(GOOD|BAD|UNCERTAIN)
 metadata JSONB
@@ -372,7 +372,7 @@ telemetry_samples_zone_ts_idx
 telemetry_samples_cycle_ts_idx
 ```
 
-**Status: `cycle_id` declared, NOT populated by ingest path** — колонка и индекс созданы миграцией, но history-logger ingest (`backend/services/history-logger/telemetry_processing.py`) пишет samples без `cycle_id`. Это известное расхождение; в backlog'е либо заполнить `cycle_id` через grow_cycle lookup, либо удалить колонку. До разрешения запросы по `telemetry_samples_cycle_ts_idx` не имеют production-данных. `metadata` хранит `node_uid`, `raw` и опциональные flags (`flow_active`, `stable`, `corrections_allowed`).
+**`cycle_id` на ingest (AE 1.0.0 / волна 6):** history-logger (`telemetry_processing.py`) резолвит активную посадку зоны (`grow_cycles.status IN ('PLANNED','RUNNING','PAUSED')`) и пишет её `id` в `telemetry_samples.cycle_id`. Узел `cycle_id` в MQTT не шлёт. Нет активной посадки — `NULL`. По допущению §1.1.1 на зоне одна активная посадка; если в данных две и больше — `NULL` и `logger.error` (`reason_code=telemetry_ambiguous_active_grow_cycle`), id не угадывается. `metadata` хранит `node_uid`, `raw` и опциональные flags (`flow_active`, `stable`, `corrections_allowed`).
 
 ---
 
@@ -503,6 +503,11 @@ substrate_type VARCHAR(64) NULL           -- FK-by-code → substrates.code (м�
 day_night_enabled BOOLEAN NULL            -- активирует extensions.day_night override (миграция 2026_04_13_150000)
 irrigation_interval_sec INT NULL
 irrigation_duration_sec INT NULL
+soil_moisture_min DECIMAL(5,2) NULL  -- AE 1.0.0 / волна 1: полоса влажности субстрата
+soil_moisture_max DECIMAL(5,2) NULL
+vpd_min DECIMAL(5,3) NULL              -- одно место нормы VPD (колонки, не extensions)
+vpd_max DECIMAL(5,3) NULL
+light_integral_per_shot DECIMAL(12,3) NULL
 lighting_photoperiod_hours INT NULL
 lighting_start_time TIME NULL
 mist_interval_sec INT NULL
@@ -650,6 +655,11 @@ substrate_type VARCHAR(64) NULL           -- FK-by-code (snapshot, не каск
 day_night_enabled BOOLEAN NULL            -- snapshot активации day/night override
 irrigation_interval_sec INT NULL
 irrigation_duration_sec INT NULL
+soil_moisture_min DECIMAL(5,2) NULL  -- AE 1.0.0 / волна 1: полоса влажности субстрата
+soil_moisture_max DECIMAL(5,2) NULL
+vpd_min DECIMAL(5,3) NULL              -- одно место нормы VPD (колонки, не extensions)
+vpd_max DECIMAL(5,3) NULL
+light_integral_per_shot DECIMAL(12,3) NULL
 lighting_photoperiod_hours INT NULL
 lighting_start_time TIME NULL
 mist_interval_sec INT NULL
@@ -1073,10 +1083,9 @@ status IN ('pending','claimed','running','completed','failed','cancelled')
 ```
 
 Назначение:
-- durable contract между Laravel scheduler-dispatch и automation-engine;
-- идемпотентный запуск workflow через `POST /zones/{id}/start-cycle`
-  и `POST /zones/{id}/start-irrigation`;
-- арбитраж конкурентных запусков через claim (`FOR UPDATE SKIP LOCKED`).
+- durable lifecycle намерений/задач автоматики (исторически — мост Laravel↔AE; после AE 1.0.0 wake-up зон делает тик воркера, не `automation:dispatch-schedules`);
+- идемпотентный claim (`FOR UPDATE SKIP LOCKED`); маршрутов `POST /zones/{id}/start-cycle` и `start-irrigation` больше нет;
+- арбитраж конкурентных запусков через claim.
 
 Payload-contract (`payload` JSONB, wake-up only):
 ```json
@@ -1317,10 +1326,11 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 }
 ```
 
-## 6.11. AE3-Lite runtime tables (staged rollout)
+## 6.11. AE runtime tables (AE 1.0.0)
 
-Ниже таблицы вводятся migration-пакетом AE3-Lite и используются runtime-слоем
-`backend/services/automation-engine/ae3lite/` (см. `04_BACKEND_CORE/ae3lite.md`).
+Ниже таблицы используются runtime-слоем
+`backend/services/automation-engine/ae4/` (канон поведения — `04_BACKEND_CORE/ae4.md`).
+Пакета `ae3lite` нет. Диспетчера Laravel нет; команды к узлам публикует только history-logger.
 
 ### 6.11.1. ae_tasks
 
@@ -1781,19 +1791,23 @@ scheduler_logs_zone_created_idx -- expression partial index по details->>'zone
 - `result.commands_failed: int|null`
 
 Статус:
-- в canonical runtime вместо scheduler-task используется `zone_automation_intents`.
+- в AE 1.0.0 wake-up зон делает тик воркера (`due_at`); таблица `zone_automation_intents`
+  остаётся durable lifecycle, без Laravel `automation:dispatch-schedules`.
 
 ---
 
-## 8.5. laravel_scheduler_active_tasks (ACTIVE: Laravel scheduler owner)
+## 8.5. laravel_scheduler_active_tasks (HISTORICAL: бывший Laravel dispatcher)
 
-Durable state Laravel dispatcher для reconcile/anti-overlap в цепочке
+Operational state внешнего диспетчера до волны 10 cutover.
+После сноса `automation:dispatch-schedules` / `ScheduleDispatcher` таблица может
+оставаться в схеме для истории reconcile; текущий путь автоматики —
+`тик AE 1.0.0 → History-Logger → MQTT`, не
 `Laravel scheduler-dispatch -> /start-cycle -> intent -> executor`.
 
 Примечание:
-- `zone_automation_intents` — canonical lifecycle намерений;
-- `laravel_scheduler_active_tasks` — operational state external dispatcher-а
-  (busy arbitration, polling, recovery после рестартов Laravel).
+- `zone_automation_intents` — lifecycle намерений;
+- `laravel_scheduler_active_tasks` — исторический operational state внешнего dispatcher-а
+  (busy arbitration, polling, recovery после рестартов Laravel). Не текущий wake-up path.
 
 ```
 id BIGSERIAL PK
@@ -2659,6 +2673,11 @@ updated_by BIGINT NULL FK -> users
 created_at, updated_at
 UNIQUE (zone_id)
 ```
+
+Поле `timing.ec_clean` (AE4, волна 7) живёт в JSON `payload` /
+`resolved_config.base.timing` (каталог `ZoneCorrectionConfigCatalog`), не в
+отдельной колонке. Единица — как у цели EC фазы. Пустое значение: долю слива
+в бак стока не считать. Рядом с ним же `timing.stale_ec_allows_shot`.
 
 #### 16.8.3. zone_correction_config_versions
 

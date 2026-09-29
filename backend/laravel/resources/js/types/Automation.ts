@@ -66,6 +66,18 @@ export interface AutomationState {
     error_message?: string | null
     human_error_message?: string | null
   } | null
+  /** Последнее решение посадки (пауза политики): failed всегда false. */
+  planting_decision?: {
+    reason_code: string
+    human_message: string
+    failed: false
+  } | null
+  /** Готовность уйти на неделю (§11.7). Не второй runtime. */
+  unattended_ready?: boolean | null
+  unattended_blockers?: Array<{
+    reason_code: string
+    human_message: string
+  }> | null
   workflow_phase?: string | null
   current_stage?: string | null
   current_stage_label?: string | null

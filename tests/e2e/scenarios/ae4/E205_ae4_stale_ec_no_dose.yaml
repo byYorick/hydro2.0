@@ -1,0 +1,27 @@
+# E205: протухший EC feed — в командах нет dose.
+
+name: E205_ae4_stale_ec_no_dose
+description: |
+  Контракт волны 4 AE4:
+  протухший EC рабочего бака feed не порождает cmd=dose.
+  Поведение доказано pytest tests/unit/ae4/test_e205_stale_ec_no_dose.py
+  с моком history_logger_gateway. Realhw не требуется.
+
+tags:
+  - ae4
+  - wave4
+  - dose
+
+meta:
+  id: E205
+  wave: 4
+  runtime: ae4
+  requires_physical_node: false
+  proves: |
+    stale EC feed: no dose command published via common.history_logger_gateway;
+    cmd_id would start with ae4- if any command; plan name not sent as cmd
+
+actions:
+  - step: document_contract
+    type: set
+    note: behaviour proven by pytest tests/unit/ae4/test_e205_stale_ec_no_dose.py

@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enums\NodeLifecycleState;
 use App\Events\NodeConfigUpdated;
+use Illuminate\Contracts\Database\Eloquent\CastsAttributes;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -44,7 +45,7 @@ class DeviceNode extends Model
         'pending_zone_set_at' => 'datetime',
         'validated' => 'boolean',
         'config' => 'array',
-        'lifecycle_state' => NodeLifecycleState::class,
+        'lifecycle_state' => SafeNodeLifecycleStateCast::class,
     ];
 
     /**
@@ -258,5 +259,30 @@ class DeviceNode extends Model
     {
         return app(\App\Services\NodeLifecycleService::class)
             ->transitionToDecommissioned($this, $reason);
+    }
+}
+
+/**
+ * Неизвестное значение в БД не роняет список узлов.
+ */
+class SafeNodeLifecycleStateCast implements CastsAttributes
+{
+    public function get($model, string $key, $value, array $attributes): NodeLifecycleState
+    {
+        if ($value instanceof NodeLifecycleState) {
+            return $value;
+        }
+
+        return NodeLifecycleState::tryFrom((string) $value) ?? NodeLifecycleState::UNPROVISIONED;
+    }
+
+    public function set($model, string $key, $value, array $attributes): string
+    {
+        if ($value instanceof NodeLifecycleState) {
+            return $value->value;
+        }
+
+        return NodeLifecycleState::tryFrom((string) $value)?->value
+            ?? NodeLifecycleState::UNPROVISIONED->value;
     }
 }

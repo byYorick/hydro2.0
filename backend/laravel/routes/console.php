@@ -96,47 +96,7 @@ Schedule::command('alerts:dlq-replay --older-than-hours=24')
     ->dailyAt('04:00')
     ->description('Автоматический replay старых алертов из DLQ (старше 24 часов)');
 
-// MVP cutover: перенос внешнего scheduler-dispatch в Laravel.
-// Команда диспатчит due-окна в automation-engine по типу задачи:
-// irrigation → /start-irrigation, lighting → /start-lighting-tick,
-// solution_topup / solution_change → соответствующие endpoint'ы,
-// diagnostics → /start-cycle; после tick — greenhouse climate.
-// Не только start-cycle.
-// Включается feature-flag: AUTOMATION_LARAVEL_SCHEDULER_ENABLED=true.
-// Частота tick синхронизирована с AUTOMATION_LARAVEL_SCHEDULER_DISPATCH_INTERVAL_SEC (config services.automation_engine).
-$automationDispatchSchedules = Schedule::command('automation:dispatch-schedules');
-$dispatchIntervalSec = max(10, (int) config('services.automation_engine.scheduler_dispatch_interval_sec', 60));
-if ($dispatchIntervalSec <= 10) {
-    $automationDispatchSchedules->everyTenSeconds();
-} elseif ($dispatchIntervalSec <= 15) {
-    $automationDispatchSchedules->everyFifteenSeconds();
-} elseif ($dispatchIntervalSec <= 20) {
-    $automationDispatchSchedules->everyTwentySeconds();
-} elseif ($dispatchIntervalSec <= 30) {
-    $automationDispatchSchedules->everyThirtySeconds();
-} elseif ($dispatchIntervalSec <= 60) {
-    $automationDispatchSchedules->everyMinute();
-} else {
-    $everyMinutes = max(1, (int) ceil($dispatchIntervalSec / 60));
-    $automationDispatchSchedules->cron(sprintf('*/%d * * * *', $everyMinutes));
-}
-// Mutex: p99 lock_ttl из schedulerConfig() если БД доступна, иначе config с полом 5 мин
-// (ceil(55s/60)=1 мин короче длинных циклов и даёт overlap двух tick).
-$configuredLockTtlSec = max(10, (int) config('services.automation_engine.scheduler_lock_ttl_sec', 55));
-$dispatchScheduleMutexMinutes = max(5, (int) ceil($configuredLockTtlSec / 60));
-try {
-    $dispatchScheduleMutexMinutes = max(
-        $dispatchScheduleMutexMinutes,
-        app(AutomationRuntimeConfigService::class)->schedulerMutexExpiryMinutes(),
-    );
-} catch (\Throwable) {
-    // bootstrap без БД (artisan list): оставляем config-fallback
-}
-$automationDispatchSchedules
-    ->withoutOverlapping($dispatchScheduleMutexMinutes)
-    ->onOneServer()
-    ->when(fn (): bool => app(AutomationRuntimeConfigService::class)->schedulerEnabled())
-    ->description('Laravel scheduler dispatcher: планирование и dispatch abstract задач в automation-engine');
+// Диспетчер Laravel удалён волной 10 (AE 1.0.0).
 
 // Watchdog AE3: лог stale ae_tasks (без dual-write fail), orphan pending intents
 // без ae_task. Terminal fail ae_tasks — только ae3lite janitor.

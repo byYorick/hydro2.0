@@ -1480,20 +1480,8 @@ static float resolve_clean_min_switch_value(void) {
     if (s_virtual_state.force_clean_sensor_conflict && clean_max_active) {
         return 0.0f;
     }
-    /* Пока симуляция в активном clean_fill, считаем нижний датчик «мокнуто влажным»,
-     * чтобы не срывать AE3 на clean_fill_source_empty при нулевых guard-delay. */
-    if (s_virtual_state.clean_fill_stage_active) {
-        return 1.0f;
-    }
-    /* AE3 может использовать clean_fill_min_check_delay_ms=0: первая проверка идёт сразу после
-     * команд наполнения. Пока water_level ещё ниже порога 0.18, без этого правила telemetry даёт 0 и
-     * backend видит clean_fill_source_empty. На реальном стенде «вода на входе» есть, пока открыт
-     * путь clean_fill или идёт solution_fill с подачей из чистого контура. */
-    if (s_virtual_state.valve_clean_fill_on || s_virtual_state.tank_fill_on ||
-        (s_virtual_state.main_pump_on && s_virtual_state.valve_clean_supply_on &&
-         s_virtual_state.valve_solution_fill_on)) {
-        return 1.0f;
-    }
+    /* Без override уровень берётся из модели воды. AE 1.0.0 считает min=0 пустым баком.
+     * Открытый клапан набора сам по себе нижний датчик не замыкает. */
     if (s_virtual_state.clean_max_latched) {
         return 1.0f;
     }
@@ -1523,12 +1511,8 @@ static float resolve_solution_min_switch_value(void) {
     if (s_virtual_state.force_solution_sensor_conflict && solution_max_active) {
         return 0.0f;
     }
-    /* См. resolve_clean_min_switch_value: при нулевых guard-delay в AE3 solution_min проверяется
-     * раньше, чем solution_level успевает подняться над порогом. */
-    if (s_virtual_state.main_pump_on && s_virtual_state.valve_clean_supply_on &&
-        s_virtual_state.valve_solution_fill_on) {
-        return 1.0f;
-    }
+    /* Без override solution_min следует модели solution_level. Кадр AE 1.0.0
+     * не должен видеть полный бак только потому, что открыты клапаны долива. */
     if (s_virtual_state.solution_max_latched) {
         return 1.0f;
     }
@@ -1649,10 +1633,10 @@ static void publish_current_virtual_sensor_snapshot(bool include_levels, bool in
         );
     }
 
-    if (include_ph && s_virtual_state.ph_sensor_mode_active) {
+    if (include_ph) {
         publish_telemetry_for_node("nd-test-ph-1", "ph_sensor", "PH", s_virtual_state.ph_value);
     }
-    if (include_ec && s_virtual_state.ec_sensor_mode_active) {
+    if (include_ec) {
         publish_telemetry_for_node("nd-test-ec-1", "ec_sensor", "EC", s_virtual_state.ec_value);
     }
     if (include_soil) {
@@ -5092,12 +5076,8 @@ static void publish_virtual_telemetry_batch(void) {
         resolve_solution_max_switch_value()
     );
 
-    if (s_virtual_state.ph_sensor_mode_active) {
-        publish_telemetry_for_node("nd-test-ph-1", "ph_sensor", "PH", s_virtual_state.ph_value);
-    }
-    if (s_virtual_state.ec_sensor_mode_active) {
-        publish_telemetry_for_node("nd-test-ec-1", "ec_sensor", "EC", s_virtual_state.ec_value);
-    }
+    publish_telemetry_for_node("nd-test-ph-1", "ph_sensor", "PH", s_virtual_state.ph_value);
+    publish_telemetry_for_node("nd-test-ec-1", "ec_sensor", "EC", s_virtual_state.ec_value);
 
     publish_telemetry_for_node("nd-test-soil-1", "soil_moisture", "SOIL_MOISTURE", s_virtual_state.soil_moisture);
 

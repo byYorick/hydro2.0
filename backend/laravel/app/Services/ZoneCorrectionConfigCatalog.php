@@ -210,6 +210,20 @@ class ZoneCorrectionConfigCatalog
                     self::field('timing.sensor_mode_stabilization_time_sec', 'Стабилизация после режима датчика', 'Ожидание после включения sensor mode.', 'integer', ['min' => 0, 'max' => 3600, 'unit' => 'сек']),
                     self::field('timing.stabilization_sec', 'Пауза перед проверкой коррекции', 'Ожидание перед первым corr_check.', 'integer', ['min' => 0, 'max' => 3600, 'unit' => 'сек']),
                     self::field('timing.telemetry_max_age_sec', 'Макс. возраст телеметрии', 'Максимальный возраст PH/EC telemetry для correction runtime.', 'integer', ['min' => 5, 'max' => 3600, 'unit' => 'сек']),
+                    self::field(
+                        'timing.stale_ec_allows_shot',
+                        'Кадр при протухшем EC',
+                        'allow — кадр полива разрешён при протухшем EC (импульса соли нет). deny или пусто — кадр запрещён. Дефолт AE3 не подставляется.',
+                        'enum',
+                        ['options' => ['allow', 'deny']]
+                    ),
+                    self::field(
+                        'timing.ec_clean',
+                        'EC чистой воды',
+                        'EC_clean для доли слива в бак стока. Единица как у цели EC фазы. Пустое поле долю не считает.',
+                        'number',
+                        ['min' => 0.0, 'max' => 20.0, 'step' => 0.01]
+                    ),
                     self::field('timing.irr_state_max_age_sec', 'Макс. возраст состояния бака', 'Максимальный возраст снимка storage_state.', 'integer', ['min' => 5, 'max' => 3600, 'advanced_only' => true, 'unit' => 'сек']),
                     self::field('timing.level_poll_interval_sec', 'Интервал опроса уровня', 'Интервал повторной проверки level sensors.', 'integer', ['min' => 5, 'max' => 3600, 'advanced_only' => true, 'unit' => 'сек']),
                 ],

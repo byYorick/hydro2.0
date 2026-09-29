@@ -1,0 +1,29 @@
+# E218: E-STOP из zone_events обрывает полив; нового MQTT-топика нет.
+
+name: E218_ae4_estop_from_zone_events
+description: |
+  Контракт AE4 волны 3:
+  активный EMERGENCY_STOP_ACTIVATED в zone_events обрывает полив fail-closed,
+  класс безопасности гасит тракт/дозаторы через history-logger,
+  нового MQTT-топика под E-STOP нет. Realhw не требуется.
+
+tags:
+  - ae4
+  - wave3
+  - estop
+
+meta:
+  id: E218
+  wave: 3
+  runtime: ae4
+  requires_physical_node: false
+  proves: |
+    E-STOP from existing zone_events EMERGENCY_STOP_ACTIVATED;
+    irrigation mutation not started;
+    no new MQTT topic for E-STOP;
+    device cmds only via history-logger gateway
+
+actions:
+  - step: document_contract
+    type: set
+    note: behaviour proven by pytest tests/unit/ae4/test_e218_estop_zone_events.py

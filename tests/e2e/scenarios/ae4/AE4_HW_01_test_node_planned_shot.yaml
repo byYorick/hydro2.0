@@ -1,0 +1,288 @@
+# AE 1.0.0 на физической test_node: оба бака не пустые, тик открывает кадр.
+#
+# Узкий прогон (нода уже на MQTT 1884, node-sim остановлен launcher-ом):
+#   E2E_SCENARIO_INCLUDE_REGEX='AE4_HW_01' \
+#     tests/e2e/run_automation_engine_real_hardware.sh --set=ae4
+
+name: AE4_HW_01_test_node_planned_shot
+description: |
+  Физическая test_node. set_fault_mode держит clean и feed непустыми.
+  Тик AE 1.0.0 публикует run_pump на nd-test-irrig, узел отвечает DONE.
+
+tags:
+  - ae4
+  - realhw
+  - mqtt
+
+meta:
+  id: AE4_HW_01
+  wave: realhw
+  runtime: ae4
+  requires_physical_node: true
+  proves: |
+    test_node level overrides drive an ae4 planned shot to DONE
+
+actions:
+  - step: set_ids
+    type: set
+    zone_uid: ${TEST_NODE_ZONE_UID}
+    node_uid: ${TEST_NODE_UID}
+
+  - step: clear_ae4_planting
+    type: database_execute
+    params:
+      zone_uid: ${zone_uid}
+    query: |
+      WITH z AS (
+        SELECT id FROM zones WHERE uid = :zone_uid
+      )
+      DELETE FROM grow_cycles WHERE zone_id IN (SELECT id FROM z);
+
+  - step: seed_ae4_planting
+    type: database_execute
+    params:
+      zone_uid: ${zone_uid}
+      node_uid: ${node_uid}
+    query: |
+      WITH z AS (
+        UPDATE zones
+        SET automation_runtime = 'ae4', control_mode = 'auto', status = 'online', updated_at = NOW()
+        WHERE uid = :zone_uid
+        RETURNING id, greenhouse_id
+      ),
+      drop_lease AS (
+        DELETE FROM ae_zone_leases WHERE zone_id IN (SELECT id FROM z) RETURNING zone_id
+      ),
+      drop_tasks AS (
+        DELETE FROM ae_tasks WHERE zone_id IN (SELECT id FROM z) RETURNING id
+      ),
+      drop_commands AS (
+        DELETE FROM commands WHERE zone_id IN (SELECT id FROM z) RETURNING id
+      ),
+      drop_events AS (
+        DELETE FROM zone_events WHERE zone_id IN (SELECT id FROM z) RETURNING id
+      ),
+      drop_bundles AS (
+        DELETE FROM automation_effective_bundles
+        WHERE scope_type = 'grow_cycle'
+          AND scope_id IN (SELECT id FROM grow_cycles WHERE zone_id IN (SELECT id FROM z))
+        RETURNING id
+      ),
+      drop_cycles AS (
+        DELETE FROM grow_cycles WHERE zone_id IN (SELECT id FROM z) RETURNING id
+      ),
+      recipe AS (
+        INSERT INTO recipes (name, description, created_at, updated_at)
+        VALUES ('ae4-hw-recipe', 'посадка AE4 test_node', NOW(), NOW())
+        RETURNING id
+      ),
+      revision AS (
+        INSERT INTO recipe_revisions (recipe_id, revision_number, status, created_at, updated_at)
+        SELECT id, 1, 'PUBLISHED', NOW(), NOW() FROM recipe
+        RETURNING id
+      ),
+      cycle AS (
+        INSERT INTO grow_cycles (
+          greenhouse_id, zone_id, recipe_revision_id, status, started_at, created_at, updated_at
+        )
+        SELECT z.greenhouse_id, z.id, revision.id, 'RUNNING', NOW() - INTERVAL '10 minutes', NOW(), NOW()
+        FROM z, revision
+        RETURNING id
+      ),
+      phase AS (
+        INSERT INTO grow_cycle_phases (
+          grow_cycle_id, phase_index, name, nutrient_solution_volume_l,
+          irrigation_interval_sec, irrigation_duration_sec, started_at, created_at, updated_at
+        )
+        SELECT id, 0, 'hw-veg', 40, 60, 2, NOW() - INTERVAL '10 minutes', NOW(), NOW()
+        FROM cycle
+        RETURNING id, grow_cycle_id
+      ),
+      linked AS (
+        UPDATE grow_cycles gc
+        SET current_phase_id = phase.id
+        FROM phase
+        WHERE gc.id = phase.grow_cycle_id
+        RETURNING gc.id
+      )
+      INSERT INTO automation_effective_bundles (
+        scope_type, scope_id, bundle_revision, schema_revision, config, violations, status,
+        compiled_at, inputs_checksum, created_at, updated_at
+      )
+      SELECT 'grow_cycle', linked.id, 'ae4-hw-1', '1',
+        replace(
+          '{
+            "zone": {
+              "logic_profile": {
+                "active_profile": {
+                  "command_plans": {
+                    "plans": {
+                      "irrigation_start": [
+                        {"node_uid":"__NODE__","channel":"valve_solution_supply","cmd":"set_relay","params":{"state":true}},
+                        {"node_uid":"__NODE__","channel":"valve_irrigation","cmd":"set_relay","params":{"state":true}},
+                        {"node_uid":"__NODE__","channel":"pump_main","cmd":"run_pump","params":{"duration_ms":2000}}
+                      ],
+                      "irrigation_stop": [
+                        {"node_uid":"__NODE__","channel":"pump_main","cmd":"set_relay","params":{"state":false}},
+                        {"node_uid":"__NODE__","channel":"valve_irrigation","cmd":"set_relay","params":{"state":false}},
+                        {"node_uid":"__NODE__","channel":"valve_solution_supply","cmd":"set_relay","params":{"state":false}}
+                      ],
+                      "clean_fill_start": [
+                        {"node_uid":"__NODE__","channel":"valve_clean_fill","cmd":"set_relay","params":{"state":true}}
+                      ],
+                      "clean_fill_stop": [
+                        {"node_uid":"__NODE__","channel":"valve_clean_fill","cmd":"set_relay","params":{"state":false}}
+                      ],
+                      "solution_fill_start": [
+                        {"node_uid":"__NODE__","channel":"valve_solution_fill","cmd":"set_relay","params":{"state":true}}
+                      ],
+                      "solution_fill_stop": [
+                        {"node_uid":"__NODE__","channel":"valve_solution_fill","cmd":"set_relay","params":{"state":false}}
+                      ]
+                    }
+                  }
+                }
+              },
+              "correction": {
+                "resolved_config": {
+                  "timing": {"telemetry_max_age_sec": 300, "stale_ec_allows_shot": "allow"},
+                  "runtime": {"clean_fill_timeout_sec": 20, "solution_topup_timeout_sec": 20}
+                }
+              }
+            }
+          }',
+          '__NODE__',
+          :node_uid
+        )::jsonb,
+        '[]'::jsonb, 'valid', NOW(), 'ae4hw01checksum000000000000000000000', NOW(), NOW()
+      FROM linked;
+
+  - step: wait_bundle_settle
+    type: sleep
+    seconds: 2
+
+  - step: pin_ae4_bundle
+    type: database_execute
+    params:
+      zone_uid: ${zone_uid}
+      node_uid: ${node_uid}
+    query: |
+      WITH z AS (
+        SELECT id FROM zones WHERE uid = :zone_uid
+      ),
+      cycle AS (
+        SELECT id FROM grow_cycles
+        WHERE zone_id IN (SELECT id FROM z) AND status = 'RUNNING'
+        ORDER BY id DESC LIMIT 1
+      ),
+      phase AS (
+        SELECT id, grow_cycle_id FROM grow_cycle_phases
+        WHERE grow_cycle_id IN (SELECT id FROM cycle)
+        ORDER BY phase_index LIMIT 1
+      ),
+      linked AS (
+        UPDATE grow_cycles gc
+        SET current_phase_id = phase.id, updated_at = NOW()
+        FROM phase
+        WHERE gc.id = phase.grow_cycle_id
+        RETURNING gc.id
+      )
+      INSERT INTO automation_effective_bundles (
+        scope_type, scope_id, bundle_revision, schema_revision, config, violations, status,
+        compiled_at, inputs_checksum, created_at, updated_at
+      )
+      SELECT 'grow_cycle', linked.id, 'ae4-hw-1', '1', replace(
+        '{
+          "zone": {
+            "logic_profile": {
+              "active_profile": {
+                "command_plans": {
+                  "plans": {
+                    "irrigation_start": [
+                      {"node_uid":"__NODE__","channel":"valve_solution_supply","cmd":"set_relay","params":{"state":true}},
+                      {"node_uid":"__NODE__","channel":"valve_irrigation","cmd":"set_relay","params":{"state":true}},
+                      {"node_uid":"__NODE__","channel":"pump_main","cmd":"run_pump","params":{"duration_ms":2000}}
+                    ],
+                    "irrigation_stop": [
+                      {"node_uid":"__NODE__","channel":"pump_main","cmd":"set_relay","params":{"state":false}},
+                      {"node_uid":"__NODE__","channel":"valve_irrigation","cmd":"set_relay","params":{"state":false}},
+                      {"node_uid":"__NODE__","channel":"valve_solution_supply","cmd":"set_relay","params":{"state":false}}
+                    ],
+                    "clean_fill_start": [
+                      {"node_uid":"__NODE__","channel":"valve_clean_fill","cmd":"set_relay","params":{"state":true}}
+                    ],
+                    "clean_fill_stop": [
+                      {"node_uid":"__NODE__","channel":"valve_clean_fill","cmd":"set_relay","params":{"state":false}}
+                    ],
+                    "solution_fill_start": [
+                      {"node_uid":"__NODE__","channel":"valve_solution_fill","cmd":"set_relay","params":{"state":true}}
+                    ],
+                    "solution_fill_stop": [
+                      {"node_uid":"__NODE__","channel":"valve_solution_fill","cmd":"set_relay","params":{"state":false}}
+                    ]
+                  }
+                }
+              }
+            },
+            "correction": {
+              "resolved_config": {
+                "timing": {"telemetry_max_age_sec": 300},
+                "runtime": {"clean_fill_timeout_sec": 20, "solution_topup_timeout_sec": 20}
+              }
+            }
+          }
+        }',
+        '__NODE__',
+        :node_uid
+      )::jsonb,
+        '[]'::jsonb, 'valid', NOW(), 'ae4hw01pin00000000000000000000000', NOW(), NOW()
+      FROM linked
+      ON CONFLICT (scope_type, scope_id) DO UPDATE
+      SET config = EXCLUDED.config, updated_at = NOW();
+
+  - step: read_zone
+    type: database_query
+    query: SELECT id AS zone_id FROM zones WHERE uid = :zone_uid LIMIT 1
+    params:
+      zone_uid: ${zone_uid}
+    save: zone_row
+    expected_rows: 1
+
+  - step: set_zone
+    type: set
+    zone_id: ${zone_row.0.zone_id}
+
+  - step: hold_tanks_ready
+    type: hardware_set_fault_mode
+    node_uid: ${node_uid}
+    channel: storage_state
+    params:
+      level_clean_min_override: true
+      level_clean_max_override: false
+      level_solution_min_override: true
+      level_solution_max_override: false
+    wait_seconds: 3
+
+  - step: wait_level_sample
+    type: db_wait
+    timeout: 30
+    expected_rows: 1
+    query: |
+      SELECT tl.sensor_id
+      FROM telemetry_last tl
+      JOIN sensors s ON s.id = tl.sensor_id
+      WHERE s.zone_id = :zone_id
+        AND s.label = 'level_solution_min'
+        AND tl.last_value >= 0.5
+      ORDER BY tl.updated_at DESC
+      LIMIT 1
+    params:
+      zone_id: ${zone_id}
+
+  - step: wait_run_pump
+    type: wait_command
+    zone_id: ${zone_id}
+    timeout: 90
+    filter:
+      cmd: run_pump
+      status: DONE

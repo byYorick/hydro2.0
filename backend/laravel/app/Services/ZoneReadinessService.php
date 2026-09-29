@@ -73,7 +73,11 @@ class ZoneReadinessService
             ));
         }
 
-        return array_values(array_unique(array_merge($configured, $this->getCapabilityRequiredBindings($zone))));
+        return array_values(array_unique(array_merge(
+            $configured,
+            $this->getCapabilityRequiredBindings($zone),
+            $this->getAe4DrainTankRequiredBindings($zone)
+        )));
     }
 
     /**
@@ -146,10 +150,17 @@ class ZoneReadinessService
     }
 
     /**
-     * Для 2-баковой схемы дренаж не обязателен.
+     * Для 2-баковой схемы дренаж (клапан valve_drain) не обязателен.
+     * Бак стока AE4 (level_drain_* / ec_drain_sensor) — отдельная сущность:
+     * valve_drain за уровень бака стока не принимается.
      */
     private function shouldRequireDrainBinding(Zone $zone): bool
     {
+        // AE4: роль drain = клапан слива рабочего бака AE3; бак стока — другие каналы.
+        if ((string) ($zone->automation_runtime ?? 'ae3') === 'ae4') {
+            return false;
+        }
+
         $profile = $this->resolveActiveAutomationProfile($zone);
         if (! $profile) {
             return true;
@@ -171,6 +182,31 @@ class ZoneReadinessService
         }
 
         return true;
+    }
+
+    /**
+     * Обязательные каналы бака стока AE4 (не valve_drain).
+     *
+     * @return array<int, string>
+     */
+    private function getAe4DrainTankRequiredBindings(Zone $zone): array
+    {
+        if ((string) ($zone->automation_runtime ?? 'ae3') !== 'ae4') {
+            return [];
+        }
+
+        $profile = $this->resolveActiveAutomationProfile($zone);
+        if (! $profile) {
+            return [];
+        }
+
+        $subsystems = is_array($profile->subsystems) ? $profile->subsystems : [];
+        $tanksCount = $this->extractIrrigationTanksCount($subsystems);
+        if ($tanksCount !== 3) {
+            return [];
+        }
+
+        return ['level_drain_min', 'level_drain_max', 'ec_drain_sensor'];
     }
 
     private function resolveActiveAutomationProfile(Zone $zone): ?ZoneLogicProfile
@@ -406,6 +442,9 @@ class ZoneReadinessService
         $roleMessages = [
             'pump_main' => 'Основная помпа не привязана к каналу',
             'drain' => 'Дренаж не привязан к каналу',
+            'level_drain_min' => 'Нижний уровень бака стока не привязан',
+            'level_drain_max' => 'Верхний уровень бака стока не привязан',
+            'ec_drain_sensor' => 'EC бака стока не привязан',
             'pump_acid' => 'Насос pH кислоты не привязан к каналу',
             'pump_base' => 'Насос pH щёлочи не привязан к каналу',
             'pump_a' => 'Насос EC NPK не привязан к каналу',
@@ -747,7 +786,11 @@ class ZoneReadinessService
             'pump_main' => ['pump_main'],
             // AE3 solution_drain_* резолвит requested_channel=valve_drain по role ИЛИ channel.
             // role=drain + channel=valve_drain достаточно; fill/supply/irrigation — не drain.
+            // Бак стока AE4 — level_drain_* / ec_drain_sensor; valve_drain за уровень не принимается.
             'drain' => ['valve_drain', 'drain', 'drain_main', 'drain_valve'],
+            'level_drain_min' => ['level_drain_min'],
+            'level_drain_max' => ['level_drain_max'],
+            'ec_drain_sensor' => ['ec_drain_sensor'],
         ];
 
         $autoBound = [];
@@ -765,6 +808,10 @@ class ZoneReadinessService
             }
             $prioritySql = 'CASE LOWER(node_channels.channel) '.implode(' ', $priorityCases).' ELSE 999 END';
 
+            $expectedType = in_array($role, ['level_drain_min', 'level_drain_max', 'ec_drain_sensor'], true)
+                ? 'sensor'
+                : 'actuator';
+
             $channelId = NodeChannel::query()
                 ->select('node_channels.id')
                 ->join('nodes', 'nodes.id', '=', 'node_channels.node_id')
@@ -773,7 +820,7 @@ class ZoneReadinessService
                     $query->where('nodes.zone_id', $zone->id)
                         ->orWhere('nodes.pending_zone_id', $zone->id);
                 })
-                ->whereRaw("LOWER(COALESCE(node_channels.type, '')) = 'actuator'")
+                ->whereRaw("LOWER(COALESCE(node_channels.type, '')) = ?", [$expectedType])
                 ->where(function ($query) use ($candidates) {
                     foreach ($candidates as $candidate) {
                         $query->orWhereRaw('LOWER(node_channels.channel) = ?', [$candidate]);
@@ -788,8 +835,21 @@ class ZoneReadinessService
                 continue;
             }
 
-            $label = $role === 'pump_main' ? 'Auto Main Pump' : 'Auto Drain';
-            $assetType = $role === 'pump_main' ? 'PUMP' : 'DRAIN';
+            $label = match ($role) {
+                'pump_main' => 'Auto Main Pump',
+                'drain' => 'Auto Drain',
+                'level_drain_min' => 'Auto Drain Tank Min',
+                'level_drain_max' => 'Auto Drain Tank Max',
+                'ec_drain_sensor' => 'Auto Drain EC',
+                default => 'Auto '.$role,
+            };
+            $assetType = match ($role) {
+                'pump_main' => 'PUMP',
+                'drain' => 'DRAIN',
+                'level_drain_min', 'level_drain_max' => 'LEVEL',
+                'ec_drain_sensor' => 'SENSOR',
+                default => 'OTHER',
+            };
             $required = $role === 'pump_main';
 
             $now = now();

@@ -37,45 +37,36 @@
   рассинхронизация даёт `401 unauthorized` на `POST /zones/{id}/start-cycle`.
 - После смены env: `docker compose up -d laravel`.
 
-### 3.1.2. Проверки
-- Команда зарегистрирована: `docker compose exec laravel php artisan list | rg automation:dispatch-schedules`.
-- Ручной прогон: `docker compose exec laravel php artisan automation:dispatch-schedules --zone-id=1`.
-- В compose не должно быть сервиса с именем `scheduler` — планирование выполняется в контейнере `laravel`.
-- Security smoke `POST /zones/{id}/start-cycle`:
-  - без токена — `401`;
-  - с токеном, без `X-Trace-Id` — `422` (см. актуальные требования в `doc_ai/04_BACKEND_CORE/ae3lite.md`).
+### 3.1.2. Проверки (после сноса диспетчера)
+- Команды `automation:dispatch-schedules` **нет** (`php artisan list | rg dispatch-schedules` — пусто).
+- В compose не должно быть сервиса с именем `scheduler`.
+- Health AE: `curl -fsS http://localhost:9405/health`.
+- Канон: `doc_ai/04_BACKEND_CORE/ae4.md`.
 
-### 3.1.3. Отключение dispatch
-- `AUTOMATION_LARAVEL_SCHEDULER_ENABLED=0` и перезапуск `laravel` — останавливает автоматический dispatch; исполнение уже запущенных задач в AE смотреть отдельно.
+### 3.1.3. Отключение старого dispatch
+- Исторически: `AUTOMATION_LARAVEL_SCHEDULER_ENABLED=0`. После волны 10 класс и команда удалены — флаг не нужен.
 
-### 3.1.4. Инциденты `start-cycle` / intents / active tasks
+### 3.1.4. Инциденты задач / lease
 
 Симптомы:
-- повторяющиеся `accepted`, но нет terminal статусов;
-- в `zone_automation_intents` долго висят `claimed|running`;
-- в `laravel_scheduler_active_tasks` растет backlog.
+- зона не получает кадр дольше ожидаемого `interval_sec`;
+- в `ae_tasks` долго висят `claimed|running|waiting_command`;
+- `unattended_blockers` не пуст.
 
 Проверки:
 ```sql
--- Застрявшие intents (старше 5 минут)
-SELECT id, zone_id, idempotency_key, status, claimed_at, updated_at, retry_count, max_retries
-FROM zone_automation_intents
-WHERE status IN ('claimed','running')
-  AND updated_at < now() - interval '5 minutes'
+-- Застрявшие задачи (старше 15 минут)
+SELECT id, zone_id, status, due_at, updated_at, error_code
+FROM ae_tasks
+WHERE status IN ('claimed','running','waiting_command')
+  AND updated_at < now() - interval '15 minutes'
 ORDER BY updated_at ASC;
-
--- Активные задачи scheduler, которые не терминировались
-SELECT task_id, zone_id, task_type, status, accepted_at, due_at, expires_at, last_polled_at
-FROM laravel_scheduler_active_tasks
-WHERE terminal_at IS NULL
-ORDER BY accepted_at ASC;
 ```
 
 Восстановление:
-1. Проверить readiness AE: `curl -fsS http://automation-engine:9405/health/ready`.
-2. Перезапустить `automation-engine` (startup recovery должен финализировать in-flight).
-3. Прогнать reconcile: `php artisan automation:dispatch-schedules --zone-id=<id>`.
-4. Если задача уже просрочена, убедиться что в `laravel_scheduler_active_tasks` выставлен terminal status (`timeout|failed`) и выполнен повторный dispatch.
+1. Проверить readiness AE: `curl -fsS http://automation-engine:9405/health`.
+2. Перезапустить `automation-engine`.
+3. Не вызывать удалённый `automation:dispatch-schedules`.
 
 ## 3.2. Рестарт automation-engine и startup recovery
 

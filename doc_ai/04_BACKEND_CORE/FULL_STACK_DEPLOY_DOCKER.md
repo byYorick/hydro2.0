@@ -18,9 +18,9 @@ Breaking-change: обратная совместимость со старыми
 
 ---
 
-> Планировщик расписаний (полив, свет, климат) выполняется **внутри Laravel** (`automation:dispatch-schedules`, intents в БД). Отдельного Python-сервиса `scheduler` в compose **нет**.  
-> Источник истины: `doc_ai/04_BACKEND_CORE/PYTHON_SERVICES_ARCH.md`,
-> `doc_ai/06_DOMAIN_ZONES_RECIPES/SCHEDULER_ENGINE.md`, `doc_ai/ARCHITECTURE_FLOWS.md`.
+> Пробуждение зон и свет/полив/химия — тик воркера AE 1.0.0 (`ae4.md`). Диспетчера Laravel (`automation:dispatch-schedules`) нет. Отдельного Python-сервиса `scheduler` в compose **нет**.  
+> Источник истины: `doc_ai/04_BACKEND_CORE/ae4.md`,
+> `doc_ai/04_BACKEND_CORE/PYTHON_SERVICES_ARCH.md`, `doc_ai/ARCHITECTURE_FLOWS.md`.
 
 ## 1. Структура репозитория
 

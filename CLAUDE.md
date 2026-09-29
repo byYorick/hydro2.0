@@ -42,7 +42,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - **Backend:** `doc_ai/04_BACKEND_CORE/BACKEND_ARCH_FULL.md`, `backend/README.md`
 - **Python сервисы:** `doc_ai/04_BACKEND_CORE/PYTHON_SERVICES_ARCH.md`, `backend/services/README.md`
-- **AE3 (automation-engine):** `doc_ai/04_BACKEND_CORE/ae3lite.md`, `AE3_RUNTIME_EVENT_CONTRACT.md`, `AE3_IRR_FAILSAFE_AND_ESTOP_CONTRACT.md`, `AE3_IRR_LEVEL_SWITCH_EVENT_CONTRACT.md`, `AUTOMATION_CONFIG_AUTHORITY.md`
+- **AE 1.0.0 (automation-engine):** `doc_ai/04_BACKEND_CORE/ae4.md`, `AUTOMATION_CONFIG_AUTHORITY.md`
 - **history-logger API:** `doc_ai/04_BACKEND_CORE/HISTORY_LOGGER_API.md` — REST API спецификация
 - **Прошивки:** `doc_ai/02_HARDWARE_FIRMWARE/`, `firmware/README.md`
 - **MQTT протокол:** `doc_ai/03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md`
@@ -93,7 +93,7 @@ docker compose -f backend/docker-compose.dev.yml exec laravel php artisan test t
 # запускает pytest против `hydro_test` (mirror schema из `hydro_dev`), не портит
 # рабочие данные. Conftest автоматически форсирует `PG_DB=hydro_test`.
 make test-ae                                                     # полный AE suite
-make test-ae PYTEST_ARGS="-q tests/unit/test_ae3lite_probe_backoff.py"  # один файл
+make test-ae PYTEST_ARGS="-q tests/unit/ae4"  # пакет AE 1.0.0
 make test-ae PYTEST_ARGS="-x -k test_name"                       # фильтр
 make test-db-reset                                               # wipe test DB
 
@@ -158,7 +158,6 @@ make logs SERVICE=<имя>  # произвольный сервис
 | mqtt-bridge | http://localhost:9000 | — |
 | history-logger | http://localhost:9300 | http://localhost:9300/metrics |
 | automation-engine | http://localhost:9405 | http://localhost:9405/metrics |
-| Laravel (метрики scheduler-dispatch) | http://localhost:8080 | http://localhost:8080/api/system/scheduler/metrics |
 | Grafana | http://localhost:3000 | — |
 | Prometheus | http://localhost:9090 | — |
 
@@ -175,13 +174,13 @@ make logs SERVICE=<имя>  # произвольный сервис
 **Python микросервисы** (расположены в `backend/services/`):
 - `mqtt-bridge` — FastAPI мост для REST→MQTT (порт 9000)
 - `history-logger` — подписчик MQTT, пишет телеметрию в PostgreSQL, **единственная точка публикации команд в MQTT** (порт 9300)
-- `automation-engine` — контроллер зон, проверяет targets, отправляет команды через history-logger REST API (порт 9405).
-  **Канонический runtime — `ae3lite/`** (AE2/`ae2lite` удалён). См. `doc_ai/04_BACKEND_CORE/ae3lite.md`, `AE3_RUNTIME_EVENT_CONTRACT.md`, `AE3_IRR_FAILSAFE_AND_ESTOP_CONTRACT.md`.
-- расписания полива/освещения из фаз рецептов планирует **Laravel** (`automation:dispatch-schedules`, intents в БД, wake-up через `POST /zones/{id}/start-cycle`)
+- `automation-engine` — контроллер зон (AE 1.0.0, каталог `ae4/`), тик сам назначает полив/химию/свет и climate-tick, команды через history-logger REST API (порт 9405).
+  Канон поведения — `doc_ai/04_BACKEND_CORE/ae4.md`. Пакета `ae3lite` нет. Диспетчера Laravel нет.
+- единственный publisher команд в MQTT — **history-logger**
 
 **Архитектура потока команд:**
 ```
-Laravel scheduler-dispatch → REST → Automation-Engine → REST → History-Logger → MQTT → Узлы
+Automation-Engine (тик AE 1.0.0) → REST → History-Logger → MQTT → Узлы
 ```
 
 **Критично:** Только `history-logger` публикует команды напрямую в MQTT. Остальные сервисы используют REST API для обеспечения централизованного логирования и мониторинга.
@@ -421,22 +420,21 @@ Laravel scheduler-dispatch → REST → Automation-Engine → REST → History-L
 
 Ниже сводка конкретных инвариантов, извлечённых из `doc_ai/`. При работе над задачей **всегда** уточняй детали в соответствующей спецификации — это компактная памятка, а не замена документов.
 
-### AE3 (automation-engine) — критичные инварианты
+### AE 1.0.0 (automation-engine) — критичные инварианты
 
-Кратко; полный канон — `doc_ai/04_BACKEND_CORE/ae3lite.md`, локальный контракт — `backend/services/automation-engine/AGENT.md`, коды — `ERROR_CODE_CATALOG.md`.
+Кратко; полный канон — `doc_ai/04_BACKEND_CORE/ae4.md`, локальный контракт — `backend/services/automation-engine/AGENT.md`, коды — `ERROR_CODE_CATALOG.md`.
 
-- **Канонический runtime — `ae3lite/`** (`ae2lite`/монолит удалены).
+- **Канонический runtime — `ae4/` (AE 1.0.0)**. Пакета `ae3lite` нет. Диспетчера Laravel (`automation:dispatch-schedules`) нет.
 - Прямой MQTT-publish из AE или Laravel **запрещён** — только `history-logger` `POST /commands`.
 - **Одна активная execution task на зону** — partial unique index + `ZoneLease`.
-- Внешние ingress: `POST /zones/{id}/start-cycle`, `start-irrigation`, `start-lighting-tick`; greenhouse climate — `POST /greenhouses/{id}/start-climate-tick`. Internal status: `GET /internal/tasks/{task_id}`.
+- HTTP-поверхность: `/health`, `/metrics`, состояние зоны, control-mode, `POST /greenhouses/{id}/start-climate-tick`. Маршрутов `start-cycle` / `start-irrigation` / `start-lighting-tick` / `start-solution-topup` / `start-solution-change` нет.
 - Runtime читает zone state из **PostgreSQL SQL read-model** (compiled bundle) — без runtime HTTP к Laravel.
 - Успешный terminal mutating-команды — только `DONE`; `NO_EFFECT|ERROR|INVALID|BUSY|TIMEOUT|SEND_FAILED` = fail для v1.
-- Task FSM: `pending → claimed → running → waiting_command → completed/failed` (также `cancelled`). Stage requeue (two-tank): атомарный `update_stage` (`(claimed|running|waiting_command) → pending`); метод `requeue_pending` снят.
-- LISTEN/NOTIFY fast-path: `scheduler_intent_terminal`, `ae_zone_event`; terminal команд AE3 **poll-ит** (не подписан на `ae_command_status` / `ae_signal_update`).
-- Переключение `zones.automation_runtime='ae3'` **запрещено** при active task/lease.
-- Hardcoded default targets **запрещены** — отсутствие phase target = `PlannerConfigurationError` (fail-closed).
-- `ae3lite/*` **не импортирует** legacy runtime пакеты.
-- Частые error codes: `start_cycle_zone_busy`, `start_cycle_idempotency_key_conflict`, `ae3_task_create_failed`, `ae3_complete_transition_failed`, `ae3_transition_apply_failed` / `ae3_poll_apply_failed` / `ae3_correction_apply_failed`, `ae3_snapshot_required_node_type_missing`, `irr_state_unavailable`. Deprecated aliases (`ae3_requeue_failed`, `ae3_task_create_conflict`, …) — см. каталог.
+- Task FSM: `pending → claimed → running → waiting_command → completed/failed` (также `cancelled`).
+- Тик воркера сам будит зоны (`due_at`) и один climate-tick на теплицу.
+- Переключение `zones.automation_runtime` **запрещено** при active task/lease.
+- Hardcoded default targets **запрещены** — отсутствие phase target = ошибка конфигурации (fail-closed).
+- Каталог runtime — `ae4/`.
 
 ### Команды к узлам и валидация
 
@@ -447,11 +445,11 @@ Laravel scheduler-dispatch → REST → Automation-Engine → REST → History-L
 - `command_response.ts` — в **миллисекундах**.
 - Ограничения (безопасные пределы; реальные значения задаются через `zone.correction_config` / `pump_calibration`):
   - `controllers.{ec,ph}.min_interval_sec` между дозами: конфигурируемо per controller; типовые production-конфиги pH 60–120 с, EC 60–120 с (старые значения "pH ≥ 20 сек, EC ≥ 10 сек" устарели — не опираться на них).
-  - `pump_calibration.max_dose_ms` — hard-cap на одну дозу, дефолт **60 000 мс** (60 с; совпадает с firmware `CORRECTION_NODE_ACTUATOR_MAX_DURATION_MS` / NodeConfig `safe_limits.max_duration_ms` ph_node/ec_node). Enforce в [`_dose_ml_to_ms`](backend/services/automation-engine/ae3lite/domain/services/correction_planner.py); при clamp пересчитывается `effective_ml`. HL sanity ceiling `_MAX_DURATION_MS_SANITY=300_000` — верхняя граница transport, не AE3 default. Для медленных насосов поднимите `max_dose_ms` **и** NodeConfig cap согласованно. `pid_state.last_dose_at` пишется только после terminal `DONE` дозы.
+  - `pump_calibration.max_dose_ms` — hard-cap на одну дозу, дефолт **60 000 мс** (60 с; совпадает с firmware `CORRECTION_NODE_ACTUATOR_MAX_DURATION_MS` / NodeConfig `safe_limits.max_duration_ms` ph_node/ec_node). Enforce в [`_dose_ml_to_ms`](backend/services/automation-engine/ae4/); при clamp пересчитывается `effective_ml`. HL sanity ceiling `_MAX_DURATION_MS_SANITY=300_000` — верхняя граница transport, не AE3 default. Для медленных насосов поднимите `max_dose_ms` **и** NodeConfig cap согласованно. `pid_state.last_dose_at` пишется только после terminal `DONE` дозы.
   - `pump_calibration.min_dose_ms` — нижний порог; ниже — reason `below_min_dose_ms`, доза discarded.
   - `controllers.{ec,ph}.max_dose_ml` — контроллерный cap per dose.
-- Sanity bounds на telemetry для PID: pH ∈ [0, 14], EC ∈ [0, 20] mS/cm (см. [`_sensor_value_in_bounds`](backend/services/automation-engine/ae3lite/application/handlers/base.py)). Выход за пределы (error code типа -1/999) → `sensor_out_of_bounds`, PID не обновляется.
-- `ec_dosing_mode='multi_parallel'` требует distinct `(node_uid, channel)` per компонент — fail-closed в [`_assert_distinct_parallel_actuators`](backend/services/automation-engine/ae3lite/domain/services/correction_planner.py). Суперпозиция команд на один pump = неверные дозы.
+- Sanity bounds на telemetry для PID: pH ∈ [0, 14], EC ∈ [0, 20] mS/cm (см. [`_sensor_value_in_bounds`](backend/services/automation-engine/ae4/)). Выход за пределы (error code типа -1/999) → `sensor_out_of_bounds`, PID не обновляется.
+- `ec_dosing_mode='multi_parallel'` требует distinct `(node_uid, channel)` per компонент — fail-closed в [`_assert_distinct_parallel_actuators`](backend/services/automation-engine/ae4/). Суперпозиция команд на один pump = неверные дозы.
 - `test_sensor` обязателен для SENSOR-каналов; `restart` и `state` обязательны для всех узлов.
 - 3 последовательных `no-effect` для одного `pid_type` → alert + fail-closed correction window. Обычные correction attempts и `no-effect` — независимые лимиты.
 
@@ -553,8 +551,8 @@ Laravel scheduler-dispatch → REST → Automation-Engine → REST → History-L
 ### Локальные AGENTS.md (обязательно читать при работе в подкаталоге)
 
 - `backend/laravel/docs/AGENTS.md` — подробные Laravel-правила (версии, Eloquent, Inertia, тесты, стиль).
-- `backend/services/AGENTS.md` — разделение Laravel scheduler-dispatch ↔ AE ↔ history-logger; запреты на прямой MQTT из AE/Laravel.
-- `backend/services/automation-engine/AGENT.md` — canonical AE3-Lite контракт, error codes, task FSM, команды для тестов.
+- `backend/services/AGENTS.md` — границы Laravel ↔ AE 1.0.0 ↔ history-logger; запреты на прямой MQTT из AE/Laravel.
+- `backend/services/automation-engine/AGENT.md` — локальный контракт AE 1.0.0, error codes, task FSM, команды для тестов.
 - `tests/e2e/AGENTS.md` — YAML E2E и realhw `test_node` (не Playwright, не HIL). Канон: `doc_ai/13_TESTING/REALHW_TEST_NODE_AGENT_GUIDE.md`.
 
 ### Документация — конвенции
@@ -570,9 +568,7 @@ Laravel scheduler-dispatch → REST → Automation-Engine → REST → History-L
 
 | Тема | Документ |
 |------|----------|
-| AE3 runtime и контракт | `doc_ai/04_BACKEND_CORE/ae3lite.md`, `AE3_RUNTIME_EVENT_CONTRACT.md` |
-| Irrigation failsafe, E-STOP | `doc_ai/04_BACKEND_CORE/AE3_IRR_FAILSAFE_AND_ESTOP_CONTRACT.md` |
-| Level switch events | `doc_ai/04_BACKEND_CORE/AE3_IRR_LEVEL_SWITCH_EVENT_CONTRACT.md` |
+| AE 1.0.0 runtime и контракт | `doc_ai/04_BACKEND_CORE/ae4.md` |
 | MQTT топики/payload | `doc_ai/03_TRANSPORT_MQTT/MQTT_NAMESPACE.md`, `MQTT_SPEC_FULL.md`, `BACKEND_NODE_CONTRACT_FULL.md` |
 | Валидация команд | `doc_ai/03_TRANSPORT_MQTT/COMMAND_VALIDATION_ENGINE.md` |
 | Модель данных | `doc_ai/05_DATA_AND_STORAGE/DATA_MODEL_REFERENCE.md` |

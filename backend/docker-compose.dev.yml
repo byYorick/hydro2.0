@@ -377,6 +377,8 @@ services:
       - ./error_codes.json:/app/error_codes.json:ro
       # Canonical JSON Schemas (repo root) — для parity test (Pydantic ↔ JSON Schema)
       - ../schemas:/schemas:ro
+      # Живой канон doc_ai для E255 (волна 10)
+      - ../doc_ai:/doc_ai:ro
     healthcheck:
       test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:9405/health/ready\", timeout=2).read()' || exit 1"]
       interval: 15s

@@ -143,25 +143,7 @@ export const zonesApi = {
     return apiGet<Record<string, unknown>>(`/zones/${zoneId}`)
   },
 
-  /**
-   * Запуск штатного/форсированного полива зоны.
-   */
-  startIrrigation(
-    zoneId: number,
-    payload: { mode: 'normal' | 'force'; source?: string; requested_duration_sec?: number | null },
-  ): Promise<void> {
-    return apiPostVoid(`/zones/${zoneId}/start-irrigation`, payload)
-  },
 
-  /**
-   * Запуск диагностического цикла AE3 (cycle_start / DIAGNOSTICS_TICK).
-   */
-  startCycle(
-    zoneId: number,
-    payload?: { source?: string; idempotency_key?: string },
-  ): Promise<Record<string, unknown>> {
-    return apiPost<Record<string, unknown>>(`/zones/${zoneId}/start-cycle`, payload ?? {})
-  },
 
   operatorUnblock(
     zoneId: number,
@@ -170,12 +152,6 @@ export const zonesApi = {
     return apiPost<Record<string, unknown>>(`/zones/${zoneId}/operator-unblock`, payload)
   },
 
-  startSolutionChange(
-    zoneId: number,
-    payload?: { source?: string; trigger?: string; idempotency_key?: string },
-  ): Promise<Record<string, unknown>> {
-    return apiPost<Record<string, unknown>>(`/zones/${zoneId}/start-solution-change`, payload ?? {})
-  },
 
   /**
    * Запуск / сохранение калибровки насоса. Возвращает `run_token` при запуске.

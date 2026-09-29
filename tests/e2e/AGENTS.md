@@ -36,11 +36,9 @@ HIL lab (`infra/hil/…`, 8080/1883/9405) — **не** этот launcher.
 
 ## Не чинить как баги
 
-- Fill: EC seed **~0.45**, `solution_max=false`, calcium **`pump_b`**. Не сидить T_full при max ON.
-- `ec_overshoot_dilute_pct` канон **15** (не 100), кроме теста самого dilute (E120).
-- E103 first-run retry-limit — ожидаемый ERROR.
-- Sequential: Ca `pump_b`, Mg `pump_c`, NPK `pump_a`, micro `pump_d`. Irrigation inline — только pH.
-- Helper fill: `include_sequence: two_tank_fill_ca`.
+- Уровни на test_node задаёт `storage_state` / `set_fault_mode` (`level_*_override`), не MQTT node-sim.
+- `1` на `level_*_min` — бак не пуст. Оба `min=0` — `both_tanks_empty`, `run_pump` нет.
+- Кадр AE 1.0.0 — `irrigation_start` → `run_pump` `DONE` → `irrigation_stop`. Маршрута `start-cycle` нет.
 
 ---
 
@@ -49,8 +47,8 @@ HIL lab (`infra/hil/…`, 8080/1883/9405) — **не** этот launcher.
 ```bash
 cd tests/e2e
 ./venv/bin/python -m pytest -q tests/test_realhw_launcher_contract.py \
-  tests/test_ae3lite_realhw_seed_safety_contract.py \
-  tests/test_suite_catalog.py
+  tests/test_suite_catalog.py \
+  tests/test_ae4_scenario_contract.py
 ```
 
 Каталог сценариев: `README.md`, `scenarios/README.md`.

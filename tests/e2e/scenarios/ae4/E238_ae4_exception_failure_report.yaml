@@ -1,0 +1,25 @@
+# E238: исключение → журнал, алерт, failed=true, русский human_error_message.
+
+name: E238_ae4_exception_failure_report
+description: |
+  Исключение в воркере AE4 проводится только через failure_report:
+  logger, zone_events, send_biz_alert, state_details.failed=true.
+
+tags:
+  - ae4
+  - wave2
+  - failure
+
+meta:
+  id: E238
+  wave: 2
+  runtime: ae4
+  requires_physical_node: false
+  proves: |
+    report_exception sets failed=true and Russian human_error_message;
+    send_biz_alert called from failure_report only
+
+actions:
+  - step: document_contract
+    type: set
+    note: behaviour proven by pytest tests/unit/ae4/test_e238_e239_e240_failure_report.py

@@ -1,12 +1,12 @@
 # ARCHITECTURE_FLOWS.md
-# Ключевые архитектурные потоки hydro 2.0 (AE3 authority runtime)
+# Ключевые архитектурные потоки hydro 2.0 (AE 1.0.0)
 
-**Версия:** 3.4  
-**Дата обновления:** 2026-08-02  
+**Версия:** 3.5  
+**Дата обновления:** 2026-09-25  
 **Статус:** Актуально
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
-Breaking-change: HTTP-транспорт задач планировщика удалён из runtime.
+Breaking-change: диспетчер Laravel и ingress `start-*` зон удалены; wake-up — тик воркера 1.0.0.
 
 ---
 
@@ -22,32 +22,30 @@ Breaking-change: HTTP-транспорт задач планировщика у�
 
 ## 2. Защищённый pipeline команд
 
-`Laravel scheduler -> automation-engine -> history-logger -> MQTT -> ESP32`
+`Automation-Engine (тик AE 1.0.0) -> history-logger -> MQTT -> ESP32`
 
 Инварианты:
 - прямой MQTT publish из Laravel/automation-engine запрещён;
 - единственная точка публикации команд: `POST /commands` в `history-logger`.
 - `automation-engine` может сделать не более одного transient retry к `history-logger` при transport error / `HTTP 5xx`; дальнейшая деградация — fail-closed.
+- диспетчера Laravel (`automation:dispatch-schedules`, `ScheduleDispatcher`) нет.
 
 ---
 
-## 3. AE3 запуск задач (ingress)
+## 3. AE 1.0.0 пробуждение и HTTP
 
-`Laravel scheduler (insert intent) -> POST wake-up -> AE3 worker / ZoneRunner`
+`Тик воркера ae4 → due_at=now (мутация зоны) + один POST /greenhouses/{id}/start-climate-tick на теплицу`
 
-Канонические внешние ingress (см. `ae3lite.md` / `AGENT.md`):
-- `POST /zones/{id}/start-cycle` — diagnostics / cycle_start / compat non-irrigation;
-- `POST /zones/{id}/start-irrigation` — штатный полив по расписанию;
-- `POST /zones/{id}/start-lighting-tick` — lighting tick для `automation_runtime='ae3'`;
-- `POST /zones/{id}/start-solution-topup` — автодолив раствора (`solution_topup`);
-- `POST /zones/{id}/start-solution-change` — полуавто смена раствора (`solution_change`);
-- `POST /greenhouses/{id}/start-climate-tick` — greenhouse climate tick.
+Канон поведения — `ae4.md` / `AGENT.md`. Живой HTTP automation-engine:
+- `/health`, `/metrics`, состояние зоны, control-mode;
+- `POST /greenhouses/{id}/start-climate-tick` — единственный climate-tick на теплицу из тика воркера.
+
+Маршрутов `start-irrigation`, `start-lighting-tick`, `start-solution-topup`, `start-cycle`, `start-solution-change` нет.
 
 Правила:
-- Laravel scheduler-dispatch пишет намерение в `zone_automation_intents` и будит соответствующий ingress;
-- workflow шаги: `send -> await terminal (poll commands) -> next`;
+- единственное автоматическое пробуждение зон — тик воркера 1.0.0;
 - single-writer на уровне зоны: одна активная execution task / lease;
-- при busy — `409 *_zone_busy` (например `start_cycle_zone_busy`, `start_irrigation_zone_busy`, `start_solution_change_zone_busy`). Requested intent **остаётся pending**; Laravel ретраит тот же `idempotency_key`. AE3 не вызывает `mark_terminal` на busy.
+- OFF света и закрытие тракта — класс безопасности, мутацию воды/химии не занимают.
 
 Single-writer policy:
 - runtime работает fail-closed: при недоступной проверке writer-state
@@ -56,21 +54,14 @@ Single-writer policy:
 
 ---
 
-## 4. Feedback и телеметрия для AE3
+## 4. Feedback и телеметрия для AE 1.0.0
 
-`PostgreSQL LISTEN/NOTIFY (fast-path) + reconcile polling (SoT)`
+`PostgreSQL reconcile polling (SoT) + опциональный LISTEN/NOTIFY (fast-path)`
 
-Канон подписок AE3 (`PYTHON_SERVICES_ARCH.md`, `ae3lite` `NOTIFY_CHANNELS`):
-- `scheduler_intent_terminal` — terminal lifecycle intent → `IntentStatusListener` → `worker.kick()`;
-- `ae_zone_event` — node runtime events (`LEVEL_SWITCH_CHANGED`, storage/e-stop, …) после записи HL → `ZoneEventListener` → `worker.kick()`.
-
-AE3 **не** подписан на:
-- `ae_command_status` — остаётся для scheduler cockpit / других потребителей; terminal команд AE3 **poll-ит** из `commands` / `ae_commands`;
-- `ae_signal_update` — не используется AE3 runtime (historical / reserved).
+Terminal команд runtime **poll-ит** из `commands` / `ae_commands`. DB = source of truth.
 
 Правила:
-- `NOTIFY` — только fast-path wake-up;
-- polling (`commands`, `telemetry_last`, `zone_events`) — обязательный fallback; DB = source of truth;
+- polling (`commands`, `telemetry_last`, `zone_events`) — обязательный fallback;
 - stale critical signals → fail-closed + `zone_events`.
 
 ---
@@ -83,7 +74,7 @@ AE3 **не** подписан на:
 
 - raw authority state хранится в `automation_config_documents`;
 - compiler собирает `automation_effective_bundles`;
-- AE3 читает bundle по `grow_cycles.settings.bundle_revision`;
+- AE 1.0.0 читает bundle по `grow_cycles.settings.bundle_revision`;
 - Laravel readiness/start path читает bundle и `automation_config_violations`.
 
 Precedence compile:
@@ -115,7 +106,7 @@ API:
 - `SYSTEM_ARCH_FULL.md`
 - `04_BACKEND_CORE/PYTHON_SERVICES_ARCH.md`
 - `04_BACKEND_CORE/AUTOMATION_CONFIG_AUTHORITY.md`
-- `04_BACKEND_CORE/ae3lite.md`
+- `04_BACKEND_CORE/ae4.md`
 - `04_BACKEND_CORE/REST_API_REFERENCE.md`
 - `04_BACKEND_CORE/API_SPEC_FRONTEND_BACKEND_FULL.md`
 - `03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md`
@@ -123,18 +114,19 @@ API:
 
 ---
 
-## 8. AE3 runtime pipeline
+## 8. AE 1.0.0 runtime pipeline
 
-Базовый command flow (инвариант не меняется):
+Базовый command flow:
 
-`Laravel scheduler-dispatch -> Automation-Engine -> history-logger -> MQTT -> ESP32`
+`Automation-Engine (тик 1.0.0) -> history-logger -> MQTT -> ESP32`
 
-Режимы выполнения:
-- `ae3`: ownership по зоне переключается на current authority runtime через `zones.automation_runtime='ae3'`.
+Runtime:
+- воркер обслуживает зоны с `automation_runtime IS DISTINCT FROM 'ae3'`;
+- значение `ae3` историческое и не обслуживается; пакета `ae3lite` нет.
 
 Routing:
-- cutover выполняется вручную по зоне через поле `zones.automation_runtime`;
-- автоматический canary-router, `ae3l_canary_state` и bridge gate orchestration в canonical AE3 runtime не используются.
+- смена `zones.automation_runtime` при active task/lease запрещена;
+- автоматический canary-router и bridge gate orchestration не используются.
 
 Compatibility path:
 - zone ingress — через `start-cycle` / `start-irrigation` / `start-lighting-tick` / `start-solution-topup` / `start-solution-change` + `zone_automation_intents`;

@@ -7,6 +7,21 @@ from typing import Dict, Any, Optional, List
 from dataclasses import dataclass, field
 from pathlib import Path
 
+_NODE_TYPE_ALIASES = {
+    "irrigation": "irrig",
+    "irrigation_node": "irrig",
+    "pump_node": "pump",
+    "ph_node": "ph",
+    "ec_node": "ec",
+    "climate_node": "climate",
+    "light_node": "light",
+}
+
+
+def _canonical_node_type(raw: object) -> str:
+    value = str(raw or "unknown").strip().lower()
+    return _NODE_TYPE_ALIASES.get(value, value or "unknown")
+
 
 @dataclass
 class MqttConfig:
@@ -138,7 +153,7 @@ class SimConfig:
             zone_uid=node_data.get("zone_uid", "zn-1"),
             node_uid=node_data.get("node_uid", "nd-sim-1"),
             hardware_id=node_data.get("hardware_id", "esp32-sim-001"),
-            node_type=node_data.get("node_type", "unknown"),
+            node_type=_canonical_node_type(node_data.get("node_type", "unknown")),
             mode=node_data.get("mode", "preconfig"),
             config_report_on_start=node_data.get("config_report_on_start", True),
             initial_sensors=node_data.get("initial_sensors", {}) or {},

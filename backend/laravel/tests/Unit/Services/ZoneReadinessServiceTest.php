@@ -682,4 +682,60 @@ class ZoneReadinessServiceTest extends TestCase
         $this->assertSame(1, ChannelBinding::query()->where('role', 'pump_main')->count());
         $this->assertSame(0, ChannelBinding::query()->where('role', 'drain')->count());
     }
+
+    public function test_ae4_three_tank_requires_drain_tank_sensors_not_valve_drain(): void
+    {
+        $zone = Zone::factory()->create(['automation_runtime' => 'ae4']);
+        $node = DeviceNode::factory()->create([
+            'zone_id' => $zone->id,
+            'status' => 'online',
+        ]);
+
+        $this->createActuatorBinding($zone, $node, 'pump_main', 'pump_main', 'Основная помпа');
+        $this->createActuatorBinding($zone, $node, 'valve_drain', 'drain', 'Клапан слива feed');
+
+        $this->storeZoneLogicProfile($zone, [
+            'irrigation' => [
+                'enabled' => true,
+                'execution' => [
+                    'tanks_count' => 3,
+                ],
+            ],
+        ]);
+
+        $readiness = $this->service->checkZoneReadiness($zone);
+
+        $this->assertNotContains('drain', $readiness['required_bindings']);
+        $this->assertContains('level_drain_min', $readiness['required_bindings']);
+        $this->assertContains('level_drain_max', $readiness['required_bindings']);
+        $this->assertContains('ec_drain_sensor', $readiness['required_bindings']);
+        $this->assertContains('level_drain_min', $readiness['missing_bindings']);
+        $this->assertFalse($readiness['ready']);
+    }
+
+    public function test_ae3_three_tank_still_requires_drain_valve_role(): void
+    {
+        $zone = Zone::factory()->create(['automation_runtime' => 'ae3']);
+        $node = DeviceNode::factory()->create([
+            'zone_id' => $zone->id,
+            'status' => 'online',
+        ]);
+
+        $this->createActuatorBinding($zone, $node, 'pump_main', 'pump_main', 'Основная помпа');
+
+        $this->storeZoneLogicProfile($zone, [
+            'irrigation' => [
+                'enabled' => true,
+                'execution' => [
+                    'tanks_count' => 3,
+                ],
+            ],
+        ]);
+
+        $readiness = $this->service->checkZoneReadiness($zone);
+
+        $this->assertContains('drain', $readiness['required_bindings']);
+        $this->assertNotContains('level_drain_min', $readiness['required_bindings']);
+        $this->assertContains('drain', $readiness['missing_bindings']);
+    }
 }

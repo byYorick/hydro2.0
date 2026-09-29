@@ -541,16 +541,9 @@ History-logger:
 
 ### 7.4.5. Пример полного потока
 
-**1. Laravel scheduler-dispatch создаёт intent и будит зону**
-```bash
-POST http://automation-engine:9405/zones/1/start-cycle
-{
-  "source": "laravel_scheduler",
-  "idempotency_key": "sch:z1:irrigation:2026-02-21T10:00:00Z"
-}
-```
+**1. Тик воркера AE 1.0.0 назначает мутацию (due_at=now); диспетчера Laravel нет**
 
-**2. Automation-engine отправляет команду в history-logger**
+Пример device-команды после решения тика (не через `start-cycle`):
 ```bash
 POST http://history-logger:9300/commands
 {
@@ -564,16 +557,15 @@ POST http://history-logger:9300/commands
 }
 ```
 
-**3. Нода возвращает `command_response`**
+**2. Нода возвращает `command_response`**
 - `history-logger` сохраняет статус команды;
-- Automation-engine получает обновление через `LISTEN/NOTIFY` и reconcile polling.
+- Automation-engine получает обновление через reconcile polling.
 
 ### 7.4.6. Преимущества архитектуры
 
 1. Единый командный publisher (`history-logger`) и единый audit trail.
-2. Детерминированный wake-up контракт (`POST /zones/{id}/start-cycle`).
-3. Отделение scheduling (Laravel) от device execution (automation-engine).
-4. Устойчивость через `NOTIFY + polling` для feedback-команд.
+2. Wake-up зон — тик воркера AE 1.0.0 (`ae4.md`); диспетчера Laravel нет.
+3. Устойчивость через polling terminal статусов команд.
 
 2. **Централизованное логирование:**
    - Все команды проходят через history-logger

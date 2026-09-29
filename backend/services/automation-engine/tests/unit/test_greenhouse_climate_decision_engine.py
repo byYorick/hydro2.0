@@ -1,5 +1,5 @@
-from ae3lite.greenhouse_climate.decision_engine import compute_climate_decision
-from ae3lite.greenhouse_climate import run_tick
+from ae4.leaf_climate.decision import compute_climate_decision
+from ae4.leaf_climate import run_tick
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -291,7 +291,8 @@ def test_semi_mode_always_suppresses_commands() -> None:
     assert d.suppress_commands is True
 
 
-def test_stale_inside_and_weather_uses_fallback_open() -> None:
+def test_stale_inside_and_weather_yields_empty_commands() -> None:
+    """E211: нет свежей температуры воздуха — команд нет (не fallback_open)."""
     ex = _exec(fallback_open_pct=12)
     d = compute_climate_decision(
         execution=ex,
@@ -314,8 +315,9 @@ def test_stale_inside_and_weather_uses_fallback_open() -> None:
         now_ts=1_000_000.0,
         last_command_ts=None,
     )
-    assert d.left_target_pct >= 12
-    assert d.right_target_pct >= 12
+    assert d.suppress_commands is True
+    assert d.command_sides == ()
+    assert d.decision_reason == "air_temp_stale"
 
 
 def test_weather_stale_caps_schedule_and_temperature_demand() -> None:
@@ -346,7 +348,7 @@ def test_weather_stale_caps_schedule_and_temperature_demand() -> None:
     assert d.right_target_pct <= 20
 
 
-def test_inside_stale_uses_fallback_even_when_weather_is_fresh() -> None:
+def test_inside_stale_yields_empty_commands_even_when_weather_is_fresh() -> None:
     ex = _exec(fallback_open_pct=12, day_base_open_pct=40)
     d = compute_climate_decision(
         execution=ex,
@@ -370,8 +372,9 @@ def test_inside_stale_uses_fallback_even_when_weather_is_fresh() -> None:
         last_command_ts=None,
     )
 
-    assert d.left_target_pct == 12
-    assert d.right_target_pct == 12
+    assert d.suppress_commands is True
+    assert d.command_sides == ()
+    assert d.decision_reason == "air_temp_stale"
 
 
 def test_rain_with_direction_prefers_leeward_higher_cap() -> None:

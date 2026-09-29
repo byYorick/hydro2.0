@@ -13,7 +13,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 
 - `doc_ai/SYSTEM_ARCH_FULL.md` — greenhouse-level climate decisions принадлежат уровню теплицы.
 - `doc_ai/ARCHITECTURE_FLOWS.md` — protected command pipeline и single-writer invariants.
-- `doc_ai/04_BACKEND_CORE/ae3lite.md` — canonical AE3 task types и ingress endpoints.
+- `doc_ai/04_BACKEND_CORE/ae4.md` — canonical AE 1.0.0 (тик воркера, один `start-climate-tick` на теплицу).
 - `doc_ai/04_BACKEND_CORE/PYTHON_SERVICES_ARCH.md` — роли `automation-engine` и `history-logger`.
 - `doc_ai/04_BACKEND_CORE/HISTORY_LOGGER_API.md` — единственный REST-контракт публикации команд в MQTT.
 - `doc_ai/05_DATA_AND_STORAGE/DATA_MODEL_REFERENCE.md` — canonical tables/read-models.
@@ -146,19 +146,16 @@ blocker появляется только если связанная layer-spec
 
 ## 4. Архитектурные ограничения
 
-### 4.1. Расширение текущего AE3 scope
+### 4.1. Scope AE 1.0.0
 
-Текущий `doc_ai/04_BACKEND_CORE/ae3lite.md` жестко ограничивает canonical task types
-и endpoint-ы. Поэтому `greenhouse_climate_tick` нельзя добавлять в runtime-код, пока
-не синхронизированы:
+Канон `doc_ai/04_BACKEND_CORE/ae4.md`: один `POST /greenhouses/{id}/start-climate-tick` на теплицу из тика воркера, второго tick нет, диспетчера нет. Перед расширением greenhouse climate сверять:
 
-1. `doc_ai/04_BACKEND_CORE/ae3lite.md`;
+1. `doc_ai/04_BACKEND_CORE/ae4.md`;
 2. `doc_ai/04_BACKEND_CORE/PYTHON_SERVICES_ARCH.md`;
-3. `doc_ai/06_DOMAIN_ZONES_RECIPES/SCHEDULER_ENGINE.md`;
-4. `doc_ai/06_DOMAIN_ZONES_RECIPES/SCHEDULER_AE3_NON_IRRIGATION_DISPATCH.md`;
-5. API docs и data model docs.
+3. `doc_ai/ARCHITECTURE_FLOWS.md`;
+4. API docs и data model docs.
 
-Это изменение является осознанным расширением runtime scope, а не “малой правкой”.
+Это изменение scope runtime, а не «малая правка».
 Если часть документов уже обновлена, Stage 1 обязан проверить их на согласованность с
 DD-1..DD-9 и этим планом, а не считать синхронизацию завершенной автоматически.
 
@@ -997,7 +994,7 @@ Stop condition:
 
 Синхронизировать и при необходимости обновить:
 
-1. `doc_ai/04_BACKEND_CORE/ae3lite.md`;
+1. `doc_ai/04_BACKEND_CORE/ae4.md`;
 2. `doc_ai/04_BACKEND_CORE/PYTHON_SERVICES_ARCH.md`;
 3. `doc_ai/04_BACKEND_CORE/AUTOMATION_CONFIG_AUTHORITY.md`;
 4. `doc_ai/04_BACKEND_CORE/API_SPEC_FRONTEND_BACKEND_FULL.md`;
@@ -1007,7 +1004,7 @@ Stop condition:
 8. `doc_ai/03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md`;
 9. `doc_ai/03_TRANSPORT_MQTT/BACKEND_NODE_CONTRACT_FULL.md`;
 10. `doc_ai/02_HARDWARE_FIRMWARE/NODE_CHANNELS_REFERENCE.md`;
-11. `doc_ai/06_DOMAIN_ZONES_RECIPES/SCHEDULER_ENGINE.md`;
+11. `doc_ai/ARCHITECTURE_FLOWS.md`;
 12. frontend docs.
 
 Stage 1 считается закрытым только если в этих документах нет противоречий по:

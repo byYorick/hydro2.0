@@ -386,8 +386,9 @@ main() {
                 "automation_engine/E65_phase_transition_api"
                 "automation_engine/E74_node_zone_mismatch_guard"
 
-                # SCHEDULER
-                "scheduler/E93_start_cycle_intent_executor_path"
+                # AE 1.0.0 node-sim. Общая зона: только последовательно, SIM_02 после SIM_01.
+                "ae4/AE4_SIM_01_node_sim_planned_shot"
+                "ae4/AE4_SIM_02_node_sim_both_tanks_empty"
             )
             
             log_info "Запуск полного набора E2E сценариев (${#SCENARIOS[@]} сценариев, без CHAOS)..."

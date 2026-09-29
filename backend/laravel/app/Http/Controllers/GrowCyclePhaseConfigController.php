@@ -38,6 +38,8 @@ class GrowCyclePhaseConfigController extends Controller
         'temp_air_target', 'humidity_target', 'co2_target',
         'solution_temp_target', 'solution_temp_min', 'solution_temp_max',
         'irrigation_interval_sec', 'irrigation_duration_sec',
+        'soil_moisture_min', 'soil_moisture_max',
+        'vpd_min', 'vpd_max', 'light_integral_per_shot',
         'lighting_photoperiod_hours', 'lighting_start_time',
         'mist_interval_sec', 'mist_duration_sec',
     ];

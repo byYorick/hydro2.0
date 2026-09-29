@@ -456,6 +456,83 @@
                 Сколько длится один цикл полива (подача раствора)
               </p>
             </div>
+            <div>
+              <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">Объём раствора, л</label>
+              <input
+                v-model.number="phase.nutrient_solution_volume_l"
+                type="number"
+                min="0.1"
+                max="100000"
+                step="0.1"
+                class="input-field w-full"
+                data-testid="phase-solution-volume-l"
+              />
+              <p class="text-[12px] text-[color:var(--text-muted)] mt-1 leading-snug">
+                Рабочий объём бака раствора. Без него цикл не стартует.
+              </p>
+            </div>
+          </div>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-lg">
+            <div>
+              <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">Влажность субстрата min (%)</label>
+              <input
+                v-model.number="phase.soil_moisture_min"
+                type="number"
+                min="0"
+                max="100"
+                step="0.1"
+                class="input-field w-full"
+                data-testid="phase-soil-moisture-min"
+              />
+            </div>
+            <div>
+              <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">Влажность субстрата max (%)</label>
+              <input
+                v-model.number="phase.soil_moisture_max"
+                type="number"
+                min="0"
+                max="100"
+                step="0.1"
+                class="input-field w-full"
+                data-testid="phase-soil-moisture-max"
+              />
+            </div>
+            <div>
+              <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">VPD min (кПа)</label>
+              <input
+                v-model.number="phase.vpd_min"
+                type="number"
+                min="0"
+                step="0.01"
+                class="input-field w-full"
+                data-testid="phase-vpd-min"
+              />
+            </div>
+            <div>
+              <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">VPD max (кПа)</label>
+              <input
+                v-model.number="phase.vpd_max"
+                type="number"
+                min="0"
+                step="0.01"
+                class="input-field w-full"
+                data-testid="phase-vpd-max"
+              />
+            </div>
+            <div class="md:col-span-2">
+              <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">Интеграл света на кадр</label>
+              <input
+                v-model.number="phase.light_integral_per_shot"
+                type="number"
+                min="0"
+                step="1"
+                class="input-field w-full"
+                data-testid="phase-light-integral-per-shot"
+              />
+              <p class="text-[12px] text-[color:var(--text-muted)] mt-1 leading-snug">
+                Пусто — правило интеграла молчит. Единица как у канала света зоны.
+              </p>
+            </div>
           </div>
         </div>
 

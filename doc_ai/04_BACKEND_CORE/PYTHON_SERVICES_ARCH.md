@@ -1,30 +1,23 @@
 # PYTHON_SERVICES_ARCH.md
-# Архитектура Python-сервисов hydro2.0 (AE3)
+# Архитектура Python-сервисов hydro2.0 (AE 1.0.0)
 
-**Версия:** 3.7
-**Дата обновления:** 2026-08-24
-**Статус:** Актуально (канонично для runtime; sync 2026-08-24: mqtt-bridge = ops leftover, feature-builder = skeleton)
+**Версия:** 3.8
+**Дата обновления:** 2026-09-25
+**Статус:** Актуально (канон поведения автоматики — `ae4.md`; sync 2026-09-25: без ae3lite и без Laravel dispatcher)
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
-Breaking-change: HTTP-транспорт задач планировщика удалён из runtime; обратная совместимость не поддерживается.
+Breaking-change: диспетчер Laravel и зональные `start-*` ingress удалены; wake-up — тик воркера 1.0.0.
 
 ---
 
 ## 1. Цель
 
-Зафиксировать текущую архитектуру Python-сервисов после перехода на AE3 authority runtime:
+Зафиксировать текущую архитектуру Python-сервисов после AE 1.0.0:
 - единый поток команд через `history-logger`;
-- запуск workflow зоны через `POST /zones/{id}/start-cycle` (cycle/diagnostics),
-  штатный полив — `POST /zones/{id}/start-irrigation`,
-  тик освещения — `POST /zones/{id}/start-lighting-tick`,
-  автодолив — `POST /zones/{id}/start-solution-topup`,
-  подмена раствора — `POST /zones/{id}/start-solution-change`,
-  **тик климата теплицы (крыша)** — `POST /greenhouses/{id}/start-climate-tick`
-  (intents `greenhouse_automation_intents`, см. `GREENHOUSE_CLIMATE_CONTROL_PLAN.md`);
+- пробуждение зон — тик воркера `ae4/` (без `ScheduleDispatcher`);
+- **тик климата теплицы (крыша)** — один `POST /greenhouses/{id}/start-climate-tick` на теплицу из того же тика;
 - direct SQL read-model в runtime path automation-engine;
-- AE3 LISTEN только `scheduler_intent_terminal` + `ae_zone_event`; terminal статусы команд — **poll**
-  (не LISTEN для telemetry/command status).
-- fast-path wake-up по NOTIFY без отказа от DB-first source of truth.
+- terminal статусы команд — **poll** (не LISTEN для telemetry/command status).
 
 ---
 
@@ -41,13 +34,14 @@ Breaking-change: HTTP-транспорт задач планировщика у�
 - `9300` REST API;
 - `9300/metrics` Prometheus metrics.
 
-### 2.2 `automation-engine` (AE3)
+### 2.2 `automation-engine` (AE 1.0.0)
 
 Назначение:
-- DB-backed `Ae3RuntimeWorker` drain loop + `ae_zone_leases` (не per-zone runners);
-- two-tank workflow;
-- коррекция pH/EC;
-- rich zone state для UI;
+- воркер `ae4/` + HTTP (`/health`, `/metrics`, состояние зоны, `POST /greenhouses/{id}/start-climate-tick`);
+- тик сам назначает полив/химию/свет и один climate-tick на теплицу;
+- коррекция pH/EC (импульс);
+- rich zone state для UI (`unattended_ready`, blockers);
+- device-команды только через history-logger.
 - исполнение intents от Laravel scheduler.
 
 Порты:
@@ -122,34 +116,18 @@ Live: `/simulations/live/start|stop` (связь с `node-sim-manager` `:9100`).
 - scoped incident identity хранится в `details.dedupe_key`;
 - `system.alert_policies` задаёт policy auto-resolve только для policy-managed AE3 business alert code.
 
-### 3.2 Запуск цикла и intents
+### 3.2 Пробуждение зон (AE 1.0.0)
 
-Внешние entrypoints automation-engine (wake-up из Laravel scheduler-dispatch):
+Диспетчера Laravel (`ScheduleDispatcher`, `automation:dispatch-schedules`) нет. Маршрутов `start-cycle` / `start-irrigation` / `start-lighting-tick` / `start-solution-topup` / `start-solution-change` нет.
 
-- `POST /zones/{id}/start-cycle` — diagnostics / `cycle_start`;
-- `POST /zones/{id}/start-irrigation` — штатный полив по расписанию (`irrigation_start`), опционально `requested_duration_sec`;
-- `POST /zones/{id}/start-lighting-tick` — тик освещения по расписанию на AE3 (`lighting_tick`), см. `SCHEDULER_ENGINE.md`;
-- `POST /zones/{id}/start-solution-topup` — автодолив (`solution_topup`);
-- `POST /zones/{id}/start-solution-change` — полуавтоматическая подмена раствора (`solution_change`);
-- `POST /greenhouses/{id}/start-climate-tick` — greenhouse climate tick.
+Живой путь:
+1. Тик воркера `ae4/` обходит зоны без явного `ae3`, при необходимости пишет задачу мутации с `due_at=now`.
+2. Тот же тик будит форточки одним `POST /greenhouses/{id}/start-climate-tick` на теплицу.
+3. Device-команды — только через history-logger `POST /commands`.
 
-Laravel scheduler-dispatch модель:
-1. Laravel scheduler пишет запись в `zone_automation_intents` со статусом `pending`.
-2. Laravel вызывает соответствующий endpoint (матрица по `task_type` и `automation_runtime`:
-   полив — `start-irrigation`, свет на AE3 — `start-lighting-tick`,
-   solution_* — `start-solution-topup` / `start-solution-change`,
-   иначе при поддерживаемом runtime — `start-cycle`; см. `ScheduleDispatcher`).
-3. AE3 claim intent (`FOR UPDATE SKIP LOCKED`) и исполняет.
-4. AE3 обновляет intent lifecycle (`claimed/running/completed/failed/cancelled`).
-
-Контракт intent payload (wake-up only):
-- разрешены только поля metadata: `source`, `task_type=diagnostics`, `workflow=cycle_start`, `topology`, `grow_cycle_id` (опционально);
-- `task_payload` и `schedule_payload` не используются и не входят в актуальный контракт;
-- runtime path `start-cycle` не принимает и не исполняет device-level payload из intent.
-
-Удалённые endpoint'ы (в прошлом):
-- `POST /scheduler/task` — удален.
-- `GET /scheduler/task/{task_id}` — удален.
+Канон: `doc_ai/04_BACKEND_CORE/ae4.md`. Удалённые endpoint'ы (в прошлом):
+- `POST /scheduler/task`, `GET /scheduler/task/{task_id}`;
+- зональные `start-*` ingress волны AE3.
 
 ### 3.3 Телеметрия и фидбек команд
 
@@ -368,4 +346,4 @@ Fail-closed:
 - `REST_API_REFERENCE.md`
 - `API_SPEC_FRONTEND_BACKEND_FULL.md`
 - `../05_DATA_AND_STORAGE/DATA_MODEL_REFERENCE.md`
-- `ae3lite.md`
+- `ae4.md`

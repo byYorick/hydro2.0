@@ -27,10 +27,10 @@ Breaking-change: обратная совместимость со старыми
 ## 0.1 Authority / AE3 Canonical Overrides (2026-03-24)
 
 Эти правила имеют приоритет над более старыми фрагментами документа:
-- внешний запуск автоматики: `POST /zones/{id}/start-cycle` и `POST /zones/{id}/start-irrigation`;
+- внешний wake-up зон — тик воркера AE 1.0.0 (`ae4.md`); маршрутов `start-cycle` / `start-irrigation` / `start-lighting-tick` нет;
 - HTTP transport `POST /scheduler/task` и `GET /scheduler/task/{task_id}` удалён из runtime;
 - runtime automation-engine использует direct SQL read-model (без runtime HTTP вызовов в `/api/internal/effective-targets/*`);
-- scheduler передает intent через БД (`zone_automation_intents`) и будит зону через `start-cycle` или `start-irrigation`;
+- диспетчера Laravel нет; intents/расписание не будят зону через старый ingress;
 - endpoint `POST /api/zones/{id}/automation/manual-resume` удален.
 - web-admin/system settings/correction editors не получают authority-конфиги через Inertia props и используют только unified automation API.
 

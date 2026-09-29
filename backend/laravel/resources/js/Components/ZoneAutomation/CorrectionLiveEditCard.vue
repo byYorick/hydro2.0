@@ -439,6 +439,8 @@ const LIVE_EDITABLE_CORRECTION_FIELDS = new Set<string>([
   'timing.irr_state_max_age_sec',
   'timing.level_poll_interval_sec',
   'timing.sensor_mode_stabilization_time_sec',
+  'timing.stale_ec_allows_shot',
+  'timing.ec_clean',
   'retry.max_ec_correction_attempts',
   'retry.max_ph_correction_attempts',
   'retry.prepare_recirculation_max_attempts',
@@ -491,6 +493,14 @@ const CORRECTION_FIELD_TEXTS: Record<string, LocalizedCorrectionText> = {
   'timing.telemetry_max_age_sec': {
     label: 'Максимальная давность телеметрии',
     description: 'Если свежие pH/EC sample старше этого порога, correction считает телеметрию устаревшей и не принимает решение по ней.',
+  },
+  'timing.stale_ec_allows_shot': {
+    label: 'Кадр при протухшем EC',
+    description: 'allow — кадр полива разрешён при протухшем EC. deny или пусто — кадр запрещён.',
+  },
+  'timing.ec_clean': {
+    label: 'EC чистой воды',
+    description: 'EC_clean для доли слива. Единица как у цели EC фазы. Пустое поле долю не считает.',
   },
   'timing.irr_state_max_age_sec': {
     label: 'Максимальная давность IRR state',

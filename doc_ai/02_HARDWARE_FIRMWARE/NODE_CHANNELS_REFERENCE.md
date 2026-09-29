@@ -165,6 +165,40 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
 }
 ```
 
+### 2.10. Бак стока (AE 1.0.0)
+
+Отдельный бак `drain` для доли слива с лотков. Это **не** клапан `valve_drain`
+(слив рабочего бака `feed` в AE3). Клапан `valve_drain` за уровень бака стока
+не принимается. Пока этих строк нет в контракте, контур со стоком не стартует.
+
+Канонические ключи уровня (тот же стиль, что §2.9):
+
+- `level_drain_min` — нижний уровень бака стока;
+- `level_drain_max` — верхний уровень бака стока.
+
+| Domain key | `metric_type` | Firmware channel id | К чему относится |
+|------------|---------------|---------------------|------------------|
+| `level_drain_min` / `level_drain_max` | `WATER_LEVEL_SWITCH` | то же имя | бак `drain` |
+| EC бака стока | `EC` | `ec_drain_sensor` | только бак `drain` |
+
+Тип уровней: `SENSOR` (`bool` / `0|1`), семантика как у §2.9.
+Тип EC стока: `SENSOR`, единицы как у `ec_sensor` рабочего бака (единица канала
+и цели фазы должны совпадать).
+
+Рекомендуемый telemetry payload уровня — как в §2.9 (`metric_type`: `WATER_LEVEL_SWITCH`).
+Для EC стока:
+
+```json
+{
+  "metric_type": "EC",
+  "value": 1.2,
+  "unit": "mS/cm",
+  "ts": 1737355600
+}
+```
+
+Синонимы (`drain_level`, `ec_drain`, `moisture` и т.п.) не читаются.
+
 ### 2.12. Системные события (system)
 
 Канал `system` используется для событий уровня ноды (не привязанных к конкретному actuator channel).
@@ -358,6 +392,8 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
 - `valve_clean_supply` — клапан забора чистой воды из clean tank в solution path;
 - `valve_solution_fill` — клапан набора в бак раствора;
 - `valve_solution_supply` — клапан забора из бака раствора;
+- `valve_drain` — клапан слива рабочего бака `feed` (AE3 solution_drain / путь
+  опустошения). **Не** датчик уровня бака стока §2.10 и не `level_drain_*`;
 - `pump_main` — главный насос контура подготовки/полива;
 - `fan_air` — вентилятор;
 - `heater_air` / `heater` — нагреватель воздуха (имя зависит от прошивки);

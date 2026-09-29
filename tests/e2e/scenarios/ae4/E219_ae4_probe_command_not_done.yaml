@@ -1,0 +1,30 @@
+# E219: тестовая команда доходит до history-logger; не-DONE роняет шаг.
+
+name: E219_ae4_probe_command_not_done
+description: |
+  Контракт пути команды AE4 волны 2:
+  probe-команда публикуется через common history_logger_gateway,
+  cmd_id с префиксом ae4-, имя plan в gateway не отправляется,
+  terminal не-DONE роняет шаг через failure_report.
+  Кадр полива сюда не входит. Realhw не требуется.
+
+tags:
+  - ae4
+  - wave2
+  - command_path
+
+meta:
+  id: E219
+  wave: 2
+  runtime: ae4
+  requires_physical_node: false
+  proves: |
+    publish via common.history_logger_gateway;
+    cmd_id starts with ae4-;
+    plan name irrigation_start is not sent as cmd;
+    non-DONE fails step via failure_report
+
+actions:
+  - step: document_contract
+    type: set
+    note: behaviour proven by pytest tests/unit/ae4/test_e219_probe_command.py

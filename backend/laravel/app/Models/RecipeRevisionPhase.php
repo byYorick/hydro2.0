@@ -52,6 +52,11 @@ class RecipeRevisionPhase extends Model
         'day_night_enabled',
         'irrigation_interval_sec',
         'irrigation_duration_sec',
+        'soil_moisture_min',
+        'soil_moisture_max',
+        'vpd_min',
+        'vpd_max',
+        'light_integral_per_shot',
         // Опциональные параметры
         'lighting_photoperiod_hours',
         'lighting_start_time',
@@ -94,6 +99,11 @@ class RecipeRevisionPhase extends Model
         'nutrient_solution_volume_l' => 'decimal:2',
         'temp_air_target' => 'decimal:2',
         'humidity_target' => 'decimal:2',
+        'soil_moisture_min' => 'decimal:2',
+        'soil_moisture_max' => 'decimal:2',
+        'vpd_min' => 'decimal:3',
+        'vpd_max' => 'decimal:3',
+        'light_integral_per_shot' => 'decimal:3',
         'solution_temp_target' => 'decimal:2',
         'solution_temp_min' => 'decimal:2',
         'solution_temp_max' => 'decimal:2',
@@ -228,6 +238,26 @@ class RecipeRevisionPhase extends Model
 
         if ($this->irrigation_duration_sec !== null) {
             $targets['irrigation_duration_sec'] = $this->irrigation_duration_sec;
+        }
+
+        if ($this->soil_moisture_min !== null) {
+            $targets['soil_moisture_min'] = (float) $this->soil_moisture_min;
+        }
+
+        if ($this->soil_moisture_max !== null) {
+            $targets['soil_moisture_max'] = (float) $this->soil_moisture_max;
+        }
+
+        if ($this->vpd_min !== null) {
+            $targets['vpd_min'] = (float) $this->vpd_min;
+        }
+
+        if ($this->vpd_max !== null) {
+            $targets['vpd_max'] = (float) $this->vpd_max;
+        }
+
+        if ($this->light_integral_per_shot !== null) {
+            $targets['light_integral_per_shot'] = (float) $this->light_integral_per_shot;
         }
 
         $systemType = Arr::get($this->extensions ?? [], 'subsystems.irrigation.targets.system_type')

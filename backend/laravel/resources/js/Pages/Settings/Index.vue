@@ -225,7 +225,7 @@
     <ConfirmModal
       :open="resetConfirmOpen"
       title="Сбросить параметры движка?"
-      message="Сброс вернёт runtime-override AE3/scheduler к значениям env/config. Активные циклы не останавливаются сразу, но следующие тики и интервалы пойдут с дефолтами. Пользовательские профили зон не меняются."
+      message="Сброс вернёт runtime-override автоматики к значениям env/config. Активные циклы не останавливаются сразу, но следующие тики и интервалы пойдут с дефолтами. Пользовательские профили зон не меняются."
       confirm-text="Сбросить"
       confirm-variant="danger"
       :loading="automationSettingsResetting"
@@ -277,7 +277,7 @@ const roleBadgeVariant = computed(() => {
 const sectionCatalog = [
   { id: 'profile', label: 'Мой профиль', hint: 'Имя, email, роль', icon: '👤' },
   { id: 'notifications', label: 'Уведомления', hint: 'Тосты и алерты', icon: '🔔' },
-  { id: 'automation', label: 'Параметры движка', hint: 'AE3 и runtime', icon: '⚙️', requiresAutomation: true },
+  { id: 'automation', label: 'Параметры автоматики', hint: 'runtime и тик', icon: '⚙️', requiresAutomation: true },
   { id: 'system', label: 'Настройки системы', hint: 'Authority платформы', icon: '📊', requiresSystem: true },
 ]
 
@@ -513,7 +513,7 @@ const saveAlertPolicies = async () => {
       }
     )
     applyAlertPoliciesSnapshot(document || null)
-    showToast('Политика закрытия AE3 alerts сохранена', 'success', TOAST_TIMEOUT.NORMAL)
+    showToast('Политика закрытия alerts автоматики сохранена', 'success', TOAST_TIMEOUT.NORMAL)
   } catch (err) {
     logger.error('Failed to save alert policies:', err)
     showToast(
@@ -531,7 +531,7 @@ const resetAlertPolicies = async () => {
   try {
     const document = await automationConfig.resetDocument('system', 0, 'system.alert_policies')
     applyAlertPoliciesSnapshot(document || null)
-    showToast('Политика закрытия AE3 alerts сброшена к default', 'success', TOAST_TIMEOUT.NORMAL)
+    showToast('Политика закрытия alerts автоматики сброшена к default', 'success', TOAST_TIMEOUT.NORMAL)
   } catch (err) {
     logger.error('Failed to reset alert policies:', err)
     showToast(

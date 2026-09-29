@@ -357,13 +357,10 @@ export function useZoneShowPage() {
     mode: 'normal' | 'force'
     durationSec?: number
   }): Promise<void> => {
+    void mode
+    void durationSec
     if (!zoneId.value) return
-
-    await api.zones.startIrrigation(zoneId.value, {
-      mode,
-      source: 'frontend',
-      requested_duration_sec: durationSec ?? null,
-    })
+    throw new Error('Ручной полив через старый ingress удалён. Тик автоматики сам назначает кадр.')
   }
 
   const onActionSubmit = async ({

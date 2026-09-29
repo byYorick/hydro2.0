@@ -5,6 +5,7 @@ E2E Test Runner - выполняет YAML сценарии с проверкам
 """
 
 import asyncio
+import copy
 import yaml
 import logging
 import sys
@@ -727,6 +728,88 @@ class E2ERunner:
             logger.error(f"[FAULT_INJECT] Error {action}ing service {compose_service}: {e}", exc_info=True)
             raise
     
+    def _node_sim_active_config_path(self) -> str:
+        compose_dir = os.path.dirname(self.compose_file) if os.path.dirname(self.compose_file) else os.getcwd()
+        runtime_dir = os.path.join(compose_dir, "runtime")
+        os.makedirs(runtime_dir, exist_ok=True)
+        return os.path.join(runtime_dir, "active.yaml")
+
+    def _install_node_sim_config(self, sim_cfg: Optional[Dict[str, Any]]) -> None:
+        """Положить конфиг в bind-mount node-sim. None — вернуть дефолтный sim.yaml."""
+        path = self._node_sim_active_config_path()
+        if not sim_cfg:
+            if os.path.exists(path):
+                os.remove(path)
+            logger.info("node-sim: активный конфиг снят, контейнер вернётся к sim.yaml")
+            return
+        payload = self._expand_sim_placeholders(copy.deepcopy(sim_cfg))
+        mqtt = payload.get("mqtt")
+        if not isinstance(mqtt, dict):
+            mqtt = {}
+            payload["mqtt"] = mqtt
+        # Процесс симулятора в сети compose. Хостовый MQTT_PORT сюда не подходит.
+        mqtt["host"] = "mosquitto"
+        mqtt["port"] = 1883
+        for key in ("username", "password"):
+            if mqtt.get(key) in ("", "null", "None"):
+                mqtt[key] = None
+        with open(path, "w", encoding="utf-8") as handle:
+            yaml.safe_dump(payload, handle, allow_unicode=True, sort_keys=False)
+        logger.info("node-sim: записан активный конфиг %s", path)
+
+    def _expand_sim_placeholders(self, value: Any) -> Any:
+        """Подставить ${VAR} и ${VAR:-default} из контекста сценария и окружения."""
+        if isinstance(value, dict):
+            return {key: self._expand_sim_placeholders(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [self._expand_sim_placeholders(item) for item in value]
+        if not isinstance(value, str):
+            return value
+
+        def replace(match: re.Match[str]) -> str:
+            name = match.group(1)
+            default = match.group(2)
+            current = self.context.get(name)
+            if current not in (None, "", "auto"):
+                return str(current)
+            env_value = os.getenv(name)
+            if env_value not in (None, "", "auto"):
+                return env_value
+            if default is not None:
+                return "" if default == "null" else default
+            return match.group(0)
+
+        return re.sub(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}", replace, value)
+
+    async def _restart_node_sim(self) -> None:
+        """Перечитать active.yaml. docker start не перезапускает уже работающий процесс."""
+        container = self._resolve_container_name("node-sim")
+        since = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+        restarted = subprocess.run(
+            ["docker", "restart", container],
+            capture_output=True,
+            text=True,
+            timeout=90,
+        )
+        if restarted.returncode != 0:
+            raise RuntimeError(f"node-sim restart failed: {restarted.stderr}")
+        deadline = time.time() + 30
+        while time.time() < deadline:
+            logs = subprocess.run(
+                ["docker", "logs", "--since", since, container],
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+            text = f"{logs.stdout}\n{logs.stderr}"
+            if "Failed to connect to MQTT" in text:
+                raise RuntimeError("node-sim не подключился к MQTT")
+            if "Node simulator is running" in text or "Subscribed to command topic" in text:
+                logger.info("node-sim перезапущен и подписан на команды")
+                return
+            await asyncio.sleep(0.4)
+        raise RuntimeError("node-sim не успел подписаться на команды после перезапуска")
+
     async def _fault_restore(self, service: str):
         """
         Восстановить сервис после fault injection.
@@ -2259,22 +2342,16 @@ class E2ERunner:
             if self.real_hardware_mode:
                 logger.info("[REAL_HARDWARE] Skipping start_simulator (node-sim control disabled)")
                 return
-            # При необходимости создаем временный конфиг node-sim и монтируем через NODE_SIM_CONFIG
             cfg_ref = raw.get("config_ref")
+            sim_cfg = None
             if cfg_ref:
-                # cfg_ref формат: dotted path, например node_sim.config (или setup.node_sim.config)
                 sim_cfg = self._resolve_variable_expression(cfg_ref)
                 if not sim_cfg and "setup" in self.context:
                     sim_cfg = self._resolve_variable_expression(f"setup.{cfg_ref}")
-                if sim_cfg:
-                    import tempfile, yaml
-                    tmp = tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".yaml")
-                    yaml.safe_dump(sim_cfg, tmp)
-                    tmp.flush()
-                    self.context["_node_sim_config_path"] = tmp.name
-                    os.environ["NODE_SIM_CONFIG"] = tmp.name
-                    logger.info(f"Generated node-sim config at {tmp.name}")
-            await self._fault_restore("node-sim")
+                if not isinstance(sim_cfg, dict):
+                    raise RuntimeError(f"start_simulator: config_ref {cfg_ref!r} не найден")
+            self._install_node_sim_config(sim_cfg)
+            await self._restart_node_sim()
             return
         if step_type == "stop_simulator":
             if self.real_hardware_mode:

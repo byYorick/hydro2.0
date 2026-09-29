@@ -217,7 +217,7 @@ backend/
 │  │  ├─ requirements.txt
 │  │  ├─ Dockerfile
 │  │  └─ README.md
-│  ├─ automation-engine/       # AE3 (`ae3lite/`): зоны, коррекции; device-команды через HL REST
+│  ├─ automation-engine/       # AE 1.0.0 (`ae4/`): зоны, коррекции; device-команды через HL REST
 │  ├─ history-logger/          # Телеметрия + единственная публикация команд в MQTT
 │  └─ common/                  # Общие библиотеки для Python-сервисов (модели, DTO, клиенты MQTT/БД)
 ├─ configs/

@@ -25,7 +25,7 @@
 - Default `make up` = core: laravel, mqtt-bridge, history-logger, automation-engine, postgres, redis, mosquitto (+ prometheus/grafana по желанию). `digital-twin`, `feature-builder`, `node-emulator` — не часть default up.
 - Команды к узлам не публикуются напрямую в MQTT из Laravel или automation-engine (только через history-logger):
   единая точка публикации в MQTT — `history-logger`.
-- Базовый поток команд: `Laravel scheduler-dispatch -> Automation-Engine -> History-Logger -> MQTT -> ESP32`.
+- Базовый поток команд: `Automation-Engine (тик AE 1.0.0) -> History-Logger -> MQTT -> ESP32`.
 - Не ломать защищённый пайплайн `ESP32 -> MQTT -> Python -> PostgreSQL -> Laravel -> Vue`.
 - Любые изменения протокола/данных сопровождать обновлением спецификаций и строкой:
   `Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0`.
@@ -133,7 +133,7 @@
 
 - Команды к узлам идут только через Python-слой с централизованной MQTT-публикацией в `history-logger`.
 - Запрещено публиковать команды в MQTT напрямую из Laravel или automation-engine в обход history-logger.
-- Базовый путь команд: `Laravel scheduler-dispatch -> Automation-Engine -> History-Logger -> MQTT -> ESP32`.
+- Базовый путь команд: `Automation-Engine (тик AE 1.0.0) -> History-Logger -> MQTT -> ESP32`.
 - Laravel владеет схемой БД: любые изменения через миграции, без ручного DDL.
 - При добавлении новых метрик телеметрии — обеспечить запись в `telemetry_samples`
   и `telemetry_last` (см. `doc_ai/05_DATA_AND_STORAGE`).

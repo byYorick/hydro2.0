@@ -79,7 +79,7 @@ Breaking-change: обратная совместимость со старыми
 ## 04_BACKEND_CORE
 Ядро backend-приложения:
 - архитектура Laravel-приложения;
-- Python-сервисы и AE3 (`ae3lite.md` — canonical runtime);
+- Python-сервисы и AE 1.0.0 (`ae4.md` — canonical runtime);
 - REST/API‑слой, history-logger, error codes;
 - стек и варианты деплоя (в т.ч. Docker);
 - планы рефакторинга / reliability (status `plan`).

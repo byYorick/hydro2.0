@@ -49,44 +49,11 @@
 
     <!-- Тело: ручное управление + workflow steps -->
     <div class="grid gap-4 xl:grid-cols-2">
-      <!-- Ручное управление -->
+      <!-- Ручные действия старого ingress сняты волной 10 -->
       <div class="space-y-2">
         <p class="text-xs text-[color:var(--text-muted)]">
-          Ручное управление
+          Полная подмена раствора и мойка контура — на плановом визите. Суточный тик сам держит полив и химию.
         </p>
-        <div class="grid gap-2 grid-cols-1 sm:grid-cols-3">
-          <Button
-            size="sm"
-            :disabled="!canOperateAutomation || irrigationActionLoading"
-            @click="$emit('start-irrigation')"
-          >
-            {{ irrigationActionLoading ? 'Отправка...' : 'Запустить полив' }}
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            :disabled="!canOperateAutomation || irrigationActionLoading"
-            @click="$emit('force-irrigation')"
-          >
-            {{ irrigationActionLoading ? 'Отправка...' : 'Принудительный полив' }}
-          </Button>
-          <Button
-            size="sm"
-            variant="secondary"
-            :disabled="!canOperateAutomation || diagnosticsActionLoading"
-            @click="$emit('run-diagnostics')"
-          >
-            {{ diagnosticsActionLoading ? 'Отправка...' : 'Диагностика' }}
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            :disabled="!canOperateAutomation || solutionChangeActionLoading"
-            @click="$emit('start-solution-change')"
-          >
-            {{ solutionChangeActionLoading ? 'Отправка...' : 'Подмена раствора' }}
-          </Button>
-        </div>
       </div>
 
       <!-- Ручные шаги workflow -->
@@ -199,10 +166,6 @@ function modeDisabledTitle(mode: AutomationControlMode): string | undefined {
 }
 
 defineEmits<{
-  (e: 'start-irrigation'): void
-  (e: 'force-irrigation'): void
-  (e: 'run-diagnostics'): void
-  (e: 'start-solution-change'): void
   (e: 'select-mode', mode: ModeValue): void
   (e: 'run-manual-step', step: AutomationManualStep): void
 }>()
@@ -250,10 +213,10 @@ const manualStepsIdleHint = computed(() => {
   const phase = String(props.workflowPhase ?? '').trim().toLowerCase()
   const stage = String(props.currentStage ?? '').trim()
   if (phase === 'idle' && !stage) {
-    return 'Нет активной задачи AE3. В manual/semi шаги появляются после запуска workflow — нажмите «Диагностика».'
+    return 'Нет активной задачи. В manual/semi шаги появляются после запуска workflow.'
   }
   if (!stage) {
-    return 'Стадия workflow не определена. Дождитесь обновления состояния или запустите «Диагностика».'
+    return 'Стадия workflow не определена. Дождитесь обновления состояния.'
   }
   return null
 })

@@ -712,6 +712,68 @@ async def _create_sensors_per_item(
                 _sensor_cache_set(sensor_key, sensor_id)
 
 
+async def _resolve_active_cycle_ids(zone_ids: list[int]) -> dict[int, Optional[int]]:
+    """Резолв grow_cycles.id на ingest: ровно одна активная посадка → id, иначе NULL.
+
+    Узел cycle_id в MQTT не шлёт. При >1 активной посадке id не угадываем.
+    """
+    resolved: dict[int, Optional[int]] = {int(zid): None for zid in zone_ids}
+    if not zone_ids:
+        return resolved
+
+    unique_zone_ids = sorted({int(zid) for zid in zone_ids})
+    rows = await fetch(
+        """
+        SELECT id, zone_id
+        FROM grow_cycles
+        WHERE zone_id = ANY($1::bigint[])
+          AND status IN ('PLANNED', 'RUNNING', 'PAUSED')
+        ORDER BY zone_id, id
+        """,
+        unique_zone_ids,
+    )
+
+    by_zone: dict[int, list[int]] = {}
+    for row in rows:
+        zone_id = row.get("zone_id")
+        cycle_id = row.get("id")
+        if zone_id is None or cycle_id is None:
+            continue
+        by_zone.setdefault(int(zone_id), []).append(int(cycle_id))
+
+    for zone_id, cycle_ids in by_zone.items():
+        if len(cycle_ids) == 1:
+            resolved[zone_id] = cycle_ids[0]
+            continue
+        if len(cycle_ids) > 1:
+            resolved[zone_id] = None
+            logger.error(
+                "Несколько активных посадок на зоне: cycle_id не заполняем",
+                extra={
+                    "zone_id": zone_id,
+                    "grow_cycle_ids": cycle_ids,
+                    "reason_code": "telemetry_ambiguous_active_grow_cycle",
+                },
+            )
+    return resolved
+
+
+async def _attach_cycle_ids(items: list[dict]) -> None:
+    """Проставляет item['cycle_id'] по активной посадке зоны (без MQTT-поля)."""
+    zone_ids = [
+        int(item["zone_id"])
+        for item in items
+        if item.get("zone_id") is not None
+    ]
+    cycle_by_zone = await _resolve_active_cycle_ids(zone_ids)
+    for item in items:
+        zone_id = item.get("zone_id")
+        if zone_id is None:
+            item["cycle_id"] = None
+        else:
+            item["cycle_id"] = cycle_by_zone.get(int(zone_id))
+
+
 async def _insert_telemetry_sample_item(
     item: dict,
     result: TelemetryBatchResult,
@@ -729,14 +791,17 @@ async def _insert_telemetry_sample_item(
     if metadata and not metadata.get("node_uid"):
         metadata.pop("node_uid", None)
 
+    if "cycle_id" not in item:
+        await _attach_cycle_ids([item])
+
     entry = item.get("entry")
     try:
         await execute(
             """
             INSERT INTO telemetry_samples (
-                sensor_id, ts, zone_id, value, quality, metadata
+                sensor_id, ts, zone_id, cycle_id, value, quality, metadata
             )
-            SELECT $1, $2, $3, $4, $5, $6
+            SELECT $1, $2, $3, $4, $5, $6, $7
             FROM sensors s
             WHERE s.id = $1
               AND s.zone_id = $3
@@ -744,6 +809,7 @@ async def _insert_telemetry_sample_item(
             int(item["sensor_id"]),
             _normalize_ts_for_db(sample.ts),
             int(item["zone_id"]) if item["zone_id"] is not None else None,
+            int(item["cycle_id"]) if item.get("cycle_id") is not None else None,
             sample.value,
             "GOOD",
             metadata or None,
@@ -1805,11 +1871,14 @@ async def process_telemetry_batch(
         item for item in resolved_with_sensor if _item_is_writable(item, tracked_ids)
     ]
 
+    await _attach_cycle_ids(writable_items)
+
     processed_count = 0
     written_items: list[dict] = []
     sensor_ids: list[int] = []
     sample_ts_values: list[datetime] = []
     zone_ids: list[int | None] = []
+    cycle_ids: list[int | None] = []
     sample_values: list[float] = []
     qualities: list[str] = []
     metadata_values: list[dict | None] = []
@@ -1831,30 +1900,35 @@ async def process_telemetry_batch(
         sensor_ids.append(int(item["sensor_id"]))
         sample_ts_values.append(_normalize_ts_for_db(sample.ts))
         zone_ids.append(int(item["zone_id"]) if item["zone_id"] is not None else None)
+        cycle_ids.append(
+            int(item["cycle_id"]) if item.get("cycle_id") is not None else None
+        )
         sample_values.append(sample.value)
         qualities.append(_persist_quality_for_sample(sample))
         metadata_values.append(metadata or None)
 
     if sensor_ids:
         query = """
-            WITH incoming (sensor_id, ts, zone_id, value, quality, metadata) AS (
+            WITH incoming (sensor_id, ts, zone_id, cycle_id, value, quality, metadata) AS (
                 SELECT *
                 FROM UNNEST(
                     $1::bigint[],
                     $2::timestamp[],
                     $3::bigint[],
-                    $4::double precision[],
-                    $5::text[],
-                    $6::jsonb[]
-                ) AS t(sensor_id, ts, zone_id, value, quality, metadata)
+                    $4::bigint[],
+                    $5::double precision[],
+                    $6::text[],
+                    $7::jsonb[]
+                ) AS t(sensor_id, ts, zone_id, cycle_id, value, quality, metadata)
             )
             INSERT INTO telemetry_samples (
-                sensor_id, ts, zone_id, value, quality, metadata
+                sensor_id, ts, zone_id, cycle_id, value, quality, metadata
             )
             SELECT
                 incoming.sensor_id,
                 incoming.ts,
                 incoming.zone_id,
+                incoming.cycle_id,
                 incoming.value,
                 incoming.quality,
                 incoming.metadata
@@ -1870,6 +1944,7 @@ async def process_telemetry_batch(
                 sensor_ids,
                 sample_ts_values,
                 zone_ids,
+                cycle_ids,
                 sample_values,
                 qualities,
                 metadata_values,

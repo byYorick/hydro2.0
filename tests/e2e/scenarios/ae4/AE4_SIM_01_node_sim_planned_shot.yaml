@@ -1,0 +1,259 @@
+# Боевой контур AE 1.0.0: node-sim публикует уровни в MQTT, тик открывает кадр,
+# history-logger доставляет run_pump, симулятор отвечает DONE.
+#
+# Узкий прогон (не full suite):
+#   cd tests/e2e && PYTHONPATH=. python -m runner.suite scenarios/ae4/AE4_SIM_01_node_sim_planned_shot.yaml
+
+name: AE4_SIM_01_node_sim_planned_shot
+description: |
+  Эмуляция рабочего полива зоны ae4.
+  Симулятор узла на MQTT 1884, телеметрия уровней свежая и баки не пустые,
+  интервал фазы уже вышел. Тик публикует run_pump с duration_ms, узел отвечает DONE.
+
+tags:
+  - ae4
+  - node_sim
+  - mqtt
+
+meta:
+  id: AE4_SIM_01
+  wave: sim
+  runtime: ae4
+  requires_physical_node: false
+  proves: |
+    node-sim telemetry over MQTT drives an ae4 planned shot;
+    history-logger stores the command and the simulator reaches DONE
+
+setup:
+  node_sim:
+    config:
+      mqtt:
+        host: ${MQTT_HOST:-localhost}
+        port: ${MQTT_PORT:-1884}
+      node:
+        gh_uid: gh-ae4-sim
+        zone_uid: zn-ae4-sim
+        node_uid: nd-ae4-sim
+        hardware_id: esp32-ae4-sim-001
+        node_type: pump
+        mode: configured
+        channels: []
+        actuators:
+          - pump_main
+          - valve_solution_supply
+          - valve_irrigation
+          - valve_clean_fill
+          - valve_solution_fill
+      telemetry:
+        interval_seconds: 3600
+        heartbeat_interval_seconds: 30
+
+actions:
+  - step: seed_ae4_zone
+    type: database_execute
+    query: |
+      INSERT INTO greenhouses (uid, name, timezone, type, provisioning_token, created_at, updated_at)
+      VALUES ('gh-ae4-sim', 'AE4 sim', 'UTC', 'GREENHOUSE', 'gh_ae4_sim_token', NOW(), NOW())
+      ON CONFLICT (uid) DO UPDATE SET name = EXCLUDED.name, timezone = EXCLUDED.timezone, updated_at = NOW();
+
+      INSERT INTO zones (greenhouse_id, uid, name, status, automation_runtime, control_mode, created_at, updated_at)
+      SELECT id, 'zn-ae4-sim', 'AE4 sim zone', 'online', 'ae4', 'auto', NOW(), NOW()
+      FROM greenhouses WHERE uid = 'gh-ae4-sim'
+      ON CONFLICT (uid) DO UPDATE SET
+        greenhouse_id = EXCLUDED.greenhouse_id,
+        status = 'online',
+        automation_runtime = 'ae4',
+        control_mode = 'auto',
+        updated_at = NOW();
+
+      INSERT INTO nodes (zone_id, uid, name, type, status, lifecycle_state, hardware_id, config, created_at, updated_at)
+      SELECT z.id, 'nd-ae4-sim', 'AE4 sim node', 'irrig', 'online', 'ASSIGNED_TO_ZONE', 'esp32-ae4-sim-001',
+             '{"node_secret":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}'::jsonb,
+             NOW(), NOW()
+      FROM zones z WHERE z.uid = 'zn-ae4-sim'
+      ON CONFLICT (uid) DO UPDATE SET
+        zone_id = EXCLUDED.zone_id,
+        type = 'irrig',
+        status = 'online',
+        lifecycle_state = 'ASSIGNED_TO_ZONE',
+        config = EXCLUDED.config,
+        updated_at = NOW();
+
+      DELETE FROM ae_zone_leases WHERE zone_id = (SELECT id FROM zones WHERE uid = 'zn-ae4-sim');
+      DELETE FROM ae_tasks WHERE zone_id = (SELECT id FROM zones WHERE uid = 'zn-ae4-sim');
+      DELETE FROM commands WHERE zone_id = (SELECT id FROM zones WHERE uid = 'zn-ae4-sim');
+      DELETE FROM zone_events WHERE zone_id = (SELECT id FROM zones WHERE uid = 'zn-ae4-sim');
+      DELETE FROM automation_effective_bundles
+      WHERE scope_type = 'grow_cycle'
+        AND scope_id IN (
+          SELECT id FROM grow_cycles WHERE zone_id = (SELECT id FROM zones WHERE uid = 'zn-ae4-sim')
+        );
+      DELETE FROM grow_cycles WHERE zone_id = (SELECT id FROM zones WHERE uid = 'zn-ae4-sim');
+
+      INSERT INTO recipes (name, description, created_at, updated_at)
+      VALUES ('ae4-sim-recipe', 'посадка для node-sim AE4', NOW(), NOW());
+
+      INSERT INTO recipe_revisions (recipe_id, revision_number, status, created_at, updated_at)
+      SELECT id, 1, 'PUBLISHED', NOW(), NOW() FROM recipes WHERE name = 'ae4-sim-recipe' ORDER BY id DESC LIMIT 1;
+
+      INSERT INTO grow_cycles (
+        greenhouse_id, zone_id, recipe_revision_id, status, started_at, created_at, updated_at
+      )
+      SELECT g.id, z.id, r.id, 'RUNNING', NOW() - INTERVAL '10 minutes', NOW(), NOW()
+      FROM greenhouses g
+      JOIN zones z ON z.uid = 'zn-ae4-sim'
+      JOIN recipe_revisions r ON r.recipe_id = (SELECT id FROM recipes WHERE name = 'ae4-sim-recipe' ORDER BY id DESC LIMIT 1)
+      WHERE g.uid = 'gh-ae4-sim'
+      ORDER BY r.id DESC
+      LIMIT 1;
+
+      INSERT INTO grow_cycle_phases (
+        grow_cycle_id, phase_index, name, nutrient_solution_volume_l,
+        irrigation_interval_sec, irrigation_duration_sec, started_at, created_at, updated_at
+      )
+      SELECT gc.id, 0, 'sim-veg', 40, 60, 2, NOW() - INTERVAL '10 minutes', NOW(), NOW()
+      FROM grow_cycles gc
+      JOIN zones z ON z.id = gc.zone_id AND z.uid = 'zn-ae4-sim'
+      WHERE gc.status = 'RUNNING'
+      ORDER BY gc.id DESC
+      LIMIT 1;
+
+      UPDATE grow_cycles gc
+      SET current_phase_id = gcp.id
+      FROM grow_cycle_phases gcp, zones z
+      WHERE gcp.grow_cycle_id = gc.id
+        AND gc.zone_id = z.id
+        AND z.uid = 'zn-ae4-sim'
+        AND gc.status = 'RUNNING';
+
+      INSERT INTO automation_effective_bundles (
+        scope_type, scope_id, bundle_revision, schema_revision, config, violations, status,
+        compiled_at, inputs_checksum, created_at, updated_at
+      )
+      SELECT 'grow_cycle', gc.id, 'ae4-sim-1', '1',
+        '{
+          "zone": {
+            "logic_profile": {
+              "active_profile": {
+                "command_plans": {
+                  "plans": {
+                    "irrigation_start": [
+                      {"node_uid":"nd-ae4-sim","channel":"valve_solution_supply","cmd":"set_relay","params":{"state":true}},
+                      {"node_uid":"nd-ae4-sim","channel":"valve_irrigation","cmd":"set_relay","params":{"state":true}},
+                      {"node_uid":"nd-ae4-sim","channel":"pump_main","cmd":"run_pump","params":{"duration_ms":2000}}
+                    ],
+                    "irrigation_stop": [
+                      {"node_uid":"nd-ae4-sim","channel":"pump_main","cmd":"set_relay","params":{"state":false}},
+                      {"node_uid":"nd-ae4-sim","channel":"valve_irrigation","cmd":"set_relay","params":{"state":false}},
+                      {"node_uid":"nd-ae4-sim","channel":"valve_solution_supply","cmd":"set_relay","params":{"state":false}}
+                    ],
+                    "clean_fill_start": [
+                      {"node_uid":"nd-ae4-sim","channel":"valve_clean_fill","cmd":"set_relay","params":{"state":true}}
+                    ],
+                    "clean_fill_stop": [
+                      {"node_uid":"nd-ae4-sim","channel":"valve_clean_fill","cmd":"set_relay","params":{"state":false}}
+                    ],
+                    "solution_fill_start": [
+                      {"node_uid":"nd-ae4-sim","channel":"valve_solution_fill","cmd":"set_relay","params":{"state":true}}
+                    ],
+                    "solution_fill_stop": [
+                      {"node_uid":"nd-ae4-sim","channel":"valve_solution_fill","cmd":"set_relay","params":{"state":false}}
+                    ]
+                  }
+                }
+              }
+            },
+            "correction": {
+              "resolved_config": {
+                "timing": {"telemetry_max_age_sec": 300, "stale_ec_allows_shot": "allow"},
+                "runtime": {"clean_fill_timeout_sec": 20, "solution_topup_timeout_sec": 20}
+              }
+            }
+          }
+        }'::jsonb,
+        '[]'::jsonb, 'valid', NOW(), 'ae4sim01checksum00000000000000000000', NOW(), NOW()
+      FROM grow_cycles gc
+      JOIN zones z ON z.id = gc.zone_id AND z.uid = 'zn-ae4-sim'
+      WHERE gc.status = 'RUNNING'
+      ORDER BY gc.id DESC
+      LIMIT 1;
+
+  - step: start_node_simulator
+    type: start_simulator
+    config_ref: node_sim.config
+    wait_seconds: 2
+
+  - step: read_zone
+    type: database_query
+    query: |
+      SELECT id AS zone_id FROM zones WHERE uid = 'zn-ae4-sim' LIMIT 1
+    save: zone_row
+    expected_rows: 1
+
+  - step: set_zone
+    type: set
+    zone_id: ${zone_row.0.zone_id}
+
+  - step: read_ts
+    type: database_query
+    query: SELECT EXTRACT(EPOCH FROM NOW())::bigint AS ts
+    save: ts_row
+    expected_rows: 1
+
+  - step: publish_feed_not_empty
+    type: mqtt_publish
+    topic: hydro/gh-ae4-sim/zn-ae4-sim/nd-ae4-sim/level_solution_min/telemetry
+    qos: 1
+    payload:
+      metric_type: WATER_LEVEL
+      value: 1
+      ts: ${ts_row.0.ts}
+
+  - step: publish_feed_not_full
+    type: mqtt_publish
+    topic: hydro/gh-ae4-sim/zn-ae4-sim/nd-ae4-sim/level_solution_max/telemetry
+    qos: 1
+    payload:
+      metric_type: WATER_LEVEL
+      value: 0
+      ts: ${ts_row.0.ts}
+
+  - step: publish_clean_not_empty
+    type: mqtt_publish
+    topic: hydro/gh-ae4-sim/zn-ae4-sim/nd-ae4-sim/level_clean_min/telemetry
+    qos: 1
+    payload:
+      metric_type: WATER_LEVEL
+      value: 1
+      ts: ${ts_row.0.ts}
+
+  - step: publish_clean_max
+    type: mqtt_publish
+    topic: hydro/gh-ae4-sim/zn-ae4-sim/nd-ae4-sim/level_clean_max/telemetry
+    qos: 1
+    payload:
+      metric_type: WATER_LEVEL
+      value: 0
+      ts: ${ts_row.0.ts}
+
+  - step: wait_level_sample
+    type: db_wait
+    timeout: 20
+    expected_rows: 1
+    query: |
+      SELECT tl.sensor_id
+      FROM telemetry_last tl
+      JOIN sensors s ON s.id = tl.sensor_id
+      WHERE s.zone_id = :zone_id
+        AND s.label = 'level_solution_min'
+    params:
+      zone_id: ${zone_id}
+
+  - step: wait_run_pump
+    type: wait_command
+    zone_id: ${zone_id}
+    timeout: 45
+    filter:
+      cmd: run_pump
+      status: DONE
+    save: pump_command

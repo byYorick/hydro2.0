@@ -24,7 +24,17 @@ actions:
     test_hardware_id: h${TIMESTAMP_S}
     test_node_uid_seed: nd-setup-${TIMESTAMP_S}
     test_gh_uid: gh-test-1
-    test_zone_uid: zn-test-1
+    test_zone_uid: zn-e03-${TIMESTAMP_S}
+    test_gh_token: tok-e03-${TIMESTAMP_S}
+
+  - step: seed_empty_zone
+    type: database_execute
+    query: |
+      INSERT INTO zones (greenhouse_id, uid, name, status, automation_runtime, control_mode, created_at, updated_at)
+      SELECT id, :zone_uid, 'E03', 'online', 'ae4', 'auto', NOW(), NOW()
+      FROM greenhouses WHERE uid = 'gh-test-1';
+    params:
+      zone_uid: ${test_zone_uid}
 
   - step: build_node_sim_config
     type: set
