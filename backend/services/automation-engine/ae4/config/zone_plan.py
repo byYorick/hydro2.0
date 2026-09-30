@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Mapping
 
 from ae4.domain.dose_policy import ControllerDoseParams
@@ -272,6 +272,7 @@ async def load_zone_plan(*, zone_id: int) -> ZonePlan:
         zone_bundle=zone_bundle,
         stale_ec_allows_shot=stale_ec_allows_shot,
     )
+    dose = await _attach_channel_dose_rates(zone_id=int(row["zone_id"]), dose=dose)
     pump_main_ml_per_sec = None
     if dose is not None:
         nutrition = dose.actuators.get("nutrition")
@@ -300,6 +301,61 @@ async def load_zone_plan(*, zone_id: int) -> ZonePlan:
         drain_tank_volume_l=None,
         pump_main_ml_per_sec=pump_main_ml_per_sec,
         channel_node_uids=await _channel_node_uids(zone_id=int(row["zone_id"])),
+    )
+
+
+_REAGENT_CHANNELS = {
+    "nutrition": "pump_a",
+    "ph_up": "pump_base",
+    "ph_down": "pump_acid",
+}
+
+
+async def _attach_channel_dose_rates(*, zone_id: int, dose: ZoneDosePlan) -> ZoneDosePlan:
+    """ml/сек активной калибровки канала, если в bundle его нет."""
+    rows = await fetch(
+        """
+        SELECT LOWER(nc.channel) AS channel, pc.ml_per_sec
+        FROM pump_calibrations AS pc
+        JOIN node_channels AS nc ON nc.id = pc.node_channel_id
+        JOIN nodes AS n ON n.id = nc.node_id
+        WHERE (n.zone_id = $1 OR n.pending_zone_id = $1)
+          AND pc.is_active = true
+          AND pc.ml_per_sec > 0
+          AND (pc.valid_to IS NULL OR pc.valid_to > NOW())
+        """,
+        zone_id,
+    )
+    rates: dict[str, float] = {}
+    for row in rows:
+        channel = str(row.get("channel") or "").strip()
+        ml = _optional_float(row.get("ml_per_sec"))
+        if channel and ml and ml > 0:
+            rates[channel] = ml
+    if not rates:
+        return dose
+    nutrition_ml = dose.ec.ml_per_sec or rates.get("pump_a")
+    ph_ml = dose.ph.ml_per_sec or rates.get("pump_acid") or rates.get("pump_base")
+    actuators = dict(dose.actuators)
+    for reagent, channel in _REAGENT_CHANNELS.items():
+        current = actuators.get(reagent)
+        ml = None
+        if current is not None and current.ml_per_sec:
+            ml = current.ml_per_sec
+        else:
+            ml = rates.get(channel)
+        if current is None and ml is None:
+            continue
+        actuators[reagent] = DoseActuatorRef(
+            node_uid=current.node_uid if current is not None else "",
+            channel=current.channel if current is not None and current.channel else channel,
+            ml_per_sec=ml,
+        )
+    return replace(
+        dose,
+        ec=replace(dose.ec, ml_per_sec=nutrition_ml),
+        ph=replace(dose.ph, ml_per_sec=ph_ml),
+        actuators=actuators,
     )
 
 
@@ -383,6 +439,17 @@ def _optional_int(value: Any) -> int | None:
     return number
 
 
+def _controller_mapping(correction_root: Mapping[str, Any], kind: str) -> Mapping[str, Any]:
+    """Контроллер лежит в `controllers` или, в compiled bundle, в `base.controllers`."""
+    direct = _dig(correction_root, "controllers", kind)
+    if isinstance(direct, Mapping) and direct:
+        return direct
+    nested = _dig(correction_root, "base", "controllers", kind)
+    if isinstance(nested, Mapping):
+        return nested
+    return {}
+
+
 def _controller_params(
     *,
     correction_root: Mapping[str, Any],
@@ -391,9 +458,7 @@ def _controller_params(
     min_dose_ms: int | None,
     ml_per_sec: float | None,
 ) -> ControllerDoseParams:
-    ctrl = _dig(correction_root, "controllers", kind)
-    if not isinstance(ctrl, Mapping):
-        ctrl = {}
+    ctrl = _controller_mapping(correction_root, kind)
     observe = ctrl.get("observe") if isinstance(ctrl.get("observe"), Mapping) else {}
     return ControllerDoseParams(
         gain=gain,

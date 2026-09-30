@@ -223,8 +223,8 @@ async def _resolve_actuator(
 def _default_channel(reagent: str) -> str:
     return {
         "nutrition": "pump_a",
-        "ph_up": "ph_up",
-        "ph_down": "ph_down",
+        "ph_up": "pump_base",
+        "ph_down": "pump_acid",
     }.get(reagent, "")
 
 
@@ -251,7 +251,9 @@ async def _lookup_node_uid(*, zone_id: int, channel: str) -> str:
         for item in channels:
             if not isinstance(item, Mapping):
                 continue
-            name = str(item.get("id") or item.get("channel") or "").strip().lower()
+            name = str(
+                item.get("name") or item.get("id") or item.get("channel") or ""
+            ).strip().lower()
             if name == want and node_uid:
                 return node_uid
     return ""

@@ -37,6 +37,14 @@ from ae4.infrastructure.zone_telemetry import (
 
 # Каналы irrigation_start из ZoneLogicProfileNormalizer::TWO_TANK_REQUIRED_PLAN_CHANNELS.
 _FEED_ONLY_REQUIRED_CHANNELS = ("valve_solution_supply", "valve_irrigation", "pump_main")
+# Интервал и окно наблюдения — коррекция уже запущена, новый вызов не нужен.
+_CORRECTION_IN_PROGRESS = frozenset(
+    {
+        "reagent_min_interval",
+        "reagent_observation_pending",
+    }
+)
+
 _DRAIN_OR_RETURN_CHANNELS = frozenset(
     {
         "valve_drain",
@@ -271,6 +279,26 @@ def decide_mutation(
             dose_decision=dose,
         )
     if dose.allow_pulse and dose.dose_ml is not None and dose.reagent:
+        if _solution_outside_corridor(
+            phase=phase,
+            telemetry=telemetry,
+            now=now,
+            telemetry_max_age_sec=plan.telemetry_max_age_sec,
+        ) and not _steps_bound(plan=plan, plan_key="sensor_mode_activate"):
+            return MutationDecision(
+                kind=None,
+                reason_code="solution_not_ready",
+                human_message=(
+                    "Раствор вне коридора, но нет шагов sensor_mode_activate — "
+                    "импульс не публикуется. Полив остановлен, ждём решения."
+                ),
+                failed=False,
+                create_task=False,
+                create_alert=True,
+                dose_ml=float(dose.dose_ml),
+                reagent=str(dose.reagent),
+                dose_decision=dose,
+            )
         return MutationDecision(
             kind="dose_pulse",
             reason_code=dose.reason_code,
@@ -280,6 +308,31 @@ def decide_mutation(
             create_alert=False,
             dose_ml=float(dose.dose_ml),
             reagent=str(dose.reagent),
+            dose_decision=dose,
+        )
+
+    unready = _solution_outside_corridor(
+        phase=phase,
+        telemetry=telemetry,
+        now=now,
+        telemetry_max_age_sec=plan.telemetry_max_age_sec,
+    )
+    if unready is not None:
+        correcting = dose.reason_code in _CORRECTION_IN_PROGRESS
+        return MutationDecision(
+            kind=None,
+            reason_code="solution_correcting" if correcting else "solution_not_ready",
+            human_message=(
+                f"{unready} Коррекция уже идёт — полив ждёт следующий импульс."
+                if correcting
+                else (
+                    f"{unready} Импульс в этом тике не публикуется "
+                    f"({dose.reason_code}). Полив остановлен, ждём решения."
+                )
+            ),
+            failed=False,
+            create_task=False,
+            create_alert=not correcting,
             dose_decision=dose,
         )
 
@@ -487,6 +540,71 @@ def _decide_dose(
         ec_drain_sample=telemetry.ec_drain,
         ec_max=phase.ec_max,
     )
+
+
+def _solution_outside_corridor(
+    *,
+    phase: PhaseTargets,
+    telemetry: ZoneTelemetrySnapshot,
+    now: datetime,
+    telemetry_max_age_sec: int,
+) -> str | None:
+    """Свежий pH или EC вне коридора фазы. Протухшая проба кадр этим фактом не держит."""
+    parts: list[str] = []
+    ph = telemetry.ph_feed
+    if (
+        ph is not None
+        and _sample_fresh(sample=ph, now=now, telemetry_max_age_sec=telemetry_max_age_sec)
+        and _value_outside_corridor(
+            value=float(ph.value),
+            low=phase.ph_min,
+            high=phase.ph_max,
+        )
+    ):
+        parts.append(
+            f"pH {float(ph.value):g} вне коридора {_corridor_label(phase.ph_min, phase.ph_max)}."
+        )
+    ec = telemetry.ec_feed
+    if (
+        ec is not None
+        and _sample_fresh(sample=ec, now=now, telemetry_max_age_sec=telemetry_max_age_sec)
+        and _value_outside_corridor(
+            value=float(ec.value),
+            low=phase.ec_min,
+            high=phase.ec_max,
+        )
+    ):
+        parts.append(
+            f"EC {float(ec.value):g} вне коридора {_corridor_label(phase.ec_min, phase.ec_max)}."
+        )
+    if not parts:
+        return None
+    return "Раствор для полива не готов: " + " ".join(parts)
+
+
+def _corridor_label(low: float | None, high: float | None) -> str:
+    if low is not None and high is not None:
+        return f"{float(low):g}–{float(high):g}"
+    if low is not None:
+        return f"не ниже {float(low):g}"
+    if high is not None:
+        return f"не выше {float(high):g}"
+    return "фазы"
+
+
+def _value_outside_corridor(
+    *,
+    value: float,
+    low: float | None,
+    high: float | None,
+) -> bool:
+    if low is None and high is None:
+        return False
+    if low is not None and value < float(low):
+        return True
+    if high is not None and value > float(high):
+        return True
+    return False
 
 
 def _ec_above_corridor(

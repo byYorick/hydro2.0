@@ -252,7 +252,9 @@ async def report_planting_decision(
             message=message,
             zone_id=zone_id,
             alert_type="AE4 Policy Pause",
-            severity="warning",
+            severity=(
+                "critical" if reason_code == "solution_not_ready" else "warning"
+            ),
             details=payload,
             dedupe_key=str(
                 alert_dedupe_key or f"ae4-pause:{zone_id}:{reason_code}"

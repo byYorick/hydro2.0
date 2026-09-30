@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timezone
 
 from ae4.application.mutation_decision import decide_mutation
@@ -13,6 +14,18 @@ from tests.unit.ae4.conftest_wave4 import make_dose_plan
 def test_e209_fresh_ph_below_target_one_pulse() -> None:
     now = datetime(2026, 6, 1, 10, 0, tzinfo=timezone.utc)
     plan = make_plan(dose=make_dose_plan())
+    plans = dict(plan.command_plans)
+    inner = dict(plans["plans"])
+    inner["sensor_mode_activate"] = [
+        {
+            "node_uid": "nd-ph",
+            "channel": "ph_sensor",
+            "cmd": "set_relay",
+            "params": {"state": True},
+        }
+    ]
+    plans["plans"] = inner
+    plan = replace(plan, command_plans=plans)
     phase = make_phase(
         started_at=now.replace(hour=8),
         ph_target=5.8,

@@ -99,6 +99,7 @@ void app_main(void) {
     esp_log_level_set("*", ESP_LOG_ERROR);
     esp_log_level_set("test_node_cmd", ESP_LOG_INFO);
     esp_log_level_set("test_node_main", ESP_LOG_INFO);
+    esp_log_level_set("test_node_ui", ESP_LOG_INFO);
 
     if (xTaskCreate(
         test_node_bootstrap_task,
