@@ -10,7 +10,7 @@ from ae3lite.application.dto.stage_outcome import StageOutcome
 from ae3lite.application.handlers.base import BaseStageHandler
 from ae3lite.domain.errors import TaskExecutionError
 from ae3lite.infrastructure.metrics import IRRIGATION_DECISION, inc_observability_write_failed
-from common.biz_alerts import send_biz_alert
+from ae3lite.hydraulics.failure_report import note_upward_report
 from common.db import create_zone_event
 
 
@@ -81,7 +81,7 @@ class DecisionGateHandler(BaseStageHandler):
 
         try:
             if decision.outcome == "skip":
-                await send_biz_alert(
+                await note_upward_report(
                     code="biz_irrigation_decision_skip",
                     alert_type="AE3 Irrigation Decision Skip",
                     message="Decision-controller полива решил пропустить запуск.",
@@ -104,7 +104,7 @@ class DecisionGateHandler(BaseStageHandler):
                     scope_parts=("stage:decision_gate",),
                 )
             if decision.outcome == "degraded_run":
-                await send_biz_alert(
+                await note_upward_report(
                     code="biz_irrigation_decision_degraded",
                     alert_type="AE3 Irrigation Decision Degraded",
                     message="Decision-controller полива разрешил деградированный запуск.",
@@ -127,7 +127,7 @@ class DecisionGateHandler(BaseStageHandler):
                     scope_parts=("stage:decision_gate",),
                 )
             if decision.outcome == "fail":
-                await send_biz_alert(
+                await note_upward_report(
                     code="biz_irrigation_decision_fail",
                     alert_type="AE3 Irrigation Decision Fail",
                     message="Decision-controller полива вернул отказ.",

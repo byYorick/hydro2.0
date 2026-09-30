@@ -391,6 +391,13 @@ def _normalize_fail_safe_actuators(actuators: Sequence[Any]) -> tuple[Mapping[st
     return tuple(out)
 
 
+def _topology_fail_safe_on_flow(topology: str) -> bool:
+    from ae3lite.application.services.workflow_topology import TopologyRegistry
+
+    pack = TopologyRegistry().try_pack(str(topology or "").strip().lower())
+    return pack is not None and pack.fail_safe_on_flow
+
+
 async def attempt_task_fail_safe_shutdown(
     *,
     task: Any,
@@ -414,7 +421,7 @@ async def attempt_task_fail_safe_shutdown(
         )
 
     topology = str(getattr(task, "topology", "") or "").strip().lower()
-    if topology and topology not in {"two_tank", "two_tank_drip_substrate_trays"}:
+    if not _topology_fail_safe_on_flow(topology):
         return CorrectionInterruptFailSafeStopResult(
             attempted=False,
             success=False,
@@ -518,7 +525,7 @@ async def attempt_correction_interrupt_fail_safe_stop(
         )
 
     topology = str(check.topology or "").strip().lower()
-    if topology and topology not in {"two_tank", "two_tank_drip_substrate_trays"}:
+    if not _topology_fail_safe_on_flow(topology):
         return CorrectionInterruptFailSafeStopResult(
             attempted=False,
             success=False,

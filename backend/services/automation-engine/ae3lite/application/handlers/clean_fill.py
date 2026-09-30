@@ -9,7 +9,7 @@ from typing import Any, Mapping
 from ae3lite.application.dto.stage_outcome import StageOutcome
 from ae3lite.application.handlers.base import BaseStageHandler
 from ae3lite.infrastructure.metrics import STAGE_DEADLINE_EXCEEDED
-from common.biz_alerts import send_biz_alert
+from ae3lite.hydraulics.failure_report import note_upward_report
 
 _logger = logging.getLogger(__name__)
 
@@ -139,7 +139,7 @@ class CleanFillCheckHandler(BaseStageHandler):
                 stage="clean_fill_check",
             ).inc()
             try:
-                await send_biz_alert(
+                await note_upward_report(
                     code="biz_clean_fill_timeout",
                     alert_type="AE3 Clean Fill Timeout",
                     message="Превышено время заполнения бака чистой водой после всех циклов повтора.",

@@ -15,10 +15,6 @@ def _noop_flow_path_events(monkeypatch: pytest.MonkeyPatch) -> None:
         "ae3lite.application.handlers.flow_path_guard.create_zone_event",
         AsyncMock(return_value=None),
     )
-    monkeypatch.setattr(
-        "ae3lite.application.handlers.flow_path_guard.send_biz_alert",
-        AsyncMock(return_value=None),
-    )
 
 
 @pytest.fixture(autouse=True)

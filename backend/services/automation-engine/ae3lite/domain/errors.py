@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from enum import Enum
+from typing import Any
 
 
 class TaskStatus(str, Enum):
@@ -75,6 +76,7 @@ class ErrorCodes:
 
     # Переходы между stage
     AE3_UNKNOWN_HANDLER = "ae3_unknown_handler"
+    AE3_STAGE_SYSTEM_MISMATCH = "ae3_stage_system_mismatch"
     AE3_UNKNOWN_OUTCOME_KIND = "ae3_unknown_outcome_kind"
     AE3_TRANSITION_NO_NEXT_STAGE = "ae3_transition_no_next_stage"
     AE3_COMMAND_NO_ROUTING = "ae3_command_no_routing"
@@ -231,6 +233,7 @@ class TaskExecutionError(Ae3LiteError):
     def __init__(self, code: str, message: str) -> None:
         super().__init__(message)
         self.code = str(code or "ae3_task_execution_failed").strip() or "ae3_task_execution_failed"
+        self.upward_reports: tuple[Any, ...] = ()
 
 
 class TaskTerminalStateReached(Ae3LiteError):

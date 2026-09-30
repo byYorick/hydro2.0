@@ -15,6 +15,18 @@ logger = logging.getLogger(__name__)
 
 _STARTUP_MANUAL_HOLD_TIMEOUT_DEFAULT_SEC = 3600
 
+
+def _topology_has_clean_fill(task: Any) -> bool:
+    """Пакет без стадии clean_fill наполняет бак раствора сразу после probe."""
+    from ae3lite.application.services.workflow_topology import TopologyRegistry
+
+    topology = str(getattr(task, "topology", "") or "").strip().lower()
+    pack = TopologyRegistry().try_pack(topology)
+    if pack is None:
+        return True
+    return "clean_fill_start" in pack.stages
+
+
 class StartupHandler(BaseStageHandler):
     """Обрабатывает stage ``startup``: probe, проверка уровня и условная маршрутизация."""
 
@@ -41,6 +53,8 @@ class StartupHandler(BaseStageHandler):
         # SetControlModeUseCase). См. CONTROL_MODES_SPEC §6.3 / §9.7.
         await self._clear_manual_to_auto_reconcile_flag(task=task)
         runtime = self._require_runtime_plan(plan=plan)
+        if not _topology_has_clean_fill(task):
+            return StageOutcome(kind="transition", next_stage="solution_fill_start")
 
         clean_max = await self._read_level(
             task=task,

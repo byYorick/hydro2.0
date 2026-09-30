@@ -11,7 +11,7 @@ from ae3lite.application.dto.stage_outcome import StageOutcome
 from ae3lite.application.runtime_event_contract import with_runtime_event_contract
 from ae3lite.domain.errors import TaskExecutionError
 from ae3lite.infrastructure.metrics import FLOW_STOP_FAILED, inc_observability_write_failed
-from common.biz_alerts import send_biz_alert
+from ae3lite.hydraulics.failure_report import note_upward_report
 from common.db import create_zone_event
 
 _logger = logging.getLogger(__name__)
@@ -105,7 +105,10 @@ _FLOW_PATH_FAIL_SAFE_PREFIXES = (
 def should_fail_safe_shutdown_on_task_fail(task: Any) -> bool:
     """True for irrigation/fill/recirc/topup flow-path; False for mid-dose correction."""
     topology = str(getattr(task, "topology", "") or "").strip().lower()
-    if topology not in {"two_tank", "two_tank_drip_substrate_trays"}:
+    from ae3lite.application.services.workflow_topology import TopologyRegistry
+
+    pack = TopologyRegistry().try_pack(topology)
+    if pack is None or not pack.fail_safe_on_flow:
         return False
     corr_step = ""
     correction = getattr(task, "correction", None)
@@ -402,7 +405,7 @@ async def _emit_flow_stop_failed(
         )
 
     try:
-        await send_biz_alert(
+        await note_upward_report(
             zone_id=int(task.zone_id),
             code="biz_flow_stop_failed_hardware_may_be_active",
             severity="critical",

@@ -7,8 +7,16 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Mapping, Optional, Tuple
+
+from ae3lite.application.services.topology_pack import (
+    HYDRAULIC_ENTRY_BY_TASK_TYPE,
+    SINGLE_TANK_COMMAND_PLAN_KEYS,
+    TWO_TANK_COMMAND_PLAN_KEYS,
+    TopologyPack,
+)
+from ae3lite.hydraulics.ownership import system_for_stage
 
 
 # ---------------------------------------------------------------------------
@@ -27,6 +35,8 @@ class StageDef:
         next_stage: Статический stage-приёмник после успешного выполнения команды.
         terminal_error: ``(error_code, error_message)``; если задан, stage терминально падает.
         timeout_key: Ключ runtime-конфига для вычисления ``stage_deadline_at``.
+        system: Модуль гидравлики, которому принадлежит стадия
+            (``solution`` / ``irrigation`` / ``executor``).
         has_correction: Может ли этот check-stage запускать цикл коррекции.
         on_corr_success: Stage перехода при успешной коррекции.
         on_corr_fail: Stage перехода при неуспешной коррекции.
@@ -45,6 +55,7 @@ class StageDef:
 
     # Проверочные stage
     timeout_key: Optional[str] = None
+    system: str = ""
     has_correction: bool = False
     on_corr_success: Optional[str] = None
     on_corr_fail: Optional[str] = None
@@ -54,7 +65,7 @@ class StageDef:
 # Topology two-tank drip substrate trays (полный граф)
 # ---------------------------------------------------------------------------
 
-TWO_TANK: Mapping[str, StageDef] = {
+_TWO_TANK_STAGES: Mapping[str, StageDef] = {
     # === Startup ===
     "startup": StageDef(
         "startup",
@@ -356,6 +367,20 @@ TWO_TANK: Mapping[str, StageDef] = {
 }
 
 
+def _bind_hydraulic_system(graph: Mapping[str, StageDef]) -> dict[str, StageDef]:
+    """Проставляет владельца стадии из каталога модулей гидравлики."""
+    bound: dict[str, StageDef] = {}
+    for name, stage in graph.items():
+        system = system_for_stage(name)
+        if system is None:
+            raise RuntimeError(f"Стадия {name} не назначена модулю гидравлики")
+        bound[name] = replace(stage, system=system)
+    return bound
+
+
+TWO_TANK: Mapping[str, StageDef] = _bind_hydraulic_system(_TWO_TANK_STAGES)
+
+
 # ---------------------------------------------------------------------------
 # Topology generic_cycle_start (simple single-batch diagnostics)
 # ---------------------------------------------------------------------------
@@ -367,35 +392,170 @@ GENERIC_CYCLE_START: Mapping[str, StageDef] = {
 }
 
 
-# ---------------------------------------------------------------------------
-# Реестр
-# ---------------------------------------------------------------------------
-
-# Каноническое имя topology → граф stage
-_TOPOLOGIES: Mapping[str, Mapping[str, StageDef]] = {
-    "two_tank_drip_substrate_trays": TWO_TANK,
-    "two_tank": TWO_TANK,  # short alias used in legacy intents
-    "generic_cycle_start": GENERIC_CYCLE_START,
+LIGHTING_TICK_STAGES: Mapping[str, StageDef] = {
+    # Текущий intent пишет current_stage='apply'. Tick остаётся одним command batch.
+    "apply": StageDef(
+        "apply",
+        "command",
+        workflow_phase="ready",
+        command_plans=("lighting_tick",),
+    ),
 }
 
 
+def _without_clean_fill(graph: Mapping[str, StageDef]) -> dict[str, StageDef]:
+    """Скомпилированный вариант графа: нет стадий чистого бака."""
+    dropped = {name for name in graph if name.startswith("clean_fill_")}
+    compiled: dict[str, StageDef] = {}
+    for name, stage in graph.items():
+        if name in dropped:
+            continue
+        next_stage = stage.next_stage
+        if next_stage in dropped:
+            next_stage = "solution_fill_start"
+        if next_stage != stage.next_stage:
+            stage = replace(stage, next_stage=next_stage)
+        compiled[name] = stage
+    return compiled
+
+
+SINGLE_TANK: Mapping[str, StageDef] = _without_clean_fill(TWO_TANK)
+
+
+def _hydraulic_pack(
+    pack_id: str,
+    *,
+    stages: Mapping[str, StageDef],
+    irrigation_binding: str,
+    command_plan_keys: frozenset[str],
+    plan_profile: str,
+) -> TopologyPack:
+    return TopologyPack(
+        id=pack_id,
+        stages=stages,
+        required_node_types=frozenset({"irrig", "ph", "ec"}),
+        required_subsystems=("solution", "irrigation", "correction"),
+        optional_subsystems=("solution_change", "solution_topup"),
+        entry_by_task_type=HYDRAULIC_ENTRY_BY_TASK_TYPE,
+        command_plan_keys=command_plan_keys,
+        irrigation_binding=irrigation_binding,
+        scope="zone",
+        plan_profile=plan_profile,
+        execution_mode="workflow",
+        check_stage_ownership=True,
+        fail_safe_on_flow=True,
+        tracks_correction_authority=True,
+        retries_missing_actuators=True,
+    )
+
+
+TWO_TANK_PACK = _hydraulic_pack(
+    "two_tank",
+    stages=TWO_TANK,
+    irrigation_binding="generic",
+    command_plan_keys=TWO_TANK_COMMAND_PLAN_KEYS,
+    plan_profile="two_tank",
+)
+DRIP_SUBSTRATE_TRAYS_PACK = _hydraulic_pack(
+    "two_tank_drip_substrate_trays",
+    stages=TWO_TANK,
+    irrigation_binding="drip_substrate_trays",
+    command_plan_keys=TWO_TANK_COMMAND_PLAN_KEYS,
+    plan_profile="two_tank",
+)
+SINGLE_TANK_PACK = _hydraulic_pack(
+    "single_tank",
+    stages=SINGLE_TANK,
+    irrigation_binding="single_tank",
+    command_plan_keys=SINGLE_TANK_COMMAND_PLAN_KEYS,
+    plan_profile="single_tank",
+)
+GENERIC_CYCLE_START_PACK = TopologyPack(
+    id="generic_cycle_start",
+    stages=GENERIC_CYCLE_START,
+    required_node_types=frozenset({"irrig"}),
+    required_subsystems=(),
+    optional_subsystems=("diagnostics",),
+    entry_by_task_type={"cycle_start": "startup"},
+    command_plan_keys=frozenset(),
+    plan_profile="diagnostics",
+    execution_mode="command_batch",
+    check_stage_ownership=False,
+)
+LIGHTING_TICK_PACK = TopologyPack(
+    id="lighting_tick",
+    stages=LIGHTING_TICK_STAGES,
+    required_node_types=frozenset(),
+    required_subsystems=("lighting",),
+    optional_subsystems=(),
+    entry_by_task_type={"lighting_tick": "apply"},
+    command_plan_keys=frozenset({"lighting_tick"}),
+    scope="zone",
+    plan_profile="lighting",
+    execution_mode="command_batch",
+    check_stage_ownership=False,
+)
+
+
+# Каноническое имя topology → пакет
+_PACKS: Mapping[str, TopologyPack] = {
+    TWO_TANK_PACK.id: TWO_TANK_PACK,
+    DRIP_SUBSTRATE_TRAYS_PACK.id: DRIP_SUBSTRATE_TRAYS_PACK,
+    SINGLE_TANK_PACK.id: SINGLE_TANK_PACK,
+    GENERIC_CYCLE_START_PACK.id: GENERIC_CYCLE_START_PACK,
+    LIGHTING_TICK_PACK.id: LIGHTING_TICK_PACK,
+}
+
+
+def _pack_from_stages(pack_id: str, stages: Mapping[str, StageDef]) -> TopologyPack:
+    """Тестовый граф без каталога модулей."""
+    return TopologyPack(
+        id=pack_id,
+        stages=stages,
+        required_node_types=frozenset(),
+        required_subsystems=(),
+        optional_subsystems=(),
+        entry_by_task_type={},
+        command_plan_keys=frozenset(),
+        execution_mode="command_batch",
+        check_stage_ownership=False,
+    )
+
+
 class TopologyRegistry:
-    """Сервис lookup для описаний stage внутри topology."""
+    """Сервис lookup для пакетов topology и их stage."""
 
     def __init__(
         self,
-        topologies: Mapping[str, Mapping[str, StageDef]] | None = None,
+        topologies: Mapping[str, TopologyPack | Mapping[str, StageDef]] | None = None,
     ) -> None:
-        self._topologies = dict(topologies or _TOPOLOGIES)
+        source = _PACKS if topologies is None else topologies
+        packs: dict[str, TopologyPack] = {}
+        for key, value in source.items():
+            if isinstance(value, TopologyPack):
+                packs[key] = value
+            else:
+                packs[key] = _pack_from_stages(key, value)
+        self._packs = packs
+
+    def pack(self, topology: str) -> TopologyPack:
+        found = self._packs.get(topology)
+        if found is None:
+            raise KeyError(f"Неизвестная topology: {topology!r}")
+        return found
+
+    def try_pack(self, topology: str) -> Optional[TopologyPack]:
+        return self._packs.get(str(topology or "").strip().lower())
+
+    def ids(self) -> Tuple[str, ...]:
+        return tuple(self._packs)
 
     def get(self, topology: str, stage: str) -> StageDef:
         """Возвращает :class:`StageDef` для пары *topology* / *stage*.
 
         Выбрасывает :class:`KeyError`, если topology или stage неизвестны.
         """
-        topo = self._topologies.get(topology)
-        if topo is None:
-            raise KeyError(f"Неизвестная topology: {topology!r}")
+        topo = self.pack(topology).stages
         stage_def = topo.get(stage)
         if stage_def is None:
             raise KeyError(
@@ -405,19 +565,17 @@ class TopologyRegistry:
 
     def stages(self, topology: str) -> Mapping[str, StageDef]:
         """Возвращает полный граф stage для *topology*."""
-        topo = self._topologies.get(topology)
-        if topo is None:
-            raise KeyError(f"Неизвестная topology: {topology!r}")
-        return topo
+        return self.pack(topology).stages
 
     def has_topology(self, topology: str) -> bool:
-        return topology in self._topologies
+        return topology in self._packs
 
     def validate(self, topology: str) -> list[str]:
         """Возвращает список ошибок валидации, пустой при согласованном графе."""
-        topo = self._topologies.get(topology)
-        if topo is None:
+        found = self._packs.get(topology)
+        if found is None:
             return [f"Неизвестная topology: {topology!r}"]
+        topo = found.stages
         errors: list[str] = []
         for name, sdef in topo.items():
             if sdef.name != name:
@@ -450,7 +608,32 @@ class TopologyRegistry:
                 errors.append(
                     f"Stage {name!r} одновременно содержит terminal_error и next_stage"
                 )
+            if found.check_stage_ownership:
+                expected = system_for_stage(name)
+                if expected is None or sdef.system != expected:
+                    errors.append(
+                        f"Stage {name!r} принадлежит системе {sdef.system!r}, "
+                        f"каталог модулей ожидает {expected!r}"
+                    )
+        entry_targets = set(found.entry_by_task_type.values())
+        missing_entries = sorted(entry_targets - set(topo))
+        for missing in missing_entries:
+            errors.append(
+                f"Topology {topology!r} ссылается на неизвестный entry stage {missing!r}"
+            )
         return errors
 
 
-__all__ = ["GENERIC_CYCLE_START", "StageDef", "TopologyRegistry", "TWO_TANK"]
+__all__ = [
+    "DRIP_SUBSTRATE_TRAYS_PACK",
+    "GENERIC_CYCLE_START",
+    "GENERIC_CYCLE_START_PACK",
+    "LIGHTING_TICK_PACK",
+    "SINGLE_TANK",
+    "SINGLE_TANK_PACK",
+    "StageDef",
+    "TWO_TANK",
+    "TWO_TANK_PACK",
+    "TopologyPack",
+    "TopologyRegistry",
+]

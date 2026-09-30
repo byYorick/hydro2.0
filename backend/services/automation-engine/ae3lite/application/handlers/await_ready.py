@@ -17,7 +17,7 @@ from ae3lite.infrastructure.metrics import (
     IRRIGATION_WAIT_READY_RESOLVED,
     IRRIGATION_WAIT_READY_TIMEOUT,
 )
-from common.biz_alerts import send_biz_alert
+from ae3lite.hydraulics.failure_report import note_upward_report
 from common.db import create_zone_event
 
 
@@ -130,7 +130,7 @@ class AwaitReadyHandler(BaseStageHandler):
                     exc_info=True,
                 )
             try:
-                await send_biz_alert(
+                await note_upward_report(
                     code="biz_irrigation_wait_ready_timeout",
                     alert_type="AE3 Irrigation Wait Ready Timeout",
                     message="Полив превысил время ожидания на этапе await_ready: зона не перешла в READY.",

@@ -22,7 +22,7 @@ from ae3lite.infrastructure.metrics import (
     IRRIGATION_REPLAY,
     IRRIGATION_SOLUTION_MIN,
 )
-from common.biz_alerts import send_biz_alert
+from ae3lite.hydraulics.failure_report import note_upward_report
 from common.db import create_zone_event
 
 
@@ -427,7 +427,7 @@ class IrrigationCheckHandler(BaseStageHandler):
         next_replay_count = int(getattr(task, "irrigation_replay_count", 0) or 0) + 1
         if next_replay_count > max_replays:
             try:
-                await send_biz_alert(
+                await note_upward_report(
                     code="biz_irrigation_replay_exhausted",
                     alert_type="AE3 Irrigation Replay Exhausted",
                     message="Исчерпан бюджет повторов после повторных срабатываний нижнего уровня раствора.",
@@ -486,7 +486,7 @@ class IrrigationCheckHandler(BaseStageHandler):
                 exc_info=True,
             )
         try:
-            await send_biz_alert(
+            await note_upward_report(
                 code="biz_irrigation_solution_min",
                 alert_type="AE3 Irrigation Solution Min",
                 message="Во время полива сработал нижний датчик уровня раствора.",

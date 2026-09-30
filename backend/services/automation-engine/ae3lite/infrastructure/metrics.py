@@ -592,7 +592,7 @@ def initialize_counter_series() -> None:
     for error_type in ("LeaseLost", "TimeoutError"):
         TICK_ERRORS.labels(error_type=error_type)
 
-    for topology in ("two_tank_drip_substrate_trays", "two_tank", "generic_cycle_start"):
+    for topology in registry.ids():
         IRRIGATION_SOLUTION_MIN.labels(topology=topology)
         for component in ("A", "B", "micro"):
             IRRIGATION_EC_COMPONENT_DOSE.labels(topology=topology, component=component)

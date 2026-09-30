@@ -916,14 +916,15 @@ async def test_corr_check_max_attempts_exceeded_still_sends_alert_in_prepare_rec
     )
     monitor = _MockRuntimeMonitor(ph=4.0, ec=0.5)
     handler = _make_handler(monitor=monitor)
-    send_alert = AsyncMock(return_value=True)
-    monkeypatch.setattr("ae3lite.application.handlers.correction.send_biz_alert", send_alert)
     monkeypatch.setattr("ae3lite.application.handlers.correction.create_zone_event", AsyncMock(return_value=None))
 
     await handler.run(task=task, plan=_MockPlan(), stage_def=None, now=NOW)
 
-    send_alert.assert_awaited_once()
-    assert send_alert.await_args.kwargs["message"] == "Цикл коррекции исчерпал все настроенные попытки."
+    from ae3lite.hydraulics.failure_report import drain_upward_reports
+
+    reports = drain_upward_reports()
+    assert len(reports) == 1
+    assert reports[0].message == "Цикл коррекции исчерпал все настроенные попытки."
 
 
 async def test_corr_check_keeps_ec_and_ph_in_same_correction_window(monkeypatch: pytest.MonkeyPatch):
@@ -1829,9 +1830,7 @@ async def test_corr_wait_ec_three_no_effect_attempts_fail_closed_solution_fill(m
         }
     }
     task = _make_task(corr=corr)
-    send_alert = AsyncMock(return_value=True)
     create_event = AsyncMock(return_value=None)
-    monkeypatch.setattr("ae3lite.application.handlers.correction.send_biz_alert", send_alert)
     monkeypatch.setattr("ae3lite.application.handlers.correction.create_zone_event", create_event)
     monitor = _MockRuntimeMonitor(ec_samples=[
         {"ts": NOW - timedelta(seconds=4), "value": 1.01},
@@ -1844,8 +1843,11 @@ async def test_corr_wait_ec_three_no_effect_attempts_fail_closed_solution_fill(m
 
     assert outcome.kind == "transition"
     assert outcome.next_stage == "solution_fill_timeout_stop"
-    send_alert.assert_awaited_once()
-    assert send_alert.await_args.kwargs["message"] == (
+    from ae3lite.hydraulics.failure_report import drain_upward_reports
+
+    reports = drain_upward_reports()
+    assert len(reports) == 1
+    assert reports[0].message == (
         "Коррекция EC не дала наблюдаемого эффекта 3 раз подряд."
     )
     assert create_event.await_count == 2

@@ -10,11 +10,13 @@ from datetime import datetime
 from datetime import timedelta
 from typing import Any, Mapping
 
+from ae3lite.application.services.workflow_topology import TopologyRegistry
 from ae3lite.config.schema import RuntimePlan
 from ae3lite.application.services.task_failed_alert import emit_task_failed_alert
 from ae3lite.application.use_cases.finalize_task import FinalizeTaskUseCase
 from ae3lite.application.runtime_event_contract import with_runtime_event_contract
 from ae3lite.infrastructure.metrics import FLOW_STOP_FAILED, TASK_RUNNING_TRANSITION_MISSED, inc_observability_write_failed
+from ae3lite.hydraulics.failure_report import publish_upward_reports
 from common.db import create_zone_event
 from common.infra_alerts import send_infra_alert
 from common.biz_alerts import send_biz_alert
@@ -40,8 +42,6 @@ SNAPSHOT_TRANSIENT_MAX_STAGE_AGE_SEC = max(
     int(os.getenv("AE3_SNAPSHOT_TRANSIENT_MAX_STAGE_AGE_SEC", "600")),
 )
 NODE_PERSISTENT_DEAD_SEC = max(60, int(os.getenv("AE3_NODE_PERSISTENT_DEAD_SEC", "600")))
-TWO_TANK_TOPOLOGIES = frozenset({"two_tank", "two_tank_drip_substrate_trays"})
-TWO_TANK_REQUIRED_NODE_TYPES = frozenset({"irrig", "ph", "ec"})
 SNAPSHOT_RETRY_SCHEDULED_CODE = "infra_ae3_snapshot_retry_scheduled"
 SNAPSHOT_RETRY_EXHAUSTED_CODE = "ae3_snapshot_retry_exhausted"
 COMMAND_SEND_RETRY_SEC = max(1, int(os.getenv("AE3_COMMAND_SEND_RETRY_SEC", "8")))
@@ -154,9 +154,10 @@ class ExecuteTaskUseCase:
                     )
                 start_observability_emitted = True
 
-            # В v2 все two_tank-задачи идут через WorkflowRouter
+            # Workflow-пакеты идут через WorkflowRouter. Tick и diagnostics — command batch.
             topology = running_task.topology
-            if topology in ("two_tank", "two_tank_drip_substrate_trays"):
+            pack = TopologyRegistry().try_pack(str(topology or ""))
+            if pack is not None and pack.execution_mode == "workflow":
                 final_task = await self._workflow_router.run(task=running_task, plan=plan, now=now)
                 await self._mark_correction_config_applied_if_needed(
                     task=final_task,
@@ -369,6 +370,7 @@ class ExecuteTaskUseCase:
                 extra_details=dict(snapshot_details) if snapshot_details else None,
             )
         except (PlannerConfigurationError, TaskExecutionError, TaskFinalizeError) as exc:
+            reports = tuple(getattr(exc, "upward_reports", ()) or ())
             if first_run and not start_observability_emitted and isinstance(exc, PlannerConfigurationError):
                 self._emit_start_readiness_failed(
                     task=running_task,
@@ -381,6 +383,7 @@ class ExecuteTaskUseCase:
                 fallback_task=running_task,
             )
             if terminal_task is not None:
+                await publish_upward_reports(reports)
                 logger.info(
                     "AE3 execution задачи остановлено после внешнего terminal transition: zone_id=%s task_id=%s status=%s reason=%s",
                     getattr(terminal_task, "zone_id", None),
@@ -433,6 +436,7 @@ class ExecuteTaskUseCase:
                 error_message=error_message,
                 now=now,
                 extra_details=execution_extra_details,
+                upward_reports=reports,
             )
         except Exception as exc:
             message = str(exc).strip() or exc.__class__.__name__
@@ -676,8 +680,10 @@ class ExecuteTaskUseCase:
 
     def _is_transient_snapshot_gap(self, *, task: Any, error_code: str) -> bool:
         topology = str(getattr(task, "topology", "") or "").strip().lower()
+        pack = TopologyRegistry().try_pack(topology)
         return (
-            topology in TWO_TANK_TOPOLOGIES
+            pack is not None
+            and pack.retries_missing_actuators
             and str(error_code or "").strip() == ErrorCodes.AE3_SNAPSHOT_NO_ONLINE_ACTUATOR_CHANNELS
         )
 
@@ -754,7 +760,8 @@ class ExecuteTaskUseCase:
         чтобы оператор не получал общую ошибку «no online actuator channels».
         """
         topology = str(getattr(task, "topology", "") or "").strip().lower()
-        if topology not in TWO_TANK_TOPOLOGIES:
+        pack = TopologyRegistry().try_pack(topology)
+        if pack is None or pack.execution_mode != "workflow" or not pack.required_node_types:
             return
         actuators = getattr(snapshot, "actuators", ()) or ()
         present_types = {
@@ -762,7 +769,7 @@ class ExecuteTaskUseCase:
             for actuator in actuators
         }
         present_types.discard("")
-        missing = sorted(TWO_TANK_REQUIRED_NODE_TYPES - present_types)
+        missing = sorted(pack.required_node_types - present_types)
         if not missing:
             return
         zone_id = int(getattr(snapshot, "zone_id", 0) or 0) or int(getattr(task, "zone_id", 0) or 0)
@@ -774,7 +781,7 @@ class ExecuteTaskUseCase:
                 "topology": topology,
                 "missing_node_types": missing,
                 "present_node_types": sorted(present_types),
-                "required_node_types": sorted(TWO_TANK_REQUIRED_NODE_TYPES),
+                "required_node_types": sorted(pack.required_node_types),
             },
         )
 
@@ -1091,8 +1098,11 @@ class ExecuteTaskUseCase:
         error_message: str,
         now: datetime,
         extra_details: Mapping[str, Any] | None = None,
+        upward_reports: tuple[Any, ...] = (),
     ) -> Any:
         extra_details = dict(extra_details) if isinstance(extra_details, Mapping) else {}
+        if upward_reports:
+            await publish_upward_reports(upward_reports)
         timeout_observability = await self._build_failure_observability_details(
             task=task,
             error_code=error_code,
@@ -1433,7 +1443,8 @@ class ExecuteTaskUseCase:
         now: datetime,
     ) -> None:
         topology = str(getattr(plan, "topology", "") or getattr(task, "topology", "")).strip().lower()
-        if topology not in {"two_tank", "two_tank_drip_substrate_trays"}:
+        pack = TopologyRegistry().try_pack(topology)
+        if pack is None or not pack.fail_safe_on_flow:
             return
         get_task_by_id = getattr(self._task_repository, "get_by_id", None)
         if callable(get_task_by_id):
@@ -1561,7 +1572,8 @@ class ExecuteTaskUseCase:
             return
 
         topology = str(getattr(plan, "topology", "") or getattr(task, "topology", "")).strip().lower()
-        if topology not in {"two_tank", "two_tank_drip_substrate_trays"}:
+        pack = TopologyRegistry().try_pack(topology)
+        if pack is None or not pack.tracks_correction_authority:
             return
 
         correction_config = getattr(snapshot, "correction_config", None)

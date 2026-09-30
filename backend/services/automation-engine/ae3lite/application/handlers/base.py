@@ -30,7 +30,7 @@ from ae3lite.infrastructure.metrics import (
     IRR_PROBE_STREAK_EXHAUSTED,
     NODE_REBOOT_DETECTED,
 )
-from common.biz_alerts import send_biz_alert
+from ae3lite.hydraulics.failure_report import note_upward_report
 from common.db import create_zone_event
 from common.service_logs import send_service_log
 
@@ -1010,7 +1010,7 @@ class BaseStageHandler:
                     error_message=failure.message,
                 )
             try:
-                await send_biz_alert(
+                await note_upward_report(
                     code="biz_irr_probe_streak_exhausted",
                     alert_type="AE3 IRR Probe Streak Exhausted",
                     message=(

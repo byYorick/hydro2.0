@@ -47,6 +47,9 @@ class StageOutcome:
     error_code: Optional[str] = None
     error_message: Optional[str] = None
 
+    # Доменные алерты. Модуль их только описывает, наружу отправляет исполнитель.
+    upward_reports: Tuple[Any, ...] = ()
+
     # Актуальная строка задачи после reconcile/publish command path.
     task_override: Any | None = None
 

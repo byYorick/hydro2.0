@@ -8,12 +8,14 @@ from typing import Any, Callable, Iterable, List, Mapping, Sequence
 
 from ae3lite.application.dto import CommandPlan, ZoneActuatorRef, ZoneSnapshot
 from ae3lite.application.handlers.base import BaseStageHandler
+from ae3lite.application.services.topology_pack import subsystem_enabled_flags
+from ae3lite.application.services.workflow_topology import TopologyRegistry
 from ae3lite.config.errors import ConfigValidationError
 from ae3lite.config.loader import load_zone_correction
 from ae3lite.config.runtime_plan_builder import (
     HL_RUN_PUMP_MAX_DURATION_MS,
     _build_day_night_config,
-    resolve_two_tank_runtime,
+    assemble_pack_runtime,
 )
 from ae3lite.domain.entities import AutomationTask, PlannedCommand
 from ae3lite.domain.errors import ErrorCodes, PlannerConfigurationError
@@ -48,6 +50,11 @@ class CycleStartPlanner:
             silently degrading on missing/invalid config
         """
         if str(getattr(task, "task_type", "") or "").strip().lower() == "lighting_tick":
+            lighting_pack = TopologyRegistry().pack("lighting_tick")
+            if lighting_pack.plan_profile != "lighting":
+                raise PlannerConfigurationError("Пакет lighting_tick обязан быть tick-профилем света")
+            if lighting_pack.entry_by_task_type.get("lighting_tick") != "apply":
+                raise PlannerConfigurationError("Пакет lighting_tick должен входить в стадию apply")
             return self._build_lighting_tick_plan(task=task, snapshot=snapshot)
         if str(getattr(task, "task_type", "") or "").strip().lower() == "solution_topup":
             return self._build_solution_topup_plan(task=task, snapshot=snapshot)
@@ -81,7 +88,8 @@ class CycleStartPlanner:
             raise PlannerConfigurationError(f"Неподдерживаемый diagnostics workflow для cycle_start planner: {workflow or 'empty'}")
         if not topology:
             raise PlannerConfigurationError("Для diagnostics execution обязательно указать topology")
-        if topology in {"two_tank", "two_tank_drip_substrate_trays"}:
+        hydraulic = TopologyRegistry().try_pack(topology)
+        if hydraulic is not None and hydraulic.plan_profile in {"two_tank", "single_tank"}:
             return self._build_two_tank_plan(task=task, snapshot=snapshot, workflow=workflow, topology=topology)
 
         steps = diagnostics.get("steps")
@@ -150,6 +158,14 @@ class CycleStartPlanner:
             named_plans=named_plans,
         )
 
+    def _assert_required_subsystems_enabled(self, *, pack: Any, snapshot: ZoneSnapshot) -> None:
+        flags = subsystem_enabled_flags(snapshot)
+        for subsystem_id in pack.required_subsystems:
+            if flags.get(subsystem_id) is False:
+                raise PlannerConfigurationError(
+                    f"Подсистема {subsystem_id} обязательна для topology={pack.id}, но выключена"
+                )
+
     def _build_two_tank_plan(
         self,
         *,
@@ -158,8 +174,10 @@ class CycleStartPlanner:
         workflow: str,
         topology: str,
     ) -> CommandPlan:
+        pack = TopologyRegistry().pack(topology)
+        self._assert_required_subsystems_enabled(pack=pack, snapshot=snapshot)
         self._shadow_validate_correction(snapshot=snapshot, task=task)
-        runtime = resolve_two_tank_runtime(snapshot)
+        runtime = assemble_pack_runtime(snapshot, pack)
         runtime = self._apply_irrigation_decision_snapshot(task=task, runtime=runtime)
         runtime = dict(runtime)
         runtime["zone_workflow_phase"] = str(getattr(snapshot, "workflow_phase", "") or "idle").strip().lower()
@@ -429,7 +447,12 @@ class CycleStartPlanner:
         if str(snapshot.automation_runtime or "").strip().lower() != "ae3":
             raise PlannerConfigurationError("Для solution_topup требуется zone.automation_runtime='ae3'")
         topology = str(task.topology or "two_tank").strip().lower()
-        if topology not in {"two_tank", "two_tank_drip_substrate_trays"}:
+        topup_pack = TopologyRegistry().try_pack(topology)
+        if (
+            topup_pack is None
+            or topup_pack.plan_profile not in {"two_tank", "single_tank"}
+            or "solution_topup_guard" not in topup_pack.stages
+        ):
             raise PlannerConfigurationError(f"solution_topup не поддерживает topology={topology}")
         plan = self._build_two_tank_plan(
             task=task,
@@ -467,7 +490,12 @@ class CycleStartPlanner:
         if str(snapshot.automation_runtime or "").strip().lower() != "ae3":
             raise PlannerConfigurationError("Для solution_change требуется zone.automation_runtime='ae3'")
         topology = str(task.topology or "two_tank").strip().lower()
-        if topology not in {"two_tank", "two_tank_drip_substrate_trays"}:
+        change_pack = TopologyRegistry().try_pack(topology)
+        if (
+            change_pack is None
+            or change_pack.plan_profile not in {"two_tank", "single_tank"}
+            or "await_operator_drain_confirm" not in change_pack.stages
+        ):
             raise PlannerConfigurationError(f"solution_change не поддерживает topology={topology}")
         plan = self._build_two_tank_plan(
             task=task,

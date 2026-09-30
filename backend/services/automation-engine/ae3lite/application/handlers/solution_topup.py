@@ -11,7 +11,7 @@ from ae3lite.application.handlers.base import BaseStageHandler
 from ae3lite.application.level_monitor import solution_topup_need_active
 from ae3lite.domain.errors import TaskExecutionError
 from ae3lite.infrastructure.metrics import STAGE_DEADLINE_EXCEEDED
-from common.biz_alerts import send_biz_alert
+from ae3lite.hydraulics.failure_report import note_upward_report
 from common.db import create_zone_event
 
 _logger = logging.getLogger(__name__)
@@ -289,7 +289,7 @@ class SolutionTopupCheckHandler(BaseStageHandler):
                 stage="solution_topup_check",
             ).inc()
             try:
-                await send_biz_alert(
+                await note_upward_report(
                     code="biz_solution_topup_timeout",
                     alert_type="AE3 Solution Topup Timeout",
                     message="Превышено время автодолива бака раствора.",

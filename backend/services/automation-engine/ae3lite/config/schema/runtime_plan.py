@@ -262,55 +262,61 @@ class ProcessCalibrationRuntime(BaseModel):
     meta: Any = None
 
 
-# ─── Root: RuntimePlan ─────────────────────────────────────────────────────
+# ─── Срезы подсистем. RuntimePlan — их объединение. ───────────────────────
 
-class RuntimePlan(BaseModel):
-    """Full typed mirror of `plan.runtime` dict (output of
-    `resolve_two_tank_runtime`).
+_SLICE_CONFIG = ConfigDict(extra="forbid", frozen=True)
 
-    32 top-level fields + 10 nested structures. Drift detection: any change
-    in `resolve_two_tank_runtime` output that adds/removes/renames a key must
-    be reflected here.
 
-    Runtime access is attribute-based (`runtime.target_ph`,
-    `runtime.correction.max_ec_dose_ml`, etc.). Runtime readers/tests must not
-    rely on dict-like access or `_DictShim` compatibility.
-    """
+class SolutionRuntimeSlice(BaseModel):
+    """Таймауты и датчики баков: solution / clean fill / topup / drain."""
 
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config = _SLICE_CONFIG
 
-    # Required node setup
-    required_node_types: list[str]
-
-    # Timeouts / poll intervals
     clean_fill_timeout_sec: Annotated[int, Field(ge=30, le=86400)]
     solution_fill_timeout_sec: Annotated[int, Field(ge=30, le=86400)]
     prepare_recirculation_timeout_sec: Annotated[int, Field(ge=30, le=7200)]
     prepare_recirculation_correction_slack_sec: Annotated[int, Field(ge=0, le=7200)]
     solution_fill_correction_slack_sec: Annotated[int, Field(ge=0, le=7200)]
-    irrigation_recovery_correction_slack_sec: Annotated[int, Field(ge=0, le=7200)] = 900
     level_poll_interval_sec: Annotated[int, Field(ge=5, le=3600)]
     clean_fill_retry_cycles: Annotated[int, Field(ge=0, le=20)]
     level_switch_on_threshold: Annotated[float, Field(ge=0.0, le=1.0)]
+    sensor_mode_stabilization_time_sec: ShortSeconds
+    clean_max_sensor_labels: list[LabelStr]
+    clean_min_sensor_labels: list[LabelStr]
+    solution_max_sensor_labels: list[LabelStr]
+    solution_min_sensor_labels: list[LabelStr]
     solution_topup_enabled: bool = True
     solution_topup_timeout_sec: Annotated[int, Field(ge=30, le=86400)] = 900
     solution_topup_cooldown_sec: Annotated[int, Field(ge=0, le=86400)] = 300
     solution_change_enabled: bool = False
     solution_drain_timeout_sec: Annotated[int, Field(ge=30, le=86400)] = 900
     solution_change_operator_confirm_timeout_sec: Annotated[int, Field(ge=60, le=86400)] = 3600
+
+
+class IrrigationRuntimeSlice(BaseModel):
+    """Полив: irr_state, fail-safe и decision."""
+
+    model_config = _SLICE_CONFIG
+
     telemetry_max_age_sec: Annotated[int, Field(ge=5, le=3600)]
     irr_state_max_age_sec: Annotated[int, Field(ge=5, le=3600)]
     irr_state_wait_timeout_sec: Annotated[float, Field(ge=0.0, le=30.0)]
+    fail_safe_guards: FailSafeGuards
+    irrigation_execution: IrrigationExecution
+    irrigation_decision: IrrigationDecision
+    irrigation_recovery: IrrigationRecovery
+    irrigation_safety: IrrigationSafety
+    irrigation_recovery_correction_slack_sec: Annotated[int, Field(ge=0, le=7200)] = 900
     irr_state_wait_poll_interval_sec: Annotated[float, Field(ge=0.0, le=5.0)] | None = None
-    sensor_mode_stabilization_time_sec: ShortSeconds
+    soil_moisture_target: SoilMoistureTarget | None = None
+    semi_allows_active_flow: bool = False
 
-    # Sensor labels (plural — singular dropped in v1)
-    clean_max_sensor_labels: list[LabelStr]
-    clean_min_sensor_labels: list[LabelStr]
-    solution_max_sensor_labels: list[LabelStr]
-    solution_min_sensor_labels: list[LabelStr]
 
-    # Targets (resolved from active phase_targets)
+class CorrectionRuntimeSlice(BaseModel):
+    """Химия: targets, PID и correction config."""
+
+    model_config = _SLICE_CONFIG
+
     target_ph: PhValue
     target_ec: EcValue
     target_ph_min: PhValue
@@ -321,60 +327,60 @@ class RuntimePlan(BaseModel):
     target_ec_prepare_min: EcValue
     target_ec_prepare_max: EcValue
     npk_ec_share: EcShare
-    # Recipe ratios (optional at load time; used for baseline T_* math)
-    ec_component_ratios: Mapping[str, Any] = {}
-    recirc: RecircDiluteConfig = RecircDiluteConfig()
-
-    # Day/night
-    day_night_enabled: bool
-    day_night_config: DayNightConfig
-
-    # Tolerance
     prepare_tolerance: PrepareToleranceRuntime
     prepare_tolerance_by_phase: dict[str, PrepareToleranceRuntime]
-
-    # PID state/configs/calibrations (loose — owned by handlers)
     pid_state: Mapping[str, Any]
     pid_configs: Mapping[str, Any]
     process_calibrations: dict[str, ProcessCalibrationRuntime]
-
-    # Correction
     correction: CorrectionPhaseRuntime
     correction_by_phase: dict[str, CorrectionPhaseRuntime]
+    ec_component_ratios: Mapping[str, Any] = {}
+    recirc: RecircDiluteConfig = RecircDiluteConfig()
 
-    # Command plans (10 plan names hardcoded by two_tank topology)
+
+class LightingRuntimeSlice(BaseModel):
+    """День/ночь света, который гидравлический план несёт рядом с поливом."""
+
+    model_config = _SLICE_CONFIG
+
+    day_night_enabled: bool
+    day_night_config: DayNightConfig
+
+
+class RuntimePlan(
+    SolutionRuntimeSlice,
+    IrrigationRuntimeSlice,
+    CorrectionRuntimeSlice,
+    LightingRuntimeSlice,
+):
+    """Собранный план активного пакета topology.
+
+    Поля — объединение срезов подсистем. Набор ``command_specs`` режет
+    сборщик по ``TopologyPack.command_plan_keys``, схема остаётся общей:
+    handler-ы читают атрибуты, а не dict.
+
+    Drift detection: любое новое поле ``resolve_two_tank_runtime`` /
+    ``assemble_pack_runtime`` должно попасть в свой срез.
+    """
+
+    model_config = _SLICE_CONFIG
+
+    required_node_types: list[str]
     command_specs: dict[str, list[CommandStep]]
-
-    # Fail-safe + irrigation subsystems
-    fail_safe_guards: FailSafeGuards
-    irrigation_execution: IrrigationExecution
-    irrigation_decision: IrrigationDecision
-    irrigation_recovery: IrrigationRecovery
-    irrigation_safety: IrrigationSafety
-    soil_moisture_target: SoilMoistureTarget | None = None
-    # Derived: cycle_start_planner injects the active workflow phase string
-    # (snapshot.workflow_phase normalized) for handler convenience.
     zone_workflow_phase: str | None = None
-    # Optional cycle context consumed by await_ready observability/events.
     grow_cycle_id: int | None = None
-    # Derived: cycle_start_planner injects the bundle_revision tag locked
-    # for the active irrigation decision snapshot. Optional — only set when
-    # `task.irrigation_bundle_revision` is non-empty.
     bundle_revision: str | None = None
-    # Phase 5: monotonic `zones.config_revision` at plan-build time. Used by
-    # `BaseStageHandler._checkpoint()` to detect live-mode config edits (compared
-    # to current `zones.config_revision`). Distinct from `bundle_revision`
-    # (content hash) — this is a simple integer counter incremented by
-    # `ZoneConfigRevisionService::bumpAndAudit`.
     config_revision: int | None = None
-    # PR7: при semi=True разрешает продолжать активный flow-path без принудительного stop.
-    semi_allows_active_flow: bool = False
 
 
 # ─── Re-export of building blocks (handy for tests / type-aware consumers) ──
 
 __all__ = [
     "RuntimePlan",
+    "SolutionRuntimeSlice",
+    "IrrigationRuntimeSlice",
+    "CorrectionRuntimeSlice",
+    "LightingRuntimeSlice",
     "CorrectionPhaseRuntime",
     "PrepareToleranceRuntime",
     "CommandStep",

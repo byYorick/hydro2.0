@@ -1,8 +1,8 @@
 # AE3-Lite: Minimal Canonical Spec
 
-**Версия:** 3.11-canonical
-**Дата:** 2026-08-17
-**Статус:** CANONICAL MINIMAL SPEC (sync с runtime кодом 2026-05-28: file tree, task types, FSM `update_stage`, error codes, lighting_tick/greenhouse_climate_tick добавлены в canonical scope; lighting day/night ON/OFF — **implemented** 2026-08-17; **solution_change** — Laravel `task_type=solution_change` → `POST /start-solution-change` (не `cycle_start`); **solution_topup** — sync 2026-08-11; irrigation_start default `pump_main/run_pump {duration_ms}`; 409 `*_zone_busy` не терминалит requested intent)
+**Версия:** 3.12-canonical
+**Дата:** 2026-09-30
+**Статус:** CANONICAL MINIMAL SPEC (sync с runtime кодом 2026-09-30: `TopologyPack` и срезы `RuntimePlan`; `two_tank` и `two_tank_drip_substrate_trays` — два дескриптора одного графа; `single_tank` без `clean_fill_*`; `lighting_tick` зарегистрирован в `TopologyRegistry`. Ранее: lighting day/night ON/OFF — **implemented** 2026-08-17; **solution_change** — Laravel `task_type=solution_change` → `POST /start-solution-change`; **solution_topup** — sync 2026-08-11; irrigation_start default `pump_main/run_pump {duration_ms}`; 409 `*_zone_busy` не терминалит requested intent)
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 
@@ -49,7 +49,7 @@ AE3-Lite v1 не включает:
 8. auto-canary router
 9. auto-rollback controller
 10. outbox/domain-events platform
-11. generic workflow framework
+11. редактор графа из JSON/UI и произвольные рёбра из `logic_profile`. Именованные `TopologyPack` в коде — в scope (см. §11.1)
 
 `GET /zones/{id}/state` доступен как internal operator endpoint (см. §7.4 и `runtime/app.py`), но не считается canonical ingress runtime path и не используется как single source of truth — UI обязан читать состояние из Laravel/SQL read-model.
 
@@ -493,7 +493,7 @@ OR COALESCE(n.last_seen_at, n.last_heartbeat_at, n.updated_at)
 1. Если `persistently_offline_uids` непуст (узел давно мёртв, `last_seen_age_sec ≥ AE3_NODE_PERSISTENT_DEAD_SEC`) — задача fail-closed с кодом `ae3_snapshot_required_node_persistently_offline` без retry.
 2. Иначе срабатывает transient retry (`SNAPSHOT_TRANSIENT_RETRY_SEC=10s`, бюджет `AE3_SNAPSHOT_TRANSIENT_MAX_STAGE_AGE_SEC=600s`); breakdown пробрасывается в `AE_SNAPSHOT_RETRY_SCHEDULED` / `AE_SNAPSHOT_RETRY_EXHAUSTED` events и в `infra_ae3_snapshot_retry_*` алерты.
 
-Дополнительно для two-tank-топологий (`two_tank`, `two_tank_drip_substrate_trays`) `ExecuteTaskUseCase._verify_topology_required_node_types` после загрузки snapshot проверяет, что среди actuator'ов представлены все требуемые `node_type` ∈ `{irrig, ph, ec}`. При отсутствии — fail-closed с конкретным кодом `ae3_snapshot_required_node_type_missing` и `details.missing_node_types`, без retry.
+Для workflow-пакетов (`execution_mode=workflow`) `ExecuteTaskUseCase._verify_topology_required_node_types` после загрузки snapshot проверяет, что среди actuator'ов представлены все `TopologyPack.required_node_types`. У `two_tank`, `two_tank_drip_substrate_trays` и `single_tank` это `{irrig, ph, ec}`. При отсутствии — fail-closed с кодом `ae3_snapshot_required_node_type_missing` и `details.missing_node_types`, без retry. Пакеты `lighting_tick` и `generic_cycle_start` эту сверку snapshot не выполняют.
 
 Канонические env-переменные:
 
@@ -1014,7 +1014,7 @@ Controlled stop выполняется вручную:
 
 ## 11. Минимальная кодовая структура
 
-Дерево актуально на 2026-05-28; точные имена файлов — в `backend/services/automation-engine/ae3lite/`.
+Дерево актуально на 2026-09-30; точные имена файлов — в `backend/services/automation-engine/ae3lite/`.
 
 ```text
 backend/services/automation-engine/ae3lite/
@@ -1031,19 +1031,19 @@ backend/services/automation-engine/ae3lite/
 │   │   ├── execute_task.py
 │   │   ├── finalize_task.py
 │   │   ├── startup_recovery.py        # recovery после restart (включая waiting_command)
+│   │   ├── workflow_router.py         # dispatch по StageDef.handler → StageOutcome → update_stage
 │   │   ├── set_control_mode.py
 │   │   └── request_manual_step.py
 │   ├── handlers/                      # stage handlers: startup, *_fill_*, prepare_recirc_*,
 │   │                                  # await_ready, decision_gate, irrigation_*, correction,
 │   │                                  # base.py с _checkpoint hot-reload
 │   ├── services/
-│   │   ├── workflow_topology.py       # TWO_TANK graph (StageDef + transitions)
-│   │   ├── workflow_router.py         # запуск handler, перевод StageOutcome в update_stage
-│   │   ├── topology_registry.py
+│   │   ├── workflow_topology.py       # StageDef, TopologyRegistry, пакеты графов
+│   │   ├── topology_pack.py           # TopologyPack: узлы, входы, command plan keys
 │   │   └── correction_transition_policy.py
 │   └── adapters/                      # intent mapping
 ├── config/
-│   ├── runtime_plan_builder.py        # resolve_two_tank_runtime_plan
+│   ├── runtime_plan_builder.py        # resolve_two_tank_runtime + assemble_pack_runtime
 │   └── ...                            # Pydantic schemas, loaders
 ├── domain/
 │   ├── entities/
@@ -1081,6 +1081,7 @@ backend/services/automation-engine/ae3lite/
 │   ├── bootstrap.py                   # build_ae3_runtime_bundle()
 │   ├── env.py                         # Ae3RuntimeConfig.from_env()
 │   └── app.py                         # create_app() / serve()
+├── hydraulics/                        # solution, irrigation, correction, lighting, climate
 ├── greenhouse_climate/                # rule-based roof vent tick
 └── main.py
 ```
@@ -1090,7 +1091,29 @@ backend/services/automation-engine/ae3lite/
 2. без module-level mutable state
 3. DTO и domain objects не смешиваются
 4. compatibility code живёт только в adapter/facade слое (`application/adapters/`)
-5. модулей `reconcile_command.py` и `runtime/recovery.py` в актуальном дереве **нет**: command reconcile реализован в `gateways/sequential_command_gateway.py::recover_waiting_command`, startup-recovery — в `use_cases/startup_recovery.py`.
+5. модулей `reconcile_command.py`, `runtime/recovery.py` и `topology_registry.py` в актуальном дереве **нет**: command reconcile реализован в `gateways/sequential_command_gateway.py::recover_waiting_command`, startup-recovery — в `use_cases/startup_recovery.py`, реестр пакетов — в `services/workflow_topology.py`.
+
+### 11.1 Пакеты topology и подсистемы
+
+Граф остаётся кодом и проверяется `TopologyRegistry.validate` при использовании. Оператор включает подсистемы флагом `subsystems.<id>.enabled`, а не рисует стадии.
+
+`TopologyPack` (`application/services/topology_pack.py`): `id`, граф `StageDef`, `required_node_types`, обязательные и опциональные подсистемы, `entry_by_task_type`, `command_plan_keys`, `irrigation_binding`, `plan_profile`, `execution_mode`.
+
+Зарегистрированные пакеты зоны:
+
+| id | Граф | execution_mode | Смысл |
+| --- | --- | --- | --- |
+| `two_tank` | `TWO_TANK` | `workflow` | Два бака, `irrigation_binding=generic` |
+| `two_tank_drip_substrate_trays` | тот же `TWO_TANK` | `workflow` | Тот же граф, `irrigation_binding=drip_substrate_trays` |
+| `single_tank` | `TWO_TANK` без стадий `clean_fill_*` | `workflow` | После probe startup сразу `solution_fill_start` |
+| `generic_cycle_start` | одна стадия `startup` | `command_batch` | Diagnostics single-batch |
+| `lighting_tick` | стадия `apply` | `command_batch` | Tick света, вход `lighting_tick` → `apply` |
+
+Подсистемы (`hydraulics/system.py`): `flow` (`solution`, `irrigation`), `hosted` (`correction`, своих стадий в графе нет, host-стадии объявляет модуль), `tick` (`lighting` scope `zone`; `climate` scope `greenhouse`, отдельные таблицы и lease, не стадия `ae_tasks`). Зависимости handler-ов объявляет `handler_deps` модуля. `WorkflowRouter` их подставляет и не перечисляет конструкторы.
+
+`RuntimePlan` — объединение срезов `SolutionRuntimeSlice`, `IrrigationRuntimeSlice`, `CorrectionRuntimeSlice`, `LightingRuntimeSlice`. `assemble_pack_runtime` считает гидравлический dict и оставляет в `command_specs` только ключи пакета. Обязательная подсистема с `enabled=false` даёт `PlannerConfigurationError`.
+
+Новый `task_type` и новый HTTP ingress по-прежнему требуют правки этого документа и CHECK в БД. Новая установка — новый `TopologyPack`.
 
 ---
 

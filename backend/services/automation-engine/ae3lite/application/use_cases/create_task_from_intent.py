@@ -554,10 +554,13 @@ class CreateTaskFromIntentUseCase:
             return
 
         topology = str(getattr(meta, "topology", "") or "").strip().lower()
-        if topology not in {"two_tank", "two_tank_drip_substrate_trays"}:
+        from ae3lite.application.services.workflow_topology import TopologyRegistry
+
+        change_pack = TopologyRegistry().try_pack(topology)
+        if change_pack is None or "await_operator_drain_confirm" not in change_pack.stages:
             raise TaskCreateError(
                 "solution_change_topology_unsupported",
-                f"Подмена раствора поддерживается только для two-tank topology, получено: {topology or 'empty'}",
+                f"Подмена раствора не описана в пакете topology, получено: {topology or 'empty'}",
                 details={"topology": topology or "empty"},
             )
 

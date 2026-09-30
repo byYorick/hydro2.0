@@ -3,6 +3,7 @@
 # PostgreSQL • Laravel Models • Python ORM • Связи • Ограничения
 # **ОБНОВЛЕНО ПОСЛЕ AUTHORITY CUTOVER 2026-03-24**
 # **СИНХРОНИЗИРОВАНО С МИГРАЦИЯМИ 2026-08-02**
+# **sensors.type CHECK расширен 2026-09-30** (`2026_09_30_161700_extend_sensors_type_check_for_weather`)
 # Уточнено vs stamp 2026-05-28:
 # - `greenhouse_types`, `zone_dt_params` — ACTIVE (секции ниже)
 # - `zone_process_calibrations` / `system_automation_settings` — **dropped** после authority cutover;
@@ -325,7 +326,7 @@ greenhouse_id FK
 zone_id FK NULL
 node_id FK NULL
 scope ENUM(inside|outside)
-type ENUM(TEMPERATURE|HUMIDITY|CO2|PH|EC|WATER_LEVEL|WATER_LEVEL_SWITCH|SOIL_MOISTURE|SOIL_TEMP|WIND_SPEED|OUTSIDE_TEMP|...)
+type CHECK(TEMPERATURE|HUMIDITY|CO2|PH|EC|WATER_LEVEL|FLOW_RATE|PUMP_CURRENT|WIND_SPEED|WIND_DIRECTION|PRESSURE|LIGHT_INTENSITY|SOIL_MOISTURE|SOIL_TEMP|OUTSIDE_TEMP|OUTSIDE_HUMIDITY|OUTSIDE_PRESSURE|OUTSIDE_LIGHT|RAIN_DETECTED|OTHER)
 label VARCHAR
 unit VARCHAR NULL
 specs JSONB NULL
@@ -346,6 +347,8 @@ UNIQUE(zone_id, node_id, scope, type, label)  -- canonical
 ```
 
 **Status:** canonical UNIQUE index восстановлен миграцией `2026_05_28_120000_restore_sensors_canonical_unique_index.php`. До этого пакета миграция `2025_12_31_070152_*` дедуплицировала данные, но создание уникального индекса было пропущено. Если приложение работает на старой схеме, дубли по `(zone_id, node_id, scope, type, label)` возможны — сначала прогнать `make migrate`.
+
+`sensors.type` — `varchar` с CHECK `sensors_type_check`, не enum `sensors_type_enum`. Погодные значения `SOIL_TEMP`, `OUTSIDE_TEMP`, `OUTSIDE_HUMIDITY`, `OUTSIDE_PRESSURE`, `OUTSIDE_LIGHT`, `RAIN_DETECTED` добавлены миграцией `2026_09_30_161700_extend_sensors_type_check_for_weather`. `WATER_LEVEL_SWITCH` в эту колонку не пишется: history-logger сохраняет его как `WATER_LEVEL`.
 
 ---
 

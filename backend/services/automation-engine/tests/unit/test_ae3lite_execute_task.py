@@ -2169,8 +2169,8 @@ async def test_execute_task_two_tank_required_node_type_missing_fails_closed(
 
 @pytest.mark.asyncio
 async def test_execute_task_non_two_tank_topology_skips_required_node_check() -> None:
-    """Для нестандартных топологий (single_tank и т.п.) topology-aware check пропускается."""
-    task = _make_task(stage="startup", topology="single_tank")
+    """Command-batch topology не сверяет actuator snapshot с required_node_types пакета."""
+    task = _make_task(stage="startup", topology="generic_cycle_start")
     task_repo = _TaskRepoRunning(running_task=task)
     finalize = _FinalizeTaskUseCase()
     alerts = _AlertRepositoryRecorder()

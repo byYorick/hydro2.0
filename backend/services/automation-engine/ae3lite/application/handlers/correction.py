@@ -71,7 +71,7 @@ from ae3lite.infrastructure.metrics import (
     CORRECTION_OBSERVE_OUT_OF_BOUNDS,
     IRRIGATION_EC_COMPONENT_DOSE,
 )
-from common.biz_alerts import send_biz_alert
+from ae3lite.hydraulics.failure_report import note_upward_report
 from common.db import create_zone_event
 from common.utils.time import utcnow_naive as _utcnow
 
@@ -205,11 +205,9 @@ class CorrectionHandler(BaseStageHandler):
             command_gateway=command_gateway,
             event_logger=self._event_logger,
         )
-        # Lazy closure over module-level send_biz_alert so existing handler
-        # tests that monkeypatch ``ae3lite.application.handlers.correction.send_biz_alert``
-        # remain observable (same trick as for create_zone_event above).
+        # Отчёт кладётся в буфер тика. Наружу его отправляет исполнитель.
         self._alert_service = alert_service or CorrectionAlertService(
-            alert_sink_fn=lambda **kwargs: send_biz_alert(**kwargs),
+            alert_sink_fn=lambda **kwargs: note_upward_report(**kwargs),
         )
 
     async def run(

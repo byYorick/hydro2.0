@@ -1,9 +1,9 @@
 # ERROR_CODE_CATALOG.md
 # Канонический каталог кодов ошибок automation/runtime
 
-**Версия:** 1.7
-**Дата:** 2026-08-18
-**Статус:** Актуально (фаза 5: прошивки/MQTT command_response; фаза 4: UI fallback; solution_topup/solution_change runtime codes; two-tank operator copy)
+**Версия:** 1.8
+**Дата:** 2026-09-30
+**Статус:** Актуально (`ae3_snapshot_required_node_type_missing` читает `TopologyPack.required_node_types`; ранее: фаза 5 прошивки/MQTT command_response; solution_topup/solution_change runtime codes)
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 
@@ -173,7 +173,7 @@ make i18n-catalog-check   # включает audit_phase4_i18n_coverage.py
 | `ae3_snapshot_empty_command_plans` | `ae3_snapshot` | В активном профиле нет `command_plans` | `В активном automation profile отсутствуют command plans для выполнения цикла.` |
 | `ae3_snapshot_no_online_actuator_channels` | `ae3_snapshot` | В зоне нет ни одного online actuator/service channel. SQL-фильтр учитывает `nodes.status='online'` либо свежий `last_seen_at` в окне `AE3_NODE_FRESHNESS_FALLBACK_SEC`. В payload `details` приходит per-node breakdown (`zone_nodes`, `persistently_offline_uids`, `transiently_offline_uids`, `persistent_dead_threshold_sec`). | `В зоне нет ни одного онлайн-исполнительного канала. Проверьте привязки устройств и состояние нод.` |
 | `ae3_snapshot_required_node_persistently_offline` | `ae3_snapshot` | Один или несколько узлов зоны не подают признаков жизни ≥ `AE3_NODE_PERSISTENT_DEAD_SEC` (default 600). AE3 не выполняет retry, чтобы не зависать. Конкретные `node_uid` приходят в `details.persistently_offline_uids`. | `Один или несколько узлов зоны давно не выходят на связь. AE3 завершил задачу без повторов — проверьте питание и сеть нод.` |
-| `ae3_snapshot_required_node_type_missing` | `ae3_snapshot` | Для текущей топологии (`two_tank` / `two_tank_drip_substrate_trays`) в зоне отсутствует actuator хотя бы для одного из обязательных `node_type` (`irrig`, `ph`, `ec`). В `details.missing_node_types` — список недостающих типов. | `Для двухбакового цикла в зоне нет нод обязательных типов (irrig/ph/ec). Проверьте регистрацию узлов.` |
+| `ae3_snapshot_required_node_type_missing` | `ae3_snapshot` | У workflow-пакета (`two_tank`, `two_tank_drip_substrate_trays`, `single_tank`) в snapshot нет actuator хотя бы для одного типа из `TopologyPack.required_node_types` (у этих пакетов это `irrig`, `ph`, `ec`). В `details.missing_node_types` — список недостающих типов. | `Для цикла зоны нет нод обязательных типов (irrig/ph/ec). Проверьте регистрацию узлов.` |
 | `ae3_snapshot_conflicting_config_values` | `ae3_snapshot` | Merge runtime-конфига выявил противоречие | `AE3 обнаружил конфликтующие значения в runtime-конфигурации и остановил запуск fail-closed.` |
 | `ae3_snapshot_retry_exhausted` | `ae3_snapshot` | Retry на transient snapshot gap исчерпан (бюджет = `AE3_SNAPSHOT_TRANSIENT_MAX_STAGE_AGE_SEC`, default 600). В `details` дополнительно приходят `zone_nodes`, `persistently_offline_uids`, `transiently_offline_uids` для расследования. | `AE3 не смог восстановить transient snapshot gap за допустимое время и завершил задачу с ошибкой.` |
 | `ae3_snapshot_retry_persist_failed` | `ae3_snapshot` | Не удалось сохранить повтор retry после transient gap | `AE3 не смог сохранить задачу для повторной попытки после transient snapshot gap.` |

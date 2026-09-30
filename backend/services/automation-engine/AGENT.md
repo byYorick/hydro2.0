@@ -1,7 +1,7 @@
 # AGENT.md (automation-engine / AE3-Lite v1)
 
 Краткие инструкции для ИИ-ассистента при работе в `backend/services/automation-engine`.
-Обновлено: 2026-08-17 (E-STOP fail-closed без restore; dual-calib default fail-closed; operator cmds не обходят lease)
+Обновлено: 2026-09-30 (TopologyPack, handler_deps, `single_tank`; ранее 2026-08-17: E-STOP fail-closed без restore; dual-calib default fail-closed; operator cmds не обходят lease)
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 
 ## 1. Главная цель
@@ -53,8 +53,9 @@ ae3lite/
     handlers/         # stage handlers: startup, clean_fill_*, solution_fill_*,
                       # prepare_recirc_*, await_ready, decision_gate,
                       # irrigation_*, correction, base (с _checkpoint hot-reload)
-    services/         # workflow_topology (TWO_TANK graph), workflow_router,
-                      # topology_registry, correction_transition_policy
+    services/         # workflow_topology (TopologyRegistry), topology_pack,
+                      # correction_transition_policy
+  hydraulics/         # flow solution/irrigation, hosted correction, tick lighting/climate
     adapters/         # intent mapping
   config/             # Pydantic schemas, runtime_plan_builder, loader
   infrastructure/
@@ -125,7 +126,7 @@ Ingress / task creation:
 
 Snapshot / topology:
 - `ae3_snapshot_no_active_grow_cycle`, `ae3_snapshot_bundle_invalid` — типичные snapshot-ошибки.
-- `ae3_snapshot_required_node_type_missing` — для топологии two_tank/`two_tank_drip_substrate_trays` отсутствует узел обязательного типа (`irrig|ph|ec`).
+- `ae3_snapshot_required_node_type_missing` — у workflow-пакета нет actuator обязательного `node_type` из `TopologyPack.required_node_types` (`irrig|ph|ec` для `two_tank`, drip-trays и `single_tank`).
 - `ae3_snapshot_required_node_persistently_offline` — обязательный узел не отвечает дольше `AE3_NODE_PERSISTENT_DEAD_SEC` (fail-closed без retry).
 - `ae3_snapshot_no_online_actuator_channels` — нет ни одного online actuator/service канала.
 

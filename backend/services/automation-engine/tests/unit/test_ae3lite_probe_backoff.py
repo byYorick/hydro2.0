@@ -181,10 +181,8 @@ async def test_probe_backoff_escalates_on_streak_limit(monkeypatch) -> None:
 
     monkeypatch.setattr(handler, "_probe_irr_state", _probe)
 
-    with patch("ae3lite.application.handlers.base.create_zone_event") as zone_event_mock, \
-            patch("ae3lite.application.handlers.base.send_biz_alert") as alert_mock:
+    with patch("ae3lite.application.handlers.base.create_zone_event") as zone_event_mock:
         zone_event_mock.return_value = None
-        alert_mock.return_value = True
         out = await handler._probe_irr_state_with_backoff(
             task=_make_task(),
             plan=_make_plan(),
@@ -198,7 +196,6 @@ async def test_probe_backoff_escalates_on_streak_limit(monkeypatch) -> None:
     assert out.error_code == ErrorCodes.AE3_REQUIRED_NODE_OFFLINE
     args, _ = zone_event_mock.call_args
     assert args[1] == "IRR_STATE_PROBE_STREAK_EXHAUSTED"
-    alert_mock.assert_not_called()
 
 
 @pytest.mark.asyncio

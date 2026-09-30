@@ -96,6 +96,28 @@ _STAGE_TIMEOUT_GUARDS: dict[str, tuple[str, str]] = {
 }
 
 
+def assemble_pack_runtime(snapshot: Any, pack: Any) -> dict[str, Any]:
+    """Собирает runtime dict из срезов, которые требует пакет topology.
+
+    Гидравлические профили ``two_tank`` и ``single_tank`` считают общий
+    two-tank dict, затем оставляют только ``pack.command_plan_keys``.
+    """
+    profile = str(getattr(pack, "plan_profile", "") or "")
+    if profile not in {"two_tank", "single_tank"}:
+        raise PlannerConfigurationError(
+            f"assemble_pack_runtime не поддерживает plan_profile={profile or 'empty'}"
+        )
+    runtime = resolve_two_tank_runtime(snapshot)
+    allowed = getattr(pack, "command_plan_keys", None)
+    if allowed:
+        specs = runtime.get("command_specs")
+        if isinstance(specs, dict):
+            runtime["command_specs"] = {
+                name: steps for name, steps in specs.items() if name in allowed
+            }
+    return runtime
+
+
 def resolve_two_tank_runtime_plan(snapshot: Any) -> Any:
     """Build and validate the typed `RuntimePlan` for a snapshot."""
     # Local import avoids a circular import at module load time
@@ -449,6 +471,7 @@ def _resolve_solution_change_enabled(*, snapshot: Any, execution: Mapping[str, A
 
 
 __all__ = [
+    "assemble_pack_runtime",
     "default_two_tank_command_plan",
     "resolve_two_tank_runtime",
     "resolve_two_tank_runtime_plan",

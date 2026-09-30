@@ -1,9 +1,9 @@
 # PYTHON_SERVICES_ARCH.md
 # Архитектура Python-сервисов hydro2.0 (AE3)
 
-**Версия:** 3.7
-**Дата обновления:** 2026-08-24
-**Статус:** Актуально (канонично для runtime; sync 2026-08-24: mqtt-bridge = ops leftover, feature-builder = skeleton)
+**Версия:** 3.8
+**Дата обновления:** 2026-09-30
+**Статус:** Актуально (канонично для runtime; sync 2026-09-30: TopologyPack, `single_tank`, `lighting_tick` в реестре; ранее 2026-08-24: mqtt-bridge = ops leftover, feature-builder = skeleton)
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 Breaking-change: HTTP-транспорт задач планировщика удалён из runtime; обратная совместимость не поддерживается.
@@ -231,16 +231,17 @@ Status: AE3 listens — `scheduler_intent_terminal`, `ae_zone_event`. Status: NO
 
 ### 4.2 Topology registry (zone workflows)
 
-Реальный registry задан в `ae3lite/application/services/workflow_topology.py` и `topology_registry.py`. Поддерживаемые topology для `ae_tasks`:
-- `two_tank_drip_substrate_trays` — production two-tank workflow (`TWO_TANK` graph);
-- `two_tank` — алиас к `two_tank_drip_substrate_trays` (compat);
-- `generic_cycle_start` — облегчённый cycle_start для зон без two-tank (`single_tank`/`single_tank_drip`);
-- `lighting_tick` — workflow для `task_type='lighting_tick'`.
+Реестр — `TopologyRegistry` в `ae3lite/application/services/workflow_topology.py`. Дескриптор — `TopologyPack` в `topology_pack.py`. Поддерживаемые topology для `ae_tasks`:
+- `two_tank_drip_substrate_trays` — граф `TWO_TANK`, `irrigation_binding=drip_substrate_trays`;
+- `two_tank` — тот же граф `TWO_TANK`, `irrigation_binding=generic` (отдельный пакет, не алиас);
+- `single_tank` — тот же контур без стадий `clean_fill_*`; startup после probe идёт в `solution_fill_start`;
+- `generic_cycle_start` — одна стадия `startup`, исполнение `command_batch` (diagnostics);
+- `lighting_tick` — стадия `apply`, исполнение `command_batch`.
 
-Greenhouse climate (`task_type='greenhouse_climate_tick'`) исполняется отдельным runtime path (`ae3lite/greenhouse_climate/`) и не использует topology registry зоны.
+Greenhouse climate (`task_type='greenhouse_climate_tick'`) исполняется отдельным runtime path (`ae3lite/greenhouse_climate/`) и в реестр зоны входит только как tick-модуль scope `greenhouse`, не как стадия `ae_tasks`.
 
-Фазы two-tank (стадии графа агрегируются в `workflow_phase`):
-- `idle -> tank_filling -> tank_recirc -> ready -> irrigating <-> irrig_recirc`.
+Фазы two-tank и single-tank (стадии графа агрегируются в `workflow_phase`):
+- `idle -> tank_filling -> tank_recirc -> ready -> irrigating`.
 
 ---
 

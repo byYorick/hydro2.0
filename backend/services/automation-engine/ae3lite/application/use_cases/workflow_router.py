@@ -19,28 +19,15 @@ from ae3lite.application.handlers.flow_path_guard import (
     encode_manual_hold_return_stage,
 )
 from ae3lite.application.handlers.base import BaseStageHandler
-from ae3lite.application.handlers.await_ready import AwaitReadyHandler
-from ae3lite.application.handlers.clean_fill import CleanFillCheckHandler
-from ae3lite.application.handlers.command import CommandHandler
-from ae3lite.application.handlers.correction import CorrectionHandler
-from ae3lite.application.handlers.decision_gate import DecisionGateHandler
-from ae3lite.application.handlers.irrigation_check import IrrigationCheckHandler
-from ae3lite.application.handlers.manual_hold import ManualHoldHandler
-from ae3lite.application.handlers.prepare_recirc import PrepareRecircCheckHandler
-from ae3lite.application.handlers.prepare_recirc_window import PrepareRecircWindowHandler
-from ae3lite.application.handlers.solution_fill import SolutionFillCheckHandler
-from ae3lite.application.handlers.solution_topup import (
-    SolutionTopupCheckHandler,
-    SolutionTopupCompleteHandler,
-    SolutionTopupGuardHandler,
-)
-from ae3lite.application.handlers.solution_change import (
-    SolutionChangeCompleteHandler,
-    SolutionChangeOperatorGateHandler,
-    SolutionDrainCheckHandler,
-)
-from ae3lite.application.handlers.startup import StartupHandler
 from ae3lite.application.services.workflow_topology import TopologyRegistry
+from ae3lite.hydraulics.dispatch import assert_stage_dispatch
+from ae3lite.hydraulics.failure_report import (
+    close_upward_capture,
+    drain_upward_reports,
+    open_upward_capture,
+    publish_upward_reports,
+)
+from ae3lite.hydraulics.registry import handler_dependency_map, hydraulic_handler_classes
 from ae3lite.config.schema import RuntimePlan
 from ae3lite.domain.entities.workflow_state import CorrectionState, WorkflowState
 from ae3lite.domain.services.zone_node_availability import resolve_task_error_with_node_offline
@@ -129,26 +116,8 @@ class WorkflowRouter:
     уровней и расчёты коррекции живут в handler-классах.
     """
 
-    # Соответствие handler key → handler class
-    HANDLER_MAP: dict[str, type[BaseStageHandler]] = {
-        "startup": StartupHandler,
-        "await_ready": AwaitReadyHandler,
-        "decision_gate": DecisionGateHandler,
-        "command": CommandHandler,
-        "clean_fill": CleanFillCheckHandler,
-        "solution_fill": SolutionFillCheckHandler,
-        "solution_topup_guard": SolutionTopupGuardHandler,
-        "solution_topup_check": SolutionTopupCheckHandler,
-        "solution_topup_complete": SolutionTopupCompleteHandler,
-        "solution_change_gate": SolutionChangeOperatorGateHandler,
-        "solution_drain_check": SolutionDrainCheckHandler,
-        "solution_change_complete": SolutionChangeCompleteHandler,
-        "irrigation_check": IrrigationCheckHandler,
-        "prepare_recirc": PrepareRecircCheckHandler,
-        "prepare_recirc_window": PrepareRecircWindowHandler,
-        "manual_hold": ManualHoldHandler,
-        "correction": CorrectionHandler,
-    }
+    # Ключи собраны из трёх модулей гидравлики плюс общий command/manual_hold.
+    HANDLER_MAP: dict[str, type[BaseStageHandler]] = hydraulic_handler_classes()
 
     def __init__(
         self,
@@ -169,7 +138,15 @@ class WorkflowRouter:
         self._runtime_monitor = runtime_monitor
         self._command_gateway = command_gateway
 
-        # Предсоздать handler'ы
+        # Зависимости объявляет модуль подсистемы (handler_deps), не роутер.
+        dependency_pool: dict[str, Any] = {
+            "task_repository": task_repository,
+            "decision_controller": decision_controller,
+            "planner": correction_planner,
+            "pid_state_repository": pid_state_repository,
+            "alert_repository": alert_repository,
+        }
+        declared_deps = handler_dependency_map()
         self._handlers: dict[str, BaseStageHandler] = {}
         for key, cls in self.HANDLER_MAP.items():
             kwargs: dict[str, Any] = {
@@ -179,18 +156,10 @@ class WorkflowRouter:
                 # Tests, создающие handlers напрямую, оставляют default False.
                 "live_reload_enabled": True,
             }
-            if key in {"await_ready", "decision_gate", "irrigation_check", "prepare_recirc"}:
-                kwargs["task_repository"] = task_repository
-            if key == "decision_gate":
-                kwargs["decision_controller"] = decision_controller
-            if key == "correction":
-                if correction_planner is not None:
-                    kwargs["planner"] = correction_planner
-                kwargs["pid_state_repository"] = pid_state_repository
-            if key == "prepare_recirc":
-                kwargs["pid_state_repository"] = pid_state_repository
-            if key == "prepare_recirc_window":
-                kwargs["alert_repository"] = alert_repository
+            for dep_name in declared_deps.get(key, ()):
+                if dep_name == "planner" and dependency_pool["planner"] is None:
+                    continue
+                kwargs[dep_name] = dependency_pool[dep_name]
             self._handlers[key] = cls(**kwargs)
 
     async def run(self, *, task: Any, plan: Any, now: datetime) -> Any:
@@ -206,8 +175,13 @@ class WorkflowRouter:
             if task.correction is not None:
                 handler = self._handlers["correction"]
                 stage_def = self._registry.get(topology, current_stage)
-                outcome = await handler.run(
-                    task=task, plan=plan, stage_def=stage_def, now=now,
+                assert_stage_dispatch(stage_def, correction_active=True)
+                outcome = await self._invoke_handler(
+                    handler=handler,
+                    task=task,
+                    plan=plan,
+                    stage_def=stage_def,
+                    now=now,
                 )
                 return await self._apply_outcome(
                     task=task, plan=plan, outcome=outcome, now=now,
@@ -215,6 +189,7 @@ class WorkflowRouter:
 
             # Обычный dispatch stage
             stage_def = self._registry.get(topology, current_stage)
+            assert_stage_dispatch(stage_def, correction_active=False)
             handler_key = stage_def.handler
 
             # Терминальные ready-stage обрабатываются централизованно
@@ -240,8 +215,12 @@ class WorkflowRouter:
             if handler_key == "solution_topup_complete":
                 handler = self._handlers.get("solution_topup_complete")
                 if handler is not None:
-                    outcome = await handler.run(
-                        task=task, plan=plan, stage_def=stage_def, now=now,
+                    outcome = await self._invoke_handler(
+                        handler=handler,
+                        task=task,
+                        plan=plan,
+                        stage_def=stage_def,
+                        now=now,
                     )
                     return await self._apply_outcome(
                         task=task, plan=plan, outcome=outcome, now=now,
@@ -249,8 +228,12 @@ class WorkflowRouter:
             if current_stage == "complete_ready" and str(getattr(task, "task_type", "") or "").strip().lower() == "solution_change":
                 handler = self._handlers.get("solution_change_complete")
                 if handler is not None:
-                    outcome = await handler.run(
-                        task=task, plan=plan, stage_def=stage_def, now=now,
+                    outcome = await self._invoke_handler(
+                        handler=handler,
+                        task=task,
+                        plan=plan,
+                        stage_def=stage_def,
+                        now=now,
                     )
                     return await self._apply_outcome(
                         task=task, plan=plan, outcome=outcome, now=now,
@@ -263,23 +246,13 @@ class WorkflowRouter:
                     f"Не найден handler для key={handler_key!r} (stage={current_stage})",
                 )
 
-            try:
-                outcome = await handler.run(
-                    task=task, plan=plan, stage_def=stage_def, now=now,
-                )
-            except TaskExecutionError as exc:
-                code, message = await self._remap_execution_error_for_task(
-                    task=task,
-                    error_code=str(exc.code),
-                    error_message=str(exc),
-                    node_uid=self._extract_irrig_node_uid_from_plan(plan=plan),
-                )
-                remapped = TaskExecutionError(code, message)
-                # Preserve attributes used by correction stage-deadline interrupt.
-                deadline_kind = getattr(exc, "deadline_kind", None)
-                if deadline_kind is not None:
-                    remapped.deadline_kind = str(deadline_kind)
-                raise remapped from exc
+            outcome = await self._invoke_handler(
+                handler=handler,
+                task=task,
+                plan=plan,
+                stage_def=stage_def,
+                now=now,
+            )
             return await self._apply_outcome(
                 task=task, plan=plan, outcome=outcome, now=now,
             )
@@ -295,6 +268,9 @@ class WorkflowRouter:
         now: datetime,
     ) -> Any:
         current_task = outcome.task_override or task
+        reports = tuple(getattr(outcome, "upward_reports", ()) or ())
+        if outcome.kind != "fail" and reports:
+            await publish_upward_reports(reports)
 
         if outcome.kind == "poll":
             return await self._apply_poll(task=current_task, outcome=outcome, now=now)
@@ -329,6 +305,7 @@ class WorkflowRouter:
                 task=current_task, now=now,
                 error_code=error_code,
                 error_message=error_message,
+                upward_reports=tuple(getattr(outcome, "upward_reports", ()) or ()),
             )
 
         raise TaskExecutionError(
@@ -687,11 +664,57 @@ class WorkflowRouter:
             )
         return resolved_task
 
+    async def _invoke_handler(
+        self,
+        *,
+        handler: BaseStageHandler,
+        task: Any,
+        plan: Any,
+        stage_def: Any,
+        now: datetime,
+    ) -> Any:
+        """Запускает модуль и забирает его отчёты. Наружу их здесь не шлёт."""
+        token = open_upward_capture()
+        try:
+            try:
+                outcome = await handler.run(
+                    task=task, plan=plan, stage_def=stage_def, now=now,
+                )
+            except TaskExecutionError as exc:
+                reports = drain_upward_reports()
+                code, message = await self._remap_execution_error_for_task(
+                    task=task,
+                    error_code=str(exc.code),
+                    error_message=str(exc),
+                    node_uid=self._extract_irrig_node_uid_from_plan(plan=plan),
+                )
+                remapped = TaskExecutionError(code, message)
+                remapped.upward_reports = tuple(getattr(exc, "upward_reports", ()) or ()) + reports
+                deadline_kind = getattr(exc, "deadline_kind", None)
+                if deadline_kind is not None:
+                    remapped.deadline_kind = str(deadline_kind)
+                raise remapped from exc
+            reports = drain_upward_reports()
+            existing = tuple(getattr(outcome, "upward_reports", ()) or ())
+            if reports or existing:
+                return replace(outcome, upward_reports=existing + reports)
+            return outcome
+        finally:
+            close_upward_capture(token)
+
     async def _fail_task(
-        self, *, task: Any, now: datetime, error_code: str, error_message: str,
+        self,
+        *,
+        task: Any,
+        now: datetime,
+        error_code: str,
+        error_message: str,
+        upward_reports: tuple[Any, ...] = (),
     ) -> Any:
         TASK_FAILED.labels(topology=task.topology, error_code=error_code).inc()
-        raise TaskExecutionError(error_code, error_message)
+        error = TaskExecutionError(error_code, error_message)
+        error.upward_reports = upward_reports
+        raise error
 
     async def _remap_execution_error_for_task(
         self,

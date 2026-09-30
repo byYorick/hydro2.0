@@ -42,10 +42,6 @@ def _noop_zone_events(monkeypatch: pytest.MonkeyPatch) -> None:
         "ae3lite.application.handlers.flow_path_guard.create_zone_event",
         AsyncMock(return_value=None),
     )
-    monkeypatch.setattr(
-        "ae3lite.application.handlers.flow_path_guard.send_biz_alert",
-        AsyncMock(return_value=None),
-    )
 
 
 def test_should_interrupt_flow_for_control_mode_defaults() -> None:
@@ -166,14 +162,9 @@ async def test_ensure_flow_stopped_emits_event_and_alert_on_command_timeout(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     event_mock = AsyncMock(return_value=None)
-    alert_mock = AsyncMock(return_value=True)
     monkeypatch.setattr(
         "ae3lite.application.handlers.flow_path_guard.create_zone_event",
         event_mock,
-    )
-    monkeypatch.setattr(
-        "ae3lite.application.handlers.flow_path_guard.send_biz_alert",
-        alert_mock,
     )
     handler = _HandlerStub(batch_raises=True)
     task = SimpleNamespace(id=1, zone_id=2, current_stage="solution_fill_check", workflow=SimpleNamespace())
@@ -187,9 +178,12 @@ async def test_ensure_flow_stopped_emits_event_and_alert_on_command_timeout(
     )
     event_mock.assert_awaited_once()
     assert event_mock.await_args.args[1] == "FLOW_STOP_FAILED_HARDWARE_MAY_BE_ACTIVE"
-    alert_mock.assert_awaited_once()
-    assert alert_mock.await_args.kwargs["code"] == "biz_flow_stop_failed_hardware_may_be_active"
-    assert alert_mock.await_args.kwargs["severity"] == "critical"
+    from ae3lite.hydraulics.failure_report import drain_upward_reports
+
+    reports = drain_upward_reports()
+    assert len(reports) == 1
+    assert reports[0].code == "biz_flow_stop_failed_hardware_may_be_active"
+    assert reports[0].severity == "critical"
 
 
 def test_encode_decode_manual_hold_operator_step() -> None:

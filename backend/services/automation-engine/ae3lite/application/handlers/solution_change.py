@@ -10,7 +10,7 @@ from ae3lite.application.dto.stage_outcome import StageOutcome
 from ae3lite.application.handlers.base import BaseStageHandler
 from ae3lite.domain.errors import TaskExecutionError
 from ae3lite.infrastructure.metrics import STAGE_DEADLINE_EXCEEDED
-from common.biz_alerts import send_biz_alert
+from ae3lite.hydraulics.failure_report import note_upward_report
 from common.db import create_zone_event
 
 _logger = logging.getLogger(__name__)
@@ -172,7 +172,7 @@ class SolutionDrainCheckHandler(BaseStageHandler):
                 stage="solution_drain_check",
             ).inc()
             try:
-                await send_biz_alert(
+                await note_upward_report(
                     code="biz_solution_drain_timeout",
                     alert_type="AE3 Solution Drain Timeout",
                     message="Превышено время слива бака раствора при подмене.",

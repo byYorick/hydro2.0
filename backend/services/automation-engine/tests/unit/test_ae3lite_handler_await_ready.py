@@ -98,19 +98,9 @@ async def test_await_ready_timeout_emits_zone_event_and_biz_alert(monkeypatch: p
     async def fake_create_zone_event(zone_id: int, event_type: str, details=None):
         events.append((zone_id, event_type, details))
 
-    alerts: list[dict] = []
-
-    async def fake_send_biz_alert(**kwargs):
-        alerts.append(dict(kwargs))
-        return True
-
     monkeypatch.setattr(
         "ae3lite.application.handlers.await_ready.create_zone_event",
         fake_create_zone_event,
-    )
-    monkeypatch.setattr(
-        "ae3lite.application.handlers.await_ready.send_biz_alert",
-        fake_send_biz_alert,
     )
 
     handler = AwaitReadyHandler(runtime_monitor=object(), command_gateway=object(), task_repository=_TaskRepoStub())
@@ -124,6 +114,16 @@ async def test_await_ready_timeout_emits_zone_event_and_biz_alert(monkeypatch: p
     )
     plan = _plan(zone_workflow_phase="startup", grow_cycle_id=99)
     out = await handler.run(task=task, plan=plan, stage_def=SimpleNamespace(), now=now)
+    from ae3lite.hydraulics.failure_report import drain_upward_reports
+
+    alerts = [
+        {
+            "code": report.code,
+            "zone_id": report.zone_id,
+            "dedupe_key": report.dedupe_key,
+        }
+        for report in drain_upward_reports()
+    ]
     assert out.kind == "fail"
     assert len(events) == 1
     assert events[0][0] == 7

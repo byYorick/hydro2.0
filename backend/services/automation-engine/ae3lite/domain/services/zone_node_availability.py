@@ -6,10 +6,15 @@ import os
 from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
 
+from ae3lite.application.services.workflow_topology import TopologyRegistry
 from ae3lite.domain.errors import ErrorCodes, SnapshotBuildError
 
-TWO_TANK_TOPOLOGIES = frozenset({"two_tank", "two_tank_drip_substrate_trays"})
-TWO_TANK_REQUIRED_NODE_TYPES = frozenset({"irrig", "ph", "ec"})
+TWO_TANK_REQUIRED_NODE_TYPES = TopologyRegistry().pack("two_tank").required_node_types
+TWO_TANK_TOPOLOGIES = frozenset(
+    pack_id
+    for pack_id in TopologyRegistry().ids()
+    if TopologyRegistry().pack(pack_id).plan_profile == "two_tank"
+)
 IRRIGATION_TASK_TYPES = frozenset({"irrigation_start"})
 CORRECTION_STAGE_PREFIXES = ("ph_", "ec_", "correction_", "prepare_recirc", "await_ready")
 
@@ -230,19 +235,17 @@ def required_node_types_for_task(
     normalized_topology = str(topology or "").strip().lower()
     normalized_task_type = str(task_type or "").strip().lower()
     normalized_stage = str(current_stage or "").strip().lower()
+    pack = TopologyRegistry().try_pack(normalized_topology)
+    required = pack.required_node_types if pack is not None else frozenset({"irrig"})
 
-    if normalized_task_type in IRRIGATION_TASK_TYPES:
+    if normalized_task_type in IRRIGATION_TASK_TYPES and "irrig" in required:
         return frozenset({"irrig"})
 
     if normalized_stage.startswith(CORRECTION_STAGE_PREFIXES):
-        if normalized_topology in TWO_TANK_TOPOLOGIES:
-            return frozenset({"ph", "ec"})
-        return frozenset()
+        chemical = required & frozenset({"ph", "ec"})
+        return chemical
 
-    if normalized_topology in TWO_TANK_TOPOLOGIES:
-        return TWO_TANK_REQUIRED_NODE_TYPES
-
-    return frozenset({"irrig"})
+    return required
 
 
 def resolve_required_nodes_offline_failure(

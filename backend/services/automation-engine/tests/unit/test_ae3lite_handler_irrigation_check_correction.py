@@ -768,7 +768,6 @@ async def test_irrigation_check_recent_solution_low_event_uses_setup_replay_path
         task_repository=task_repo,
     )
     monkeypatch.setattr("ae3lite.application.handlers.irrigation_check.create_zone_event", AsyncMock(return_value=True))
-    monkeypatch.setattr("ae3lite.application.handlers.irrigation_check.send_biz_alert", AsyncMock(return_value=None))
     task = SimpleNamespace(
         id=1,
         zone_id=7,

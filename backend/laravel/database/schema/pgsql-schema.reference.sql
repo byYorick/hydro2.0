@@ -3184,7 +3184,7 @@ CREATE TABLE public.sensors (
     created_at timestamp(0) without time zone,
     updated_at timestamp(0) without time zone,
     CONSTRAINT sensors_scope_check CHECK (((scope)::text = ANY ((ARRAY['inside'::character varying, 'outside'::character varying])::text[]))),
-    CONSTRAINT sensors_type_check CHECK (((type)::text = ANY ((ARRAY['TEMPERATURE'::character varying, 'HUMIDITY'::character varying, 'CO2'::character varying, 'PH'::character varying, 'EC'::character varying, 'WATER_LEVEL'::character varying, 'FLOW_RATE'::character varying, 'PUMP_CURRENT'::character varying, 'WIND_SPEED'::character varying, 'WIND_DIRECTION'::character varying, 'PRESSURE'::character varying, 'LIGHT_INTENSITY'::character varying, 'SOIL_MOISTURE'::character varying, 'OTHER'::character varying])::text[])))
+    CONSTRAINT sensors_type_check CHECK (((type)::text = ANY ((ARRAY['TEMPERATURE'::character varying, 'HUMIDITY'::character varying, 'CO2'::character varying, 'PH'::character varying, 'EC'::character varying, 'WATER_LEVEL'::character varying, 'FLOW_RATE'::character varying, 'PUMP_CURRENT'::character varying, 'WIND_SPEED'::character varying, 'WIND_DIRECTION'::character varying, 'PRESSURE'::character varying, 'LIGHT_INTENSITY'::character varying, 'SOIL_MOISTURE'::character varying, 'SOIL_TEMP'::character varying, 'OUTSIDE_TEMP'::character varying, 'OUTSIDE_HUMIDITY'::character varying, 'OUTSIDE_PRESSURE'::character varying, 'OUTSIDE_LIGHT'::character varying, 'RAIN_DETECTED'::character varying, 'OTHER'::character varying])::text[])))
 );
 
 
