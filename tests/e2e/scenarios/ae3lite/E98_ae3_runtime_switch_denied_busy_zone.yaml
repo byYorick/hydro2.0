@@ -618,7 +618,7 @@ assertions:
         value: error
       - field: code
         operator: equals
-        value: VALIDATION_ERROR
+        value: validation_error
       - field: errors.automation_runtime
         operator: is_not_null
 

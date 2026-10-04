@@ -1,6 +1,6 @@
 {
     "version": 1,
-    "generated_at": "2026-07-21T07:44:58+00:00",
+    "generated_at": "2026-10-04T06:23:34+00:00",
     "tracked_tables_count": 29,
     "tables": {
         "ae_commands": {
@@ -133,6 +133,11 @@
         },
         "ae_tasks": {
             "columns": {
+                "claim_generation": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "NO"
+                },
                 "claimed_at": {
                     "data_type": "timestamp with time zone",
                     "udt_name": "timestamptz",
@@ -163,9 +168,29 @@
                     "udt_name": "bool",
                     "is_nullable": "YES"
                 },
+                "corr_active_component": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                },
                 "corr_attempt": {
                     "data_type": "smallint",
                     "udt_name": "int2",
+                    "is_nullable": "YES"
+                },
+                "corr_baseline_id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "YES"
+                },
+                "corr_component_targets_json": {
+                    "data_type": "jsonb",
+                    "udt_name": "jsonb",
+                    "is_nullable": "YES"
+                },
+                "corr_dilute_attempts": {
+                    "data_type": "integer",
+                    "udt_name": "int4",
                     "is_nullable": "YES"
                 },
                 "corr_ec_amount_ml": {
@@ -213,6 +238,11 @@
                     "udt_name": "varchar",
                     "is_nullable": "YES"
                 },
+                "corr_ec_pid_frozen": {
+                    "data_type": "boolean",
+                    "udt_name": "bool",
+                    "is_nullable": "YES"
+                },
                 "corr_limit_policy_logged": {
                     "data_type": "boolean",
                     "udt_name": "bool",
@@ -236,6 +266,11 @@
                 "corr_needs_ph_up": {
                     "data_type": "boolean",
                     "udt_name": "bool",
+                    "is_nullable": "YES"
+                },
+                "corr_nutrient_budget": {
+                    "data_type": "numeric",
+                    "udt_name": "numeric",
                     "is_nullable": "YES"
                 },
                 "corr_outcome_success": {
@@ -269,6 +304,11 @@
                     "is_nullable": "YES"
                 },
                 "corr_ph_node_uid": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                },
+                "corr_pipeline_phase": {
                     "data_type": "character varying",
                     "udt_name": "varchar",
                     "is_nullable": "YES"
@@ -316,6 +356,16 @@
                 "corr_wait_until": {
                     "data_type": "timestamp with time zone",
                     "udt_name": "timestamptz",
+                    "is_nullable": "YES"
+                },
+                "corr_water_ec": {
+                    "data_type": "numeric",
+                    "udt_name": "numeric",
+                    "is_nullable": "YES"
+                },
+                "corr_water_ph": {
+                    "data_type": "numeric",
+                    "udt_name": "numeric",
                     "is_nullable": "YES"
                 },
                 "created_at": {
@@ -433,7 +483,17 @@
                     "udt_name": "timestamptz",
                     "is_nullable": "YES"
                 },
+                "overall_deadline_at": {
+                    "data_type": "timestamp with time zone",
+                    "udt_name": "timestamptz",
+                    "is_nullable": "YES"
+                },
                 "pending_manual_step": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                },
+                "process_run_id": {
                     "data_type": "character varying",
                     "udt_name": "varchar",
                     "is_nullable": "YES"
@@ -497,6 +557,11 @@
         },
         "ae_zone_leases": {
             "columns": {
+                "claim_generation": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "NO"
+                },
                 "leased_until": {
                     "data_type": "timestamp with time zone",
                     "udt_name": "timestamptz",
@@ -506,6 +571,11 @@
                     "data_type": "character varying",
                     "udt_name": "varchar",
                     "is_nullable": "NO"
+                },
+                "process_run_id": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
                 },
                 "updated_at": {
                     "data_type": "timestamp with time zone",
@@ -1286,6 +1356,11 @@
                     "udt_name": "int8",
                     "is_nullable": "NO"
                 },
+                "is_system": {
+                    "data_type": "boolean",
+                    "udt_name": "bool",
+                    "is_nullable": "NO"
+                },
                 "name": {
                     "data_type": "character varying",
                     "udt_name": "varchar",
@@ -1295,6 +1370,11 @@
                     "data_type": "character varying",
                     "udt_name": "varchar",
                     "is_nullable": "NO"
+                },
+                "shared_weather_station_node_id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "YES"
                 },
                 "timezone": {
                     "data_type": "character varying",

@@ -191,7 +191,15 @@ async def ensure_flow_stopped(
     """Отправляет stop-план stage, подтверждает OFF через irr_state probe."""
     config = flow_path_stage_config(stage)
     if config is None:
-        return FlowStopOutcome(confirmed=True, task=task)
+        return FlowStopOutcome(
+            confirmed=False,
+            task=task,
+            error_code="ae3_flow_stop_unconfirmed",
+            error_message=(
+                f"Нет flow-path конфигурации для stage={stage}; "
+                "остановка без probe не считается подтверждённой"
+            ),
+        )
 
     commands = _resolve_stop_commands(plan=plan, plan_names=config.stop_plan_names)
     if not commands:

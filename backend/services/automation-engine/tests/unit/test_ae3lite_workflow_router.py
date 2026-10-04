@@ -6,6 +6,7 @@ deadline computation — without real DB (all dependencies mocked).
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
@@ -127,18 +128,41 @@ class _MockTaskRepo:
         self._return_task = return_task
         self._current_task = current_task
 
-    async def update_stage(self, *, task_id, owner, workflow, correction, due_at, now, preserve_pending_manual_step=False):
+    @asynccontextmanager
+    async def transaction(self):
+        yield object()
+
+    async def update_stage(
+        self,
+        *,
+        task_id,
+        owner,
+        workflow,
+        correction,
+        due_at,
+        now,
+        preserve_pending_manual_step=False,
+        claim_generation=0,
+        conn=None,
+    ):
         self.update_stage_calls.append({
             "task_id": task_id,
             "owner": owner,
+            "claim_generation": claim_generation,
             "workflow": workflow,
             "correction": correction,
             "preserve_pending_manual_step": preserve_pending_manual_step,
+            "conn": conn,
         })
         return self._return_task
 
-    async def mark_completed(self, *, task_id, owner, now):
-        self.mark_completed_calls.append(task_id)
+    async def mark_completed(self, *, task_id, owner, now, claim_generation=0, conn=None):
+        self.mark_completed_calls.append({
+            "task_id": task_id,
+            "owner": owner,
+            "claim_generation": claim_generation,
+            "conn": conn,
+        })
         if self._return_task is None:
             return None
         return replace(self._return_task, status="completed")
@@ -156,18 +180,19 @@ class _MockWorkflowRepo:
     def __init__(self):
         self.upsert_calls: list[dict] = []
 
-    async def upsert_phase(self, *, zone_id, workflow_phase, payload, scheduler_task_id, now):
-        self.upsert_calls.append({"zone_id": zone_id, "phase": workflow_phase, "payload": payload})
+    async def upsert_phase(self, *, zone_id, workflow_phase, payload, scheduler_task_id, now, conn=None):
+        self.upsert_calls.append({"zone_id": zone_id, "phase": workflow_phase, "payload": payload, "conn": conn})
 
 
 class _MockWorkflowRepoRaises(_MockWorkflowRepo):
-    async def upsert_phase(self, *, zone_id, workflow_phase, payload, scheduler_task_id, now):
+    async def upsert_phase(self, *, zone_id, workflow_phase, payload, scheduler_task_id, now, conn=None):
         await super().upsert_phase(
             zone_id=zone_id,
             workflow_phase=workflow_phase,
             payload=payload,
             scheduler_task_id=scheduler_task_id,
             now=now,
+            conn=conn,
         )
         raise RuntimeError("workflow repo unavailable")
 
@@ -297,10 +322,11 @@ async def test_router_transition_uses_task_override_owner_from_command_reconcile
     router, tr, _ = _make_router(return_task=task)
     router._handlers["command"] = _StubHandler(outcome)
 
-    await router.run(task=task, plan=_MockPlan(runtime=RUNTIME), now=NOW)
+    with pytest.raises(TaskExecutionError) as exc_info:
+        await router.run(task=task, plan=_MockPlan(runtime=RUNTIME), now=NOW)
 
-    assert tr.update_stage_calls[0]["owner"] == "w-reconciled"
-    assert tr.update_stage_calls[0]["workflow"].current_stage == "solution_fill_start"
+    assert exc_info.value.code == "ae3_stale_claim_rejected"
+    assert tr.update_stage_calls == []
 
 
 async def test_router_poll_uses_task_override_owner_from_command_reconcile():
@@ -318,9 +344,11 @@ async def test_router_poll_uses_task_override_owner_from_command_reconcile():
     outcome = StageOutcome(kind="poll", due_delay_sec=5, task_override=fresh)
     router, tr, _ = _make_router(clean_fill_outcome=outcome, return_task=task)
 
-    await router.run(task=task, plan=_MockPlan(runtime=RUNTIME), now=NOW)
+    with pytest.raises(TaskExecutionError) as exc_info:
+        await router.run(task=task, plan=_MockPlan(runtime=RUNTIME), now=NOW)
 
-    assert tr.update_stage_calls[0]["owner"] == "w-reconciled"
+    assert exc_info.value.code == "ae3_stale_claim_rejected"
+    assert tr.update_stage_calls == []
 
 
 async def test_router_enter_correction_uses_task_override_owner_from_command_reconcile():
@@ -347,14 +375,15 @@ async def test_router_enter_correction_uses_task_override_owner_from_command_rec
     router, tr, _ = _make_router(return_task=task)
     router._handlers["solution_fill"] = _StubHandler(outcome)
 
-    await router.run(task=task, plan=_MockPlan(runtime=RUNTIME), now=NOW)
+    with pytest.raises(TaskExecutionError) as exc_info:
+        await router.run(task=task, plan=_MockPlan(runtime=RUNTIME), now=NOW)
 
-    assert tr.update_stage_calls[0]["owner"] == "w-reconciled"
-    assert tr.update_stage_calls[0]["correction"].corr_step == "corr_wait_stable"
+    assert exc_info.value.code == "ae3_stale_claim_rejected"
+    assert tr.update_stage_calls == []
 
 
 async def test_router_enter_correction_reloads_owner_from_db_when_stale():
-    """CAS path: in-memory claimed_by stale → reload owner before update_stage."""
+    """Чужой claimed_by в БД не подставляется: stale writer не пишет outcome."""
     corr = CorrectionState(
         corr_step="corr_check", attempt=1, max_attempts=5,
         ec_attempt=0, ec_max_attempts=5, ph_attempt=0, ph_max_attempts=5,
@@ -379,9 +408,54 @@ async def test_router_enter_correction_reloads_owner_from_db_when_stale():
     router, _, _ = _make_router(task_repo=tr, return_task=task)
     router._handlers["solution_fill"] = _StubHandler(outcome)
 
+    with pytest.raises(TaskExecutionError) as exc_info:
+        await router.run(task=task, plan=_MockPlan(runtime=RUNTIME), now=NOW)
+
+    assert exc_info.value.code == "ae3_stale_claim_rejected"
+    assert tr.update_stage_calls == []
+
+
+async def test_router_same_token_override_updates_stage_fields():
+    base_row = _make_task_row(stage="clean_fill_stop_to_solution", phase="tank_filling")
+    task = AutomationTask.from_row({**base_row, "claimed_by": "w1", "claim_generation": 3})
+    override = AutomationTask.from_row({
+        **base_row,
+        "claimed_by": "w1",
+        "claim_generation": 3,
+        "status": "running",
+    })
+    outcome = StageOutcome(
+        kind="transition",
+        next_stage="solution_fill_start",
+        task_override=override,
+    )
+    router, tr, _ = _make_router(return_task=task)
+    router._handlers["command"] = _StubHandler(outcome)
+
     await router.run(task=task, plan=_MockPlan(runtime=RUNTIME), now=NOW)
 
-    assert tr.update_stage_calls[0]["owner"] == "w-fresh"
+    assert tr.update_stage_calls[0]["owner"] == "w1"
+    assert tr.update_stage_calls[0]["claim_generation"] == 3
+    assert tr.update_stage_calls[0]["workflow"].current_stage == "solution_fill_start"
+
+
+async def test_router_override_with_other_generation_does_not_write():
+    base_row = _make_task_row(stage="clean_fill_stop_to_solution", phase="tank_filling")
+    task = AutomationTask.from_row({**base_row, "claimed_by": "w1", "claim_generation": 2})
+    override = AutomationTask.from_row({**base_row, "claimed_by": "w1", "claim_generation": 4})
+    outcome = StageOutcome(
+        kind="transition",
+        next_stage="solution_fill_start",
+        task_override=override,
+    )
+    router, tr, _ = _make_router(return_task=task)
+    router._handlers["command"] = _StubHandler(outcome)
+
+    with pytest.raises(TaskExecutionError) as exc_info:
+        await router.run(task=task, plan=_MockPlan(runtime=RUNTIME), now=NOW)
+
+    assert exc_info.value.code == "ae3_stale_claim_rejected"
+    assert tr.update_stage_calls == []
 
 
 async def test_router_enter_correction_idempotent_when_correction_already_persisted():
@@ -448,10 +522,11 @@ async def test_router_exit_correction_uses_task_override_owner_from_command_reco
     )
     router, tr, _ = _make_router(correction_outcome=outcome, return_task=task)
 
-    await router.run(task=task, plan=_MockPlan(runtime=RUNTIME), now=NOW)
+    with pytest.raises(TaskExecutionError) as exc_info:
+        await router.run(task=task, plan=_MockPlan(runtime=RUNTIME), now=NOW)
 
-    assert tr.update_stage_calls[0]["owner"] == "w-reconciled"
-    assert tr.update_stage_calls[0]["workflow"].current_stage == "solution_fill_stop_to_ready"
+    assert exc_info.value.code == "ae3_stale_claim_rejected"
+    assert tr.update_stage_calls == []
 
 
 async def test_router_complete_uses_task_override_owner_from_command_reconcile():
@@ -468,9 +543,11 @@ async def test_router_complete_uses_task_override_owner_from_command_reconcile()
     router, tr, _ = _make_router(return_task=task)
     router._handlers["solution_fill"] = _StubHandler(outcome)
 
-    await router.run(task=task, plan=_MockPlan(runtime=RUNTIME), now=NOW)
+    with pytest.raises(TaskExecutionError) as exc_info:
+        await router.run(task=task, plan=_MockPlan(runtime=RUNTIME), now=NOW)
 
-    assert tr.mark_completed_calls  # called through _complete_task
+    assert exc_info.value.code == "ae3_stale_claim_rejected"
+    assert tr.mark_completed_calls == []
 
 
 async def test_router_fail_uses_task_override_for_metrics():
@@ -494,7 +571,7 @@ async def test_router_fail_uses_task_override_for_metrics():
     with pytest.raises(TaskExecutionError) as exc_info:
         await router.run(task=task, plan=_MockPlan(runtime=RUNTIME), now=NOW)
 
-    assert exc_info.value.code == "clean_fill_timeout"
+    assert exc_info.value.code == "ae3_stale_claim_rejected"
 
 
 async def test_router_returns_cancelled_task_when_transition_persist_races_with_abort():
@@ -1199,10 +1276,10 @@ async def test_router_fails_closed_when_workflow_repo_sync_fails_after_transitio
         await router.run(task=task, plan=_MockPlan(runtime=RUNTIME), now=NOW)
 
     assert exc_info.value.code == "ae3_workflow_state_sync_failed"
-    assert len(tr.update_stage_calls) == 2
+    assert len(tr.update_stage_calls) == 1
     assert tr.update_stage_calls[0]["workflow"].current_stage == "clean_fill_start"
-    assert tr.update_stage_calls[1]["workflow"].current_stage == "startup"
     assert len(wr.upsert_calls) == 1
+    assert tr.update_stage_calls[0]["conn"] is wr.upsert_calls[0]["conn"]
 
 
 async def test_router_poll_await_ready_does_not_overwrite_zone_workflow_state():

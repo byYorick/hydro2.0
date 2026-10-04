@@ -62,6 +62,7 @@ class DecisionGateHandler(BaseStageHandler):
             irrigation_decision_strategy=str(runtime.irrigation_decision.strategy or ""),
             irrigation_decision_outcome=decision.outcome,
             irrigation_decision_reason_code=decision.reason_code,
+            claim_generation=int(getattr(task, "claim_generation", 0) or 0),
             irrigation_decision_degraded=decision.degraded,
         )
         if updated is None:

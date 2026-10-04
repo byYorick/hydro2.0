@@ -134,7 +134,11 @@ async def test_shutdown_releases_unpublished_claim() -> None:
     released = await worker._maybe_release_unpublished_claim(task)
     assert released is True
     task_repository.requeue_unpublished_execution.assert_awaited_once()
-    lease_repository.release.assert_awaited_once_with(zone_id=3, owner="shutdown-test-worker")
+    lease_repository.release.assert_awaited_once_with(
+        zone_id=3,
+        owner="shutdown-test-worker",
+        claim_generation=0,
+    )
 
     task_repository.requeue_unpublished_execution.reset_mock()
     lease_repository.release.reset_mock()

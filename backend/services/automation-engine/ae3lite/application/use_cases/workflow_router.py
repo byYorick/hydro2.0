@@ -31,7 +31,8 @@ from ae3lite.hydraulics.registry import handler_dependency_map, hydraulic_handle
 from ae3lite.config.schema import RuntimePlan
 from ae3lite.domain.entities.workflow_state import CorrectionState, WorkflowState
 from ae3lite.domain.services.zone_node_availability import resolve_task_error_with_node_offline
-from ae3lite.domain.errors import PlannerConfigurationError, TaskExecutionError
+from ae3lite.domain.claim_fence import claim_generation, claim_owner, same_claim_token
+from ae3lite.domain.errors import ErrorCodes, PlannerConfigurationError, TaskExecutionError
 from ae3lite.infrastructure.log_context import log_context_scope
 from ae3lite.infrastructure.metrics import (
     COMMAND_TERMINAL,
@@ -49,6 +50,10 @@ from common.db import create_zone_event
 
 
 logger = logging.getLogger(__name__)
+
+
+class _StageUpdateNotApplied(Exception):
+    """Internal sentinel: task update CAS did not apply inside an atomic transition."""
 
 
 # ── Stage deadline slack constants (extracted per audit F1) ──────────
@@ -109,6 +114,9 @@ def _clamp_due_delay_sec(raw: Any) -> int:
     return value
 
 
+from ae3lite.application.services.task_workflow_transition import TaskWorkflowTransition
+
+
 class WorkflowRouter:
     """Оркестратор topology-driven workflow: dispatch → handler → apply outcome → requeue.
 
@@ -134,6 +142,7 @@ class WorkflowRouter:
     ) -> None:
         self._task_repo = task_repository
         self._workflow_repo = workflow_repository
+        self._transitions = TaskWorkflowTransition(task_repository=task_repository, workflow_repository=workflow_repository)
         self._registry = topology_registry or TopologyRegistry()
         self._runtime_monitor = runtime_monitor
         self._command_gateway = command_gateway
@@ -267,7 +276,16 @@ class WorkflowRouter:
         outcome: StageOutcome,
         now: datetime,
     ) -> Any:
-        current_task = outcome.task_override or task
+        override = getattr(outcome, "task_override", None)
+        if override is not None and not same_claim_token(task, override):
+            raise TaskExecutionError(
+                "ae3_stale_claim_rejected",
+                (
+                    f"task_override не даёт права записи task_id={getattr(task, 'id', None)}: "
+                    "чужой claimed_by или другое поколение claim"
+                ),
+            )
+        current_task = override if override is not None else task
         reports = tuple(getattr(outcome, "upward_reports", ()) or ())
         if outcome.kind != "fail" and reports:
             await publish_upward_reports(reports)
@@ -313,37 +331,49 @@ class WorkflowRouter:
             f"Неизвестный StageOutcome.kind={outcome.kind!r}",
         )
 
-    async def _resolve_stage_owner(self, *, task: Any) -> str:
-        """Возвращает актуальный claimed_by для CAS update_stage.
+    async def _require_original_claim(self, *, task: Any) -> tuple[str, int]:
+        """Возвращает token исходного claim. Чужой owner или generation — отказ писать.
 
-        После command reconcile / janitor requeue in-memory task может держать
-        stale owner. Без reload CAS miss превращается в ae3_*_apply_failed.
+        Пустой claimed_by в БД (уже pending после своего requeue) не подменяется
+        чужим именем: SQL CAS дальше не запишет outcome в чужой claim.
         """
-        owner = str(getattr(task, "claimed_by", None) or "").strip()
+        owner = claim_owner(task)
+        generation = claim_generation(task)
+        if not owner:
+            raise TaskExecutionError(
+                "ae3_stale_claim_rejected",
+                f"У задачи {getattr(task, 'id', None)} нет claimed_by для записи outcome",
+            )
         get_task_by_id = getattr(self._task_repo, "get_by_id", None)
         if not callable(get_task_by_id):
-            return owner
+            return owner, generation
         try:
             fresh = await get_task_by_id(task_id=int(task.id))
         except Exception:
             logger.warning(
-                "AE3 не смог перечитать claimed_by перед update_stage task_id=%s",
+                "AE3 не смог перечитать claim token перед записью task_id=%s",
                 getattr(task, "id", None),
                 exc_info=True,
             )
-            return owner
+            return owner, generation
         if fresh is None:
-            return owner
-        fresh_owner = str(getattr(fresh, "claimed_by", None) or "").strip()
-        if fresh_owner and fresh_owner != owner:
+            return owner, generation
+        fresh_owner = claim_owner(fresh)
+        fresh_generation = claim_generation(fresh)
+        if fresh_owner and (fresh_owner != owner or fresh_generation != generation):
             logger.info(
-                "AE3 owner reload before update_stage: task_id=%s stale=%s fresh=%s",
+                "AE3 stale claim rejected: task_id=%s owner=%s generation=%s fresh_owner=%s fresh_generation=%s",
                 getattr(task, "id", None),
-                owner or "<empty>",
+                owner,
+                generation,
                 fresh_owner,
+                fresh_generation,
             )
-            return fresh_owner
-        return fresh_owner or owner
+            raise TaskExecutionError(
+                "ae3_stale_claim_rejected",
+                "Смена владельца или поколения claim запрещает запись outcome",
+            )
+        return owner, generation
 
     async def _apply_poll(
         self, *, task: Any, outcome: StageOutcome, now: datetime,
@@ -351,11 +381,37 @@ class WorkflowRouter:
         """Оставляет задачу в том же stage и ставит повторный запуск с задержкой."""
         workflow = task.workflow
         due_at = now + timedelta(seconds=_clamp_due_delay_sec(outcome.due_delay_sec))
-        owner = await self._resolve_stage_owner(task=task)
+        owner, generation = await self._require_original_claim(task=task)
+        # await_ready reads zone_workflow_state to decide whether the fill cycle
+        # completed and irrigation is safe (via plan.runtime.zone_workflow_phase).
+        # Writing "ready" back into zone_workflow_state on each poll tick would
+        # create a self-fulfilling loop: on the very next tick the handler sees
+        # "ready" written by *itself* and starts irrigation even when tanks are
+        # still empty — for example after a failed irrigation_check that left
+        # zone_workflow_state="idle" due to a level-sensor error.  Only the fill
+        # cycle tasks (prepare_recirculation_stop_to_ready etc.) are allowed to
+        # set zone_workflow_state="ready"; await_ready must leave it untouched.
+        if task.current_stage != "await_ready":
+            resolved_task, _applied = await self._update_stage_and_workflow_phase_atomic(
+                task=task,
+                owner=owner,
+                claim_generation=generation,
+                workflow=workflow,
+                correction=task.correction,
+                due_at=due_at,
+                workflow_phase=workflow.workflow_phase,
+                preserve_pending_manual_step=True,
+                error_code="ae3_poll_apply_failed",
+                error_message=f"Не удалось сохранить poll outcome для задачи {task.id}",
+                expected_stage=str(task.current_stage or ""),
+                now=now,
+            )
+            return resolved_task
 
         updated_task = await self._task_repo.update_stage(
             task_id=task.id,
             owner=owner,
+            claim_generation=generation,
             workflow=workflow,
             correction=task.correction,
             due_at=due_at,
@@ -371,21 +427,6 @@ class WorkflowRouter:
             error_message=f"Не удалось сохранить poll outcome для задачи {task.id}",
             expected_stage=str(task.current_stage or ""),
         )
-        # await_ready reads zone_workflow_state to decide whether the fill cycle
-        # completed and irrigation is safe (via plan.runtime.zone_workflow_phase).
-        # Writing "ready" back into zone_workflow_state on each poll tick would
-        # create a self-fulfilling loop: on the very next tick the handler sees
-        # "ready" written by *itself* and starts irrigation even when tanks are
-        # still empty — for example after a failed irrigation_check that left
-        # zone_workflow_state="idle" due to a level-sensor error.  Only the fill
-        # cycle tasks (prepare_recirculation_stop_to_ready etc.) are allowed to
-        # set zone_workflow_state="ready"; await_ready must leave it untouched.
-        if task.current_stage != "await_ready":
-            await self._safe_upsert_workflow_phase(
-                task=resolved_task,
-                workflow_phase=workflow.workflow_phase,
-                now=now,
-            )
         return resolved_task
 
     async def _apply_transition(
@@ -500,47 +541,34 @@ class WorkflowRouter:
         )
 
         due_at = now + timedelta(seconds=_clamp_due_delay_sec(outcome.due_delay_sec))
-        owner = await self._resolve_stage_owner(task=task)
-        prior_workflow = task.workflow
-        prior_correction = task.correction
-        prior_due_at = task.due_at
-        updated_task = await self._task_repo.update_stage(
-            task_id=task.id,
+        owner, generation = await self._require_original_claim(task=task)
+        resolved_task, transition_applied = await self._update_stage_and_workflow_phase_atomic(
+            task=task,
             owner=owner,
+            claim_generation=generation,
             workflow=new_workflow,
             correction=None,  # Очистить correction state при переходе
             due_at=due_at,
-            now=now,
-        )
-        resolved_task = await self._resolve_inactive_terminal_task(
-            task_id=task.id,
-            updated_task=updated_task,
+            workflow_phase=next_def.workflow_phase,
+            stage=next_stage,
             error_code="ae3_transition_apply_failed",
             error_message=f"Не удалось перевести задачу {task.id} в stage {next_stage}",
             expected_stage=next_stage,
-        )
-        await self._safe_record_transition(
-            task_id=task.id,
-            from_stage=task.current_stage,
-            to_stage=next_stage,
-            workflow_phase=next_def.workflow_phase,
             now=now,
         )
-        await self._safe_emit_irrigation_lifecycle_event(
-            task=task,
-            from_stage=task.current_stage,
-            to_stage=next_stage,
-        )
-        await self._persist_workflow_phase_sync(
-            task=resolved_task,
-            owner=owner,
-            rollback_workflow=prior_workflow,
-            rollback_correction=prior_correction,
-            rollback_due_at=prior_due_at,
-            workflow_phase=next_def.workflow_phase,
-            stage=next_stage,
-            now=now,
-        )
+        if transition_applied:
+            await self._safe_record_transition(
+                task_id=task.id,
+                from_stage=task.current_stage,
+                to_stage=next_stage,
+                workflow_phase=next_def.workflow_phase,
+                now=now,
+            )
+            await self._safe_emit_irrigation_lifecycle_event(
+                task=task,
+                from_stage=task.current_stage,
+                to_stage=next_stage,
+            )
         return resolved_task
 
     async def _apply_enter_correction(
@@ -564,33 +592,19 @@ class WorkflowRouter:
 
         workflow = task.workflow
         due_at = now + timedelta(seconds=_clamp_due_delay_sec(outcome.due_delay_sec))
-        owner = await self._resolve_stage_owner(task=task)
-        prior_workflow = task.workflow
-        prior_correction = task.correction
-        prior_due_at = task.due_at
-        updated_task = await self._task_repo.update_stage(
-            task_id=task.id,
+        owner, generation = await self._require_original_claim(task=task)
+        resolved_task, _applied = await self._update_stage_and_workflow_phase_atomic(
+            task=task,
             owner=owner,
+            claim_generation=generation,
             workflow=workflow,
             correction=corr,
             due_at=due_at,
-            now=now,
-        )
-        resolved_task = await self._resolve_inactive_terminal_task(
-            task_id=task.id,
-            updated_task=updated_task,
+            workflow_phase=workflow.workflow_phase,
+            stage=str(task.current_stage or ""),
             error_code="ae3_correction_apply_failed",
             error_message=f"Не удалось сохранить correction state для задачи {task.id}",
             expected_corr_step=str(getattr(corr, "corr_step", "") or ""),
-        )
-        await self._persist_workflow_phase_sync(
-            task=resolved_task,
-            owner=owner,
-            rollback_workflow=prior_workflow,
-            rollback_correction=prior_correction,
-            rollback_due_at=prior_due_at,
-            workflow_phase=workflow.workflow_phase,
-            stage=str(task.current_stage or ""),
             now=now,
         )
         return resolved_task
@@ -648,20 +662,13 @@ class WorkflowRouter:
 
     async def _complete_task(self, *, task: Any, now: datetime) -> Any:
         TASK_COMPLETED.labels(topology=task.topology).inc()
-        owner = await self._resolve_stage_owner(task=task)
-        completed = await self._task_repo.mark_completed(
-            task_id=task.id, owner=owner, now=now,
+        owner, generation = await self._require_original_claim(task=task)
+        resolved_task, _applied = await self._complete_task_and_workflow_phase_atomic(
+            task=task,
+            owner=owner,
+            claim_generation=generation,
+            now=now,
         )
-        resolved_task = await self._resolve_inactive_terminal_task(
-            task_id=task.id,
-            updated_task=completed,
-            error_code="ae3_complete_transition_failed",
-            error_message=f"Не удалось перевести задачу {task.id} в completed",
-        )
-        if str(getattr(resolved_task, "status", "") or "").strip().lower() == "completed":
-            await self._safe_upsert_workflow_phase(
-                task=resolved_task, workflow_phase="ready", now=now,
-            )
         return resolved_task
 
     async def _invoke_handler(
@@ -910,6 +917,70 @@ class WorkflowRouter:
             return False
         return self._normalize_utc_naive(now) >= self._normalize_utc_naive(deadline)
 
+    async def _update_stage_and_workflow_phase_atomic(
+        self,
+        *,
+        task: Any,
+        owner: str,
+        claim_generation: int,
+        workflow: WorkflowState,
+        correction: CorrectionState | None,
+        due_at: datetime,
+        workflow_phase: str,
+        now: datetime,
+        stage: str | None = None,
+        preserve_pending_manual_step: bool = False,
+        error_code: str,
+        error_message: str,
+        expected_stage: str | None = None,
+        expected_corr_step: str | None = None,
+    ) -> tuple[Any, bool]:
+        """Persist ae_tasks and zone_workflow_state in one PostgreSQL transaction."""
+        try:
+            updated_task = await self._transitions.requeue(
+                task=task, owner=owner, claim_generation=claim_generation,
+                workflow=workflow, correction=correction, due_at=due_at, now=now,
+                workflow_phase=workflow_phase, stage=stage,
+                preserve_pending_manual_step=preserve_pending_manual_step,
+            )
+            if updated_task is None:
+                raise _StageUpdateNotApplied()
+            return updated_task, True
+        except _StageUpdateNotApplied:
+            resolved_task = await self._resolve_inactive_terminal_task(
+                task_id=task.id,
+                updated_task=None,
+                error_code=error_code,
+                error_message=error_message,
+                expected_stage=expected_stage,
+                expected_corr_step=expected_corr_step,
+            )
+            return resolved_task, False
+
+    async def _complete_task_and_workflow_phase_atomic(
+        self,
+        *,
+        task: Any,
+        owner: str,
+        claim_generation: int,
+        now: datetime,
+    ) -> tuple[Any, bool]:
+        try:
+            completed = await self._transitions.complete(
+                task=task, owner=owner, claim_generation=claim_generation, now=now,
+            )
+            if completed is None:
+                raise _StageUpdateNotApplied()
+            return completed, True
+        except _StageUpdateNotApplied:
+            resolved_task = await self._resolve_inactive_terminal_task(
+                task_id=task.id,
+                updated_task=None,
+                error_code="ae3_complete_transition_failed",
+                error_message=f"Не удалось перевести задачу {task.id} в completed",
+            )
+            return resolved_task, False
+
     async def _upsert_workflow_phase(
         self, *, task: Any, workflow_phase: str, stage: str | None = None, now: datetime,
     ) -> None:
@@ -946,44 +1017,6 @@ class WorkflowRouter:
             scheduler_task_id=scheduler_task_id,
             now=now,
         )
-
-    async def _persist_workflow_phase_sync(
-        self,
-        *,
-        task: Any,
-        owner: str,
-        rollback_workflow: Any,
-        rollback_correction: Any,
-        rollback_due_at: datetime,
-        workflow_phase: str,
-        stage: str | None,
-        now: datetime,
-    ) -> None:
-        """Sync zone_workflow_state; rollback ae_tasks stage if sync fail-closed."""
-        try:
-            await self._safe_upsert_workflow_phase(
-                task=task,
-                workflow_phase=workflow_phase,
-                stage=stage,
-                now=now,
-            )
-        except TaskExecutionError:
-            rolled_back = await self._task_repo.update_stage(
-                task_id=task.id,
-                owner=owner,
-                workflow=rollback_workflow,
-                correction=rollback_correction,
-                due_at=rollback_due_at,
-                now=now,
-            )
-            if rolled_back is None:
-                logger.error(
-                    "AE3 не смог откатить ae_tasks после сбоя sync zone_workflow_state "
-                    "task_id=%s zone_id=%s",
-                    getattr(task, "id", None),
-                    getattr(task, "zone_id", None),
-                )
-            raise
 
     async def _safe_record_transition(
         self,

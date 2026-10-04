@@ -53,12 +53,14 @@ async def test_lease_heartbeat_signals_lost_after_consecutive_extend_failures(
     before_lost = ZONE_LEASE_LOST.labels(zone_id="7")._value.get()
     before_hb_failed = LEASE_HEARTBEAT_FAILED.labels(zone_id="7")._value.get()
 
-    await worker._lease_heartbeat(zone_id=7, lease_lost_event=lease_lost)
+    await worker._lease_heartbeat(zone_id=7, lease_lost_event=lease_lost, claim_generation=0)
 
+    # extend()==False — подтверждённая чужая lease, не transient retry.
+    # Прежний expectation await_count==3 закреплял продолжение работы на чужом владении.
     assert lease_lost.is_set()
-    assert lease_repo.extend.await_count == 3
+    assert lease_repo.extend.await_count == 1
     assert ZONE_LEASE_LOST.labels(zone_id="7")._value.get() == before_lost + 1
-    assert LEASE_HEARTBEAT_FAILED.labels(zone_id="7")._value.get() == before_hb_failed + 3
+    assert LEASE_HEARTBEAT_FAILED.labels(zone_id="7")._value.get() == before_hb_failed + 1
     assert len(alerts) == 1
     assert alerts[0]["code"] == "ae3_zone_lease_lost"
 
@@ -69,7 +71,7 @@ async def test_extend_lease_with_transient_retry_recovers_from_db_error() -> Non
     lease_repo.extend = AsyncMock(side_effect=[RuntimeError("db down"), True])
     worker = _build_worker(lease_repo=lease_repo)
 
-    extended = await worker._extend_lease_with_transient_retry(zone_id=3)
+    extended = await worker._extend_lease_with_transient_retry(zone_id=3, claim_generation=0)
 
     assert extended is True
     assert lease_repo.extend.await_count == 2
@@ -100,10 +102,34 @@ async def test_lease_heartbeat_signals_lost_after_consecutive_exceptions(
     before_lost = ZONE_LEASE_LOST.labels(zone_id="9")._value.get()
     before_hb_failed = LEASE_HEARTBEAT_FAILED.labels(zone_id="9")._value.get()
 
-    await worker._lease_heartbeat(zone_id=9, lease_lost_event=lease_lost)
+    await worker._lease_heartbeat(zone_id=9, lease_lost_event=lease_lost, claim_generation=0)
 
     assert lease_lost.is_set()
     assert ZONE_LEASE_LOST.labels(zone_id="9")._value.get() == before_lost + 1
     assert LEASE_HEARTBEAT_FAILED.labels(zone_id="9")._value.get() == before_hb_failed + 3
     assert len(alerts) == 1
     assert alerts[0]["code"] == "ae3_zone_lease_lost"
+
+
+@pytest.mark.asyncio
+async def test_lease_heartbeat_keeps_ownership_when_db_error_then_succeeds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    lease_repo = AsyncMock()
+    lease_repo.extend = AsyncMock(side_effect=[RuntimeError("db down"), True])
+    worker = _build_worker(lease_repo=lease_repo)
+    lease_lost = asyncio.Event()
+    sleeps = {"n": 0}
+
+    async def fake_sleep(_delay: float) -> None:
+        sleeps["n"] += 1
+        if sleeps["n"] > 1:
+            raise asyncio.CancelledError()
+
+    monkeypatch.setattr(asyncio, "sleep", fake_sleep)
+
+    with pytest.raises(asyncio.CancelledError):
+        await worker._lease_heartbeat(zone_id=11, lease_lost_event=lease_lost, claim_generation=0)
+
+    assert lease_lost.is_set() is False
+    assert lease_repo.extend.await_count == 2

@@ -72,6 +72,7 @@ class ErrorCodes:
     AE3_TASK_CREATE_FAILED = "ae3_task_create_failed"
     AE3_TASK_COMPLETE_FAILED = "ae3_task_complete_failed"
     AE3_TASK_MISSING_OWNER = "ae3_task_missing_owner"
+    AE3_TASK_OVERALL_DEADLINE_EXCEEDED = "ae3_task_overall_deadline_exceeded"
     AE3_WORKFLOW_STATE_SYNC_FAILED = "ae3_workflow_state_sync_failed"
 
     # Переходы между stage

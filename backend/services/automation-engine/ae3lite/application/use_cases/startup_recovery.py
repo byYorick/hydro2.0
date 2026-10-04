@@ -44,6 +44,9 @@ logger = logging.getLogger(__name__)
 _STARTUP_RECOVERY_OUTCOME_EVENT = "AE_STARTUP_RECOVERY_OUTCOME"
 
 
+from ae3lite.application.services.task_workflow_transition import TaskWorkflowTransition
+
+
 class StartupRecoveryUseCase:
     """Reconcilе'ит сохранённые in-flight tasks без новой публикации команды.
 
@@ -68,6 +71,7 @@ class StartupRecoveryUseCase:
         self._lease_repository = lease_repository
         self._command_gateway = command_gateway
         self._workflow_repository = workflow_repository
+        self._transitions = TaskWorkflowTransition(task_repository=task_repository, workflow_repository=workflow_repository)
         self._registry = topology_registry or TopologyRegistry()
         self._alert_repository = alert_repository
         self._use_startup_recovery_lock = bool(use_startup_recovery_lock)
@@ -347,6 +351,7 @@ class StartupRecoveryUseCase:
                     f"{snapshot_stage} после остановки цикла"
                 ),
                 now=now,
+                claim_generation=int(getattr(task, "claim_generation", 0) or 0),
             )
             if failed is None:
                 logger.warning(
@@ -364,7 +369,7 @@ class StartupRecoveryUseCase:
                 now=now,
                 recovery_source="startup_recovery",
             )
-            await self._release_lease_after_recovery_fail(task=failed, now=now)
+            await self._release_lease_after_recovery_fail(task=task, now=now)
             terminal_outcome = self._build_terminal_outcome(task=failed)
             if terminal_outcome is not None:
                 outcomes.append(terminal_outcome)
@@ -548,7 +553,12 @@ class StartupRecoveryUseCase:
         if not owner:
             return None
         try:
-            return await recover_waiting_command(task_id=task.id, now=now, owner=owner)
+            return await recover_waiting_command(
+                task_id=task.id,
+                now=now,
+                owner=owner,
+                claim_generation=int(getattr(task, "claim_generation", 0) or 0),
+            )
         except Exception:
             logger.warning(
                 "Startup recovery: failed to persist waiting_command task_id=%s zone_id=%s",
@@ -584,6 +594,8 @@ class StartupRecoveryUseCase:
                 error_code="startup_recovery_unknown_stage",
                 error_message=f"Неизвестный stage {current_stage} в topology {topology}",
                 now=now,
+                owner=str(task.claimed_by or ""),
+                claim_generation=int(getattr(task, "claim_generation", 0) or 0),
             )
             if failed is None:
                 logger.error(
@@ -603,7 +615,7 @@ class StartupRecoveryUseCase:
                 now=now,
                 recovery_source=recovery_source,
             )
-            await self._release_lease_after_recovery_fail(task=failed, now=now)
+            await self._release_lease_after_recovery_fail(task=task, now=now)
             return failed
 
         # DONE подтверждает только одну команду, а не весь command batch stage.
@@ -644,6 +656,8 @@ class StartupRecoveryUseCase:
                 error_code=error_code,
                 error_message=error_message,
                 now=now,
+                owner=str(task.claimed_by or ""),
+                claim_generation=int(getattr(task, "claim_generation", 0) or 0),
             )
             if failed is None:
                 logger.error(
@@ -663,7 +677,7 @@ class StartupRecoveryUseCase:
                 now=now,
                 recovery_source=recovery_source,
             )
-            await self._release_lease_after_recovery_fail(task=failed, now=now)
+            await self._release_lease_after_recovery_fail(task=task, now=now)
             return failed
 
         # Has next_stage — transition
@@ -676,23 +690,6 @@ class StartupRecoveryUseCase:
 
             next_phase = next_def.workflow_phase if next_def else "idle"
 
-            await self._safe_upsert_workflow_phase(
-                zone_id=task.zone_id,
-                workflow_phase=next_phase,
-                payload={"ae3_cycle_start_stage": next_stage},
-                scheduler_task_id=str(task.id),
-                now=now,
-            )
-
-            # Record transition in audit trail
-            await self._task_repository.record_transition(
-                task_id=task.id,
-                from_stage=current_stage,
-                to_stage=next_stage,
-                workflow_phase=next_phase,
-                metadata={"recovery": True},
-                now=now,
-            )
 
             new_workflow = WorkflowState(
                 current_stage=next_stage,
@@ -717,20 +714,23 @@ class StartupRecoveryUseCase:
                 raise StartupRecoveryError(
                     f"Не удалось повторно поставить task_id={task.id} в очередь после recovery DONE",
                 )
-            await self._release_lease_after_recovery_success(task=requeued, now=now)
+            # Record transition in audit trail
+            await self._task_repository.record_transition(
+                task_id=task.id,
+                from_stage=current_stage,
+                to_stage=next_stage,
+                workflow_phase=next_phase,
+                metadata={"recovery": True},
+                now=now,
+            )
+
+            await self._release_lease_after_recovery_success(task=task, now=now)
             return requeued
 
         # Poll/handler stages (handler != "command" and != "ready") have no static
         # next_stage — transitions are decided by the handler at runtime. A stale
         # DONE from the previous command batch must not terminal-complete the task.
         if stage_def.handler != "ready":
-            await self._safe_upsert_workflow_phase(
-                zone_id=task.zone_id,
-                workflow_phase=stage_def.workflow_phase,
-                payload={"ae3_cycle_start_stage": current_stage},
-                scheduler_task_id=str(task.id),
-                now=now,
-            )
             continued_workflow = WorkflowState(
                 current_stage=current_stage,
                 workflow_phase=stage_def.workflow_phase,
@@ -754,21 +754,16 @@ class StartupRecoveryUseCase:
                 raise StartupRecoveryError(
                     f"Не удалось повторно поставить task_id={task.id} в очередь после recovery DONE на poll-stage",
                 )
-            await self._release_lease_after_recovery_success(task=requeued, now=now)
+            await self._release_lease_after_recovery_success(task=task, now=now)
             return requeued
 
         # Terminal success stages (complete_ready, completed_run, completed_skip)
-        await self._safe_upsert_workflow_phase(
-            zone_id=task.zone_id,
+        completed = await self._transitions.complete(
+            task=task,
             workflow_phase=stage_def.workflow_phase,
-            payload={"ae3_cycle_start_stage": current_stage},
-            scheduler_task_id=str(task.id),
-            now=now,
-        )
-        completed = await self._task_repository.mark_completed(
-            task_id=task.id,
             owner=str(task.claimed_by or ""),
             now=now,
+            claim_generation=int(getattr(task, "claim_generation", 0) or 0),
         )
         if completed is None:
             logger.error(
@@ -780,7 +775,7 @@ class StartupRecoveryUseCase:
             raise StartupRecoveryError(
                 f"Не удалось завершить task_id={task.id} после recovery DONE",
             )
-        await self._release_lease_after_recovery_success(task=completed, now=now)
+        await self._release_lease_after_recovery_success(task=task, now=now)
         return completed
 
     async def _requeue_recovered_command_stage(
@@ -791,13 +786,6 @@ class StartupRecoveryUseCase:
         now: datetime,
     ) -> AutomationTask:
         current_stage = str(task.current_stage or "")
-        await self._safe_upsert_workflow_phase(
-            zone_id=task.zone_id,
-            workflow_phase=stage_def.workflow_phase,
-            payload={"ae3_cycle_start_stage": current_stage},
-            scheduler_task_id=str(task.id),
-            now=now,
-        )
         continued_workflow = WorkflowState(
             current_stage=current_stage,
             workflow_phase=stage_def.workflow_phase,
@@ -823,20 +811,19 @@ class StartupRecoveryUseCase:
                 f"Не удалось повторно поставить task_id={task.id} в очередь "
                 f"для продолжения command batch stage={current_stage}",
             )
-        await self._release_lease_after_recovery_success(task=requeued, now=now)
+        await self._release_lease_after_recovery_success(task=task, now=now)
         return requeued
 
     async def _task_repo_update_stage(
         self, *, task: AutomationTask, workflow: WorkflowState, now: datetime,
     ) -> Any:
         """Wrapper for update_stage during recovery."""
-        return await self._task_repository.update_stage(
-            task_id=task.id,
-            owner=str(task.claimed_by or ""),
-            workflow=workflow,
-            correction=None,
-            due_at=now,
-            now=now,
+        return await self._transitions.requeue(
+            task=task, owner=str(task.claimed_by or ""),
+            claim_generation=int(getattr(task, "claim_generation", 0) or 0),
+            workflow=workflow, correction=None, due_at=now, now=now,
+            workflow_phase=None if workflow.current_stage == "await_ready" else workflow.workflow_phase,
+            preserve_pending_manual_step=True,
         )
 
     async def _fail_task(
@@ -856,6 +843,8 @@ class StartupRecoveryUseCase:
             error_code=error_code,
             error_message=error_message,
             now=now,
+            owner=str(task.claimed_by or ""),
+            claim_generation=int(getattr(task, "claim_generation", 0) or 0),
         )
         if failed_task is None:
             logger.error(
@@ -874,7 +863,7 @@ class StartupRecoveryUseCase:
             now=now,
             recovery_source=recovery_source,
         )
-        await self._release_lease_after_recovery_fail(task=failed_task, now=now)
+        await self._release_lease_after_recovery_fail(task=task, now=now)
         return failed_task
 
     async def _finalize_recovery_failure(
@@ -964,12 +953,17 @@ class StartupRecoveryUseCase:
                     zone_id=int(task.zone_id),
                     owner=owner,
                     now=now,
+                    claim_generation=int(getattr(task, "claim_generation", 0) or 0),
                 )
             else:
                 release = getattr(self._lease_repository, "release", None)
                 if not callable(release):
                     return
-                released = await release(zone_id=int(task.zone_id), owner=owner)
+                released = await release(
+                    zone_id=int(task.zone_id),
+                    owner=owner,
+                    claim_generation=int(getattr(task, "claim_generation", 0) or 0),
+                )
             if not released:
                 logger.debug(
                     "Startup recovery: lease not released zone_id=%s owner=%s task_id=%s",

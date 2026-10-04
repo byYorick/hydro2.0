@@ -91,6 +91,7 @@ class AwaitReadyHandler(BaseStageHandler):
                 owner=owner,
                 now=now,
                 irrigation_wait_ready_deadline_at=now.replace(microsecond=0) + timedelta(seconds=_WAIT_READY_TIMEOUT_SEC),
+                claim_generation=int(getattr(task, "claim_generation", 0) or 0),
             )
             if updated is None:
                 raise TaskExecutionError(

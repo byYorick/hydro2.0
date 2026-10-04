@@ -749,3 +749,223 @@ async def test_sensor_snapshot_reads_shared_weather_station_node() -> None:
             await execute("DELETE FROM zones WHERE id = $1", zone_id)
         if greenhouse_id is not None:
             await execute("DELETE FROM greenhouses WHERE id = $1", greenhouse_id)
+
+
+async def _seed_hot_two_vent_tick() -> dict[str, Any]:
+    """Теплица с жарой и двумя форточками: обе должны получить set_position."""
+    prefix = f"gh-s1-{uuid.uuid4().hex[:12]}"
+    gh_uid = f"gh-{uuid.uuid4().hex[:20]}"
+    gh_rows = await fetch(
+        """
+        INSERT INTO greenhouses (uid, name, timezone, provisioning_token, created_at, updated_at)
+        VALUES ($1, $2, 'UTC', $3, NOW(), NOW())
+        RETURNING id
+        """,
+        gh_uid,
+        prefix,
+        f"pt-{uuid.uuid4().hex[:24]}",
+    )
+    greenhouse_id = int(gh_rows[0]["id"])
+    z_rows = await fetch(
+        """
+        INSERT INTO zones (greenhouse_id, name, uid, status, automation_runtime, created_at, updated_at)
+        VALUES ($1, $2, $3, 'online', 'ae3', NOW(), NOW())
+        RETURNING id
+        """,
+        greenhouse_id,
+        f"{prefix}-zone",
+        f"zn-{uuid.uuid4().hex[:20]}",
+    )
+    zone_id = int(z_rows[0]["id"])
+    node_ids: list[int] = []
+    channel_ids: list[int] = []
+    for channel, label in (("roof_vent_left", "l"), ("roof_vent_right", "r")):
+        node = await fetch(
+            """
+            INSERT INTO nodes (zone_id, uid, name, type, status, lifecycle_state, created_at, updated_at)
+            VALUES ($1, $2, $3, 'relay', 'online', 'ACTIVE', NOW(), NOW())
+            RETURNING id
+            """,
+            zone_id,
+            f"nd-{uuid.uuid4().hex[:16]}",
+            f"{prefix}-{label}",
+        )
+        node_id = int(node[0]["id"])
+        node_ids.append(node_id)
+        channel_row = await fetch(
+            """
+            INSERT INTO node_channels (node_id, channel, type, is_active, created_at, updated_at)
+            VALUES ($1, $2, 'ACTUATOR', true, NOW(), NOW())
+            RETURNING id
+            """,
+            node_id,
+            channel,
+        )
+        channel_ids.append(int(channel_row[0]["id"]))
+    inst = await fetch(
+        """
+        INSERT INTO infrastructure_instances (owner_type, owner_id, asset_type, label, required, created_at, updated_at)
+        VALUES ('greenhouse', $1, 'VENT', $2, false, NOW(), NOW())
+        RETURNING id
+        """,
+        greenhouse_id,
+        f"{prefix}-vent",
+    )
+    await execute(
+        """
+        INSERT INTO channel_bindings (infrastructure_instance_id, node_channel_id, direction, role, created_at, updated_at)
+        VALUES ($1, $2, 'actuator', 'vent_actuator', NOW(), NOW()),
+               ($1, $3, 'actuator', 'vent_actuator', NOW(), NOW())
+        """,
+        int(inst[0]["id"]),
+        channel_ids[0],
+        channel_ids[1],
+    )
+    rev = uuid.uuid4().hex
+    await execute(
+        """
+        INSERT INTO automation_effective_bundles (
+            scope_type, scope_id, bundle_revision, schema_revision, config, violations, status, compiled_at, inputs_checksum, created_at, updated_at
+        )
+        VALUES ('greenhouse', $1, $2, '1', $3::jsonb, '[]'::jsonb, 'valid', NOW(), $4, NOW(), NOW())
+        """,
+        greenhouse_id,
+        rev,
+        _bundle_config(),
+        rev,
+    )
+    sensor = await fetch(
+        """
+        INSERT INTO sensors (greenhouse_id, zone_id, node_id, scope, type, label, is_active, created_at, updated_at)
+        VALUES ($1, $2, NULL, 'inside', 'TEMPERATURE', 'temp_air', true, NOW(), NOW())
+        RETURNING id
+        """,
+        greenhouse_id,
+        zone_id,
+    )
+    sensor_id = int(sensor[0]["id"])
+    await execute(
+        """
+        INSERT INTO telemetry_last (sensor_id, last_value, last_ts, last_quality, updated_at)
+        VALUES ($1, 32.0, $2, 'GOOD', NOW())
+        """,
+        sensor_id,
+        datetime.now(timezone.utc).replace(tzinfo=None),
+    )
+    await execute(
+        """
+        INSERT INTO greenhouse_automation_state (
+            greenhouse_id, climate_enabled, control_mode, left_position_pct, right_position_pct,
+            recommended_left_position_pct, recommended_right_position_pct,
+            created_at, updated_at
+        )
+        VALUES ($1, true, 'auto', 0, 0, 0, 0, NOW(), NOW())
+        """,
+        greenhouse_id,
+    )
+    idem = f"idem-{uuid.uuid4().hex}"
+    await execute(
+        """
+        INSERT INTO greenhouse_automation_intents (
+            greenhouse_id, intent_type, task_type, intent_source, idempotency_key, status, created_at, updated_at
+        )
+        VALUES ($1, 'GREENHOUSE_CLIMATE_TICK', 'greenhouse_climate_tick', 'pytest', $2, 'pending', NOW(), NOW())
+        """,
+        greenhouse_id,
+        idem,
+    )
+    return {
+        "greenhouse_id": greenhouse_id,
+        "zone_id": zone_id,
+        "sensor_ids": [sensor_id],
+        "idem": idem,
+    }
+
+
+@pytest.mark.asyncio
+async def test_climate_lease_lost_between_vents_does_not_publish_right_or_succeed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seeded = await _seed_hot_two_vent_tick()
+    fake_hl = _FakeHistoryLoggerClient()
+    fake_alerts = _FakeAlertPublisher()
+
+    async def _renew_false(*_args: Any, **_kwargs: Any) -> bool:
+        return False
+
+    monkeypatch.setattr(
+        "ae3lite.greenhouse_climate.run_tick._renew_greenhouse_lease",
+        _renew_false,
+    )
+    try:
+        result = await run_greenhouse_climate_tick(
+            greenhouse_id=seeded["greenhouse_id"],
+            idempotency_key=seeded["idem"],
+            history_logger_client=fake_hl,
+            alert_publisher=fake_alerts,
+        )
+        assert result.get("status") not in {"ok", "completed"}
+        channels = [call["channel"] for call in fake_hl.calls]
+        assert channels == ["roof_vent_left"]
+        assert all(call["cmd"] == "set_position" for call in fake_hl.calls)
+        assert all(call["cmd"] != "set_relay" for call in fake_hl.calls)
+        intents = await fetch(
+            "SELECT status, error_code FROM greenhouse_automation_intents WHERE greenhouse_id = $1 AND idempotency_key = $2",
+            seeded["greenhouse_id"],
+            seeded["idem"],
+        )
+        assert intents
+        assert str(intents[0]["status"]).lower() != "completed"
+        assert intents[0]["error_code"] == "greenhouse_climate_lease_lost"
+        left_rows = await fetch("SELECT status FROM commands WHERE cmd_id = $1", fake_hl.calls[0]["cmd_id"])
+        assert left_rows and str(left_rows[0]["status"]).upper() == "DONE"
+    finally:
+        await _cleanup_greenhouse(
+            greenhouse_id=seeded["greenhouse_id"],
+            zone_id=seeded["zone_id"],
+            sensor_ids=seeded["sensor_ids"],
+        )
+
+
+@pytest.mark.asyncio
+async def test_climate_renew_transport_budget_keeps_current_command_and_skips_second_vent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seeded = await _seed_hot_two_vent_tick()
+    fake_hl = _FakeHistoryLoggerClient()
+    fake_alerts = _FakeAlertPublisher()
+    calls = {"n": 0}
+
+    async def _renew_flaky(*_args: Any, **_kwargs: Any) -> bool:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("transient db")
+        raise RuntimeError("budget exceeded")
+
+    monkeypatch.setattr(
+        "ae3lite.greenhouse_climate.run_tick._renew_greenhouse_lease",
+        _renew_flaky,
+    )
+    try:
+        result = await run_greenhouse_climate_tick(
+            greenhouse_id=seeded["greenhouse_id"],
+            idempotency_key=seeded["idem"],
+            history_logger_client=fake_hl,
+            alert_publisher=fake_alerts,
+        )
+        assert result.get("status") not in {"ok", "completed"}
+        channels = [call["channel"] for call in fake_hl.calls]
+        assert channels == ["roof_vent_left"]
+        assert calls["n"] >= 2
+        intents = await fetch(
+            "SELECT status FROM greenhouse_automation_intents WHERE greenhouse_id = $1 AND idempotency_key = $2",
+            seeded["greenhouse_id"],
+            seeded["idem"],
+        )
+        assert intents and str(intents[0]["status"]).lower() != "completed"
+    finally:
+        await _cleanup_greenhouse(
+            greenhouse_id=seeded["greenhouse_id"],
+            zone_id=seeded["zone_id"],
+            sensor_ids=seeded["sensor_ids"],
+        )

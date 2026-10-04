@@ -7,10 +7,13 @@ import logging
 import time
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Mapping, Optional
+from typing import Any, Callable, Mapping, Optional
 
+from common.utils.time import utcnow_naive
 from ae3lite.domain.entities import PlannedCommand
-from ae3lite.domain.errors import CommandPublishError
+from ae3lite.domain.claim_fence import claim_generation, claim_owner
+from ae3lite.domain.errors import CommandPublishError, TaskExecutionError
+from ae3lite.domain.task_deadline import ensure_overall_deadline_active
 from ae3lite.infrastructure.metrics import (
     COMMAND_CMD_ID_REUSED,
     COMMAND_DISPATCH_DURATION,
@@ -22,9 +25,12 @@ logger = logging.getLogger(__name__)
 
 _LEGACY_RESOLVE_ATTEMPTS = 3
 _LEGACY_RESOLVE_DELAY_SEC = 0.05
+_AE3_FAIL_SAFE_KEY = "_ae3_fail_safe"
 
 _DEFINITE_NOT_PUBLISHED_MARKERS = (
     "hl_circuit_open",
+    "claim_ownership_lost",
+    "command_identity_conflict",
     "не удалось определить greenhouse_uid",
     "plannedcommand должен содержать",
     "исчезла во время вставки",
@@ -125,7 +131,8 @@ class CommandPublishResult:
 class CommandPublishPipeline:
     """Единая реализация INSERT/publish/link для gateway и use-case."""
 
-    def __init__(self, *, command_repository: Any, history_logger_client: Any) -> None:
+    def __init__(self, *, command_repository: Any, history_logger_client: Any, now_fn: Callable[[], datetime] = utcnow_naive) -> None:
+        self._now_fn = now_fn
         self._command_repository = command_repository
         self._history_logger_client = history_logger_client
 
@@ -140,6 +147,8 @@ class CommandPublishPipeline:
     ) -> tuple[int, int, str, bool, str] | None:
         allocate = getattr(self._command_repository, "allocate_and_create_pending", None)
         stage_name = str(getattr(task, "current_stage", "") or "") or None
+        owner = claim_owner(task)
+        generation = claim_generation(task)
         if callable(allocate):
             allocated = await allocate(
                 task_id=task.id,
@@ -150,6 +159,8 @@ class CommandPublishPipeline:
                 now=now,
                 stage_name=stage_name,
                 planner_step=planner_step,
+                owner=owner,
+                claim_generation=generation,
             )
             if allocated is None:
                 return None
@@ -179,6 +190,8 @@ class CommandPublishPipeline:
             payload=stored_payload,
             now=now,
             stage_name=stage_name,
+            owner=owner,
+            claim_generation=generation,
         )
         if ae_command_id is None:
             return None
@@ -229,6 +242,11 @@ class CommandPublishPipeline:
                 if not greenhouse_uid:
                     raise CommandPublishError(f"Не удалось определить greenhouse_uid для zone_id={task.zone_id}")
 
+                await self._command_repository.assert_publish_authority(
+                    task_id=task.id, owner=claim_owner(task),
+                    claim_generation=claim_generation(task), payload=command.payload,
+                )
+                self._ensure_deadline_allows_publish(task=task, payload=command_payload, now=now)
                 _dispatch_start = time.monotonic()
                 published_cmd_id = await self._history_logger_client.publish(
                     greenhouse_uid=greenhouse_uid,
@@ -242,6 +260,8 @@ class CommandPublishPipeline:
                 COMMAND_DISPATCHED.labels(stage=command.channel or "unknown").inc()
                 COMMAND_DISPATCH_DURATION.observe(time.monotonic() - _dispatch_start)
         except Exception as exc:
+            if isinstance(exc, TaskExecutionError):
+                raise
             normalized_error = str(exc).strip() or type(exc).__name__
             await self._record_publish_error(
                 ae_command_id=ae_command_id,
@@ -328,6 +348,15 @@ class CommandPublishPipeline:
             raise CommandPublishError(f"Некорректная ae_command строка для redrive: {ae_command.get('id')}") from exc
 
         cmd_name, params = self._extract_publish_payload(command)
+        if (
+            ae_command.get("node_uid") != command.node_uid
+            or ae_command.get("channel") != command.channel
+            or payload.get("cmd") != cmd_name
+            or payload.get("params") != params
+        ):
+            raise CommandPublishError(
+                f"command_identity_conflict: ae_command={ae_command_id}"
+            )
         prelinked_legacy_id: int | None = None
         skip_hl_publish = publish_status == "published_unconfirmed"
         if skip_hl_publish:
@@ -344,6 +373,11 @@ class CommandPublishPipeline:
                 if not greenhouse_uid:
                     raise CommandPublishError(f"Не удалось определить greenhouse_uid для zone_id={task.zone_id}")
 
+                await self._command_repository.assert_publish_authority(
+                    task_id=task.id, owner=claim_owner(task),
+                    claim_generation=claim_generation(task), payload=command.payload,
+                )
+                self._ensure_deadline_allows_publish(task=task, payload=payload, now=now)
                 _dispatch_start = time.monotonic()
                 published_cmd_id = await self._history_logger_client.publish(
                     greenhouse_uid=greenhouse_uid,
@@ -357,6 +391,8 @@ class CommandPublishPipeline:
                 COMMAND_DISPATCHED.labels(stage=command.channel or "unknown").inc()
                 COMMAND_DISPATCH_DURATION.observe(time.monotonic() - _dispatch_start)
         except Exception as exc:
+            if isinstance(exc, TaskExecutionError):
+                raise
             normalized_error = str(exc).strip() or type(exc).__name__
             await self._record_publish_error(
                 ae_command_id=ae_command_id,
@@ -460,6 +496,17 @@ class CommandPublishPipeline:
         if not cmd_name or not isinstance(params, Mapping):
             raise CommandPublishError("PlannedCommand должен содержать cmd и params")
         return cmd_name, params
+
+    def _ensure_deadline_allows_publish(
+        self,
+        *,
+        task: Any,
+        payload: Mapping[str, Any],
+        now: datetime,
+    ) -> None:
+        if bool(payload.get(_AE3_FAIL_SAFE_KEY)):
+            return
+        ensure_overall_deadline_active(task=task, now=self._now_fn())
 
 
 def compute_poll_timeout_sec(

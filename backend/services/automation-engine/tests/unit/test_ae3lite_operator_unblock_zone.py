@@ -39,7 +39,7 @@ class _TaskRepo:
     async def get_active_for_zone(self, *, zone_id: int):
         return self._active
 
-    async def fail_for_recovery(self, *, task_id, error_code, error_message, now):
+    async def fail_for_recovery(self, *, task_id, error_code, error_message, now, owner="", claim_generation=0):
         self.fail_calls.append(
             {"task_id": task_id, "error_code": error_code, "error_message": error_message, "now": now}
         )

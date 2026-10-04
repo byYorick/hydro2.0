@@ -8,7 +8,6 @@ import logging
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
-from functools import partial
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from statistics import median
 from typing import Any, Mapping
@@ -40,6 +39,13 @@ def resolve_greenhouse_lease_owner(*, worker_owner: str | None = None) -> str:
     return _LEASE_OWNER_PREFIX
 _TERMINAL_STATUSES = {"DONE", "ERROR", "INVALID", "BUSY", "NO_EFFECT", "TIMEOUT", "SEND_FAILED"}
 _SUCCESS_STATUS = "DONE"
+_LEASE_LOST_STATUS = "LEASE_LOST"
+# Одна транспортная ошибка renew не отменяет текущую команду. Следующая — стоп.
+_LEASE_RENEW_TRANSIENT_BUDGET = 1
+
+
+class _GreenhouseLeaseStop(Exception):
+    """Подтверждённая потеря greenhouse lease или исчерпанный транспортный бюджет."""
 _ALERT_PUBLISHER = AlertPublisher(default_source="biz")
 _GREENHOUSE_ALERT_CODES = {
     "GREENHOUSE_WEATHER_STATION_STALE",
@@ -797,16 +803,41 @@ async def _wait_command_terminal(
     timeout_sec: float,
     poll_sec: float = 1.0,
     lease_renew: Any | None = None,
+    renew_interval_sec: float | None = None,
 ) -> str:
+    """Ждёт terminal текущей команды.
+
+    ``lease_renew``:
+    - ``False`` — подтверждённая потеря владельца, немедленный ``LEASE_LOST``;
+    - исключение внутри бюджета — текущую команду не отменяет;
+    - ``_GreenhouseLeaseStop`` или ошибка сверх бюджета — ``LEASE_LOST``.
+    Голый ``CancelledError`` не поглощается.
+    """
     deadline = time.monotonic() + max(0.1, float(timeout_sec))
     next_renew = time.monotonic()
+    interval = (
+        max(0.0, float(renew_interval_sec))
+        if renew_interval_sec is not None
+        else max(10.0, float(poll_sec) * 5)
+    )
     while True:
         if lease_renew is not None and time.monotonic() >= next_renew:
             try:
-                await lease_renew()
+                renewed = await lease_renew()
+            except asyncio.CancelledError:
+                raise
+            except _GreenhouseLeaseStop:
+                return _LEASE_LOST_STATUS
             except Exception:
-                logger.debug("greenhouse_climate_tick lease renew failed cmd_id=%s", cmd_id, exc_info=True)
-            next_renew = time.monotonic() + max(10.0, float(poll_sec) * 5)
+                logger.warning(
+                    "greenhouse_climate_tick lease renew unclassified failure cmd_id=%s",
+                    cmd_id,
+                    exc_info=True,
+                )
+                return _LEASE_LOST_STATUS
+            if renewed is False:
+                return _LEASE_LOST_STATUS
+            next_renew = time.monotonic() + interval
         rows = await fetch(
             "SELECT status FROM commands WHERE cmd_id = $1 LIMIT 1",
             cmd_id,
@@ -1090,8 +1121,40 @@ async def run_greenhouse_climate_tick(
         left_done = False
         right_done = False
         command_failures: list[str] = []
+        lease_renew_failures = 0
+        stop_ordinary_commands = False
+
+        async def _climate_lease_renew() -> bool | None:
+            nonlocal lease_renew_failures
+            try:
+                renewed = await _renew_greenhouse_lease(
+                    greenhouse_id,
+                    owner=lease_owner,
+                    ttl_sec=lease_ttl_sec,
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                lease_renew_failures += 1
+                logger.warning(
+                    "greenhouse_climate_tick lease renew transport error gh=%s failures=%s",
+                    greenhouse_id,
+                    lease_renew_failures,
+                    exc_info=True,
+                )
+                if lease_renew_failures > _LEASE_RENEW_TRANSIENT_BUDGET:
+                    raise _GreenhouseLeaseStop()
+                return None
+            if renewed is False:
+                raise _GreenhouseLeaseStop()
+            return True
+
+        renew_interval_raw = execution.get("lease_renew_interval_sec")
+        renew_interval_sec = float(renew_interval_raw) if renew_interval_raw is not None else None
         if not decision.suppress_commands:
             for side, channel in (("left", "roof_vent_left"), ("right", "roof_vent_right")):
+                if stop_ordinary_commands:
+                    break
                 if side not in decision.command_sides:
                     continue
                 target = decision.left_target_pct if side == "left" else decision.right_target_pct
@@ -1120,6 +1183,8 @@ async def run_greenhouse_climate_tick(
                         params=params,
                         cmd_id=cmd_id,
                     )
+                except asyncio.CancelledError:
+                    raise
                 except Exception:
                     logger.warning(
                         "greenhouse_climate_tick command publish failed gh=%s channel=%s",
@@ -1140,13 +1205,15 @@ async def run_greenhouse_climate_tick(
                     hl_id,
                     timeout_sec=float(execution.get("command_terminal_timeout_sec") or 120),
                     poll_sec=float(execution.get("command_poll_sec") or 1),
-                    lease_renew=partial(
-                        _renew_greenhouse_lease,
-                        greenhouse_id,
-                        owner=lease_owner,
-                        ttl_sec=lease_ttl_sec,
-                    ),
+                    lease_renew=_climate_lease_renew,
+                    renew_interval_sec=renew_interval_sec,
                 )
+                if terminal == _LEASE_LOST_STATUS:
+                    command_failures.append(f"{channel}:{_LEASE_LOST_STATUS}")
+                    stop_ordinary_commands = True
+                    GREENHOUSE_CLIMATE_COMMAND_TOTAL.labels(side=side, status=terminal).inc()
+                    GREENHOUSE_CLIMATE_COMMAND_FAILED_TOTAL.labels(side=side, failure=terminal).inc()
+                    break
                 if terminal == _SUCCESS_STATUS:
                     if side == "left":
                         left_done = True
@@ -1157,11 +1224,27 @@ async def run_greenhouse_climate_tick(
                 GREENHOUSE_CLIMATE_COMMAND_TOTAL.labels(side=side, status=terminal).inc()
                 if terminal != _SUCCESS_STATUS:
                     GREENHOUSE_CLIMATE_COMMAND_FAILED_TOTAL.labels(side=side, failure=terminal).inc()
+                if stop_ordinary_commands:
+                    break
+                try:
+                    await _climate_lease_renew()
+                except asyncio.CancelledError:
+                    raise
+                except _GreenhouseLeaseStop:
+                    command_failures.append(f"{channel}:{_LEASE_LOST_STATUS}")
+                    stop_ordinary_commands = True
+                    break
 
         model_left = int(decision.left_target_pct) if left_done else int(state.get("left_position_pct") or 0)
         model_right = int(decision.right_target_pct) if right_done else int(state.get("right_position_pct") or 0)
-        final_status = "completed" if not command_failures else "failed"
-        error_code = None if not command_failures else "greenhouse_vent_command_failed"
+        lease_lost = any(str(item).endswith(f":{_LEASE_LOST_STATUS}") for item in command_failures)
+        final_status = "failed" if command_failures else "completed"
+        if lease_lost:
+            error_code = "greenhouse_climate_lease_lost"
+        elif command_failures:
+            error_code = "greenhouse_vent_command_failed"
+        else:
+            error_code = None
         error_message = None if not command_failures else ", ".join(command_failures)
         if command_failures:
             active_alerts.append("GREENHOUSE_VENT_COMMAND_FAILED")

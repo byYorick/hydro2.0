@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import time
+import types
+import uuid
 from contextlib import suppress
 from datetime import datetime, timezone as _tz
 from typing import Any, Callable, Optional
@@ -11,9 +13,11 @@ from typing import Any, Callable, Optional
 from ae3lite.domain.errors import TaskClaimRollbackError
 from ae3lite.application.use_cases.execute_task import (
     TASK_EXECUTION_LEASE_LOST_CANCEL_MSG,
+    TASK_EXECUTION_OVERALL_DEADLINE_CANCEL_MSG,
     TASK_EXECUTION_TIMEOUT_CANCEL_MSG,
 )
 from ae3lite.infrastructure.log_context import log_context_scope
+from ae3lite.domain.task_deadline import overall_deadline_remaining_sec
 from ae3lite.infrastructure.metrics import (
     ACTIVE_TASKS,
     CLAIM_ROLLBACK_FAILED,
@@ -37,6 +41,7 @@ class Ae3RuntimeWorker:
         self,
         *,
         owner: str,
+        process_run_id: str = "",
         claim_next_task_use_case: Any,
         idle_poll_interval_sec: float,
         execute_task_use_case: Any,
@@ -69,6 +74,7 @@ class Ae3RuntimeWorker:
         lease_release_resolve_ttl_sec: int = 600,
     ) -> None:
         self._owner = str(owner or "ae3-runtime").strip() or "ae3-runtime"
+        self._process_run_id = str(process_run_id or "").strip() or str(uuid.uuid4())
         self._claim_next_task_use_case = claim_next_task_use_case
         self._idle_poll_interval_sec = max(0.1, float(idle_poll_interval_sec))
         self._execute_task_use_case = execute_task_use_case
@@ -809,7 +815,11 @@ class Ae3RuntimeWorker:
 
     async def _claim_next_task_safe(self) -> tuple[Any, Any] | None:
         try:
-            return await self._claim_next_task_use_case.run(owner=self._owner, now=self._now_fn())
+            return await self._claim_next_task_use_case.run(
+                owner=self._owner,
+                now=self._now_fn(),
+                process_run_id=self._process_run_id,
+            )
         except TaskClaimRollbackError as exc:
             CLAIM_ROLLBACK_FAILED.inc()
             self._logger.error(
@@ -849,14 +859,14 @@ class Ae3RuntimeWorker:
                 error_name = type(exc).__name__
                 TASK_EXECUTION_CRASHED.labels(error=error_name).inc()
                 self._logger.error(
-                    "AE3 task execution crashed in worker wrapper: zone_id=%s task_id=%s owner=%s error_type=%s",
+                    "AE3 task execution crashed outside the pre-release safety-path: "
+                    "zone_id=%s task_id=%s owner=%s error_type=%s",
                     getattr(task, "zone_id", None),
                     getattr(task, "id", None),
                     self._owner,
                     error_name,
                     exc_info=True,
                 )
-                await self._fail_task_after_execution_crash(task=task, exc=exc)
 
     @staticmethod
     def _task_trace_id(task: Any) -> str | None:
@@ -866,11 +876,48 @@ class Ae3RuntimeWorker:
         trace_id = str(intent_meta.get("trace_id") or "").strip()
         return trace_id or None
 
-    async def _fail_task_after_execution_crash(self, *, task: Any, exc: Exception) -> None:
+    @staticmethod
+    def _claim_generation(task: Any) -> int:
+        return int(getattr(task, "claim_generation", 0) or 0)
+
+    def _is_guarded_task_cancellation(self, exc: BaseException) -> bool:
+        checker = getattr(self._execute_task_use_case, "is_guarded_task_cancellation", None)
+        if not isinstance(checker, types.MethodType):
+            return False
+        return bool(checker(exc))
+
+    async def _fail_task_after_execution_crash(self, *, task: Any, exc: BaseException) -> None:
+        """Stop до release lease. fail_for_recovery — только учёт, не остановка."""
         error_message = str(exc).strip() or type(exc).__name__
         task_id = int(getattr(task, "id", 0) or 0)
         zone_id = int(getattr(task, "zone_id", 0) or 0)
-        if task_id > 0 and self._task_repository is not None:
+        error_name = type(exc).__name__
+        TASK_EXECUTION_CRASHED.labels(error=error_name).inc()
+        finalized = False
+        complete = getattr(self._execute_task_use_case, "complete_execution_failure", None)
+        if isinstance(complete, types.MethodType):
+            try:
+                await complete(
+                    task=task,
+                    snapshot=None,
+                    plan=None,
+                    now=self._now_fn(),
+                    owner=str(getattr(task, "claimed_by", None) or self._owner),
+                    error_code="ae3_task_execution_crashed",
+                    error_message=error_message,
+                )
+                finalized = True
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                self._logger.warning(
+                    "AE3 runtime не смог завершить safety-path после crash: zone_id=%s task_id=%s owner=%s",
+                    zone_id,
+                    task_id,
+                    self._owner,
+                    exc_info=True,
+                )
+        if not finalized and task_id > 0 and self._task_repository is not None:
             fail_for_recovery = getattr(self._task_repository, "fail_for_recovery", None)
             if callable(fail_for_recovery):
                 try:
@@ -879,6 +926,8 @@ class Ae3RuntimeWorker:
                         error_code="ae3_task_execution_crashed",
                         error_message=error_message,
                         now=self._now_fn(),
+                        owner=str(getattr(task, "claimed_by", None) or self._owner),
+                        claim_generation=self._claim_generation(task),
                     )
                 except asyncio.CancelledError:
                     raise
@@ -901,22 +950,6 @@ class Ae3RuntimeWorker:
                 task_id=task_id or None,
                 zone_id=zone_id or None,
             )
-        if zone_id > 0:
-            try:
-                released = await self._zone_lease_repository.release(zone_id=zone_id, owner=self._owner)
-                if not released:
-                    await asyncio.sleep(0.05)
-                    await self._zone_lease_repository.release(zone_id=zone_id, owner=self._owner)
-            except asyncio.CancelledError:
-                raise
-            except Exception:
-                self._logger.warning(
-                    "AE3 runtime не смог освободить lease после crash: zone_id=%s task_id=%s owner=%s",
-                    zone_id,
-                    task_id,
-                    self._owner,
-                    exc_info=True,
-                )
 
     async def _drain_supervisor(self) -> None:
         backoff_sec = 1.0
@@ -952,16 +985,28 @@ class Ae3RuntimeWorker:
 
         lease_lost_event = asyncio.Event()
         heartbeat_task = self._spawn_background_task_fn(
-            self._lease_heartbeat(zone_id=task.zone_id, lease_lost_event=lease_lost_event),
+            self._lease_heartbeat(
+                zone_id=task.zone_id,
+                lease_lost_event=lease_lost_event,
+                claim_generation=self._claim_generation(task),
+            ),
             task_name="ae3lite_lease_heartbeat",
         )
         final_task = task
         timed_out = False
+        timeout_error_code = TASK_EXECUTION_TIMEOUT_CANCEL_MSG
+        timeout_error_message = f"Выполнение задачи превысило timeout {self._max_task_execution_sec} с"
+        execution_crash: BaseException | None = None
         ACTIVE_TASKS.labels(topology=task.topology).inc()
         try:
             with TICK_DURATION.time():
+                execution_now = self._now_fn()
+                effective_timeout_sec, timeout_cancel_msg = self._effective_task_timeout(
+                    task=task,
+                    now=execution_now,
+                )
                 execution_task = asyncio.create_task(
-                    self._execute_task_use_case.run(task=task, now=self._now_fn()),
+                    self._execute_task_use_case.run(task=task, now=execution_now),
                     name=f"ae3lite_execute_task:{task.id}",
                 )
                 lease_wait_task = asyncio.create_task(
@@ -971,16 +1016,25 @@ class Ae3RuntimeWorker:
                 try:
                     done, _pending = await asyncio.wait(
                         {execution_task, lease_wait_task},
-                        timeout=float(self._max_task_execution_sec),
+                        timeout=effective_timeout_sec,
                         return_when=asyncio.FIRST_COMPLETED,
                     )
                     if execution_task in done:
-                        final_task = await execution_task
+                        try:
+                            final_task = await execution_task
+                        except asyncio.CancelledError as exc:
+                            if not self._is_guarded_task_cancellation(exc):
+                                raise
+                            execution_crash = exc
+                            final_task = None
                     elif lease_wait_task in done and lease_lost_event.is_set():
                         execution_task.cancel(TASK_EXECUTION_LEASE_LOST_CANCEL_MSG)
                         try:
                             final_task = await execution_task
-                        except asyncio.CancelledError:
+                        except asyncio.CancelledError as exc:
+                            if not self._is_guarded_task_cancellation(exc):
+                                raise
+                            execution_crash = exc
                             final_task = None
                         TICK_ERRORS.labels(error_type="LeaseLost").inc()
                         self._logger.error(
@@ -990,17 +1044,33 @@ class Ae3RuntimeWorker:
                         )
                     else:
                         timed_out = True
-                        execution_task.cancel(TASK_EXECUTION_TIMEOUT_CANCEL_MSG)
+                        timeout_error_code = timeout_cancel_msg
+                        if timeout_cancel_msg == TASK_EXECUTION_OVERALL_DEADLINE_CANCEL_MSG:
+                            timeout_error_message = "Общий deadline задачи истёк во время выполнения"
+                        else:
+                            timeout_error_message = (
+                                f"Выполнение задачи превысило timeout {self._max_task_execution_sec} с"
+                            )
+                        execution_task.cancel(timeout_cancel_msg)
                         try:
                             final_task = await execution_task
-                        except asyncio.CancelledError:
+                        except asyncio.CancelledError as exc:
+                            if not self._is_guarded_task_cancellation(exc):
+                                raise
+                            execution_crash = exc
                             final_task = None
-                        TICK_ERRORS.labels(error_type="TimeoutError").inc()
+                        TICK_ERRORS.labels(
+                            error_type=(
+                                "OverallDeadlineExceeded"
+                                if timeout_cancel_msg == TASK_EXECUTION_OVERALL_DEADLINE_CANCEL_MSG
+                                else "TimeoutError"
+                            )
+                        ).inc()
                         self._logger.error(
                             "AE3 task execution timeout: zone_id=%s task_id=%s timeout_sec=%s",
                             task.zone_id,
                             task.id,
-                            self._max_task_execution_sec,
+                            effective_timeout_sec,
                         )
                 except asyncio.CancelledError:
                     lease_wait_task.cancel()
@@ -1010,22 +1080,33 @@ class Ae3RuntimeWorker:
                     lease_wait_task.cancel()
         except Exception as exc:
             TICK_ERRORS.labels(error_type=type(exc).__name__).inc()
-            raise
+            execution_crash = exc
         finally:
             ACTIVE_TASKS.labels(topology=task.topology).dec()
             cancel = getattr(heartbeat_task, "cancel", None)
             if callable(cancel):
                 cancel()
+            if execution_crash is not None:
+                await self._fail_task_after_execution_crash(task=task, exc=execution_crash)
             if lease_lost_event.is_set():
                 self._logger.warning(
                     "AE3 runtime task finished after lease was lost: zone_id=%s task_id=%s",
                     task.zone_id,
                     task.id,
                 )
-            released = await self._zone_lease_repository.release(zone_id=task.zone_id, owner=self._owner)
+            claim_generation = self._claim_generation(task)
+            released = await self._zone_lease_repository.release(
+                zone_id=task.zone_id,
+                owner=self._owner,
+                claim_generation=claim_generation,
+            )
             if not released:
                 await asyncio.sleep(0.05)
-                released = await self._zone_lease_repository.release(zone_id=task.zone_id, owner=self._owner)
+                released = await self._zone_lease_repository.release(
+                    zone_id=task.zone_id,
+                    owner=self._owner,
+                    claim_generation=claim_generation,
+                )
             if released:
                 await self._maybe_resolve_zone_lease_release_alert(task=task, reason="released")
             else:
@@ -1041,7 +1122,10 @@ class Ae3RuntimeWorker:
                     await self._maybe_resolve_zone_lease_release_alert(
                         task=task, reason="already_absent"
                     )
-                elif lease_after_release.owner != self._owner:
+                elif (
+                    lease_after_release.owner != self._owner
+                    or int(getattr(lease_after_release, "claim_generation", 0) or 0) != claim_generation
+                ):
                     self._log_debug(
                         "AE3 runtime lease owned by another worker after task finish: zone_id=%s owner=%s task_id=%s lease_owner=%s",
                         task.zone_id,
@@ -1094,8 +1178,8 @@ class Ae3RuntimeWorker:
                         intent_id=intent_id,
                         now=self._now_fn(),
                         success=False,
-                        error_code="task_execution_timeout",
-                        error_message=f"Выполнение задачи превысило timeout {self._max_task_execution_sec} с",
+                        error_code=timeout_error_code,
+                        error_message=timeout_error_message,
                         task_id=int(task.id),
                         zone_id=int(task.zone_id),
                     )
@@ -1121,6 +1205,15 @@ class Ae3RuntimeWorker:
 
         if intent_id > 0 and final_task is not None and not final_task.is_active:
             await self._safe_mark_intent_terminal(task=final_task, intent_id=intent_id)
+
+    def _effective_task_timeout(self, *, task: Any, now: datetime) -> tuple[float, str]:
+        tick_timeout = max(0.001, float(self._max_task_execution_sec))
+        remaining_sec = overall_deadline_remaining_sec(task=task, now=now)
+        if remaining_sec is None:
+            return tick_timeout, TASK_EXECUTION_TIMEOUT_CANCEL_MSG
+        if remaining_sec <= tick_timeout:
+            return max(0.001, float(remaining_sec)), TASK_EXECUTION_OVERALL_DEADLINE_CANCEL_MSG
+        return tick_timeout, TASK_EXECUTION_TIMEOUT_CANCEL_MSG
 
     def _should_resolve_zone_lease_release_alert(self, *, zone_id: int) -> bool:
         """Resolve только при known-fail или редком TTL opportunistic (stuck после restart)."""
@@ -1181,24 +1274,32 @@ class Ae3RuntimeWorker:
                 exc_info=True,
             )
 
-    async def _extend_lease_with_transient_retry(self, *, zone_id: int) -> bool:
-        """Продлевает lease с retry на transient DB-ошибки."""
+    async def _extend_lease_with_transient_retry(
+        self,
+        *,
+        zone_id: int,
+        claim_generation: int,
+    ) -> bool | None:
+        """Продлевает lease.
+
+        True — владение подтверждено. False — extend явно отказал (чужой lease),
+        без повторов. None — транспортная ошибка исчерпала retry этого тика.
+        """
         max_attempts = 1 + self._lease_heartbeat_transient_retries
-        last_exc: Exception | None = None
         for attempt in range(max_attempts):
             try:
-                return bool(
+                extended = bool(
                     await self._zone_lease_repository.extend(
                         zone_id=zone_id,
                         owner=self._owner,
                         now=self._now_fn(),
                         lease_ttl_sec=self._lease_ttl_sec,
+                        claim_generation=claim_generation,
                     )
                 )
             except asyncio.CancelledError:
                 raise
-            except Exception as exc:
-                last_exc = exc
+            except Exception:
                 if attempt + 1 >= max_attempts:
                     self._logger.warning(
                         "AE3 lease heartbeat: extend failed after transient retries zone_id=%s owner=%s",
@@ -1206,10 +1307,12 @@ class Ae3RuntimeWorker:
                         self._owner,
                         exc_info=True,
                     )
-                    return False
-        if last_exc is not None:
-            return False
-        return False
+                    return None
+                continue
+            if not extended:
+                return False
+            return True
+        return None
 
     async def _signal_lease_lost_from_heartbeat(
         self,
@@ -1252,26 +1355,43 @@ class Ae3RuntimeWorker:
                 exc_info=True,
             )
 
-    async def _lease_heartbeat(self, *, zone_id: int, lease_lost_event: asyncio.Event) -> None:
+    async def _lease_heartbeat(
+        self,
+        *,
+        zone_id: int,
+        lease_lost_event: asyncio.Event,
+        claim_generation: int,
+    ) -> None:
         """Периодически продлевает zone lease во время выполнения задачи.
 
-        Heartbeat срабатывает примерно каждые 1/3 от TTL. После
-        ``lease_heartbeat_max_failures`` подряд неудачных extend (с учётом
-        transient retry) сигнализирует lease_lost и завершается.
+        Heartbeat срабатывает примерно каждые 1/3 от TTL.
+        ``extend()==False`` — подтверждённая потеря владения, lease_lost сразу.
+        Исключение БД проходит transient retry и не гасит владение с первой ошибки.
         """
         interval = max(10.0, self._lease_ttl_sec / 3.0)
         consecutive_failures = 0
         while True:
             await asyncio.sleep(interval)
             try:
-                extended = await self._extend_lease_with_transient_retry(zone_id=zone_id)
-                if extended:
+                extended = await self._extend_lease_with_transient_retry(
+                    zone_id=zone_id,
+                    claim_generation=claim_generation,
+                )
+                if extended is True:
                     consecutive_failures = 0
                     self._log_debug("AE3 lease heartbeat extended: zone_id=%s owner=%s", zone_id, self._owner)
                     continue
 
-                consecutive_failures += 1
                 LEASE_HEARTBEAT_FAILED.labels(zone_id=str(zone_id)).inc()
+                if extended is False:
+                    await self._signal_lease_lost_from_heartbeat(
+                        zone_id=zone_id,
+                        lease_lost_event=lease_lost_event,
+                        consecutive_failures=1,
+                    )
+                    break
+
+                consecutive_failures += 1
                 if consecutive_failures < self._lease_heartbeat_max_failures:
                     continue
 
@@ -1319,6 +1439,8 @@ class Ae3RuntimeWorker:
                         error_code=error_code,
                         error_message=error_message,
                         now=self._now_fn(),
+                        owner=str(getattr(task, "claimed_by", None) or self._owner),
+                        claim_generation=self._claim_generation(task),
                     )
                 except asyncio.CancelledError:
                     raise
@@ -1342,10 +1464,18 @@ class Ae3RuntimeWorker:
         )
         if zone_id > 0:
             try:
-                released = await self._zone_lease_repository.release(zone_id=zone_id, owner=self._owner)
+                released = await self._zone_lease_repository.release(
+                    zone_id=zone_id,
+                    owner=self._owner,
+                    claim_generation=self._claim_generation(task),
+                )
                 if not released:
                     await asyncio.sleep(0.05)
-                    await self._zone_lease_repository.release(zone_id=zone_id, owner=self._owner)
+                    await self._zone_lease_repository.release(
+                        zone_id=zone_id,
+                        owner=self._owner,
+                        claim_generation=self._claim_generation(task),
+                    )
             except asyncio.CancelledError:
                 raise
             except Exception:
@@ -1599,11 +1729,21 @@ class Ae3RuntimeWorker:
 
         requeue_fn = getattr(self._task_repository, "requeue_unpublished_execution", None)
         if callable(requeue_fn):
-            requeued = await requeue_fn(task_id=task_id, owner=self._owner, now=self._now_fn())
+            claim_generation = self._claim_generation(task)
+            requeued = await requeue_fn(
+                task_id=task_id,
+                owner=self._owner,
+                now=self._now_fn(),
+                claim_generation=claim_generation,
+            )
             if requeued is None:
                 return False
             if zone_id > 0:
-                await self._zone_lease_repository.release(zone_id=zone_id, owner=self._owner)
+                await self._zone_lease_repository.release(
+                    zone_id=zone_id,
+                    owner=self._owner,
+                    claim_generation=claim_generation,
+                )
             self._log_debug(
                 "AE3 runtime shutdown requeued unpublished execution: task_id=%s zone_id=%s",
                 task_id,
@@ -1619,13 +1759,19 @@ class Ae3RuntimeWorker:
         ae_cmd = await self._command_repository.get_latest_for_task(task_id=task_id)
         if ae_cmd is not None:
             return False
+        claim_generation = self._claim_generation(current)
         released = await self._task_repository.release_claim(
             task_id=task_id,
             owner=self._owner,
             now=self._now_fn(),
+            claim_generation=claim_generation,
         )
         if released and zone_id > 0:
-            await self._zone_lease_repository.release(zone_id=zone_id, owner=self._owner)
+            await self._zone_lease_repository.release(
+                zone_id=zone_id,
+                owner=self._owner,
+                claim_generation=claim_generation,
+            )
         if released:
             self._log_debug(
                 "AE3 runtime shutdown released unpublished claim: task_id=%s zone_id=%s",

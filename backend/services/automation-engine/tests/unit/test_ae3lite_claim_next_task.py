@@ -18,44 +18,35 @@ class _FakeTaskRepository:
     def __init__(
         self,
         task: AutomationTask | None,
-        *,
-        release_result: bool = True,
-        release_results: list[bool] | None = None,
+        lease: ZoneLease | None,
     ) -> None:
         self._task = task
-        self.release_calls = []
-        self.release_result = release_result
-        self.release_results = list(release_results) if release_results is not None else None
+        self._lease = lease
+        self.claim_calls: list[dict] = []
+        self.release_calls: list[dict] = []
         self.fail_for_recovery_calls: list[dict] = []
 
-    async def claim_next_pending(self, *, owner: str, now: datetime) -> AutomationTask | None:
-        return self._task
-
-    async def release_claim(self, *, task_id: int, owner: str, now: datetime) -> bool:
-        self.release_calls.append({"task_id": task_id, "owner": owner, "now": now})
-        if self.release_results is not None:
-            if not self.release_results:
-                return False
-            return bool(self.release_results.pop(0))
-        return self.release_result
-
-    async def fail_for_recovery(
+    async def claim_next_with_zone_lease(
         self,
         *,
-        task_id: int,
-        error_code: str,
-        error_message: str,
+        owner: str,
+        process_run_id: str,
         now: datetime,
-    ) -> AutomationTask | None:
-        self.fail_for_recovery_calls.append(
+        lease_ttl_sec: int,
+        overall_deadline_sec: int,
+    ):
+        self.claim_calls.append(
             {
-                "task_id": task_id,
-                "error_code": error_code,
-                "error_message": error_message,
+                "owner": owner,
+                "process_run_id": process_run_id,
                 "now": now,
+                "lease_ttl_sec": lease_ttl_sec,
+                "overall_deadline_sec": overall_deadline_sec,
             }
         )
-        return self._task
+        if self._task is None or self._lease is None:
+            return None
+        return self._task, self._lease
 
 
 class _FakeLeaseRepository:
@@ -101,7 +92,7 @@ def _lease(now: datetime) -> ZoneLease:
 @pytest.mark.asyncio
 async def test_claim_next_task_returns_claimed_task_and_lease() -> None:
     now = datetime.now(timezone.utc)
-    task_repo = _FakeTaskRepository(_task(now))
+    task_repo = _FakeTaskRepository(_task(now), _lease(now))
     lease_repo = _FakeLeaseRepository(_lease(now))
     use_case = ClaimNextTaskUseCase(
         task_repository=task_repo,
@@ -109,20 +100,22 @@ async def test_claim_next_task_returns_claimed_task_and_lease() -> None:
         lease_ttl_sec=90,
     )
 
-    result = await use_case.run(owner="worker-a", now=now)
+    result = await use_case.run(owner="worker-a", now=now, process_run_id="run-a")
 
     assert result is not None
     task, lease = result
     assert task.id == 15
     assert lease.zone_id == 7
     assert task_repo.release_calls == []
-    assert lease_repo.claim_calls[0]["lease_ttl_sec"] == 90
+    assert task_repo.claim_calls[0]["lease_ttl_sec"] == 90
+    assert task_repo.claim_calls[0]["process_run_id"] == "run-a"
+    assert lease_repo.claim_calls == []
 
 
 @pytest.mark.asyncio
-async def test_claim_next_task_rolls_back_claim_when_lease_is_busy() -> None:
+async def test_claim_next_task_returns_none_when_lease_is_busy() -> None:
     now = datetime.now(timezone.utc)
-    task_repo = _FakeTaskRepository(_task(now))
+    task_repo = _FakeTaskRepository(_task(now), None)
     lease_repo = _FakeLeaseRepository(None)
     use_case = ClaimNextTaskUseCase(
         task_repository=task_repo,
@@ -130,55 +123,37 @@ async def test_claim_next_task_rolls_back_claim_when_lease_is_busy() -> None:
         lease_ttl_sec=60,
     )
 
-    result = await use_case.run(owner="worker-a", now=now)
+    result = await use_case.run(owner="worker-a", now=now, process_run_id="run-a")
 
     assert result is None
-    assert task_repo.release_calls == [{"task_id": 15, "owner": "worker-a", "now": now}]
+    assert task_repo.release_calls == []
+    assert task_repo.fail_for_recovery_calls == []
+    assert lease_repo.claim_calls == []
 
 
 @pytest.mark.asyncio
-async def test_claim_next_task_fails_closed_when_claim_rollback_fails(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+async def test_claim_next_task_rejects_empty_process_run_id() -> None:
     now = datetime.now(timezone.utc)
-    task_repo = _FakeTaskRepository(_task(now), release_result=False)
-    lease_repo = _FakeLeaseRepository(None)
+    task_repo = _FakeTaskRepository(_task(now), _lease(now))
+    lease_repo = _FakeLeaseRepository(_lease(now))
     use_case = ClaimNextTaskUseCase(
         task_repository=task_repo,
         zone_lease_repository=lease_repo,
         lease_ttl_sec=60,
-    )
-    alerts: list[dict] = []
-
-    async def fake_sleep(_delay: float) -> None:
-        return None
-
-    async def fake_alert(**kwargs) -> None:
-        alerts.append(kwargs)
-
-    monkeypatch.setattr("ae3lite.application.use_cases.claim_next_task.asyncio.sleep", fake_sleep)
-    monkeypatch.setattr(
-        "ae3lite.application.use_cases.claim_next_task.send_infra_alert",
-        fake_alert,
     )
 
     with pytest.raises(TaskClaimRollbackError):
-        await use_case.run(owner="worker-a", now=now)
+        await use_case.run(owner="worker-a", now=now, process_run_id=" ")
 
-    assert len(task_repo.release_calls) == 3
-    assert len(task_repo.fail_for_recovery_calls) == 1
-    assert task_repo.fail_for_recovery_calls[0]["task_id"] == 15
-    assert task_repo.fail_for_recovery_calls[0]["error_code"] == "ae3_claim_rollback_failed"
-    assert len(alerts) == 1
-    assert alerts[0]["code"] == "ae3_claim_rollback_failed"
+    assert task_repo.claim_calls == []
+    assert task_repo.release_calls == []
+    assert task_repo.fail_for_recovery_calls == []
 
 
 @pytest.mark.asyncio
-async def test_claim_next_task_retries_release_claim_before_success(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+async def test_claim_next_task_does_not_compensate_after_atomic_miss() -> None:
     now = datetime.now(timezone.utc)
-    task_repo = _FakeTaskRepository(_task(now), release_results=[False, False, True])
+    task_repo = _FakeTaskRepository(None, None)
     lease_repo = _FakeLeaseRepository(None)
     use_case = ClaimNextTaskUseCase(
         task_repository=task_repo,
@@ -186,15 +161,11 @@ async def test_claim_next_task_retries_release_claim_before_success(
         lease_ttl_sec=60,
     )
 
-    async def fake_sleep(_delay: float) -> None:
-        return None
-
-    monkeypatch.setattr("ae3lite.application.use_cases.claim_next_task.asyncio.sleep", fake_sleep)
-
-    result = await use_case.run(owner="worker-a", now=now)
+    result = await use_case.run(owner="worker-a", now=now, process_run_id="run-a")
 
     assert result is None
-    assert len(task_repo.release_calls) == 3
+    assert len(task_repo.claim_calls) == 1
+    assert task_repo.release_calls == []
     assert task_repo.fail_for_recovery_calls == []
 
 

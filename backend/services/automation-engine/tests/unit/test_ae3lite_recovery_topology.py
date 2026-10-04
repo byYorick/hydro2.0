@@ -87,7 +87,20 @@ def _make_task(
 
 # ── Stubs ───────────────────────────────────────────────────────────
 
+from contextlib import asynccontextmanager
+
+
 class _MockTaskRepo:
+    @asynccontextmanager
+    async def transaction(self):
+        before = len(self.requeued), len(self.completed)
+        try:
+            yield object()
+        except BaseException:
+            del self.requeued[before[0]:]
+            del self.completed[before[1]:]
+            raise
+
     def __init__(
         self,
         *,
@@ -114,7 +127,16 @@ class _MockTaskRepo:
     async def fetch_pending_with_idle_zone_workflow_rows(self) -> list[dict]:
         return self._reconcile_rows
 
-    async def fail_for_recovery(self, *, task_id, error_code, error_message, now) -> AutomationTask:
+    async def fail_for_recovery(
+        self,
+        *,
+        task_id,
+        error_code,
+        error_message,
+        now,
+        owner="",
+        claim_generation=0,
+    ) -> AutomationTask:
         self.failed.append({"task_id": task_id, "error_code": error_code})
         # Return a failed version of the task
         task = next((t for t in self._tasks if t.id == task_id), None)
@@ -134,6 +156,7 @@ class _MockTaskRepo:
         error_code,
         error_message,
         now,
+        claim_generation=0,
     ) -> AutomationTask:
         self.reconcile_failed.append({"task_id": task_id, "error_code": error_code})
         for row in self._reconcile_rows:
@@ -150,9 +173,22 @@ class _MockTaskRepo:
             error_code=error_code,
             error_message=error_message,
             now=now,
+            claim_generation=claim_generation,
         )
 
-    async def update_stage(self, *, task_id, owner, workflow, correction, due_at, now, preserve_pending_manual_step=False):
+    async def update_stage(
+        self,
+        *,
+        task_id,
+        owner,
+        workflow,
+        correction,
+        due_at,
+        now,
+        preserve_pending_manual_step=False,
+        claim_generation=0,
+        conn=None,
+    ):
         self.requeued.append({"task_id": task_id, "workflow": workflow})
         task = next((t for t in self._tasks if t.id == task_id), None)
         if task is None:
@@ -163,7 +199,7 @@ class _MockTaskRepo:
             "current_stage": workflow.current_stage,
         })
 
-    async def mark_completed(self, *, task_id, owner, now):
+    async def mark_completed(self, *, task_id, owner, now, claim_generation=0, conn=None):
         self.completed.append(task_id)
         task = next((t for t in self._tasks if t.id == task_id), None)
         if task is None:
@@ -173,7 +209,7 @@ class _MockTaskRepo:
     async def record_transition(self, *, task_id, from_stage, to_stage, workflow_phase, now, **kwargs):
         self.transitions.append({"task_id": task_id, "to_stage": to_stage})
 
-    async def recover_waiting_command(self, *, task_id, now, owner: str):
+    async def recover_waiting_command(self, *, task_id, now, owner: str, claim_generation: int = 0):
         self.waiting_command_persisted.append({"task_id": task_id, "owner": owner})
         task = next((t for t in self._tasks if t.id == task_id), None)
         if task is None:
@@ -215,7 +251,7 @@ class _MockLeaseRepo:
     async def release_expired(self, *, now) -> int:
         return 0
 
-    async def release_if_owner_or_expired(self, *, zone_id, owner, now) -> bool:
+    async def release_if_owner_or_expired(self, *, zone_id, owner, now, claim_generation: int = 0) -> bool:
         self.released.append({"zone_id": zone_id, "owner": owner, "now": now})
         return self._release
 
@@ -224,7 +260,7 @@ class _MockWorkflowRepo:
     def __init__(self) -> None:
         self.upserts: list[dict[str, Any]] = []
 
-    async def upsert_phase(self, *, zone_id, workflow_phase, payload, scheduler_task_id, now):
+    async def upsert_phase(self, *, zone_id, workflow_phase, payload, scheduler_task_id, now, conn=None):
         self.upserts.append({
             "zone_id": zone_id,
             "workflow_phase": workflow_phase,
@@ -235,7 +271,7 @@ class _MockWorkflowRepo:
 
 
 class _MockWorkflowRepoRaises(_MockWorkflowRepo):
-    async def upsert_phase(self, *, zone_id, workflow_phase, payload, scheduler_task_id, now):
+    async def upsert_phase(self, *, zone_id, workflow_phase, payload, scheduler_task_id, now, conn=None):
         await super().upsert_phase(
             zone_id=zone_id,
             workflow_phase=workflow_phase,
@@ -415,7 +451,7 @@ async def test_recovery_correction_in_flight_fails():
     assert result.failed_tasks == 1
 
 
-async def test_recovery_workflow_repo_failure_does_not_abort_otherwise_valid_transition():
+async def test_recovery_workflow_repo_failure_rolls_back_transition():
     task = _make_task(status="waiting_command", stage="clean_fill_start")
     repo = _MockTaskRepo(tasks=[task])
     uc = StartupRecoveryUseCase(
@@ -427,10 +463,10 @@ async def test_recovery_workflow_repo_failure_does_not_abort_otherwise_valid_tra
         use_startup_recovery_lock=False,
     )
 
-    result = await uc.run(now=NOW)
-
-    assert result.failed_tasks == 0
-    assert len(repo.requeued) == 1
+    from ae3lite.domain.errors import TaskExecutionError
+    with pytest.raises(TaskExecutionError, match="Не удалось синхронизировать workflow"):
+        await uc.run(now=NOW)
+    assert len(repo.requeued) == 0
 
 
 async def test_recovery_command_still_pending_stays_waiting():

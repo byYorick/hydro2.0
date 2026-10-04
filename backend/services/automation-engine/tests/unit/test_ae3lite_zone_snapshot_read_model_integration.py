@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
 import json
 from uuid import uuid4
 
+import asyncpg
 import pytest
 
 from ae3lite.domain.entities import AutomationTask
@@ -11,6 +13,7 @@ from ae3lite.domain.errors import SnapshotBuildError
 from ae3lite.domain.services.cycle_start_planner import CycleStartPlanner
 from ae3lite.infrastructure.read_models import PgZoneSnapshotReadModel
 from common.db import execute, fetch
+from common.env import get_settings
 
 
 def _merge_dict(base: dict, patch: dict) -> dict:
@@ -38,7 +41,19 @@ async def _resolve_active_grow_cycle_id(zone_id: int) -> int:
     return int(rows[0]["id"])
 
 
-async def _upsert_cycle_bundle(grow_cycle_id: int, patch: dict) -> None:
+async def _connect() -> asyncpg.Connection:
+    settings = get_settings()
+    return await asyncpg.connect(
+        host=settings.pg_host,
+        port=settings.pg_port,
+        database=settings.pg_db,
+        user=settings.pg_user,
+        password=settings.pg_pass,
+        timeout=10,
+    )
+
+
+async def _upsert_cycle_bundle(grow_cycle_id: int, patch: dict) -> str:
     rows = await fetch(
         """
         SELECT config
@@ -112,6 +127,21 @@ async def _upsert_cycle_bundle(grow_cycle_id: int, patch: dict) -> None:
         grow_cycle_id,
         bundle_revision,
         config,
+    )
+    return bundle_revision
+
+
+async def _set_cycle_expected_bundle_revision(grow_cycle_id: int, bundle_revision: str) -> None:
+    await execute(
+        """
+        UPDATE grow_cycles
+        SET settings = COALESCE(settings, '{}'::jsonb)
+            || jsonb_build_object('bundle_revision', $2::text),
+            updated_at = NOW()
+        WHERE id = $1
+        """,
+        grow_cycle_id,
+        bundle_revision,
     )
 
 
@@ -565,6 +595,39 @@ async def _cleanup(prefix: str) -> None:
     await execute("DELETE FROM greenhouses WHERE name LIKE $1", f"{prefix}%")
 
 
+class _InterposedSnapshotReadModel(PgZoneSnapshotReadModel):
+    def __init__(
+        self,
+        *,
+        writer_conn: asyncpg.Connection,
+        replacement_revision: str,
+    ) -> None:
+        self.writer_conn = writer_conn
+        self.replacement_revision = replacement_revision
+        self.first_select_reached = asyncio.Event()
+        self.concurrent_commit_done = asyncio.Event()
+        self.reader_pid: int | None = None
+        self.writer_pid: int | None = None
+
+    async def _after_zone_row_loaded(self, *, conn, zone_id: int, grow_cycle_id: int) -> None:
+        self.first_select_reached.set()
+        self.reader_pid = int(await conn.fetchval("SELECT pg_backend_pid()"))
+        self.writer_pid = int(await self.writer_conn.fetchval("SELECT pg_backend_pid()"))
+        await self.writer_conn.execute(
+            """
+            UPDATE automation_effective_bundles
+            SET bundle_revision = $2,
+                inputs_checksum = $2,
+                updated_at = NOW()
+            WHERE scope_type = 'grow_cycle'
+              AND scope_id = $1
+            """,
+            grow_cycle_id,
+            self.replacement_revision,
+        )
+        self.concurrent_commit_done.set()
+
+
 @pytest.mark.asyncio
 async def test_zone_snapshot_read_model_and_planner_build_cycle_start_plan() -> None:
     prefix = f"ae3-snapshot-{uuid4().hex}"
@@ -818,6 +881,89 @@ async def test_zone_snapshot_read_model_and_planner_build_cycle_start_plan() -> 
         assert plan.named_plans["solution_fill_start"][-1].channel == "pump_main"
         assert plan.named_plans["irr_state_probe"][0].channel == "storage_state"
     finally:
+        await _cleanup(prefix)
+
+
+@pytest.mark.asyncio
+async def test_zone_snapshot_repeatable_read_does_not_mix_bundle_revision_between_selects() -> None:
+    prefix = f"ae3-snapshot-repeatable-{uuid4().hex}"
+    writer_conn: asyncpg.Connection | None = None
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+
+    try:
+        greenhouse_id = await _insert_greenhouse(prefix)
+        zone_id = await _insert_zone(f"{prefix}-zone", greenhouse_id=greenhouse_id)
+        _, recipe_revision_id = await _insert_recipe_revision(prefix)
+        grow_cycle_id = await _insert_grow_cycle(
+            zone_id,
+            greenhouse_id=greenhouse_id,
+            recipe_revision_id=recipe_revision_id,
+        )
+        phase_id = await _insert_phase(grow_cycle_id, ph_target=5.8)
+        await execute(
+            """
+            UPDATE grow_cycles
+            SET current_phase_id = $2,
+                started_at = $3,
+                recipe_started_at = $3,
+                updated_at = $3
+            WHERE id = $1
+            """,
+            grow_cycle_id,
+            phase_id,
+            now,
+        )
+        await _insert_profile(zone_id)
+        old_revision_rows = await fetch(
+            """
+            SELECT bundle_revision
+            FROM automation_effective_bundles
+            WHERE scope_type = 'grow_cycle'
+              AND scope_id = $1
+            """,
+            grow_cycle_id,
+        )
+        old_revision = str(old_revision_rows[0]["bundle_revision"])
+        await _set_cycle_expected_bundle_revision(grow_cycle_id, old_revision)
+
+        node_id, _node_uid = await _insert_irrig_node(zone_id, prefix=prefix)
+        await execute(
+            """
+            INSERT INTO node_channels (node_id, channel, type, config, created_at, updated_at)
+            VALUES ($1, 'pump_main', 'ACTUATOR', '{}'::jsonb, NOW(), NOW())
+            """,
+            node_id,
+        )
+
+        writer_conn = await _connect()
+        new_revision = f"concurrent-{uuid4().hex}"
+        read_model = _InterposedSnapshotReadModel(
+            writer_conn=writer_conn,
+            replacement_revision=new_revision,
+        )
+
+        snapshot = await read_model.load(zone_id=zone_id)
+
+        assert read_model.first_select_reached.is_set()
+        assert read_model.concurrent_commit_done.is_set()
+        assert read_model.reader_pid is not None
+        assert read_model.writer_pid is not None
+        assert read_model.reader_pid != read_model.writer_pid
+        assert snapshot.bundle_revision == old_revision
+
+        current_revision_rows = await fetch(
+            """
+            SELECT bundle_revision
+            FROM automation_effective_bundles
+            WHERE scope_type = 'grow_cycle'
+              AND scope_id = $1
+            """,
+            grow_cycle_id,
+        )
+        assert str(current_revision_rows[0]["bundle_revision"]) == new_revision
+    finally:
+        if writer_conn is not None:
+            await writer_conn.close()
         await _cleanup(prefix)
 
 

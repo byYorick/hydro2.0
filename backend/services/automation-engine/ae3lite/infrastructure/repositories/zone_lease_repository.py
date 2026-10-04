@@ -25,27 +25,39 @@ class PgZoneLeaseRepository:
         owner: str,
         now: datetime,
         lease_ttl_sec: int,
+        claim_generation: int = 0,
+        process_run_id: str | None = None,
     ) -> Optional[ZoneLease]:
         normalized_now = self._normalize_timestamp(now)
         leased_until = normalized_now + timedelta(seconds=max(1, int(lease_ttl_sec)))
+        normalized_run = str(process_run_id or "").strip() or None
         pool = await get_pool()
         async with pool.acquire() as conn:
             row = await conn.fetchrow(
                 """
-                INSERT INTO ae_zone_leases (zone_id, owner, leased_until, updated_at)
-                VALUES ($1, $2, $3, $4)
+                INSERT INTO ae_zone_leases (
+                    zone_id, owner, leased_until, updated_at, claim_generation, process_run_id
+                )
+                VALUES ($1, $2, $3, $4, $5, $6)
                 ON CONFLICT (zone_id) DO UPDATE
                 SET owner = EXCLUDED.owner,
                     leased_until = EXCLUDED.leased_until,
-                    updated_at = EXCLUDED.updated_at
-                WHERE ae_zone_leases.owner = EXCLUDED.owner
-                   OR ae_zone_leases.leased_until <= $4
-                RETURNING zone_id, owner, leased_until, updated_at
+                    updated_at = EXCLUDED.updated_at,
+                    claim_generation = EXCLUDED.claim_generation,
+                    process_run_id = EXCLUDED.process_run_id
+                WHERE ae_zone_leases.leased_until <= EXCLUDED.updated_at
+                   OR (
+                        ae_zone_leases.owner = EXCLUDED.owner
+                        AND ae_zone_leases.process_run_id IS NOT DISTINCT FROM EXCLUDED.process_run_id
+                   )
+                RETURNING zone_id, owner, leased_until, updated_at, claim_generation, process_run_id
                 """,
                 zone_id,
                 owner,
                 leased_until,
                 normalized_now,
+                int(claim_generation),
+                normalized_run,
             )
         return ZoneLease.from_row(row) if row is not None else None
 
@@ -56,6 +68,7 @@ class PgZoneLeaseRepository:
         owner: str,
         now: datetime,
         lease_ttl_sec: int,
+        claim_generation: int,
     ) -> bool:
         """Продлевает lease текущего owner.
 
@@ -72,16 +85,19 @@ class PgZoneLeaseRepository:
                     updated_at = $2
                 WHERE zone_id = $1
                   AND owner = $4
+                  AND claim_generation = $5
+                  AND leased_until > $2
                 RETURNING zone_id
                 """,
                 zone_id,
                 normalized_now,
                 leased_until,
                 owner,
+                int(claim_generation),
             )
         return row is not None
 
-    async def release(self, *, zone_id: int, owner: str) -> bool:
+    async def release(self, *, zone_id: int, owner: str, claim_generation: int) -> bool:
         pool = await get_pool()
         async with pool.acquire() as conn:
             row = await conn.fetchrow(
@@ -89,10 +105,12 @@ class PgZoneLeaseRepository:
                 DELETE FROM ae_zone_leases
                 WHERE zone_id = $1
                   AND owner = $2
+                  AND claim_generation = $3
                 RETURNING zone_id
                 """,
                 zone_id,
                 owner,
+                int(claim_generation),
             )
         return row is not None
 
@@ -105,7 +123,7 @@ class PgZoneLeaseRepository:
         if conn is not None:
             row = await conn.fetchrow(
                 """
-                SELECT zone_id, owner, leased_until, updated_at
+                SELECT zone_id, owner, leased_until, updated_at, claim_generation, process_run_id
                 FROM ae_zone_leases
                 WHERE zone_id = $1
                 LIMIT 1
@@ -117,7 +135,7 @@ class PgZoneLeaseRepository:
             async with pool.acquire() as pool_conn:
                 row = await pool_conn.fetchrow(
                     """
-                    SELECT zone_id, owner, leased_until, updated_at
+                    SELECT zone_id, owner, leased_until, updated_at, claim_generation, process_run_id
                     FROM ae_zone_leases
                     WHERE zone_id = $1
                     LIMIT 1
@@ -146,8 +164,13 @@ class PgZoneLeaseRepository:
         zone_id: int,
         owner: str,
         now: datetime,
+        claim_generation: int,
     ) -> bool:
-        """Снимает lease после recovery-fail, если owner совпадает или TTL истёк."""
+        """Снимает lease того же поколения, если owner совпал или TTL этого поколения истёк.
+
+        Другое claim_generation не удаляется, даже если строка owner совпала
+        или вызывающий считает чужой TTL истёкшим.
+        """
         normalized_owner = str(owner or "").strip()
         if not normalized_owner:
             return False
@@ -158,11 +181,13 @@ class PgZoneLeaseRepository:
                 """
                 DELETE FROM ae_zone_leases
                 WHERE zone_id = $1
+                  AND claim_generation = $4
                   AND (owner = $2 OR leased_until <= $3)
                 RETURNING zone_id
                 """,
                 zone_id,
                 normalized_owner,
                 normalized_now,
+                int(claim_generation),
             )
         return row is not None

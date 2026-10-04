@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections import OrderedDict
 import logging
 import os
 from datetime import timezone
@@ -21,6 +22,7 @@ from common.db import create_zone_event
 from common.infra_alerts import send_infra_alert
 from common.biz_alerts import send_biz_alert
 from common.service_logs import send_service_log
+from ae3lite.domain.claim_fence import claim_generation, claim_owner, same_claim_token
 from ae3lite.domain.errors import (
     ErrorCodes,
     PlannerConfigurationError,
@@ -29,12 +31,14 @@ from ae3lite.domain.errors import (
     TaskExecutionError,
     TaskTerminalStateReached,
 )
+from ae3lite.domain.task_deadline import ensure_overall_deadline_active
 
 logger = logging.getLogger(__name__)
 
 
 TASK_EXECUTION_TIMEOUT_CANCEL_MSG = "ae3_task_execution_timeout"
 TASK_EXECUTION_LEASE_LOST_CANCEL_MSG = "ae3_zone_lease_lost"
+TASK_EXECUTION_OVERALL_DEADLINE_CANCEL_MSG = ErrorCodes.AE3_TASK_OVERALL_DEADLINE_EXCEEDED
 NODE_STALE_ONLINE_THRESHOLD_SEC = max(1, int(os.getenv("NODE_OFFLINE_TIMEOUT_SEC", "120")))
 SNAPSHOT_TRANSIENT_RETRY_SEC = max(1, int(os.getenv("AE3_SNAPSHOT_TRANSIENT_RETRY_SEC", "10")))
 SNAPSHOT_TRANSIENT_MAX_STAGE_AGE_SEC = max(
@@ -89,6 +93,7 @@ class ExecuteTaskUseCase:
         self._alert_repository = alert_repository
         self._command_repository = command_repository
         self._finalize_task_use_case = finalize_task_use_case or FinalizeTaskUseCase(task_repository=task_repository)
+        self._failure_states: OrderedDict[tuple[int, str, int], dict[str, Any]] = OrderedDict()
 
     async def run(self, *, task: Any, now: datetime) -> Any:
         owner = str(task.claimed_by or "").strip()
@@ -101,7 +106,12 @@ class ExecuteTaskUseCase:
         # поэтому используем персистентный флаг start_event_emitted.
         emit_start_event = first_run and not bool(getattr(task, "start_event_emitted", False))
 
-        running_task = await self._task_repository.mark_running(task_id=task.id, owner=owner, now=now)
+        running_task = await self._task_repository.mark_running(
+            task_id=task.id,
+            owner=owner,
+            now=now,
+            claim_generation=int(getattr(task, "claim_generation", 0) or 0),
+        )
         if running_task is None:
             logger.warning(
                 "AE3 mark_running CAS miss: fail-closed zone_id=%s task_id=%s owner=%s",
@@ -121,12 +131,13 @@ class ExecuteTaskUseCase:
                 now=now,
             )
 
-        await self._preflight_required_nodes_online(task=running_task)
-
         snapshot = None
         plan = None
         start_observability_emitted = False
+        self._clear_failure_guards(running_task)
         try:
+            ensure_overall_deadline_active(task=running_task, now=now)
+            await self._preflight_required_nodes_online(task=running_task)
             snapshot = await self._zone_snapshot_read_model.load(zone_id=running_task.zone_id)
             self._verify_topology_required_node_types(task=running_task, snapshot=snapshot)
             plan = self._planner.build(task=running_task, snapshot=snapshot)
@@ -219,19 +230,12 @@ class ExecuteTaskUseCase:
                 fallback_task=exc.task,
             )
             if terminal_task is not None:
-                status = str(getattr(terminal_task, "status", "") or "").strip().lower()
-                if status in {"failed", "cancelled"}:
-                    from ae3lite.application.handlers.flow_path_guard import (
-                        should_fail_safe_shutdown_on_task_fail,
-                    )
-
-                    if should_fail_safe_shutdown_on_task_fail(terminal_task):
-                        await self._attempt_fail_safe_shutdown(
-                            task=terminal_task,
-                            snapshot=snapshot,
-                            plan=plan,
-                            now=now,
-                        )
+                await self._shutdown_terminal_flow_if_needed(
+                    terminal_task=terminal_task,
+                    snapshot=snapshot,
+                    plan=plan,
+                    now=now,
+                )
                 await self._apply_terminal_task_side_effects(task=terminal_task, now=now)
                 logger.info(
                     "AE3 execution задачи остановлено после внешнего terminal transition: zone_id=%s task_id=%s status=%s",
@@ -244,16 +248,20 @@ class ExecuteTaskUseCase:
         except asyncio.CancelledError as exc:
             timeout_cancelled = self._is_timeout_cancellation(exc)
             lease_lost_cancelled = self._is_lease_lost_cancellation(exc)
-            if not timeout_cancelled and not lease_lost_cancelled:
+            overall_deadline_cancelled = self._is_overall_deadline_cancellation(exc)
+            if not timeout_cancelled and not lease_lost_cancelled and not overall_deadline_cancelled:
                 raise
 
             timeout_now = datetime.now(timezone.utc)
-            error_code = TASK_EXECUTION_TIMEOUT_CANCEL_MSG if timeout_cancelled else TASK_EXECUTION_LEASE_LOST_CANCEL_MSG
-            error_message = (
-                "Выполнение задачи превысило runtime timeout"
-                if timeout_cancelled
-                else "Во время выполнения задачи был потерян zone lease"
-            )
+            if overall_deadline_cancelled:
+                error_code = TASK_EXECUTION_OVERALL_DEADLINE_CANCEL_MSG
+                error_message = "Общий deadline задачи истёк во время выполнения"
+            elif timeout_cancelled:
+                error_code = TASK_EXECUTION_TIMEOUT_CANCEL_MSG
+                error_message = "Выполнение задачи превысило runtime timeout"
+            else:
+                error_code = TASK_EXECUTION_LEASE_LOST_CANCEL_MSG
+                error_message = "Во время выполнения задачи был потерян zone lease"
             guard_extra_details: dict[str, object] | None = None
             offline_failure = await self._resolve_offline_failure_instead_of_guard(
                 task=running_task,
@@ -271,18 +279,14 @@ class ExecuteTaskUseCase:
                 getattr(running_task, "current_stage", None),
                 error_code,
             )
-            await self._attempt_fail_safe_shutdown(
+            return await self.complete_execution_failure(
                 task=running_task,
                 snapshot=snapshot,
                 plan=plan,
                 now=timeout_now,
-            )
-            return await self._fail_closed(
-                task=running_task,
                 owner=owner,
                 error_code=error_code,
                 error_message=error_message,
-                now=timeout_now,
                 extra_details=guard_extra_details,
             )
         except SnapshotBuildError as exc:
@@ -302,6 +306,12 @@ class ExecuteTaskUseCase:
                 fallback_task=running_task,
             )
             if terminal_task is not None:
+                await self._shutdown_terminal_flow_if_needed(
+                    terminal_task=terminal_task,
+                    snapshot=snapshot,
+                    plan=plan,
+                    now=now,
+                )
                 logger.info(
                     "AE3 execution задачи остановлено после внешнего terminal transition: zone_id=%s task_id=%s status=%s reason=%s",
                     getattr(terminal_task, "zone_id", None),
@@ -322,18 +332,14 @@ class ExecuteTaskUseCase:
                     running_task.id,
                     persistent_uids,
                 )
-                await self._attempt_fail_safe_shutdown(
+                return await self.complete_execution_failure(
                     task=running_task,
                     snapshot=snapshot,
                     plan=plan,
                     now=now,
-                )
-                return await self._fail_closed(
-                    task=running_task,
                     owner=owner,
                     error_code=ErrorCodes.AE3_SNAPSHOT_REQUIRED_NODE_PERSISTENTLY_OFFLINE,
                     error_message=str(exc),
-                    now=now,
                     extra_details=dict(snapshot_details),
                 )
 
@@ -355,18 +361,14 @@ class ExecuteTaskUseCase:
                 snapshot_error_code,
                 exc,
             )
-            await self._attempt_fail_safe_shutdown(
+            return await self.complete_execution_failure(
                 task=running_task,
                 snapshot=snapshot,
                 plan=plan,
                 now=now,
-            )
-            return await self._fail_closed(
-                task=running_task,
                 owner=owner,
                 error_code=snapshot_error_code,
                 error_message=str(exc),
-                now=now,
                 extra_details=dict(snapshot_details) if snapshot_details else None,
             )
         except (PlannerConfigurationError, TaskExecutionError, TaskFinalizeError) as exc:
@@ -383,6 +385,12 @@ class ExecuteTaskUseCase:
                 fallback_task=running_task,
             )
             if terminal_task is not None:
+                await self._shutdown_terminal_flow_if_needed(
+                    terminal_task=terminal_task,
+                    snapshot=snapshot,
+                    plan=plan,
+                    now=now,
+                )
                 await publish_upward_reports(reports)
                 logger.info(
                     "AE3 execution задачи остановлено после внешнего terminal transition: zone_id=%s task_id=%s status=%s reason=%s",
@@ -401,6 +409,8 @@ class ExecuteTaskUseCase:
                     owner=owner,
                     error=exc,
                     now=now,
+                    snapshot=snapshot,
+                    plan=plan,
                 )
                 if retried_task is not None:
                     return retried_task
@@ -423,18 +433,14 @@ class ExecuteTaskUseCase:
                 error_code,
                 exc,
             )
-            await self._attempt_fail_safe_shutdown(
+            return await self.complete_execution_failure(
                 task=running_task,
                 snapshot=snapshot,
                 plan=plan,
                 now=now,
-            )
-            return await self._fail_closed(
-                task=running_task,
                 owner=owner,
                 error_code=error_code,
                 error_message=error_message,
-                now=now,
                 extra_details=execution_extra_details,
                 upward_reports=reports,
             )
@@ -449,18 +455,14 @@ class ExecuteTaskUseCase:
                 exc,
                 exc_info=True,
             )
-            await self._attempt_fail_safe_shutdown(
+            return await self.complete_execution_failure(
                 task=running_task,
                 snapshot=snapshot,
                 plan=plan,
                 now=now,
-            )
-            return await self._fail_closed(
-                task=running_task,
                 owner=owner,
                 error_code="ae3_task_execution_unhandled_exception",
                 error_message=message,
-                now=now,
             )
 
     async def _retry_transient_command_send_failure(
@@ -470,6 +472,8 @@ class ExecuteTaskUseCase:
         owner: str,
         error: TaskExecutionError,
         now: datetime,
+        snapshot: Any = None,
+        plan: Any = None,
     ) -> Any | None:
         stage_entered_at = getattr(getattr(task, "workflow", None), "stage_entered_at", None)
         stage_age_sec = self._stage_age_sec(stage_entered_at=stage_entered_at, now=now)
@@ -508,12 +512,14 @@ class ExecuteTaskUseCase:
                 severity="error",
                 details=details,
             )
-            return await self._fail_closed(
+            return await self.complete_execution_failure(
                 task=task,
+                snapshot=snapshot,
+                plan=plan,
+                now=now,
                 owner=owner,
                 error_code=COMMAND_SEND_RETRY_EXHAUSTED_CODE,
                 error_message=final_message,
-                now=now,
             )
 
         update_stage = getattr(self._task_repository, "update_stage", None)
@@ -622,12 +628,14 @@ class ExecuteTaskUseCase:
                 severity="error",
                 details=details,
             )
-            return await self._fail_closed(
+            return await self.complete_execution_failure(
                 task=task,
+                snapshot=None,
+                plan=None,
+                now=now,
                 owner=owner,
                 error_code=SNAPSHOT_RETRY_EXHAUSTED_CODE,
                 error_message=final_message,
-                now=now,
             )
 
         update_stage = getattr(self._task_repository, "update_stage", None)
@@ -922,6 +930,7 @@ class ExecuteTaskUseCase:
             irrigation_decision_strategy=strategy or None,
             irrigation_decision_config=config_mapping or None,
             irrigation_bundle_revision=bundle_revision,
+            claim_generation=int(getattr(task, "claim_generation", 0) or 0),
         )
         if updated is None:
             raise TaskExecutionError(
@@ -1100,6 +1109,11 @@ class ExecuteTaskUseCase:
         extra_details: Mapping[str, Any] | None = None,
         upward_reports: tuple[Any, ...] = (),
     ) -> Any:
+        get_task = getattr(self._task_repository, "get_by_id", None)
+        if callable(get_task):
+            current = await get_task(task_id=task.id)
+            if current is not None and str(current.status) in {"pending", "claimed", "running", "waiting_command"} and not same_claim_token(task, current):
+                return current
         extra_details = dict(extra_details) if isinstance(extra_details, Mapping) else {}
         if upward_reports:
             await publish_upward_reports(upward_reports)
@@ -1434,6 +1448,123 @@ class ExecuteTaskUseCase:
             and str(timeout_details.get("command") or "").strip().lower() == "state"
         )
 
+    def _failure_key(self, task: Any) -> tuple[int, str, int]:
+        return int(task.id), claim_owner(task), claim_generation(task)
+
+    def _failure_state(self, task: Any) -> dict[str, Any]:
+        key = self._failure_key(task)
+        if key not in self._failure_states:
+            # Bound completed-claim bookkeeping; never evict an in-flight failure.
+            for old_key, state in list(self._failure_states.items()):
+                if len(self._failure_states) < 1024:
+                    break
+                if state.get("inflight") is None:
+                    del self._failure_states[old_key]
+            self._failure_states[key] = {}
+        return self._failure_states[key]
+
+    def _clear_failure_guards(self, task: Any) -> None:
+        self._failure_states.pop(self._failure_key(task), None)
+
+    def is_guarded_task_cancellation(self, exc: BaseException) -> bool:
+        """Timeout и lease-lost — помеченные отмены safety-path. Голый CancelledError — нет."""
+        if not isinstance(exc, asyncio.CancelledError):
+            return False
+        return (
+            self._is_timeout_cancellation(exc)
+            or self._is_lease_lost_cancellation(exc)
+            or self._is_overall_deadline_cancellation(exc)
+        )
+
+    async def complete_execution_failure(
+        self,
+        *,
+        task: Any,
+        snapshot: Any,
+        plan: Any,
+        now: datetime,
+        owner: str,
+        error_code: str,
+        error_message: str,
+        extra_details: Mapping[str, Any] | None = None,
+        upward_reports: tuple[Any, ...] = (),
+    ) -> Any:
+        """Общий safety-path: stop доступных актуаторов, затем terminal fail.
+
+        Повторный вход не шлёт новый ordinary batch и не зацикливает stop/fail.
+        Запись failed сама по себе остановкой не считается.
+        """
+        state = self._failure_state(task)
+        if "result" in state:
+            return state["result"]
+        inflight = state.get("inflight")
+        if inflight is not None:
+            if state.get("caller") is asyncio.current_task():
+                return task
+            return await asyncio.shield(inflight)
+        completion = asyncio.get_running_loop().create_future()
+        state["inflight"] = completion
+        state["caller"] = asyncio.current_task()
+        try:
+            await self._shutdown_once(task=task, snapshot=snapshot, plan=plan, now=now)
+            result = await self._fail_closed(
+                task=task, owner=owner, error_code=error_code,
+                error_message=error_message, now=now,
+                extra_details=extra_details, upward_reports=upward_reports,
+            )
+            state["result"] = result
+            completion.set_result(result)
+            return result
+        except BaseException:
+            completion.cancel()
+            raise
+        finally:
+            state["inflight"] = None
+            state.pop("caller", None)
+
+    async def _shutdown_once(
+        self,
+        *,
+        task: Any,
+        snapshot: Any,
+        plan: Any,
+        now: datetime,
+    ) -> None:
+        state = self._failure_state(task)
+        if state.get("shutdown_attempted"):
+            return
+        state["shutdown_attempted"] = True
+        await self._attempt_fail_safe_shutdown(
+            task=task,
+            snapshot=snapshot,
+            plan=plan,
+            now=now,
+        )
+
+    async def _shutdown_terminal_flow_if_needed(
+        self,
+        *,
+        terminal_task: Any,
+        snapshot: Any,
+        plan: Any,
+        now: datetime,
+    ) -> None:
+        status = str(getattr(terminal_task, "status", "") or "").strip().lower()
+        if status not in {"failed", "cancelled"}:
+            return
+        from ae3lite.application.handlers.flow_path_guard import (
+            should_fail_safe_shutdown_on_task_fail,
+        )
+
+        if not should_fail_safe_shutdown_on_task_fail(terminal_task):
+            return
+        await self._shutdown_once(
+            task=terminal_task,
+            snapshot=snapshot,
+            plan=plan,
+            now=now,
+        )
+
     async def _attempt_fail_safe_shutdown(
         self,
         *,
@@ -1460,7 +1591,10 @@ class ExecuteTaskUseCase:
                 current_task = None
             # Inactive/missing task still needs hardware stop; keep original task as FK.
             if current_task is not None:
-                task = current_task
+                if not same_claim_token(task, current_task) and str(current_task.status) in {"pending", "claimed", "running", "waiting_command"}:
+                    logger.warning("AE3 stale failure cannot stop new claim: task_id=%s", task.id)
+                    return
+                # Never borrow a newer claim's authority for a shutdown.
         from ae3lite.application.services.correction_interrupt_safety import (
             attempt_task_fail_safe_shutdown,
         )
@@ -1494,9 +1628,24 @@ class ExecuteTaskUseCase:
             return
 
         if not result.attempted:
-            self._log_skip_fail_safe_shutdown(task=task, reason=str(result.reason or "not_attempted"))
+            reason = str(result.reason or "not_attempted")
+            if reason == "actuators_load_failed":
+                await self._emit_fail_safe_shutdown_alert(
+                    task=task,
+                    reason="actuators_load_failed",
+                    error_code="actuators_load_failed",
+                )
+                return
+            self._log_skip_fail_safe_shutdown(task=task, reason=reason)
             return
-        if result.success:
+        if bool(getattr(result, "confirmed", False)):
+            logger.error(
+                "AE3 fail-safe shutdown вернул confirmed без probe: task_id=%s zone_id=%s reason=%s",
+                getattr(task, "id", None),
+                getattr(task, "zone_id", None),
+                result.reason,
+            )
+        if result.success or str(result.reason or "") == "publish_accepted_unconfirmed":
             return
         reason = str(result.reason or "unknown")
         if reason.startswith("publish_exception:"):
@@ -1596,6 +1745,9 @@ class ExecuteTaskUseCase:
 
     def _is_lease_lost_cancellation(self, exc: asyncio.CancelledError) -> bool:
         return any(str(arg) == TASK_EXECUTION_LEASE_LOST_CANCEL_MSG for arg in getattr(exc, "args", ()))
+
+    def _is_overall_deadline_cancellation(self, exc: asyncio.CancelledError) -> bool:
+        return any(str(arg) == TASK_EXECUTION_OVERALL_DEADLINE_CANCEL_MSG for arg in getattr(exc, "args", ()))
 
     async def _load_terminal_task_or_none(self, *, task_id: int, fallback_task: Any) -> Any | None:
         if task_id <= 0:

@@ -181,7 +181,8 @@ make i18n-catalog-check   # включает audit_phase4_i18n_coverage.py
 | `command_timeout` | `command` | Не пришёл terminal status команды | `Не дождались подтверждения или итогового ответа по команде в допустимое время.` |
 | `command_send_failed` | `command` | Не удалось передать команду в transport path | `Команду не удалось отправить до исполнительного узла.` |
 | `ae3_task_execution_crashed` | `ae3_execution` | Worker поймал необработанное исключение в `_execute_claimed_task` и изолировал сбой per-task | `Выполнение задачи AE3 аварийно прервано runtime worker; задача переведена в failed.` |
-| `ae3_task_execution_timeout` | `ae3_execution` | Вся задача превысила runtime timeout | `Выполнение задачи AE3 превысило допустимый runtime timeout.` |
+| `ae3_task_execution_timeout` | `ae3_execution` | Один tick превысил AE_MAX_TASK_EXECUTION_SEC | `Выполнение tick AE3 превысило допустимый runtime timeout.` |
+| `ae3_task_overall_deadline_exceeded` | `ae3_execution` | Истёк сохранённый overall_deadline_at всей задачи, включая manual/operator wait | `Истёк общий срок выполнения задачи AE3; выполнена попытка безопасной остановки.` |
 | `ae3_task_execution_unhandled_exception` | `ae3_execution` | Во время выполнения произошло необработанное исключение | `Во время выполнения задачи AE3 произошло необработанное исключение.` |
 | `start_irrigation_setup_pending` | `ae3_ingress` | `POST /zones/{id}/start-irrigation` вызван до перехода зоны в `workflow_phase='ready'` (или `zone_workflow_state` ещё не создан) | `Полив отклонён: зона ещё не готова. Сначала завершите setup/cycle_start.` |
 | `irr_state_unavailable` | `ae3_irr_probe` | Probe IRR-ноды не получил snapshot за `irr_state_wait_timeout_sec` (нода offline / mqtt disconnect / reboot). В polling-стейджах поглощается backoff'ом, эскалируется только при достижении `_IRR_PROBE_FAILURE_STREAK_LIMIT` | `Снимок состояния IRR-ноды недоступен.` |
@@ -225,7 +226,9 @@ make i18n-catalog-check   # включает audit_phase4_i18n_coverage.py
 | `ae3_task_running_transition_failed` | `ae3_execution` | Не удалось перевести claimed→running | `Не удалось активировать задачу AE3 для выполнения.` |
 | `ae3_required_node_offline` | `ae3_execution` | Обязательный узел зоны offline (transient) | `Узел зоны недоступен (offline): {uid} ({type}).` |
 | `ae3_zone_lease_held` | `ae3_execution` | Operator/Laravel mutating-команда при активной `ae_zone_leases` (HL `409`, кроме `source=automation-engine` и fail-safe OFF) | `Зона занята автоматикой AE3. Дождитесь завершения задачи или переведите зону в manual.` |
-| `ae3_zone_lease_lost` | `ae3_execution` | Lease зоны потеряна mid-run | `Эксклюзивная блокировка зоны была потеряна, задача прервана.` |
+| `ae3_zone_lease_lost` | `ae3_execution` | Lease зоны потеряна mid-run. `extend()==False` — немедленный сигнал, без трёх попыток на чужом владении | `Эксклюзивная блокировка зоны была потеряна, задача прервана.` |
+| `ae3_stale_claim_rejected` | `ae3_execution` | Stale writer увидел чужой `claimed_by` или другое `claim_generation` и не пишет outcome. Подстановка свежего owner запрещена | `Исполнитель потерял право записи этого захвата и не сохранил результат.` |
+| `greenhouse_climate_lease_lost` | `greenhouse_climate` | Renew greenhouse lease вернул false или исчерпал transient retry; дальнейшие обычные команды форточек не публикуются. `DONE` уже отправленной команды не делает tick успешным | `Климатический контур потерял владение теплицей и остановил следующие команды.` |
 | `ae3_zone_lease_release_failed` | `ae3_execution` | Не удалось отпустить lease после завершения | `Не удалось освободить блокировку зоны после задачи (требуется ручная проверка).` |
 | `runtime_plan_missing` | `ae3_execution` | У task в `running/waiting_command` нет RuntimePlan | `Отсутствует runtime-план для активной задачи — задача отменена.` |
 | `control_mode_switched_to_manual` | `ae3_execution` | Active task отменена переключением `control_mode='manual'` | `Задача отменена: оператор переключил зону в ручной режим.` |
@@ -313,7 +316,7 @@ Stage-terminal коды используются `WorkflowRouter._fail_task` д�
 | Deprecated code | Заменён на |
 | --- | --- |
 | `ae3_task_create_conflict` | `start_cycle_zone_busy` (active task/lease) или `start_cycle_idempotency_key_conflict` (idempotency race) |
-| `ae3_lease_claim_failed` | Провал claim делает silent rollback через `release_claim`; при потере уже захваченной lease — `ae3_zone_lease_lost` |
+| `ae3_lease_claim_failed` | Провал lease откатывает общую транзакцию claim task+lease; при потере уже захваченной lease — `ae3_zone_lease_lost` |
 | `ae3_requeue_failed` | `ae3_transition_apply_failed` / `ae3_poll_apply_failed` / `ae3_correction_apply_failed` |
 | `cycle_start_blocked_nodes_unavailable` | `ae3_required_node_offline` / `ae3_snapshot_required_node_type_missing` / `ae3_snapshot_no_online_actuator_channels` / `ae3_snapshot_required_node_persistently_offline` |
 
@@ -383,3 +386,5 @@ Frontend показывает ошибку в таком порядке:
 - `Zone {id} has no online actuator channels`
 
 Новые runtime path не должны генерировать business semantics через raw-message.
+
+При повторе identity с другим node/channel/cmd/params причина `command_identity_conflict` возвращается через существующий `CommandPublishError`/`command_send_failed`; новую дозу под старым cmd_id не отправлять.

@@ -25,6 +25,7 @@ from ae3lite.application.use_cases import (
 )
 from ae3lite.application.use_cases.execute_task import (
     TASK_EXECUTION_LEASE_LOST_CANCEL_MSG,
+    TASK_EXECUTION_OVERALL_DEADLINE_CANCEL_MSG,
     TASK_EXECUTION_TIMEOUT_CANCEL_MSG,
 )
 from ae3lite.domain.services.cycle_start_planner import CycleStartPlanner
@@ -305,6 +306,8 @@ class _DeleteTaskBeforeFirstAeInsertRepo(PgAeCommandRepository):
         now: datetime,
         stage_name=None,
         planner_step=None,
+        owner=None,
+        claim_generation=None,
     ):
         await self._delete_task_if_armed(task_id)
         return await super().allocate_and_create_pending(
@@ -316,6 +319,8 @@ class _DeleteTaskBeforeFirstAeInsertRepo(PgAeCommandRepository):
             now=now,
             stage_name=stage_name,
             planner_step=planner_step,
+            owner=owner,
+            claim_generation=claim_generation,
         )
 
     async def create_pending(  # type: ignore[override]
@@ -328,6 +333,8 @@ class _DeleteTaskBeforeFirstAeInsertRepo(PgAeCommandRepository):
         payload,
         now: datetime,
         stage_name=None,
+        owner=None,
+        claim_generation=None,
     ):
         await self._delete_task_if_armed(task_id)
         return await super().create_pending(
@@ -338,6 +345,8 @@ class _DeleteTaskBeforeFirstAeInsertRepo(PgAeCommandRepository):
             payload=payload,
             now=now,
             stage_name=stage_name,
+            owner=owner,
+            claim_generation=claim_generation,
         )
 
 
@@ -755,7 +764,7 @@ async def test_runtime_worker_timeout_cancels_execution_with_timeout_reason_and_
                     is_active=False,
                 )
 
-    async def _release(*, zone_id, owner):
+    async def _release(*, zone_id, owner, claim_generation=0):
         released.append((zone_id, owner))
         return True
 
@@ -796,6 +805,91 @@ async def test_runtime_worker_timeout_cancels_execution_with_timeout_reason_and_
     assert terminal_calls[0]["success"] is False
     assert terminal_calls[0]["error_code"] == TASK_EXECUTION_TIMEOUT_CANCEL_MSG
     assert terminal_calls[0]["error_message"] == "Task execution exceeded runtime timeout"
+
+
+@pytest.mark.asyncio
+async def test_runtime_worker_overall_deadline_cancels_with_distinguished_reason() -> None:
+    cancel_args: list[tuple[object, ...]] = []
+    terminal_calls: list[dict[str, object]] = []
+    released: list[tuple[int, str]] = []
+    fixed_now = datetime(2026, 3, 7, 12, 0, 0)
+
+    task = SimpleNamespace(
+        id=702,
+        zone_id=82,
+        topology="generic_cycle_start",
+        intent_id=992,
+        status="claimed",
+        error_code=None,
+        error_message=None,
+        is_active=True,
+        overall_deadline_at=fixed_now,
+    )
+
+    class _ClaimOnce:
+        def __init__(self) -> None:
+            self._used = False
+
+        async def run(self, **kwargs):
+            if self._used:
+                return None
+            self._used = True
+            return task, None
+
+    class _ExecuteDeadlineAware:
+        async def run(self, *, task, now):
+            try:
+                await asyncio.sleep(3600)
+            except asyncio.CancelledError as exc:
+                cancel_args.append(exc.args)
+                return SimpleNamespace(
+                    id=task.id,
+                    zone_id=task.zone_id,
+                    topology=task.topology,
+                    intent_id=task.intent_id,
+                    status="failed",
+                    error_code=TASK_EXECUTION_OVERALL_DEADLINE_CANCEL_MSG,
+                    error_message="Общий deadline задачи истёк во время выполнения",
+                    is_active=False,
+                )
+
+    async def _release(*, zone_id, owner, claim_generation=0):
+        released.append((zone_id, owner))
+        return True
+
+    async def _noop(**kwargs):
+        return None
+
+    worker = Ae3RuntimeWorker(
+        owner="worker-overall-deadline-test",
+        claim_next_task_use_case=_ClaimOnce(),
+        idle_poll_interval_sec=0.05,
+        execute_task_use_case=_ExecuteDeadlineAware(),
+        startup_recovery_use_case=type("StartupRecoveryUseCaseStub", (), {"run": staticmethod(_noop)})(),
+        zone_lease_repository=type("ZoneLeaseRepositoryStub", (), {"release": staticmethod(_release)})(),
+        zone_intent_repository=_MockIntentRepository(mark_terminal_calls=terminal_calls),
+        spawn_background_task_fn=lambda coro, **kwargs: asyncio.create_task(coro, name=str(kwargs.get("task_name") or "ae3-test")),
+        now_fn=lambda: fixed_now,
+        logger=type(
+            "Logger",
+            (),
+            {
+                "debug": staticmethod(lambda *args, **kwargs: None),
+                "warning": staticmethod(lambda *args, **kwargs: None),
+                "error": staticmethod(lambda *args, **kwargs: None),
+            },
+        )(),
+        max_task_execution_sec=900,
+    )
+
+    await worker._drain_pending_tasks()
+
+    assert cancel_args == [(TASK_EXECUTION_OVERALL_DEADLINE_CANCEL_MSG,)]
+    assert released == [(82, "worker-overall-deadline-test")]
+    assert len(terminal_calls) == 1
+    assert terminal_calls[0]["intent_id"] == 992
+    assert terminal_calls[0]["success"] is False
+    assert terminal_calls[0]["error_code"] == TASK_EXECUTION_OVERALL_DEADLINE_CANCEL_MSG
 
 
 @pytest.mark.asyncio
@@ -862,7 +956,7 @@ async def test_runtime_worker_continues_draining_after_timeout_without_extra_kic
                 is_active=False,
             )
 
-    async def _release(*, zone_id, owner):
+    async def _release(*, zone_id, owner, claim_generation=0):
         released.append((zone_id, owner))
         return True
 
@@ -950,7 +1044,7 @@ async def test_runtime_worker_cancels_execution_when_lease_is_lost() -> None:
                     is_active=False,
                 )
 
-    async def _release(*, zone_id, owner):
+    async def _release(*, zone_id, owner, claim_generation=0):
         released.append((zone_id, owner))
         return True
 
@@ -979,7 +1073,7 @@ async def test_runtime_worker_cancels_execution_when_lease_is_lost() -> None:
         max_task_execution_sec=5.0,
     )
 
-    async def _force_lease_loss(*, zone_id, lease_lost_event):
+    async def _force_lease_loss(*, zone_id, lease_lost_event, claim_generation=0):
         lease_lost_event.set()
 
     worker._lease_heartbeat = _force_lease_loss  # type: ignore[method-assign]
@@ -1034,7 +1128,7 @@ async def test_runtime_worker_does_not_warn_when_lease_was_already_removed_durin
             )
 
     class _ZoneLeaseRepoMissingAfterRelease:
-        async def release(self, *, zone_id, owner):
+        async def release(self, *, zone_id, owner, claim_generation=0):
             return False
 
         async def get(self, *, zone_id):
@@ -1126,7 +1220,7 @@ async def test_runtime_worker_release_treats_foreign_owner_as_resolved() -> None
             )
 
     class _ZoneLeaseRepoForeignOwner:
-        async def release(self, *, zone_id, owner):
+        async def release(self, *, zone_id, owner, claim_generation=0):
             release_calls.append((zone_id, owner))
             return False
 
@@ -1235,7 +1329,7 @@ async def test_runtime_worker_resolves_lease_fail_alert_when_known_fail_and_alre
             # Считаем get(), не release(): worker ретраит release до get.
             self._get_n = 0
 
-        async def release(self, *, zone_id, owner):
+        async def release(self, *, zone_id, owner, claim_generation=0):
             return False
 
         async def get(self, *, zone_id):
@@ -1345,7 +1439,7 @@ async def test_runtime_worker_opportunistic_lease_resolve_after_ttl_warmup() -> 
             )
 
     class _ZoneLeaseRepoMissing:
-        async def release(self, *, zone_id, owner):
+        async def release(self, *, zone_id, owner, claim_generation=0):
             return False
 
         async def get(self, *, zone_id):
@@ -1438,7 +1532,7 @@ async def test_runtime_worker_successful_release_skips_resolve_without_known_fai
                 is_active=False,
             )
 
-    async def _release(*, zone_id, owner):
+    async def _release(*, zone_id, owner, claim_generation=0):
         return True
 
     async def _noop(**kwargs):

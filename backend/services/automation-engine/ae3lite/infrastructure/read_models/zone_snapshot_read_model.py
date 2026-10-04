@@ -54,10 +54,14 @@ class PgZoneSnapshotReadModel:
             return value
         return value.astimezone(timezone.utc).replace(tzinfo=None) if value.tzinfo else value
 
+    async def _after_zone_row_loaded(self, *, conn: Any, zone_id: int, grow_cycle_id: int) -> None:
+        """Test hook for proving transaction isolation between snapshot SELECT statements."""
+        return None
+
     async def load(self, *, zone_id: int) -> ZoneSnapshot:
         pool = await get_pool()
         async with pool.acquire() as conn:
-            async with conn.transaction():
+            async with conn.transaction(isolation="repeatable_read", readonly=True):
                 zone_row = await conn.fetchrow(
                     f"""
                     SELECT
@@ -126,6 +130,12 @@ class PgZoneSnapshotReadModel:
                         f"У зоны {zone_id} отсутствует current_phase_id для активного grow_cycle",
                         code=ErrorCodes.AE3_SNAPSHOT_MISSING_CURRENT_PHASE,
                     )
+
+                await self._after_zone_row_loaded(
+                    conn=conn,
+                    zone_id=zone_id,
+                    grow_cycle_id=int(grow_cycle_id),
+                )
 
                 bundle_row = await conn.fetchrow(
                     """

@@ -94,6 +94,8 @@ class SetControlModeUseCase:
                                 f"с {previous_mode} на manual"
                             ),
                             now=now,
+                            owner=str(getattr(active_task, "claimed_by", "") or ""),
+                            claim_generation=int(getattr(active_task, "claim_generation", 0) or 0),
                         )
                         active_task_action = "cancelled"
                     except Exception:

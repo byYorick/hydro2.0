@@ -71,6 +71,9 @@ AE_TASKS = Table(
         _col("idempotency_key", "text"),
         _col("claimed_by", "text"),
         _col("claimed_at", "timestamp"),
+        _col("overall_deadline_at", "timestamp"),
+        _col("claim_generation", "bigint", nullable=False),
+        _col("process_run_id", "text"),
         _col("due_at", "timestamp"),
         _col("created_at", "timestamp", nullable=False),
         _col("updated_at", "timestamp", nullable=False),
@@ -155,6 +158,8 @@ AE_ZONE_LEASES = Table(
         _col("owner", "text", nullable=False),
         _col("leased_until", "timestamp", nullable=False),
         _col("updated_at", "timestamp", nullable=False),
+        _col("claim_generation", "bigint", nullable=False),
+        _col("process_run_id", "text"),
     ),
 )
 

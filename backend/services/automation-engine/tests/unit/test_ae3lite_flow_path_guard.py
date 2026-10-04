@@ -88,6 +88,12 @@ def test_solution_topup_check_is_flow_path_stage() -> None:
         correction=SimpleNamespace(corr_step="corr_dose_ph"),
     )
     assert should_fail_safe_shutdown_on_task_fail(dose_task) is False
+    wait_task = SimpleNamespace(
+        topology="two_tank",
+        current_stage="irrigation_check",
+        correction=SimpleNamespace(corr_step="corr_wait_ec"),
+    )
+    assert should_fail_safe_shutdown_on_task_fail(wait_task) is False
 
 
 class _HandlerStub:
@@ -122,6 +128,23 @@ def _plan_with_stop_plans() -> SimpleNamespace:
             "solution_topup_stop": ("topup_stop_cmd",),
         },
     )
+
+
+@pytest.mark.asyncio
+async def test_ensure_flow_stopped_unknown_stage_is_not_confirmed_without_probe() -> None:
+    handler = _HandlerStub()
+    task = SimpleNamespace(id=1, zone_id=2, current_stage="not_a_flow_stage")
+    outcome = await ensure_flow_stopped(
+        handler,
+        task=task,
+        plan=_plan_with_stop_plans(),
+        now=NOW,
+        stage="not_a_flow_stage",
+        reason="test",
+    )
+    assert outcome.confirmed is False
+    assert handler.probe_calls == 0
+    assert handler.batch_calls == 0
 
 
 @pytest.mark.asyncio

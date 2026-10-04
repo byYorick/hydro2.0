@@ -23,6 +23,7 @@ from ae3lite.application.use_cases.execute_task import (
     SNAPSHOT_RETRY_EXHAUSTED_CODE,
     SNAPSHOT_TRANSIENT_RETRY_SEC,
     TASK_EXECUTION_LEASE_LOST_CANCEL_MSG,
+    TASK_EXECUTION_OVERALL_DEADLINE_CANCEL_MSG,
     TASK_EXECUTION_TIMEOUT_CANCEL_MSG,
 )
 from ae3lite.domain.entities.automation_task import AutomationTask
@@ -42,6 +43,7 @@ def _make_task(
     irrigation_decision_strategy: str | None = None,
     irrigation_decision_config: dict | None = None,
     irrigation_bundle_revision: str | None = None,
+    overall_deadline_at: datetime | None = None,
 ) -> AutomationTask:
     return AutomationTask.from_row({
         "id": 99, "zone_id": 99, "task_type": task_type, "status": "running",
@@ -57,6 +59,7 @@ def _make_task(
         "irrigation_decision_config": irrigation_decision_config,
         "irrigation_bundle_revision": irrigation_bundle_revision,
         "corr_step": None,
+        "overall_deadline_at": overall_deadline_at,
     })
 
 
@@ -83,10 +86,10 @@ class _TaskRepoRunning:
         self._running_task = running_task
         self.update_irrigation_runtime_calls: list[dict[str, object]] = []
 
-    async def mark_running(self, *, task_id, owner, now):
+    async def mark_running(self, *, task_id, owner, now, claim_generation=0):
         return self._running_task
 
-    async def mark_completed(self, *, task_id, owner, now):
+    async def mark_completed(self, *, task_id, owner, now, claim_generation=0):
         return replace(self._running_task, status="completed")
 
     async def get_by_id(self, *, task_id):
@@ -134,7 +137,7 @@ class _TaskRepoRequeue(_TaskRepoRunning):
         super().__init__(running_task=running_task)
         self.update_stage_calls: list[dict[str, object]] = []
 
-    async def update_stage(self, *, task_id, owner, workflow, correction, due_at, now, preserve_pending_manual_step=False):
+    async def update_stage(self, *, task_id, owner, workflow, correction, due_at, now, preserve_pending_manual_step=False, claim_generation=0):
         self.update_stage_calls.append(
             {
                 "task_id": task_id,
@@ -159,6 +162,15 @@ class _TaskRepoRequeue(_TaskRepoRunning):
 
 class _SnapshotReadModelOk:
     async def load(self, *, zone_id):
+        return _SnapshotWithCorrectionConfig()
+
+
+class _SnapshotReadModelRecorder:
+    def __init__(self) -> None:
+        self.calls: list[int] = []
+
+    async def load(self, *, zone_id):
+        self.calls.append(int(zone_id))
         return _SnapshotWithCorrectionConfig()
 
 
@@ -450,6 +462,11 @@ class _WorkflowRouterCancelledByTimeout:
 class _WorkflowRouterCancelledByLeaseLoss:
     async def run(self, *, task, plan, now):
         raise asyncio.CancelledError(TASK_EXECUTION_LEASE_LOST_CANCEL_MSG)
+
+
+class _WorkflowRouterCancelledByOverallDeadline:
+    async def run(self, *, task, plan, now):
+        raise asyncio.CancelledError(TASK_EXECUTION_OVERALL_DEADLINE_CANCEL_MSG)
 
 
 class _WorkflowRouterTerminalTask:
@@ -1673,6 +1690,54 @@ async def test_execute_task_timeout_cancellation_fails_closed_and_runs_fail_safe
         "valve_solution_supply",
         "valve_irrigation",
     ]
+
+
+@pytest.mark.asyncio
+async def test_execute_task_expired_overall_deadline_fails_before_ordinary_effects() -> None:
+    task = _make_task(
+        stage="startup",
+        topology="generic_cycle_start",
+        overall_deadline_at=NOW - timedelta(seconds=1),
+    )
+    snapshot = _SnapshotReadModelRecorder()
+    finalize = _FinalizeTaskUseCase()
+    gateway = _GatewayRecorder()
+    use_case = ExecuteTaskUseCase(
+        task_repository=_TaskRepoRunning(running_task=task),
+        zone_snapshot_read_model=snapshot,
+        planner=_PlannerOk(),
+        command_gateway=gateway,
+        workflow_router=_WorkflowRouterOk(),
+        finalize_task_use_case=finalize,
+    )
+
+    await use_case.run(task=task, now=NOW)
+
+    assert finalize.calls[0]["error_code"] == ErrorCodes.AE3_TASK_OVERALL_DEADLINE_EXCEEDED
+    assert snapshot.calls == []
+    assert gateway.calls == []
+
+
+@pytest.mark.asyncio
+async def test_execute_task_overall_deadline_cancellation_fails_closed_and_runs_fail_safe_shutdown() -> None:
+    task = _make_task(stage="solution_fill_check", topology="two_tank")
+    finalize = _FinalizeTaskUseCase()
+    gateway = _GatewayRecorder()
+    use_case = ExecuteTaskUseCase(
+        task_repository=_TaskRepoRunning(running_task=task),
+        zone_snapshot_read_model=_SnapshotReadModelWithIrrActuators(),
+        planner=_PlannerTwoTankOk(),
+        command_gateway=gateway,
+        workflow_router=_WorkflowRouterCancelledByOverallDeadline(),
+        finalize_task_use_case=finalize,
+    )
+
+    await use_case.run(task=task, now=NOW)
+
+    assert finalize.calls[0]["error_code"] == ErrorCodes.AE3_TASK_OVERALL_DEADLINE_EXCEEDED
+    assert finalize.calls[0]["error_message"] == "Общий deadline задачи истёк во время выполнения"
+    assert len(gateway.calls) == 1
+    assert gateway.calls[0]["kwargs"] == {"track_task_state": False}
 
 
 @pytest.mark.asyncio

@@ -91,6 +91,9 @@ class AutomationTask:
 
     # ── IRR probe resilience (incremented on unavailable/stale) ─────
     irr_probe_failure_streak: int = 0
+    claim_generation: int = 0
+    process_run_id: Optional[str] = None
+    overall_deadline_at: Optional[datetime] = None
 
     @classmethod
     def from_row(cls, row: Mapping[str, Any]) -> AutomationTask:
@@ -256,6 +259,11 @@ class AutomationTask:
             irrigation_setup_deadline_at=_naive(row.get("irrigation_setup_deadline_at")),
             start_event_emitted=bool(row.get("start_event_emitted", False)),
             irr_probe_failure_streak=int(row.get("irr_probe_failure_streak") or 0),
+            claim_generation=int(row.get("claim_generation") or 0),
+            process_run_id=(
+                str(row["process_run_id"]) if row.get("process_run_id") not in (None, "") else None
+            ),
+            overall_deadline_at=_naive(row.get("overall_deadline_at")),
         )
 
     @property

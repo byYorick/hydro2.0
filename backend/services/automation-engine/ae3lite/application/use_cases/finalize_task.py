@@ -30,6 +30,7 @@ class FinalizeTaskUseCase:
             task_id=task.id,
             owner=owner,
             now=now,
+            claim_generation=int(getattr(task, "claim_generation", 0) or 0),
         )
         if completed is not None:
             return completed
@@ -77,6 +78,7 @@ class FinalizeTaskUseCase:
             error_code=error_code,
             error_message=error_message,
             now=now,
+            claim_generation=int(getattr(task, "claim_generation", 0) or 0),
         )
         if failed is None:
             raise TaskFinalizeError(error_code or "ae3_task_finalize_failed", f"Не удалось перевести задачу {task.id} в failed")
@@ -97,6 +99,7 @@ class FinalizeTaskUseCase:
             error_code=error_code,
             error_message=error_message,
             now=now,
+            claim_generation=int(getattr(task, "claim_generation", 0) or 0),
         )
         if failed is not None:
             return failed

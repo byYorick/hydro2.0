@@ -275,12 +275,18 @@ async def load_open_pending_correction_interrupt_checks(
 
 @dataclass(frozen=True)
 class CorrectionInterruptFailSafeStopResult:
-    """Итог попытки fail-safe stop перед escalate."""
+    """Итог попытки fail-safe stop перед escalate.
+
+    ``success`` — транспорт принял publish-only batch. Это не подтверждённый OFF.
+    ``confirmed`` остаётся False, пока нет probe: HTTP accept, пустой snapshot
+    и пропущенный probe confirmed не ставят.
+    """
 
     attempted: bool
     success: bool
     reason: str
     commands_total: int = 0
+    confirmed: bool = False
 
 
 async def load_irrig_fail_safe_actuators(*, zone_id: int) -> tuple[Mapping[str, Any], ...]:
@@ -482,8 +488,9 @@ async def attempt_task_fail_safe_shutdown(
         return CorrectionInterruptFailSafeStopResult(
             attempted=True,
             success=True,
-            reason="ok",
+            reason="publish_accepted_unconfirmed",
             commands_total=len(commands),
+            confirmed=False,
         )
     error_code = (
         str(result.get("error_code") or "publish_failed")

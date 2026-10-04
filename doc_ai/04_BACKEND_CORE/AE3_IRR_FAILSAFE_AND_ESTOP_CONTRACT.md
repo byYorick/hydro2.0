@@ -289,6 +289,7 @@ Node events запрещено использовать как единстве�
 2. После terminal `DONE` stop-команд — probe `irr_state` с ожидаемым OFF-снимком.
 3. При успехе — transition в `manual_hold` + zone_event `CONTROL_MODE_FLOW_STOPPED`.
 4. При провале stop/probe — zone_event `FLOW_STOP_FAILED_HARDWARE_MAY_BE_ACTIVE`, critical biz-alert, terminal fail `ae3_flow_stop_unconfirmed`.
+5. Publish-only HTTP accept, пустой snapshot и пропущенный probe не являются подтверждённым OFF. Ошибка загрузки адресов (`actuators_load_failed`) оставляет неопределённость и тот же critical alert; terminal `failed` сам по себе safe не означает. Ошибка одного узла не отменяет stop-попытку на остальных известных каналах.
 5. Выход из `manual_hold`: `control_mode=auto` → возврат в сохранённый check-stage; operator manual step → тот же return-stage.
 
 `startup` в manual без активного fill **не** считается flow-path: допустим poll до выбора operator action.

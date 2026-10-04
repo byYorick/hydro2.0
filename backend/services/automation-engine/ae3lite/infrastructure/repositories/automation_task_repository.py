@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import logging
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, AsyncIterator, Mapping
 
 import asyncpg
 
-from ae3lite.domain.entities import AutomationTask
+from ae3lite.domain.entities import AutomationTask, ZoneLease
 from ae3lite.domain.entities.workflow_state import CorrectionState, WorkflowState
 from ae3lite.infrastructure.metrics import (
     OLDEST_ACTIVE_TASK_AGE_SECONDS,
@@ -17,9 +17,13 @@ from ae3lite.infrastructure.metrics import (
     PENDING_TASKS,
     TASK_DURATION_SECONDS,
 )
-from common.db import execute, get_pool
+from common.db import get_pool
 
 logger = logging.getLogger(__name__)
+
+
+class _ZoneLeaseNotAcquired(Exception):
+    """Lease не захвачена внутри транзакции claim. Транзакция откатывается."""
 
 ACTIVE_TASK_STATUSES = ("pending", "claimed", "running", "waiting_command")
 RUNNING_TASK_STATUSES = ("claimed", "running", "waiting_command")
@@ -161,6 +165,13 @@ class PgAutomationTaskRepository:
     ) -> str:
         async with self._connection(conn) as db_conn:
             return await db_conn.execute(query, *args)
+
+    @asynccontextmanager
+    async def transaction(self) -> AsyncIterator[asyncpg.Connection]:
+        """Open one repository-owned PostgreSQL transaction for multi-repository writes."""
+        async with self._connection() as conn:
+            async with conn.transaction():
+                yield conn
 
     # ── Reads ───────────────────────────────────────────────────────
 
@@ -472,6 +483,7 @@ class PgAutomationTaskRepository:
         irrigation_replay_count: int | None = None,
         irrigation_wait_ready_deadline_at: datetime | None = None,
         irrigation_setup_deadline_at: datetime | None = None,
+        claim_generation: int = 0,
     ) -> AutomationTask | None:
         normalized_now = self._normalize_timestamp(now)
         normalized_wait_ready_deadline_at = (
@@ -511,6 +523,7 @@ class PgAutomationTaskRepository:
                 updated_at = $14
             WHERE id = $1
               AND claimed_by = $2
+              AND claim_generation = $15
               AND status IN ('claimed', 'running', 'waiting_command')
             RETURNING *
             """,
@@ -528,48 +541,183 @@ class PgAutomationTaskRepository:
             normalized_wait_ready_deadline_at,
             normalized_setup_deadline_at,
             normalized_now,
+            int(claim_generation),
         )
         return self._task_from_row(row)
 
     # ── Claim / release ─────────────────────────────────────────────
 
-    async def claim_next_pending(self, *, owner: str, now: datetime) -> AutomationTask | None:
+    async def claim_next_with_zone_lease(
+        self,
+        *,
+        owner: str,
+        process_run_id: str,
+        now: datetime,
+        lease_ttl_sec: int,
+        overall_deadline_sec: int = 604800,
+    ) -> tuple[AutomationTask, ZoneLease] | None:
+        """Захватывает pending-задачу и zone lease в одной транзакции.
+
+        Если lease не получена, транзакция откатывается: задача не остаётся claimed.
+        """
+        return await self._claim_with_zone_lease(
+            owner=owner,
+            process_run_id=process_run_id,
+            now=now,
+            lease_ttl_sec=lease_ttl_sec,
+            overall_deadline_sec=overall_deadline_sec,
+            task_id=None,
+        )
+
+    async def claim_pending_task_with_zone_lease(
+        self,
+        *,
+        task_id: int,
+        owner: str,
+        process_run_id: str,
+        now: datetime,
+        lease_ttl_sec: int,
+        overall_deadline_sec: int = 604800,
+        conn: asyncpg.Connection | None = None,
+    ) -> tuple[AutomationTask, ZoneLease] | None:
+        """Тот же атомарный claim, но только для конкретной pending-задачи."""
+        return await self._claim_with_zone_lease(
+            owner=owner,
+            process_run_id=process_run_id,
+            now=now,
+            lease_ttl_sec=lease_ttl_sec,
+            overall_deadline_sec=overall_deadline_sec,
+            task_id=int(task_id),
+            conn=conn,
+        )
+
+    async def _claim_with_zone_lease(
+        self,
+        *,
+        owner: str,
+        process_run_id: str,
+        now: datetime,
+        lease_ttl_sec: int,
+        overall_deadline_sec: int,
+        task_id: int | None,
+        conn: asyncpg.Connection | None = None,
+    ) -> tuple[AutomationTask, ZoneLease] | None:
+        normalized_owner = str(owner or "").strip()
+        normalized_run = str(process_run_id or "").strip()
+        if not normalized_owner or not normalized_run:
+            return None
         normalized_now = self._normalize_timestamp(now)
-        async with self._connection() as conn:
-            async with conn.transaction():
-                row = await conn.fetchrow(
-                    """
-                    WITH candidate AS (
-                        SELECT id
-                        FROM ae_tasks
-                        WHERE status = 'pending'
-                          AND due_at <= $1
-                        ORDER BY due_at ASC, created_at ASC, id ASC
-                        FOR UPDATE SKIP LOCKED
-                        LIMIT 1
+        leased_until = normalized_now + timedelta(seconds=max(1, int(lease_ttl_sec)))
+        first_claim_deadline = normalized_now + timedelta(seconds=max(60, int(overall_deadline_sec)))
+
+        async def _run(db: asyncpg.Connection) -> tuple[AutomationTask, ZoneLease] | None:
+            try:
+                async with db.transaction():
+                    if task_id is None:
+                        row = await db.fetchrow(
+                            """
+                            WITH candidate AS (
+                                SELECT id
+                                FROM ae_tasks
+                                WHERE status = 'pending'
+                                  AND (
+                                      due_at <= $1
+                                      OR (overall_deadline_at IS NOT NULL AND overall_deadline_at <= $1)
+                                  )
+                                ORDER BY LEAST(due_at, COALESCE(overall_deadline_at, due_at)) ASC,
+                                         created_at ASC,
+                                         id ASC
+                                FOR UPDATE SKIP LOCKED
+                                LIMIT 1
+                            )
+                            UPDATE ae_tasks tasks
+                            SET status = 'claimed',
+                                claimed_by = $2,
+                                claimed_at = $1,
+                                claim_generation = nextval('ae_claim_generation_seq'),
+                                process_run_id = $3,
+                                overall_deadline_at = COALESCE(tasks.overall_deadline_at, $4),
+                                updated_at = $1
+                            FROM candidate
+                            WHERE tasks.id = candidate.id
+                            RETURNING tasks.*
+                            """,
+                            normalized_now,
+                            normalized_owner,
+                            normalized_run,
+                            first_claim_deadline,
+                        )
+                    else:
+                        row = await db.fetchrow(
+                            """
+                            WITH candidate AS (
+                                SELECT id
+                                FROM ae_tasks
+                                WHERE id = $5
+                                  AND status = 'pending'
+                                  AND (
+                                      due_at <= $1
+                                      OR (overall_deadline_at IS NOT NULL AND overall_deadline_at <= $1)
+                                  )
+                                FOR UPDATE SKIP LOCKED
+                            )
+                            UPDATE ae_tasks tasks
+                            SET status = 'claimed',
+                                claimed_by = $2,
+                                claimed_at = $1,
+                                claim_generation = nextval('ae_claim_generation_seq'),
+                                process_run_id = $3,
+                                overall_deadline_at = COALESCE(tasks.overall_deadline_at, $4),
+                                updated_at = $1
+                            FROM candidate
+                            WHERE tasks.id = candidate.id
+                            RETURNING tasks.*
+                            """,
+                            normalized_now,
+                            normalized_owner,
+                            normalized_run,
+                            first_claim_deadline,
+                            int(task_id),
+                        )
+                    task = self._task_from_row(row)
+                    if task is None:
+                        return None
+                    lease_row = await db.fetchrow(
+                        """
+                        INSERT INTO ae_zone_leases (
+                            zone_id, owner, leased_until, updated_at, claim_generation, process_run_id
+                        )
+                        VALUES ($1, $2, $3, $4, $5, $6)
+                        ON CONFLICT (zone_id) DO UPDATE
+                        SET owner = EXCLUDED.owner,
+                            leased_until = EXCLUDED.leased_until,
+                            updated_at = EXCLUDED.updated_at,
+                            claim_generation = EXCLUDED.claim_generation,
+                            process_run_id = EXCLUDED.process_run_id
+                        WHERE ae_zone_leases.leased_until <= EXCLUDED.updated_at
+                           OR (
+                                ae_zone_leases.owner = EXCLUDED.owner
+                                AND ae_zone_leases.process_run_id IS NOT DISTINCT FROM EXCLUDED.process_run_id
+                           )
+                        RETURNING zone_id, owner, leased_until, updated_at, claim_generation, process_run_id
+                        """,
+                        int(task.zone_id),
+                        normalized_owner,
+                        leased_until,
+                        normalized_now,
+                        int(task.claim_generation),
+                        normalized_run,
                     )
-                    UPDATE ae_tasks tasks
-                    SET status = 'claimed',
-                        claimed_by = $2,
-                        claimed_at = $1,
-                        updated_at = $1
-                    FROM candidate
-                    WHERE tasks.id = candidate.id
-                    RETURNING tasks.*
-                    """,
-                    normalized_now,
-                    owner,
-                )
-        task = self._task_from_row(row)
-        if task is not None:
-            self._log_fsm_success(
-                action="claim",
-                task=task,
-                from_status="pending",
-                to_status="claimed",
-                owner=owner,
-            )
-        return task
+                    if lease_row is None:
+                        raise _ZoneLeaseNotAcquired()
+                    return task, ZoneLease.from_row(lease_row)
+            except _ZoneLeaseNotAcquired:
+                return None
+
+        if conn is not None:
+            return await _run(conn)
+        async with self._connection() as owned:
+            return await _run(owned)
 
     async def refresh_pending_queue_metrics(self, *, now: datetime) -> None:
         """Обновляет gauge метрики очереди pending одним SQL-запросом."""
@@ -624,16 +772,23 @@ class PgAutomationTaskRepository:
     async def next_pending_due_at(self) -> datetime | None:
         row = await self._fetchrow(
             """
-            SELECT due_at
+            SELECT LEAST(due_at, COALESCE(overall_deadline_at, due_at)) AS effective_due_at
             FROM ae_tasks
             WHERE status = 'pending'
-            ORDER BY due_at ASC, created_at ASC, id ASC
+            ORDER BY effective_due_at ASC, created_at ASC, id ASC
             LIMIT 1
             """
         )
-        return None if row is None else row["due_at"]
+        return None if row is None else row["effective_due_at"]
 
-    async def release_claim(self, *, task_id: int, owner: str, now: datetime) -> bool:
+    async def release_claim(
+        self,
+        *,
+        task_id: int,
+        owner: str,
+        now: datetime,
+        claim_generation: int = 0,
+    ) -> bool:
         normalized_now = self._normalize_timestamp(now)
         row = await self._fetchrow(
             """
@@ -641,15 +796,18 @@ class PgAutomationTaskRepository:
             SET status = 'pending',
                 claimed_by = NULL,
                 claimed_at = NULL,
+                process_run_id = NULL,
                 updated_at = $3
             WHERE id = $1
               AND status = 'claimed'
               AND claimed_by = $2
+              AND claim_generation = $4
             RETURNING id
             """,
             task_id,
             owner,
             normalized_now,
+            int(claim_generation),
         )
         return row is not None
 
@@ -659,6 +817,7 @@ class PgAutomationTaskRepository:
         task_id: int,
         owner: str,
         now: datetime,
+        claim_generation: int = 0,
     ) -> AutomationTask | None:
         """Откатывает `claimed|running` без `ae_commands` в `pending` для graceful shutdown."""
         normalized_now = self._normalize_timestamp(now)
@@ -668,10 +827,12 @@ class PgAutomationTaskRepository:
             SET status = 'pending',
                 claimed_by = NULL,
                 claimed_at = NULL,
+                process_run_id = NULL,
                 updated_at = $3
             WHERE tasks.id = $1
               AND tasks.status IN ('claimed', 'running')
               AND tasks.claimed_by = $2
+              AND tasks.claim_generation = $4
               AND NOT EXISTS (
                   SELECT 1
                   FROM ae_commands AS commands
@@ -682,6 +843,7 @@ class PgAutomationTaskRepository:
             task_id,
             owner,
             normalized_now,
+            int(claim_generation),
         )
         task = self._task_from_row(row)
         if task is not None:
@@ -770,7 +932,14 @@ class PgAutomationTaskRepository:
             task_id,
         )
 
-    async def mark_running(self, *, task_id: int, owner: str, now: datetime) -> AutomationTask | None:
+    async def mark_running(
+        self,
+        *,
+        task_id: int,
+        owner: str,
+        now: datetime,
+        claim_generation: int = 0,
+    ) -> AutomationTask | None:
         return await self._update_task_status(
             task_id=task_id,
             owner=owner,
@@ -778,6 +947,7 @@ class PgAutomationTaskRepository:
             allowed_statuses=("claimed", "running"),
             now=now,
             action="mark_running",
+            claim_generation=claim_generation,
         )
 
     async def resume_after_waiting_command(
@@ -786,6 +956,7 @@ class PgAutomationTaskRepository:
         task_id: int,
         owner: str,
         now: datetime,
+        claim_generation: int = 0,
     ) -> AutomationTask | None:
         return await self._update_task_status(
             task_id=task_id,
@@ -794,9 +965,17 @@ class PgAutomationTaskRepository:
             allowed_statuses=("waiting_command",),
             now=now,
             action="resume_after_waiting_command",
+            claim_generation=claim_generation,
         )
 
-    async def mark_waiting_command(self, *, task_id: int, owner: str, now: datetime) -> AutomationTask | None:
+    async def mark_waiting_command(
+        self,
+        *,
+        task_id: int,
+        owner: str,
+        now: datetime,
+        claim_generation: int = 0,
+    ) -> AutomationTask | None:
         return await self._update_task_status(
             task_id=task_id,
             owner=owner,
@@ -804,6 +983,7 @@ class PgAutomationTaskRepository:
             allowed_statuses=("claimed", "running", "waiting_command"),
             now=now,
             action="mark_waiting_command",
+            claim_generation=claim_generation,
         )
 
     async def recover_waiting_command(
@@ -812,11 +992,11 @@ class PgAutomationTaskRepository:
         task_id: int,
         now: datetime,
         owner: str,
+        claim_generation: int = 0,
     ) -> AutomationTask | None:
         """Переводит task в `waiting_command` после reconcile legacy-команды.
 
-        Требует ``owner`` (``task.claimed_by``): guard ``claimed_by = owner`` защищает
-        от split-brain, когда другой worker уже держит lease на зону.
+        Требует ``owner`` и ``claim_generation`` исходного claim.
         """
         normalized_now = self._normalize_timestamp(now)
         normalized_owner = str(owner or "").strip()
@@ -830,12 +1010,14 @@ class PgAutomationTaskRepository:
             WHERE id = $1
               AND status = ANY($3::text[])
               AND claimed_by = $4
+              AND claim_generation = $5
             RETURNING *
             """,
             task_id,
             normalized_now,
             list(RUNNING_TASK_STATUSES),
             normalized_owner,
+            int(claim_generation),
         )
         return self._task_from_row(row)
 
@@ -851,6 +1033,8 @@ class PgAutomationTaskRepository:
         due_at: datetime,
         now: datetime,
         preserve_pending_manual_step: bool = False,
+        claim_generation: int = 0,
+        conn: asyncpg.Connection | None = None,
     ) -> AutomationTask | None:
         """Atomically update workflow + correction state and re-enqueue as pending.
 
@@ -920,9 +1104,11 @@ class PgAutomationTaskRepository:
                 corr_baseline_id          = $50,
                 corr_limit_policy_logged  = $51,
                 due_at     = $52,
+                process_run_id = NULL,
                 updated_at = $53
             WHERE id = $1
               AND claimed_by = $2
+              AND claim_generation = $55
               AND status IN ('claimed', 'running', 'waiting_command')
             RETURNING *
             """,
@@ -940,6 +1126,8 @@ class PgAutomationTaskRepository:
             normalized_due_at,
             normalized_now,
             bool(preserve_pending_manual_step),
+            int(claim_generation),
+            conn=conn,
         )
         task = self._task_from_row(row)
         if task is not None:
@@ -950,23 +1138,30 @@ class PgAutomationTaskRepository:
                 to_status="pending",
                 owner=owner,
             )
-            await self._sync_intent_after_task_requeue(task=task, now=normalized_now)
+            await self._sync_intent_after_task_requeue(task=task, now=normalized_now, conn=conn)
         else:
             await self._log_fsm_cas_miss(
                 action="update_stage",
                 task_id=task_id,
                 to_status="pending",
                 owner=owner,
+                conn=conn,
             )
         return task
 
-    async def _sync_intent_after_task_requeue(self, *, task: AutomationTask, now: datetime) -> None:
+    async def _sync_intent_after_task_requeue(
+        self,
+        *,
+        task: AutomationTask,
+        now: datetime,
+        conn: asyncpg.Connection | None = None,
+    ) -> None:
         """Обновляет intent.updated_at при штатном requeue ae_task → pending (multi-stage workflow)."""
         intent_id = int(getattr(task, "intent_id", 0) or 0)
         if intent_id <= 0:
             return
         try:
-            await execute(
+            await self._execute(
                 """
                 UPDATE zone_automation_intents
                 SET updated_at = $2
@@ -975,8 +1170,12 @@ class PgAutomationTaskRepository:
                 """,
                 intent_id,
                 now,
+                conn=conn,
             )
         except Exception:
+            if conn is not None:
+                # An error in the shared transaction must roll back task progress.
+                raise
             logger.warning(
                 "AE3 не смог синхронизировать intent после requeue: intent_id=%s task_id=%s",
                 intent_id,
@@ -1044,7 +1243,15 @@ class PgAutomationTaskRepository:
 
     # ── Terminal transitions ────────────────────────────────────────
 
-    async def mark_completed(self, *, task_id: int, owner: str, now: datetime) -> AutomationTask | None:
+    async def mark_completed(
+        self,
+        *,
+        task_id: int,
+        owner: str,
+        now: datetime,
+        claim_generation: int = 0,
+        conn: asyncpg.Connection | None = None,
+    ) -> AutomationTask | None:
         normalized_now = self._normalize_timestamp(now)
         row = await self._fetchrow(
             """
@@ -1056,12 +1263,15 @@ class PgAutomationTaskRepository:
                 error_message = NULL
             WHERE id = $1
               AND claimed_by = $2
+              AND claim_generation = $4
               AND status IN ('claimed', 'running', 'waiting_command')
             RETURNING *
             """,
             task_id,
             owner,
             normalized_now,
+            int(claim_generation),
+            conn=conn,
         )
         task = self._task_from_row(row)
         if task is not None:
@@ -1079,6 +1289,7 @@ class PgAutomationTaskRepository:
                 task_id=task_id,
                 to_status="completed",
                 owner=owner,
+                conn=conn,
             )
         return task
 
@@ -1090,6 +1301,7 @@ class PgAutomationTaskRepository:
         error_code: str,
         error_message: str,
         now: datetime,
+        claim_generation: int = 0,
     ) -> AutomationTask | None:
         return await self._mark_failed_row(
             task_id=task_id,
@@ -1098,6 +1310,7 @@ class PgAutomationTaskRepository:
             now=now,
             owner=owner,
             require_owner=True,
+            claim_generation=claim_generation,
         )
 
     async def fail_for_recovery(
@@ -1107,14 +1320,18 @@ class PgAutomationTaskRepository:
         error_code: str,
         error_message: str,
         now: datetime,
+        owner: str,
+        claim_generation: int,
     ) -> AutomationTask | None:
+        """Fail только того claim, который вызвал recovery. Чужое поколение не трогает."""
         return await self._mark_failed_row(
             task_id=task_id,
             error_code=error_code,
             error_message=error_message,
             now=now,
-            owner=None,
-            require_owner=False,
+            owner=owner,
+            require_owner=True,
+            claim_generation=int(claim_generation),
         )
 
     async def fail_pending_or_active_for_recovery(
@@ -1124,8 +1341,9 @@ class PgAutomationTaskRepository:
         error_code: str,
         error_message: str,
         now: datetime,
+        claim_generation: int,
     ) -> AutomationTask | None:
-        """Переводит задачу в failed для recovery/reconcile, включая pending (см. fail_for_recovery)."""
+        """Fail pending/active только наблюдаемого поколения claim."""
         normalized_now = self._normalize_timestamp(now)
         row = await self._fetchrow(
             """
@@ -1136,6 +1354,7 @@ class PgAutomationTaskRepository:
                 updated_at = $4,
                 completed_at = $4
             WHERE id = $1
+              AND claim_generation = $6
               AND status = ANY($5::text[])
             RETURNING *
             """,
@@ -1144,6 +1363,7 @@ class PgAutomationTaskRepository:
             error_message,
             normalized_now,
             list(ACTIVE_TASK_STATUSES),
+            int(claim_generation),
         )
         return self._task_from_row(row)
 
@@ -1219,6 +1439,7 @@ class PgAutomationTaskRepository:
         allowed_statuses: tuple[str, ...],
         now: datetime,
         action: str,
+        claim_generation: int = 0,
     ) -> AutomationTask | None:
         normalized_now = self._normalize_timestamp(now)
         row = await self._fetchrow(
@@ -1228,6 +1449,7 @@ class PgAutomationTaskRepository:
                 updated_at = $4
             WHERE id = $1
               AND claimed_by = $2
+              AND claim_generation = $6
               AND status = ANY($5::text[])
             RETURNING *
             """,
@@ -1236,6 +1458,7 @@ class PgAutomationTaskRepository:
             next_status,
             normalized_now,
             list(allowed_statuses),
+            int(claim_generation),
         )
         task = self._task_from_row(row)
         if task is not None:
@@ -1295,8 +1518,10 @@ class PgAutomationTaskRepository:
         task_id: int,
         to_status: str,
         owner: str,
+        conn: asyncpg.Connection | None = None,
     ) -> None:
-        current = await self.get_by_id(task_id=task_id)
+        row = await self._fetchrow("SELECT * FROM ae_tasks WHERE id = $1", task_id, conn=conn)
+        current = self._task_from_row(row)
         from_status = str(current.status if current is not None else "missing")
         zone_id = int(current.zone_id) if current is not None else None
         logger.warning(
@@ -1320,49 +1545,35 @@ class PgAutomationTaskRepository:
         now: datetime,
         owner: str | None,
         require_owner: bool,
+        claim_generation: int = 0,
     ) -> AutomationTask | None:
         normalized_now = self._normalize_timestamp(now)
+        normalized_owner = str(owner or "").strip()
+        if not normalized_owner:
+            return None
 
-        if require_owner:
-            row = await self._fetchrow(
-                """
-                UPDATE ae_tasks
-                SET status = 'failed',
-                    error_code = $3,
-                    error_message = $4,
-                    updated_at = $5,
-                    completed_at = $5
-                WHERE id = $1
-                  AND claimed_by = $2
-                  AND status = ANY($6::text[])
-                RETURNING *
-                """,
-                task_id,
-                owner,
-                error_code,
-                error_message,
-                normalized_now,
-                list(RUNNING_TASK_STATUSES),
-            )
-        else:
-            row = await self._fetchrow(
-                """
-                UPDATE ae_tasks
-                SET status = 'failed',
-                    error_code = $2,
-                    error_message = $3,
-                    updated_at = $4,
-                    completed_at = $4
-                WHERE id = $1
-                  AND status = ANY($5::text[])
-                RETURNING *
-                """,
-                task_id,
-                error_code,
-                error_message,
-                normalized_now,
-                list(RUNNING_TASK_STATUSES),
-            )
+        row = await self._fetchrow(
+            """
+            UPDATE ae_tasks
+            SET status = 'failed',
+                error_code = $3,
+                error_message = $4,
+                updated_at = $5,
+                completed_at = $5
+            WHERE id = $1
+              AND claimed_by = $2
+              AND claim_generation = $7
+              AND status = ANY($6::text[])
+            RETURNING *
+            """,
+            task_id,
+            normalized_owner,
+            error_code,
+            error_message,
+            normalized_now,
+            list(RUNNING_TASK_STATUSES),
+            int(claim_generation),
+        )
 
         task = self._task_from_row(row)
         if task is not None:

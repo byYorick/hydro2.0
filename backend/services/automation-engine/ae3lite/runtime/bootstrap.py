@@ -168,10 +168,12 @@ def build_ae3_runtime_bundle(
 
     worker = Ae3RuntimeWorker(
         owner=config.worker_owner,
+        process_run_id=config.process_run_id,
         claim_next_task_use_case=ClaimNextTaskUseCase(
             task_repository=task_repository,
             zone_lease_repository=zone_lease_repository,
             lease_ttl_sec=config.lease_ttl_sec,
+            overall_deadline_sec=config.task_overall_deadline_sec,
         ),
         idle_poll_interval_sec=config.reconcile_poll_interval_sec,
         execute_task_use_case=ExecuteTaskUseCase(

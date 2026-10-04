@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 from typing import Any, Mapping, Sequence
 
 from ae3lite.domain.entities import PlannedCommand
+from ae3lite.domain.claim_fence import same_claim_token
 from ae3lite.domain.errors import CommandPublishError, ErrorCodes, TaskExecutionError, TaskTerminalStateReached
 from ae3lite.infrastructure.gateways.command_publish_pipeline import (
     CommandPublishPipeline,
@@ -32,58 +33,19 @@ from common.utils.time import utcnow_naive as _utcnow
 
 logger = logging.getLogger(__name__)
 
-_NON_TERMINAL_STATUSES = frozenset({"PENDING", "QUEUED", "SENT", "ACK", "RUNNING"})
-_TERMINAL_STATUSES = frozenset({"DONE", "ERROR", "INVALID", "BUSY", "NO_EFFECT", "TIMEOUT", "SEND_FAILED"})
-_PROTOCOL_VIOLATION_STATUSES = frozenset({"ACCEPTED"})
+from ae3lite.domain.services.command_outcome import (
+    NON_TERMINAL_STATUSES as _NON_TERMINAL_STATUSES,
+    TERMINAL_STATUSES as _TERMINAL_STATUSES,
+    PROTOCOL_VIOLATION_STATUSES as _PROTOCOL_VIOLATION_STATUSES,
+    decode_command_outcome,
+    response_details_from_legacy_row as _response_details_from_legacy_row,
+)
 _AE3_FAIL_SAFE_KEY = "_ae3_fail_safe"
 _AE3_STAGE_EXECUTION_TOKEN_KEY = "_ae3_stage_execution_token"
 _AE3_RECOVERY_RESUME_KEY = "_ae3_recovery_resume"
 _PUMP_MAIN_CHANNEL = "pump_main"
 
 
-def _response_details_from_legacy_row(legacy_row: Mapping[str, Any]) -> dict[str, Any]:
-    """Собрать dose feedback из legacy ``commands`` (duration_ms + params)."""
-    details: dict[str, Any] = {}
-    raw_duration = legacy_row.get("duration_ms")
-    if raw_duration is not None:
-        try:
-            actual_ms = max(0, int(raw_duration))
-        except (TypeError, ValueError):
-            actual_ms = 0
-        if actual_ms > 0:
-            details["duration_ms"] = actual_ms
-
-    params = legacy_row.get("params")
-    param_block: Mapping[str, Any] = {}
-    if isinstance(params, Mapping):
-        param_block = params
-        nested = params.get("params")
-        if isinstance(nested, Mapping):
-            param_block = nested
-
-    if param_block:
-        planned_ms = param_block.get("duration_ms")
-        if details.get("duration_ms") and planned_ms is not None:
-            try:
-                if int(planned_ms) > int(details["duration_ms"]):
-                    details["duration_limited"] = True
-            except (TypeError, ValueError):
-                pass
-        planned_ml = param_block.get("ml")
-        if planned_ml is not None:
-            try:
-                details["ml"] = float(planned_ml)
-            except (TypeError, ValueError):
-                pass
-        node_mps = param_block.get("ml_per_second")
-        if node_mps is None:
-            node_mps = param_block.get("ml_per_sec")
-        if node_mps is not None:
-            try:
-                details["ml_per_second"] = float(node_mps)
-            except (TypeError, ValueError):
-                pass
-    return details
 
 
 class SequentialCommandGateway:
@@ -318,7 +280,8 @@ class SequentialCommandGateway:
                     )
                 )
 
-        # 1) pump_main OFF — строго последовательно до fan-out клапанов.
+        # 1) pump_main OFF — строго первым. Ошибка одного насоса не отменяет
+        # остальные доступные каналы: адрес второго устройства всё ещё валиден.
         for seq_index, command in pump_items:
             try:
                 result = await self._publish_without_terminal(
@@ -331,13 +294,11 @@ class SequentialCommandGateway:
                 raise
             except Exception as exc:
                 _record_result(exc)
-                break
+                continue
             _record_result(result)
-            if failures:
-                break
 
         # 2) Остальные OFF — fan-out publish без await terminal между ними.
-        if not failures and other_items:
+        if other_items:
             gathered = await asyncio.gather(
                 *(
                     self._publish_without_terminal(
@@ -550,6 +511,8 @@ class SequentialCommandGateway:
                     planner_step=resolved_planner_step,
                     seq_index=seq_index,
                 )
+        except TaskExecutionError:
+            raise
         except CommandPublishError as exc:
             if "исчезла" in str(exc).lower():
                 logger.info(
@@ -621,6 +584,7 @@ class SequentialCommandGateway:
                     task_id=task.id,
                     owner=str(task.claimed_by or ""),
                     now=now,
+                    claim_generation=int(getattr(task, "claim_generation", 0) or 0),
                 )
                 if waiting_task is None:
                     if await self._task_row_missing(task_id=task.id):
@@ -918,6 +882,8 @@ class SequentialCommandGateway:
                 ae_command.get("id"),
             )
             return True
+        except TaskExecutionError:
+            raise
         except CommandPublishError as exc:
             logger.warning(
                 "AE3 recover_waiting_command: publish redrive failed task_id=%s ae_command_id=%s error=%s",
@@ -959,6 +925,19 @@ class SequentialCommandGateway:
             return None, None, cmd_id
         return row, str(row["id"]), cmd_id
 
+    async def _persist_command_outcome(self, *, ae_command, legacy_row, now):
+        outcome = decode_command_outcome(legacy_row)
+        await self._command_repository.update_from_legacy(
+            ae_command_id=int(ae_command["id"]),
+            external_id=str(legacy_row.get("id") or ae_command.get("external_id") or ""),
+            ack_received_at=legacy_row.get("ack_at"),
+            terminal_status=outcome.terminal_status,
+            terminal_at=outcome.terminal_at,
+            last_error=outcome.last_error,
+            now=now,
+        )
+        return outcome
+
     async def _apply_legacy_outcome(
         self,
         *,
@@ -967,34 +946,12 @@ class SequentialCommandGateway:
         legacy_row: Mapping[str, Any],
         now: datetime,
     ) -> Mapping[str, Any]:
-        legacy_status = str(legacy_row.get("status") or "").strip().upper()
-        if legacy_status in _PROTOCOL_VIOLATION_STATUSES:
-            raise TaskExecutionError(
-                "command_protocol_violation",
-                f"Legacy status {legacy_status} не является terminal outcome протокола 2.0",
-            )
-        if legacy_status not in _NON_TERMINAL_STATUSES | _TERMINAL_STATUSES:
-            raise TaskExecutionError("ae3_unsupported_legacy_status", f"Неподдерживаемый legacy status={legacy_status or 'empty'}")
+        outcome = await self._persist_command_outcome(ae_command=ae_command, legacy_row=legacy_row, now=now)
+        legacy_status = outcome.status
+        terminal_status = outcome.terminal_status
+        last_error = outcome.last_error
         external_id = str(legacy_row.get("id") or "")
         cmd_id = str(legacy_row.get("cmd_id") or "").strip() or None
-        terminal_status = legacy_status if legacy_status in _TERMINAL_STATUSES else None
-        terminal_at = (
-            legacy_row.get("failed_at")
-            or legacy_row.get("ack_at")
-            or legacy_row.get("updated_at")
-            or legacy_row.get("sent_at")
-            or legacy_row.get("created_at")
-        )
-        last_error = None if terminal_status in {None, "DONE"} else str(legacy_row.get("error_message") or legacy_status)
-        await self._command_repository.update_from_legacy(
-            ae_command_id=int(ae_command["id"]),
-            external_id=external_id,
-            ack_received_at=legacy_row.get("ack_at"),
-            terminal_status=terminal_status,
-            terminal_at=terminal_at,
-            last_error=last_error,
-            now=now,
-        )
         if terminal_status is None:
             return {
                 "state": "waiting_command",
@@ -1011,6 +968,7 @@ class SequentialCommandGateway:
                 task_id=task.id,
                 owner=str(task.claimed_by or ""),
                 now=now,
+                claim_generation=int(getattr(task, "claim_generation", 0) or 0),
             )
             if resumed_task is None:
                 current_task = await self._task_repository.get_by_id(task_id=task.id)
@@ -1024,7 +982,7 @@ class SequentialCommandGateway:
                         "cmd_id": cmd_id,
                         "response_details": response_details,
                     }
-                if current_task is not None and current_status == "running":
+                if current_task is not None and current_status == "running" and same_claim_token(task, current_task):
                     return {
                         "state": "done",
                         "task": current_task,
@@ -1046,6 +1004,7 @@ class SequentialCommandGateway:
             error_code=f"command_{terminal_status.strip().lower()}",
             error_message=last_error or f"Команда завершилась с терминальным статусом {terminal_status}",
             now=now,
+            claim_generation=int(getattr(task, "claim_generation", 0) or 0),
         )
         if failed_task is None:
             raise TaskExecutionError("ae3_failed_transition_failed", f"Не удалось перевести задачу {task.id} в failed после {terminal_status}")
@@ -1106,39 +1065,19 @@ class SequentialCommandGateway:
                 poll_interval_sec = min(self._poll_max_interval_sec, poll_interval_sec * self._poll_backoff_factor)
                 continue
 
-            legacy_status = str(legacy_row.get("status") or "").strip().upper()
-            if legacy_status in _PROTOCOL_VIOLATION_STATUSES:
+            try:
+                outcome = await self._persist_command_outcome(
+                    ae_command=ae_command, legacy_row=legacy_row, now=reconcile_now,
+                )
+            except TaskExecutionError as exc:
                 return {
                     "success": False,
                     "task": task,
-                    "command_statuses": [{**status_entry, "terminal_status": legacy_status}],
-                    "error_code": "command_protocol_violation",
-                    "error_message": f"Legacy status {legacy_status} не является terminal outcome протокола 2.0",
+                    "command_statuses": [{**status_entry, "terminal_status": str(legacy_row.get("status") or "").strip().upper()}],
+                    "error_code": exc.code,
+                    "error_message": str(exc),
                 }
-            if legacy_status not in _NON_TERMINAL_STATUSES | _TERMINAL_STATUSES:
-                return {
-                    "success": False,
-                    "task": task,
-                    "command_statuses": [status_entry],
-                    "error_code": "ae3_unsupported_legacy_status",
-                    "error_message": f"Неподдерживаемый legacy status={legacy_status or 'empty'}",
-                }
-
-            await self._command_repository.update_from_legacy(
-                ae_command_id=int(ae_command["id"]),
-                external_id=str(legacy_row.get("id") or external_id or ""),
-                ack_received_at=legacy_row.get("ack_at"),
-                terminal_status=legacy_status if legacy_status in _TERMINAL_STATUSES else None,
-                terminal_at=(
-                    legacy_row.get("failed_at")
-                    or legacy_row.get("ack_at")
-                    or legacy_row.get("updated_at")
-                    or legacy_row.get("sent_at")
-                    or legacy_row.get("created_at")
-                ),
-                last_error=None if legacy_status in {None, "DONE"} else str(legacy_row.get("error_message") or legacy_status),
-                now=reconcile_now,
-            )
+            legacy_status = outcome.status
             ae_command["external_id"] = str(legacy_row.get("id") or external_id or "")
 
             if legacy_status in _NON_TERMINAL_STATUSES:

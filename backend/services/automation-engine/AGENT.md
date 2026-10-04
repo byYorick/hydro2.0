@@ -90,11 +90,11 @@ pending → claimed → running → waiting_command → completed
 Stage re-enqueue (two-tank workflow): атомарный `update_stage` из `PgAutomationTaskRepository`. Он одной транзакцией переводит `(claimed|running|waiting_command) → pending`, сбрасывает `claimed_by/claimed_at` и обновляет `current_stage` + correction-поля (`corr_*`). Прежний `requeue_pending` снят, любой stage handler возвращает `StageOutcome.transition/poll/enter_correction`, который `WorkflowRouter` транслирует в `update_stage`.
 
 Ключевые методы:
-- `claim_next_pending`: `pending → claimed` с `FOR UPDATE SKIP LOCKED`.
+- `claim_next_with_zone_lease`: атомарный `pending → claimed` и lease с `FOR UPDATE SKIP LOCKED`; generation выдаёт общая sequence.
 - `mark_running`: WHERE `status IN ('claimed','running')` (не `waiting_command`).
 - `mark_waiting_command` / `resume_after_waiting_command`: ожидание terminal в `commands` и возврат в `running`.
 - `mark_completed` / `mark_failed`: terminal.
-- `release_claim`: rollback `claimed → pending` (при провале `ZoneLease.claim`).
+- Конфликт lease откатывает общую claim-транзакцию; отдельной компенсации task нет.
 - `update_stage`: атомарный stage advance с requeue (см. выше).
 
 ## 5. Политика cleanup
@@ -168,7 +168,7 @@ Flow-path guard (PR7):
 
 Deprecated (не используются в runtime, оставлены только в backlog/catalog для compat):
 - `ae3_task_create_conflict` → заменён на `start_cycle_zone_busy` / `start_cycle_idempotency_key_conflict`.
-- `ae3_lease_claim_failed` → провал lease не raise'ит code, делает silent rollback claim (`release_claim`); при потере уже захваченной lease — `ae3_zone_lease_lost`.
+- `ae3_lease_claim_failed` → провал lease не raise'ит code, откатывает общую транзакцию task+lease; при потере уже захваченной lease — `ae3_zone_lease_lost`.
 - `ae3_requeue_failed` → заменён на `ae3_transition_apply_failed` / `ae3_poll_apply_failed` / `ae3_correction_apply_failed`.
 - `cycle_start_blocked_nodes_unavailable` → заменён на `ae3_snapshot_required_node_type_missing` / `ae3_snapshot_no_online_actuator_channels` / `ae3_snapshot_required_node_persistently_offline`.
 

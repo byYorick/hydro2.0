@@ -105,6 +105,8 @@ Breaking-change: обратная совместимость со старыми
 - `04_BACKEND_CORE/AUTOMATION_CONFIG_AUTHORITY.md` — единый authority automation/runtime-конфигов
 - `04_BACKEND_CORE/PYTHON_SERVICES_ARCH.md` — архитектура Python-сервисов
 - `04_BACKEND_CORE/ae3lite.md` — каноническая спецификация AE3-Lite (automation-engine), rollout/rollback; §9.4.1 UI `observability` в `/state` (`canonical`)
+- [04_BACKEND_CORE/AE3_ARCHITECTURE_REVIEW.md](04_BACKEND_CORE/AE3_ARCHITECTURE_REVIEW.md) — аудит AE3 и предложение по архитектуре исполнения (`guide`, 2026-10-03; не canonical)
+- [04_BACKEND_CORE/AE3_EXECUTION_HARDENING_PLAN_FOR_AI_AGENTS.md](04_BACKEND_CORE/AE3_EXECUTION_HARDENING_PLAN_FOR_AI_AGENTS.md) — план исправлений AE3 для ИИ-агентов с регрессионными тестами и прогонами (`plan`)
 - `04_BACKEND_CORE/LARAVEL_AE3_READ_MODEL_CONTRACT.md` — snapshot-контракт read-model Laravel↔AE3 + CI-job (`canonical`)
 - `04_BACKEND_CORE/AE3_RUNTIME_EVENT_CONTRACT.md` — runtime-event контракт AE3 (`canonical`)
 - `04_BACKEND_CORE/AE3_IRR_FAILSAFE_AND_ESTOP_CONTRACT.md` — failsafe / E-Stop контракт irrigation (`canonical`)

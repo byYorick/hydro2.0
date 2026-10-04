@@ -162,6 +162,8 @@ async def escalate_foreign_lease_stale_task(
         error_code=error_code,
         error_message=error_message,
         now=now,
+        owner=str(getattr(task, "claimed_by", "") or ""),
+        claim_generation=int(getattr(task, "claim_generation", 0) or 0),
     )
     if failed is None:
         logger.warning(

@@ -3,7 +3,13 @@
 from __future__ import annotations
 
 import os
+import uuid
 from dataclasses import dataclass
+
+
+def _process_run_id() -> str:
+    explicit = str(os.getenv("AE_PROCESS_RUN_ID", "")).strip()
+    return explicit or str(uuid.uuid4())
 
 
 def _env_true(name: str, default: str = "0") -> bool:
@@ -59,6 +65,8 @@ class Ae3RuntimeConfig:
     correction_interrupt_verify_grace_sec: int
     correction_interrupt_irr_state_max_age_sec: int
     correction_interrupt_replay_irrigation: bool
+    task_overall_deadline_sec: int = 604800
+    process_run_id: str = ""
 
     @classmethod
     def from_env(cls) -> "Ae3RuntimeConfig":
@@ -140,6 +148,7 @@ class Ae3RuntimeConfig:
             hl_breaker_open_sec=max(0.1, float(os.getenv("AE_HL_BREAKER_OPEN_SEC", "15"))),
             worker_owner=str(os.getenv("AE_WORKER_OWNER", "ae3-runtime-worker")).strip() or "ae3-runtime-worker",
             max_task_execution_sec=max(60, int(os.getenv("AE_MAX_TASK_EXECUTION_SEC", "900"))),
+            task_overall_deadline_sec=max(60, int(os.getenv("AE_TASK_OVERALL_DEADLINE_SEC", "604800"))),
             max_parallel_tasks=max(1, int(os.getenv("AE_MAX_PARALLEL_TASKS", "4"))),
             waiting_command_reconcile_batch_limit=max(
                 1,
@@ -207,6 +216,7 @@ class Ae3RuntimeConfig:
                 "AE_CORRECTION_INTERRUPT_REPLAY_IRRIGATION",
                 "0",
             ),
+            process_run_id=_process_run_id(),
         )
 
     @staticmethod
@@ -314,6 +324,11 @@ class Ae3RuntimeConfig:
                 "stale_running_ttl_sec must be > max_task_execution_sec "
                 f"(got stale_running_ttl_sec={self.stale_running_ttl_sec}, "
                 f"max_task_execution_sec={self.max_task_execution_sec})."
+            )
+        if int(self.task_overall_deadline_sec) <= 0:
+            raise ValueError(
+                "task_overall_deadline_sec must be > 0. "
+                "Set AE_TASK_OVERALL_DEADLINE_SEC to a positive integer."
             )
         if float(self.stale_task_reconcile_sec) <= 0.0:
             raise ValueError(

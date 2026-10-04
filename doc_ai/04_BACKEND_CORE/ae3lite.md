@@ -208,6 +208,7 @@ AE3-Lite `v1` реализует один ИИ-агент.
 15. `error_code`
 16. `error_message`
 17. `completed_at`
+18. `overall_deadline_at`
 
 Correction state для `cycle_start` хранится в explicit columns `ae_tasks`, а не в JSON payload.
 Канонический retry-contract:
@@ -419,6 +420,15 @@ Terminal:
 11. Обычная отмена процесса/loop shutdown не должна маскироваться под timeout: recovery path после restart остаётся отдельным механизмом.
 12. Fail-safe shutdown команды публикуются как publish-only batch через history-logger **до** `fail_for_recovery` / terminal fail (`startup_recovery`, `stale_task_reconcile`, `set_control_mode`, `ExecuteTaskUseCase`). Skip только если нет gateway или нет irrig fail-safe актуаторов; **не** skip из‑за inactive/already-failed task (`ae_commands.task_id` остаётся валидным FK). Batch не должен повторно переводить уже terminal/closing task в `waiting_command` и не должен искажать `ae_commands` ложным `publish_failed`, если устройство реально подтвердило shutdown после terminal failure основной задачи. Flow-path fail-safe включает `solution_topup_check` (см. `FlowPathGuard.should_fail_safe_shutdown_on_task_fail`).
 13. Перед fail-closed terminal transition runtime обязан синхронизировать `zone_workflow_state` обратно в `workflow_phase='idle'`, чтобы stale phase не переживала terminal failure task.
+14. Preflight обязательных нод входит в ту же failure boundary, что shutdown и `fail_closed`. Ошибка diagnostics/snapshot после `mark_running`, исчерпанный retry `command_send_failed` и уже terminal flow-path task не обходят stop. Запись `failed` сама по себе не означает безопасную остановку.
+15. Zone heartbeat: `extend()==False` — подтверждённая потеря владения, `lease_lost` сразу, без серии повторов. Исключение БД проходит transient retry и не гасит владение с первой ошибки. Помеченные timeout/lease-lost идут в safety-path до release lease. Голый `CancelledError` не поглощается.
+16. Greenhouse climate: `lease_renew=False` и исчерпание transient retry renew прекращают дальнейшие обычные команды. `DONE` уже отправленной форточки не делает task `completed`/`ok`. Hydraulic all-off и выдуманный безопасный `position_pct` в климат не переносятся. Publish-only OFF irrig не является подтверждённым OFF: `confirmed` остаётся false без probe; `actuators_load_failed` — неопределённость и critical alert `biz_flow_stop_failed_hardware_may_be_active`.
+17. Дедлайны зоны имеют четыре независимых уровня:
+    - `AE_MAX_TASK_EXECUTION_SEC` (default `900s`) ограничивает один in-process tick `ExecuteTaskUseCase.run()` и использует monotonic clock `asyncio`; requeue открывает новый tick-budget;
+    - command deadline ограничивает publish/poll одного сохранённого `ae_commands` effect и не заменяет stage/task deadline;
+    - `stage_deadline_at` ограничивает текущую stage и меняется только по правилам topology; same-stage poll/correction не переоткрывают его;
+    - `ae_tasks.overall_deadline_at` ограничивает всю business task от первого claim до terminal, включая `manual_hold`, operator wait, requeue, restart и hot reload. Default задаёт `AE_TASK_OVERALL_DEADLINE_SEC=604800` (7 суток). Первый claim атомарно ставит deadline, если его ещё нет; последующие claim его не меняют. Persisted deadline сравнивается с UTC wall clock.
+18. Просроченная requeued `pending` task выбирается независимо от будущего `due_at`, чтобы пройти safety-path и стать terminal. Проверка выполняется при claim/resume и непосредственно перед каждым новым ordinary effect. Уже отправленную команду разрешено только reconcile'ить; safety-stop не блокируется task deadline. Истечение даёт `ae3_task_overall_deadline_exceeded`, проходит общий fail-safe shutdown S1 и не сбрасывается сменой control mode/operator ожиданием.
 
 ---
 
@@ -555,11 +565,14 @@ Handler/planner:
 14. `workflow_phase`
 15. `claimed_by`
 16. `claimed_at`
-17. `error_code`
-18. `error_message`
-19. `created_at`
-20. `updated_at`
-21. `completed_at`
+17. `claim_generation`
+18. `process_run_id`
+19. `error_code`
+20. `error_message`
+21. `created_at`
+22. `updated_at`
+23. `completed_at`
+24. `overall_deadline_at`
 
 Примечание:
 `ae_tasks` в canonical runtime `v1` использует явные typed columns для topology,
@@ -573,6 +586,8 @@ intent metadata и workflow state. Произвольный JSON в `payload` н
 4. terminal task не может вернуться в active status
 5. runtime state irrigation decision/replay хранится в explicit typed columns, а не в произвольном JSON `payload`
 6. correction runtime сохраняет causal snapshot context в explicit columns `corr_snapshot_*`, чтобы `EC_DOSING` / `PH_CORRECTED` могли ссылаться на конкретный `IRR_STATE_SNAPSHOT` после requeue/restart
+7. право записи stage/terminal/обычной аллокации `ae_commands` — пара `(claimed_by, claim_generation)`, зафиксированная в момент claim. `claim_generation` увеличивается на 1 при каждом claim и не обнуляется при requeue. `process_run_id` — UUID запуска процесса (`AE_PROCESS_RUN_ID` или новый UUID на старте); одного process id или `AE_WORKER_OWNER` недостаточно, потому что тот же процесс после requeue claim'ит строку снова. Смена владельца или поколения прекращает текущее исполнение: stale writer не подставляет свежий `claimed_by`. `task_override` с чужим `claimed_by` или другим `claim_generation` права записи не даёт; override того же token может обновить поля стадии. Task claim и zone lease пишутся одной транзакцией. Heartbeat, release и recovery/operator передают тот же token. Release старого поколения не снимает lease нового, пока её собственный TTL не истёк. Foreign-lease escalate не снимает чужую lease. Обычная команда со старым token не создаёт новую строку `ae_commands`. Stop после потери token — не bypass: он не пишет outcome нового владельца, не снимает его lease и не открывает следующую обычную команду. Пока token ещё совпадает, safety-path S1 может публиковать OFF до release своей lease. Совпадение token перед HTTP не является end-to-end fencing MQTT или прошивки; протокол history-logger не меняется. Production остаётся с одной активной репликой AE3.
+8. `overall_deadline_at` неизменяем после первого claim. Для строк, существовавших до введения поля, migration задаёт deadline активным claimed/running/waiting task от `COALESCE(claimed_at, created_at)`, а ранее requeued pending (`claim_generation > 0`) — консервативно от `created_at`; never-claimed pending получает deadline только при первом claim.
 
 ### 6.2 `ae_commands`
 
@@ -608,10 +623,13 @@ Terminal source of truth для publish/reconcile в `v1` остаётся та�
 2. `owner`
 3. `leased_until`
 4. `updated_at`
+5. `claim_generation`
+6. `process_run_id`
 
 Обязательные ограничения:
 1. одна активная lease на `zone_id`
-2. reclaim допускается только после истечения lease или явного release
+2. reclaim незакрытой lease другим `process_run_id` допускается только после истечения `leased_until`
+3. `extend`/`release` требуют `(owner, claim_generation)` того claim, который взял lease
 
 ### 6.4 `zone_workflow_state`
 
@@ -1246,3 +1264,42 @@ Live-обновления идут через webhook от history-logger-а (с
 5. отдельные safety/recovery workflows
 
 Эти пункты не должны возвращаться в canonical spec `v1` задним числом.
+
+### Уникальность claim generation и неизменяемость команды (2026-10-03)
+
+`claim_generation` выдаётся общей PostgreSQL sequence `ae_claim_generation_seq` на каждый
+успешный или откатившийся claim. Значение монотонно, пропуски допустимы; оно не
+сбрасывается при создании новой задачи той же зоны. Lease хранит то же поколение,
+что и захваченная task. Проверки `(owner, claim_generation)` защищают и от старого
+claim той же task, и от завершённой предыдущей task этой зоны. Истёкший lease не
+продлевается heartbeat: требуется новый claim/recovery. Это локальное fencing БД,
+а не гарантия fencing HTTP/MQTT/прошивки; активная production-реплика остаётся одна.
+
+Повтор `pending`/`published_unconfirmed` с тем же `planner_step` сохраняет
+`node_uid`, `channel`, `cmd`, `params` и прежний `cmd_id`. Их несовпадение вызывает
+`command_identity_conflict` до обращения к HL; старая строка не переписывается.
+Новый осознанный импульс использует новую identity. При replay используется тот же
+разбор terminal outcome, что и при обычном исполнении: `ACK` остаётся ожиданием,
+успех mutating-команды — только `DONE`.
+
+Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
+
+### Транзакционные переходы и граница отказа (2026-10-04)
+
+`TaskWorkflowTransition` применяет requeue/complete в обычном router и startup recovery.
+Task, обязательная phase `zone_workflow_state` и heartbeat связанного intent используют
+один connection в короткой транзакции. Ошибка SQL/CAS откатывает прогресс; компенсационный
+UPDATE после очистки owner не применяется. Audit transition и lifecycle events записываются
+после commit; их сбой наблюдаем, но не изображает откат committed прогресса.
+Poll `await_ready` не меняет phase зоны на `ready`. Terminal intent остаётся под
+идемпотентным worker/reconcile, без HTTP или ожидания оборудования внутри транзакции.
+
+Snapshot читается в `REPEATABLE READ READ ONLY`: несколько SELECT видят одну revision.
+Это не отменяет guards владения и дедлайна непосредственно перед публикацией.
+Clock для общего deadline снимается заново перед каждым HTTP, включая redrive.
+Safety-stop проходит отдельный путь и не блокируется общим deadline.
+
+Общий failure path из worker и ExecuteTaskUseCase выполняет stop-попытку до terminal fail.
+Состояние повторного входа привязано к `(task_id, owner, claim_generation)`; параллельный
+отказ другой зоны не пропускает остановку. Кеш завершённых claims ограничен 1024 записями.
+Принятие stop транспортом не является подтверждением физического OFF.

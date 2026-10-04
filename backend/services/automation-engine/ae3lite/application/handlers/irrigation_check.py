@@ -464,6 +464,7 @@ class IrrigationCheckHandler(BaseStageHandler):
             owner=str(task.claimed_by or ""),
             now=now,
             irrigation_replay_count=next_replay_count,
+            claim_generation=int(getattr(task, "claim_generation", 0) or 0),
         )
         if updated is None:
             raise TaskExecutionError("irrigation_replay_persist_failed", "Не удалось сохранить счётчик повторов полива")

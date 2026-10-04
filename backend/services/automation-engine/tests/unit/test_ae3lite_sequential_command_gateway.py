@@ -64,6 +64,9 @@ def _planned(*, channel="pump_main", step_no=1):
 
 
 class _FakeCommandRepo:
+    async def assert_publish_authority(self, **kwargs):
+        return None
+
     def __init__(
         self,
         *,
@@ -121,6 +124,8 @@ class _FakeCommandRepo:
         now,
         stage_name=None,
         planner_step=None,
+        owner=None,
+        claim_generation=None,
     ):
         if self._create_pending_returns_none:
             return None
@@ -130,7 +135,19 @@ class _FakeCommandRepo:
         self.allocated_payloads.append(dict(payload) if isinstance(payload, dict) else payload)
         return ae_id, self.step_no, False, "pending"
 
-    async def create_pending(self, *, task_id, step_no, node_uid, channel, payload, now, stage_name=None):
+    async def create_pending(
+        self,
+        *,
+        task_id,
+        step_no,
+        node_uid,
+        channel,
+        payload,
+        now,
+        stage_name=None,
+        owner=None,
+        claim_generation=None,
+    ):
         if self._create_pending_returns_none:
             return None
         ae_id = 100 + step_no
@@ -230,18 +247,18 @@ class _FakeTaskRepo:
             self._current = current_task
         self._waiting_command_result = waiting_command_result
 
-    async def mark_waiting_command(self, *, task_id, owner, now):
+    async def mark_waiting_command(self, *, task_id, owner, now, claim_generation=0):
         if self._waiting_command_result is not _MISSING:
             return self._waiting_command_result
         return _mock_task(task_id=task_id, claimed_by=owner)
 
-    async def resume_after_waiting_command(self, *, task_id, owner, now):
+    async def resume_after_waiting_command(self, *, task_id, owner, now, claim_generation=0):
         return self._resumed
 
     async def get_by_id(self, *, task_id):
         return self._current
 
-    async def mark_failed(self, *, task_id, owner, error_code, error_message, now):
+    async def mark_failed(self, *, task_id, owner, error_code, error_message, now, claim_generation=0):
         m = MagicMock(id=task_id, zone_id=1, error_code=error_code, error_message=error_message)
         return m
 
@@ -258,7 +275,7 @@ class _FakeHistoryLogger:
         return f"hl-{cmd_id}"
 
 
-def _make_task(zone_id=1, task_id=1):
+def _make_task(zone_id=1, task_id=1, **kwargs):
     workflow = MagicMock()
     workflow.stage_deadline_at = None
     workflow.stage_entered_at = NOW
@@ -272,6 +289,8 @@ def _make_task(zone_id=1, task_id=1):
     m.status = "running"
     m.correction = None
     m.workflow = workflow
+    for key, value in kwargs.items():
+        setattr(m, key, value)
     return m
 
 
@@ -967,6 +986,91 @@ async def test_recover_waiting_command_redrives_pending_ae_command_without_legac
     assert publish_calls["n"] == 1
     assert result["state"] == "waiting_command"
     assert result["legacy_status"] is None
+
+
+@pytest.mark.asyncio
+async def test_recover_waiting_command_expired_deadline_does_not_redrive_ordinary_command():
+    ae_row = {
+        "id": 9,
+        "external_id": None,
+        "publish_status": "pending",
+        "node_uid": "nd-1",
+        "channel": "pump_main",
+        "step_no": 1,
+        "planner_step": "clean_fill_start:start",
+        "payload": {"cmd_id": "ae3-t1-z1-s1", "cmd": "set_relay", "params": {"state": True}},
+    }
+    cmd_repo = _FakeCommandRepo(legacy_row=None, ae_command_row=ae_row)
+    history_logger = _FakeHistoryLogger()
+    gw = _make_gw(command_repo=cmd_repo, history_logger=history_logger)
+
+    with pytest.raises(TaskExecutionError) as exc_info:
+        await gw.recover_waiting_command(
+            task=_make_task(overall_deadline_at=NOW - timedelta(seconds=1)),
+            now=NOW,
+        )
+
+    assert exc_info.value.code == ErrorCodes.AE3_TASK_OVERALL_DEADLINE_EXCEEDED
+    assert history_logger.calls == []
+
+
+@pytest.mark.asyncio
+async def test_recover_waiting_command_done_is_reconciled_after_overall_deadline():
+    cmd_repo = _FakeCommandRepo(legacy_row=_DONE_ROW)
+    history_logger = _FakeHistoryLogger()
+    gw = _make_gw(command_repo=cmd_repo, history_logger=history_logger)
+
+    result = await gw.recover_waiting_command(
+        task=_make_task(overall_deadline_at=NOW - timedelta(seconds=1)),
+        now=NOW,
+    )
+
+    assert result["state"] == "done"
+    assert result["legacy_status"] == "DONE"
+    assert history_logger.calls == []
+
+
+@pytest.mark.asyncio
+async def test_run_batch_expired_deadline_blocks_ordinary_publish_before_http():
+    cmd_repo = _FakeCommandRepo()
+    history_logger = _FakeHistoryLogger()
+    gw = _make_gw(command_repo=cmd_repo, history_logger=history_logger)
+
+    with pytest.raises(TaskExecutionError) as exc_info:
+        await gw.run_batch(
+            task=_make_task(overall_deadline_at=NOW - timedelta(seconds=1)),
+            commands=[_planned()],
+            now=NOW,
+        )
+
+    assert exc_info.value.code == ErrorCodes.AE3_TASK_OVERALL_DEADLINE_EXCEEDED
+    assert history_logger.calls == []
+
+
+@pytest.mark.asyncio
+async def test_publish_only_fail_safe_bypasses_expired_overall_deadline():
+    cmd_repo = _FakeCommandRepo()
+    history_logger = _FakeHistoryLogger()
+    gw = _make_gw(command_repo=cmd_repo, history_logger=history_logger)
+    fail_safe_command = PlannedCommand(
+        step_no=1,
+        node_uid="nd-1",
+        channel="pump_main",
+        payload={
+            "cmd": "set_relay",
+            "params": {"state": False},
+            "_ae3_fail_safe": True,
+        },
+    )
+
+    result = await gw.run_publish_only_batch(
+        task=_make_task(overall_deadline_at=NOW - timedelta(seconds=1)),
+        commands=[fail_safe_command],
+        now=NOW,
+    )
+
+    assert result["success"] is True
+    assert [call["channel"] for call in history_logger.calls] == ["pump_main"]
 
 
 @pytest.mark.asyncio

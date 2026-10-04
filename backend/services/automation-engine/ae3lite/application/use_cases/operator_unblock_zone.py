@@ -141,6 +141,8 @@ class OperatorUnblockZoneUseCase:
                 error_code=ErrorCodes.OPERATOR_UNBLOCKED,
                 error_message=message,
                 now=now,
+                owner=str(getattr(task, "claimed_by", "") or ""),
+                claim_generation=int(getattr(task, "claim_generation", 0) or 0),
             )
         except Exception:
             _logger.warning(
@@ -159,7 +161,12 @@ class OperatorUnblockZoneUseCase:
         if not callable(release_fn):
             return
         try:
-            await release_fn(zone_id=int(task.zone_id), owner=owner, now=now)
+            await release_fn(
+                zone_id=int(task.zone_id),
+                owner=owner,
+                now=now,
+                claim_generation=int(getattr(task, "claim_generation", 0) or 0),
+            )
         except Exception:
             _logger.warning(
                 "operator_unblock: lease release failed zone_id=%s owner=%s",

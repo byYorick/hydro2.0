@@ -1344,6 +1344,9 @@ scheduled_for TIMESTAMPTZ NOT NULL
 due_at TIMESTAMPTZ NOT NULL
 claimed_by VARCHAR(191) NULL
 claimed_at TIMESTAMPTZ NULL
+claim_generation BIGINT NOT NULL DEFAULT 0
+process_run_id VARCHAR(64) NULL
+overall_deadline_at TIMESTAMPTZ NULL
 error_code VARCHAR(128) NULL
 error_message TEXT NULL
 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -1417,11 +1420,15 @@ ae_tasks_zone_idempotency_unique (zone_id, idempotency_key) UNIQUE
 ae_tasks_pending_idx (due_at, created_at) WHERE status='pending'
 ae_tasks_active_zone_unique (zone_id) UNIQUE WHERE status IN ('pending','claimed','running','waiting_command')
 ae_tasks_deadline_idx (stage_deadline_at) WHERE stage_deadline_at IS NOT NULL AND status IN ('running','waiting_command')
+ae_tasks_overall_deadline_idx (overall_deadline_at) WHERE overall_deadline_at IS NOT NULL AND status IN ('pending','claimed','running','waiting_command')
 ae_tasks_topology_stage_idx (topology, current_stage) WHERE status IN ('running','waiting_command')
 ```
 
 Инварианты v1:
 - не более одной active task на зону;
+- `overall_deadline_at` ставится при первом claim и не меняется при requeue/restart/hot reload; срок включает manual/operator wait;
+- `claim_generation` монотонно растёт на каждый успешный claim (`+1`) и не сбрасывается в 0 при release/requeue. Право записи исполнителя — пара `(claimed_by, claim_generation)`, снятая в момент claim. Process run id (`process_run_id`, UUID запуска процесса) не заменяет generation: повторный claim того же процесса получает новое поколение, и старый outcome по прежнему generation не проходит;
+- `process_run_id` записывается вместе с claim и копируется в `ae_zone_leases` той же транзакцией. Пустое значение не является валидным захватом;
 - `idempotency_key` уникален только в рамках `zone_id`;
 - correction amount-поля (`corr_ec_amount_ml`, `corr_ph_amount_ml`) хранятся с точностью `NUMERIC(12,3)`;
 - `corr_snapshot_*` хранит causal link на последний подтверждённый `IRR_STATE_SNAPSHOT`, который должен переживать `enter_correction`, requeue и process restart;
@@ -1549,7 +1556,13 @@ zone_id BIGINT PK FK -> zones ON DELETE CASCADE
 owner VARCHAR(191) NOT NULL
 leased_until TIMESTAMPTZ NOT NULL
 updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+claim_generation BIGINT NOT NULL DEFAULT 0
+process_run_id VARCHAR(64) NULL
 ```
+
+`claim_generation` lease совпадает с поколением task claim, который её взял. `extend` и `release` требуют ту же пару `(owner, claim_generation)`. Release старого поколения не удаляет строку нового поколения, пока у новой lease свой `claim_generation` и её `leased_until` ещё не истёк. `release_if_owner_or_expired` тоже фильтрует по `claim_generation`: совпадение строки `owner` или истёкший TTL чужого поколения lease не снимает. Истёкшие строки по-прежнему может снять `release_expired` (TTL sweeper), это не release конкретного старого claim.
+
+Task claim и upsert этой lease выполняются одной короткой транзакцией. Если lease не получена, транзакция откатывается: задача не остаётся `claimed` без lease. Локальная проверка token перед HTTP не является end-to-end fencing MQTT или прошивки.
 
 Retention (операционный минимум для AE3-Lite; код = SoT):
 - `ae_tasks`, `ae_commands`: hot retention **90 дней** для terminal-данных (`ae3:cleanup-old-tasks --days=90` в `routes/console.php`);
@@ -2796,3 +2809,14 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 ---
 
 # Конец файла DATA_MODEL_REFERENCE.md
+
+### AE3 claim sequence (2026-10-03)
+
+`ae_claim_generation_seq` — PostgreSQL bigint sequence, владелец схемы Laravel.
+`ae_tasks.claim_generation` получает `nextval` при claim, и значение копируется в
+`ae_zone_leases.claim_generation` той же транзакцией. Последовательность общая для
+всех задач и зон; rollback может оставлять пропуски. Миграция инициализирует её выше
+максимального сохранённого поколения task/lease. Это исключает совпадение старого
+lease token с первой попыткой следующей задачи той же зоны.
+
+Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.

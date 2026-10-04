@@ -38,6 +38,7 @@ class PublishPlannedCommandUseCase:
                 task_id=task.id,
                 owner=str(task.claimed_by or ""),
                 now=now,
+                claim_generation=int(getattr(task, "claim_generation", 0) or 0),
             )
             if updated_task is None:
                 raise CommandPublishError(f"Не удалось перевести task_id={task.id} в waiting_command")
@@ -52,6 +53,7 @@ class PublishPlannedCommandUseCase:
             task_id=task.id,
             owner=str(task.claimed_by or ""),
             now=now,
+            claim_generation=int(getattr(task, "claim_generation", 0) or 0),
         )
         if updated_task is None:
             raise CommandPublishError(f"Не удалось перевести task_id={task.id} в waiting_command")

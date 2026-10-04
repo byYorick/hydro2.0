@@ -2,6 +2,20 @@
 
 Система автоматизации управления параметрами теплиц с поддержкой параллельной обработки зон, централизованной обработкой ошибок и модульной архитектурой.
 
+## Усиление исполнения (2026-10-04)
+
+Перед запуском обновлённого runtime применяются Laravel-миграции
+`2026_10_03_120000`, `130000`, `140000`: поля claim/deadline и общая sequence поколения.
+`AE_MAX_TASK_EXECUTION_SEC` ограничивает один tick (900 с по умолчанию).
+`AE_TASK_OVERALL_DEADLINE_SEC` задаёт общий срок при первом claim (604800 с);
+сохранённый срок не продлевается при poll, restart или ручном ожидании.
+
+Task/workflow переходы атомарны; snapshot читает одну committed revision;
+retry команды сохраняет адрес, параметры и cmd_id. Один активный production executor
+остаётся обязательным: проверки БД не заменяют end-to-end fencing MQTT.
+План и результаты: [AE3_EXECUTION_HARDENING_PLAN_FOR_AI_AGENTS](../../../doc_ai/04_BACKEND_CORE/AE3_EXECUTION_HARDENING_PLAN_FOR_AI_AGENTS.md).
+Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
+
 ## Актуальный AE3 runtime (2026-03-24)
 
 - Canonical runtime API:
