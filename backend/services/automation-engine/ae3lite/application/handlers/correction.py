@@ -32,6 +32,7 @@ from ae3lite.application.level_monitor import (
 )
 from ae3lite.application.runtime_event_contract import with_runtime_event_contract
 from ae3lite.application.services.correction_alert_service import CorrectionAlertService
+from ae3lite.application.services.correction_pid_state import CorrectionPidState
 from ae3lite.application.services.correction_event_logger import CorrectionEventLogger
 from ae3lite.application.services.decision_window_reader import (
     DecisionWindowReader,
@@ -67,7 +68,6 @@ from ae3lite.infrastructure.metrics import (
     CORRECTION_ESTOP_INTERRUPT,
     CORRECTION_EXHAUSTED,
     CORRECTION_NO_EFFECT,
-    CORRECTION_NO_EFFECT_RESET_FAILED,
     CORRECTION_OBSERVE_OUT_OF_BOUNDS,
     IRRIGATION_EC_COMPONENT_DOSE,
 )
@@ -128,7 +128,6 @@ _ALERT_BLOCK_RETRY_DELAY_SEC = 60
 _ALERT_BLOCK_SNAPSHOT_PREFIX = ALERT_BLOCK_SNAPSHOT_CMD_PREFIX
 _DEFAULT_DILUTE_PULSE_SEC = 10
 _DEFAULT_DILUTE_SETTLE_SEC = 30
-_PID_RESET_ATTEMPTS = 2
 
 
 def _alert_block_retry_count(corr: CorrectionState) -> int:
@@ -184,7 +183,6 @@ class CorrectionHandler(BaseStageHandler):
             live_reload_enabled=live_reload_enabled,
         )
         self._planner = planner or CorrectionPlanner()
-        self._pid_state_repository = pid_state_repository
         self._observation_analyzer = observation_analyzer or ObservationAnalyzer()
         self._decision_window_reader = (
             decision_window_reader or DecisionWindowReader(runtime_monitor=runtime_monitor)
@@ -201,6 +199,7 @@ class CorrectionHandler(BaseStageHandler):
             ),
             probe_snapshot_context_fn=self._probe_snapshot_context,
         )
+        self._pid_state = CorrectionPidState(repository=pid_state_repository, event_logger=self._event_logger)
         self._sensor_mode_controller = sensor_mode_controller or SensorModeController(
             command_gateway=command_gateway,
             event_logger=self._event_logger,
@@ -546,17 +545,17 @@ class CorrectionHandler(BaseStageHandler):
         runtime = self._require_runtime_plan(plan=plan)
         max_age = int(runtime.telemetry_max_age_sec)
 
-        target_ph = self._effective_ph_target(task=task, runtime=runtime)
-        target_ec = self._effective_ec_target(task=task, runtime=runtime)
-        target_ph_min = self._effective_ph_min(task=task, runtime=runtime)
-        target_ph_max = self._effective_ph_max(task=task, runtime=runtime)
-        target_ec_min = self._effective_ec_min(task=task, runtime=runtime)
-        target_ec_max = self._effective_ec_max(task=task, runtime=runtime)
-        tolerance = self._prepare_tolerance_for_task(task=task, runtime=runtime)
-        ph_tol_pct = self._required_prepare_tolerance_pct(tolerance=tolerance, key="ph_pct")
-        ec_tol_pct = self._required_prepare_tolerance_pct(tolerance=tolerance, key="ec_pct")
+        target_ph = self._runtime_config.effective_ph_target(task=task, runtime=runtime)
+        target_ec = self._runtime_config.effective_ec_target(task=task, runtime=runtime)
+        target_ph_min = self._runtime_config.effective_ph_min(task=task, runtime=runtime)
+        target_ph_max = self._runtime_config.effective_ph_max(task=task, runtime=runtime)
+        target_ec_min = self._runtime_config.effective_ec_min(task=task, runtime=runtime)
+        target_ec_max = self._runtime_config.effective_ec_max(task=task, runtime=runtime)
+        tolerance = self._runtime_config.prepare_tolerance_for_task(task=task, runtime=runtime)
+        ph_tol_pct = self._runtime_config.required_prepare_tolerance_pct(tolerance=tolerance, key="ph_pct")
+        ec_tol_pct = self._runtime_config.required_prepare_tolerance_pct(tolerance=tolerance, key="ec_pct")
         correction_cfg = self._correction_config(plan=plan, task=task)
-        process_cfg = self._process_cfg_for_task(task=task, runtime=runtime)
+        process_cfg = self._runtime_config.process_cfg_for_task(task=task, runtime=runtime)
         pid_state = runtime.pid_state if isinstance(runtime.pid_state, Mapping) else {}
         enforce_attempt_caps = self._enforce_attempt_caps(task=task)
 
@@ -652,6 +651,7 @@ class CorrectionHandler(BaseStageHandler):
         from ae3lite.application.services.correction_pipeline import (
             maybe_advance_pipeline,
             pipeline_dose_flags,
+            recipe_ec_band_reached,
             should_dilute,
             step_targets_reached,
         )
@@ -666,6 +666,13 @@ class CorrectionHandler(BaseStageHandler):
             ec_tol_pct=ec_tol_pct,
             planner=self._planner,
         )
+        if pipeline_step_reached and not recipe_ec_band_reached(
+            pipeline_phase=getattr(corr, "pipeline_phase", None),
+            current_ec=current_ec,
+            ec_min=self._runtime_config.irrigation_ec_min(runtime=runtime),
+            ec_max=self._runtime_config.irrigation_ec_max(runtime=runtime),
+        ):
+            pipeline_step_reached = False
         # prepare: классика — оба условия (prepare-tolerance + phase-ready).
         # Short-circuit: irrigation-band и EC уже выше prepare-target (нет dose-down).
         irrigation_short_circuit = (
@@ -701,7 +708,7 @@ class CorrectionHandler(BaseStageHandler):
                 )
                 # Mid-pipeline component switch: stale no_effect_count from the
                 # previous EC component must not block the next one.
-                await self._reset_no_effect_counts_fail_closed(
+                await self._pid_state.reset_no_effect_counts(
                     task=task,
                     corr=next_corr,
                     context="PIPELINE_COMPONENT_SWITCH",
@@ -725,7 +732,7 @@ class CorrectionHandler(BaseStageHandler):
                     "workflow_ready": workflow_ready,
                 },
             )
-            await self._reset_no_effect_counts_fail_closed(
+            await self._pid_state.reset_no_effect_counts(
                 task=task,
                 corr=next_corr,
                 context="CORRECTION_COMPLETE",
@@ -759,7 +766,7 @@ class CorrectionHandler(BaseStageHandler):
             # с чистого листа. Сам business-alert остаётся в БД как history —
             # его resolves через notify-path после ack пользователя или через
             # AlertAutoResolver когда is_no_effect=false стабилизируется.
-            await self._reset_no_effect_counts_fail_closed(
+            await self._pid_state.reset_no_effect_counts(
                 task=task,
                 corr=corr,
                 context="CORRECTION_COMPLETE",
@@ -820,7 +827,7 @@ class CorrectionHandler(BaseStageHandler):
         dose_flags = pipeline_dose_flags(corr)
         try:
             process_calibrations = {
-                str(phase_key): self._mapping_view(cfg)
+                str(phase_key): self._runtime_config.mapping_view(cfg)
                 for phase_key, cfg in runtime.process_calibrations.items()
             }
             dose_plan = self._planner.build_dose_plan(
@@ -927,13 +934,13 @@ class CorrectionHandler(BaseStageHandler):
                 due_delay_sec=max(1.0, (corr_wait_until - normalized_now).total_seconds()),
             )
 
-        ph_cfg = self._observation_config(
+        ph_cfg = self._runtime_config.observation_config(
             kind="ph",
             correction_cfg=correction_cfg,
             process_cfg=process_cfg,
             pid_entry=_pid_entry_or_none(pid_state, "ph"),
         )
-        ec_cfg = self._observation_config(
+        ec_cfg = self._runtime_config.observation_config(
             kind="ec",
             correction_cfg=correction_cfg,
             process_cfg=process_cfg,
@@ -1108,7 +1115,7 @@ class CorrectionHandler(BaseStageHandler):
                         "current_ec": current_ec,
                     },
                 )
-                await self._reset_no_effect_counts_fail_closed(
+                await self._pid_state.reset_no_effect_counts(
                     task=task,
                     corr=corr,
                     context="CORRECTION_INTERRUPTED_SOLUTION_LOW",
@@ -1147,8 +1154,8 @@ class CorrectionHandler(BaseStageHandler):
                     "target_ec": target_ec,
                     "target_ph_min": runtime.target_ph_min,
                     "target_ph_max": runtime.target_ph_max,
-                    "target_ec_min": self._effective_ec_min(task=task, runtime=runtime),
-                    "target_ec_max": self._effective_ec_max(task=task, runtime=runtime),
+                    "target_ec_min": self._runtime_config.effective_ec_min(task=task, runtime=runtime),
+                    "target_ec_max": self._runtime_config.effective_ec_max(task=task, runtime=runtime),
                 },
             )
             _logger.warning(
@@ -1235,8 +1242,8 @@ class CorrectionHandler(BaseStageHandler):
                     "retry_after_sec": dose_plan.retry_after_sec,
                     "target_ph_min": runtime.target_ph_min,
                     "target_ph_max": runtime.target_ph_max,
-                    "target_ec_min": self._effective_ec_min(task=task, runtime=runtime),
-                    "target_ec_max": self._effective_ec_max(task=task, runtime=runtime),
+                    "target_ec_min": self._runtime_config.effective_ec_min(task=task, runtime=runtime),
+                    "target_ec_max": self._runtime_config.effective_ec_max(task=task, runtime=runtime),
                 },
             )
             next_corr = replace(corr, corr_step="corr_check")
@@ -1265,12 +1272,12 @@ class CorrectionHandler(BaseStageHandler):
                         **(dict(dose_plan.dose_discarded_details) if isinstance(dose_plan.dose_discarded_details, Mapping) else {}),
                         "target_ph_min": runtime.target_ph_min,
                         "target_ph_max": runtime.target_ph_max,
-                        "target_ec_min": self._effective_ec_min(task=task, runtime=runtime),
-                        "target_ec_max": self._effective_ec_max(task=task, runtime=runtime),
+                        "target_ec_min": self._runtime_config.effective_ec_min(task=task, runtime=runtime),
+                        "target_ec_max": self._runtime_config.effective_ec_max(task=task, runtime=runtime),
                     },
                 )
                 # Freeze measurement clock so retry does not inflate I via wall-clock dt.
-                await self._touch_pid_measurement_clock(
+                await self._pid_state.touch_measurement_clock(
                     zone_id=task.zone_id,
                     now=now,
                     current_ph=current_ph,
@@ -1306,7 +1313,11 @@ class CorrectionHandler(BaseStageHandler):
                 )
 
             # True deadband / within PID dead zone — not a discarded dose.
-            if current_stage == "prepare_recirculation_check" and not workflow_ready:
+            # Открытый recirc-pipeline: deadband текущего шага (часто T_ca) не
+            # закрывает рецепт. Шаг двигает maybe_advance_pipeline; здесь только retry.
+            if current_stage == "prepare_recirculation_check" and (
+                not workflow_ready or self._recirc_pipeline_open(task)
+            ):
                 next_corr = replace(corr, corr_step="corr_check")
                 return self._enter_correction_after_delay_or_interrupt(
                     task=task,
@@ -1326,26 +1337,26 @@ class CorrectionHandler(BaseStageHandler):
                     **(dict(dose_plan.dead_zone_details) if isinstance(dose_plan.dead_zone_details, Mapping) else {}),
                     "target_ph_min": runtime.target_ph_min,
                     "target_ph_max": runtime.target_ph_max,
-                    "target_ec_min": self._effective_ec_min(task=task, runtime=runtime),
-                    "target_ec_max": self._effective_ec_max(task=task, runtime=runtime),
+                    "target_ec_min": self._runtime_config.effective_ec_min(task=task, runtime=runtime),
+                    "target_ec_max": self._runtime_config.effective_ec_max(task=task, runtime=runtime),
                     **self._readiness_event_payload(
                         targets_in_tolerance=self._planner.is_within_tolerance(
                             current_ph=current_ph,
                             current_ec=current_ec,
                             target_ph=target_ph,
                             target_ec=target_ec,
-                            ph_tolerance_pct=self._required_prepare_tolerance_pct(
-                                tolerance=self._prepare_tolerance_for_task(task=task, runtime=runtime),
+                            ph_tolerance_pct=self._runtime_config.required_prepare_tolerance_pct(
+                                tolerance=self._runtime_config.prepare_tolerance_for_task(task=task, runtime=runtime),
                                 key="ph_pct",
                             ),
-                            ec_tolerance_pct=self._required_prepare_tolerance_pct(
-                                tolerance=self._prepare_tolerance_for_task(task=task, runtime=runtime),
+                            ec_tolerance_pct=self._runtime_config.required_prepare_tolerance_pct(
+                                tolerance=self._runtime_config.prepare_tolerance_for_task(task=task, runtime=runtime),
                                 key="ec_pct",
                             ),
-                            ph_min=self._effective_ph_min(task=task, runtime=runtime),
-                            ph_max=self._effective_ph_max(task=task, runtime=runtime),
-                            ec_min=self._effective_ec_min(task=task, runtime=runtime),
-                            ec_max=self._effective_ec_max(task=task, runtime=runtime),
+                            ph_min=self._runtime_config.effective_ph_min(task=task, runtime=runtime),
+                            ph_max=self._runtime_config.effective_ph_max(task=task, runtime=runtime),
+                            ec_min=self._runtime_config.effective_ec_min(task=task, runtime=runtime),
+                            ec_max=self._runtime_config.effective_ec_max(task=task, runtime=runtime),
                         ),
                         workflow_ready=workflow_ready,
                     ),
@@ -1371,8 +1382,8 @@ class CorrectionHandler(BaseStageHandler):
                     **(dict(dose_plan.dose_discarded_details) if isinstance(dose_plan.dose_discarded_details, Mapping) else {}),
                     "target_ph_min": runtime.target_ph_min,
                     "target_ph_max": runtime.target_ph_max,
-                    "target_ec_min": self._effective_ec_min(task=task, runtime=runtime),
-                    "target_ec_max": self._effective_ec_max(task=task, runtime=runtime),
+                    "target_ec_min": self._runtime_config.effective_ec_min(task=task, runtime=runtime),
+                    "target_ec_max": self._runtime_config.effective_ec_max(task=task, runtime=runtime),
                 },
             )
         elif dose_plan.dose_clamped_reason:
@@ -1396,8 +1407,8 @@ class CorrectionHandler(BaseStageHandler):
                     **(dict(dose_plan.dose_clamped_details) if isinstance(dose_plan.dose_clamped_details, Mapping) else {}),
                     "target_ph_min": runtime.target_ph_min,
                     "target_ph_max": runtime.target_ph_max,
-                    "target_ec_min": self._effective_ec_min(task=task, runtime=runtime),
-                    "target_ec_max": self._effective_ec_max(task=task, runtime=runtime),
+                    "target_ec_min": self._runtime_config.effective_ec_min(task=task, runtime=runtime),
+                    "target_ec_max": self._runtime_config.effective_ec_max(task=task, runtime=runtime),
                 },
             )
 
@@ -1520,9 +1531,9 @@ class CorrectionHandler(BaseStageHandler):
         # Persist PID plan updates only after dose routing is confirmed and not
         # flow-held. Dual EC+PH: commit I only for the controller about to dose;
         # peer gets measurement-clock touch only (integral freeze).
-        await self._persist_pid_state_updates(
+        await self._pid_state.persist(
             zone_id=task.zone_id,
-            updates=self._select_pid_updates_for_persist(
+            updates=self._pid_state.select_updates(
                 dose_plan=dose_plan,
                 selected_action=str(selected_action),
             ),
@@ -1543,8 +1554,8 @@ class CorrectionHandler(BaseStageHandler):
                 "target_ec": target_ec,
                 "target_ph_min": runtime.target_ph_min,
                 "target_ph_max": runtime.target_ph_max,
-                "target_ec_min": self._effective_ec_min(task=task, runtime=runtime),
-                "target_ec_max": self._effective_ec_max(task=task, runtime=runtime),
+                "target_ec_min": self._runtime_config.effective_ec_min(task=task, runtime=runtime),
+                "target_ec_max": self._runtime_config.effective_ec_max(task=task, runtime=runtime),
                 "needs_ec": dose_plan.needs_ec,
                 "needs_ph_up": dose_plan.needs_ph_up,
                 "needs_ph_down": dose_plan.needs_ph_down,
@@ -1885,14 +1896,9 @@ class CorrectionHandler(BaseStageHandler):
         runtime = self._require_runtime_plan(plan=plan)
         # Read last_measured_value from DB (written by _persist_pid_state_updates in _run_check)
         # to avoid using the stale plan.runtime pid_state snapshot.
-        current_ec: Optional[float] = None
-        if self._pid_state_repository is not None:
-            try:
-                current_ec = await self._pid_state_repository.read_measured_value(
-                    zone_id=task.zone_id, pid_type="ec"
-                )
-            except Exception:
-                _logger.debug("Не удалось прочитать EC pid_state для логирования события", exc_info=True)
+        current_ec = await self._pid_state.read_measurement_for_event(
+            zone_id=task.zone_id, pid_type="ec",
+        )
         await self._log_correction_event(
             zone_id=task.zone_id,
             event_type="EC_DOSING",
@@ -1911,9 +1917,9 @@ class CorrectionHandler(BaseStageHandler):
                 "observe_seq": self._observe_seq(corr=corr, pid_type="ec", after_dose=True),
                 "ec_component": corr.ec_component,
                 "current_ec": current_ec,
-                "target_ec": self._effective_ec_target(task=task, runtime=runtime),
-                "target_ec_min": self._effective_ec_min(task=task, runtime=runtime),
-                "target_ec_max": self._effective_ec_max(task=task, runtime=runtime),
+                "target_ec": self._runtime_config.effective_ec_target(task=task, runtime=runtime),
+                "target_ec_min": self._runtime_config.effective_ec_min(task=task, runtime=runtime),
+                "target_ec_max": self._runtime_config.effective_ec_max(task=task, runtime=runtime),
                 "source": "correction_handler",
             },
         )
@@ -1933,9 +1939,9 @@ class CorrectionHandler(BaseStageHandler):
                 _logger.debug("Не удалось создать zone event IRRIGATION_EC_MULTI_DOSE", exc_info=True)
 
         runtime = self._require_runtime_plan(plan=plan)
-        process_cfg = self._process_cfg_for_task(task=task, runtime=runtime)
+        process_cfg = self._runtime_config.process_cfg_for_task(task=task, runtime=runtime)
         correction_cfg = self._correction_config(plan=plan, task=task)
-        observe_cfg = self._observation_config(
+        observe_cfg = self._runtime_config.observation_config(
             kind="ec",
             correction_cfg=correction_cfg,
             process_cfg=process_cfg,
@@ -1943,7 +1949,7 @@ class CorrectionHandler(BaseStageHandler):
         )
         wait_until = now + timedelta(seconds=int(observe_cfg["hold_window_sec"]))
         dose_completed_at = self._resolve_dose_completed_at()
-        await self._persist_pid_state_updates(
+        await self._pid_state.persist(
             zone_id=task.zone_id,
             now=dose_completed_at,
             updates={
@@ -2063,14 +2069,9 @@ class CorrectionHandler(BaseStageHandler):
         )
         # Read last_measured_value from DB (written by _persist_pid_state_updates in _run_check)
         # to avoid using the stale plan.runtime pid_state snapshot.
-        current_ph: Optional[float] = None
-        if self._pid_state_repository is not None:
-            try:
-                current_ph = await self._pid_state_repository.read_measured_value(
-                    zone_id=task.zone_id, pid_type="ph"
-                )
-            except Exception:
-                _logger.debug("Не удалось прочитать PH pid_state для логирования события", exc_info=True)
+        current_ph = await self._pid_state.read_measurement_for_event(
+            zone_id=task.zone_id, pid_type="ph",
+        )
         ph_direction = "up" if corr.needs_ph_up else "down"
         await self._log_correction_event(
             zone_id=task.zone_id,
@@ -2096,9 +2097,9 @@ class CorrectionHandler(BaseStageHandler):
         )
 
         runtime = self._require_runtime_plan(plan=plan)
-        process_cfg = self._process_cfg_for_task(task=task, runtime=runtime)
+        process_cfg = self._runtime_config.process_cfg_for_task(task=task, runtime=runtime)
         correction_cfg = self._correction_config(plan=plan, task=task)
-        observe_cfg = self._observation_config(
+        observe_cfg = self._runtime_config.observation_config(
             kind="ph",
             correction_cfg=correction_cfg,
             process_cfg=process_cfg,
@@ -2111,7 +2112,7 @@ class CorrectionHandler(BaseStageHandler):
         # reset the bias would linger until the next EC observation clears
         # it, and the planner's simplified "bias != 0" predicate would
         # incorrectly apply a stale EC→pH correction to the next pH tick.
-        await self._persist_pid_state_updates(
+        await self._pid_state.persist(
             zone_id=task.zone_id,
             now=dose_completed_at,
             updates={
@@ -2187,16 +2188,25 @@ class CorrectionHandler(BaseStageHandler):
             prefer_probe_snapshot=True,
         )
         if solution_max.get("is_triggered"):
+            # Бак полный: воду доливать нельзя. Краткий выброс EC (отклик дозы)
+            # не должен валить цикл — возвращаемся в corr_check и ждём оседания.
+            # Устойчивый перелёт закроет stage deadline.
             await self._log_correction_event(
                 zone_id=task.zone_id,
                 event_type="RECIRC_DILUTE_BLOCKED",
                 task=task,
                 corr=corr,
-                payload={"reason": "solution_max"},
+                payload={"reason": "solution_max", "resume": "corr_check"},
             )
-            raise TaskExecutionError(
-                ErrorCodes.AE3_RECIRC_DILUTE_BLOCKED_SOLUTION_MAX,
-                "Dilute заблокирован: solution_max уже ON",
+            next_corr = replace(corr, corr_step="corr_check")
+            return self._enter_correction_after_delay_or_interrupt(
+                task=task,
+                plan=plan,
+                corr=next_corr,
+                now=now,
+                due_delay_sec=float(
+                    getattr(getattr(runtime, "recirc", None), "dilute_settle_sec", 30) or 30
+                ),
             )
 
         named = plan.named_plans if hasattr(plan, "named_plans") else {}
@@ -2240,7 +2250,7 @@ class CorrectionHandler(BaseStageHandler):
             reason="dilute",
             now=now,
         )
-        await self._reset_no_effect_counts_fail_closed(
+        await self._pid_state.reset_no_effect_counts(
             task=task,
             corr=corr,
             context="RECIRC_DILUTE",
@@ -2276,19 +2286,18 @@ class CorrectionHandler(BaseStageHandler):
     ) -> None:
         """Reset EC integral/derivative (and emit PID_EC_RESET)."""
         try:
-            if self._pid_state_repository is not None:
-                await self._persist_pid_state_updates(
-                    zone_id=int(task.zone_id),
-                    now=now,
-                    updates={
-                        "ec": {
-                            "integral": 0.0,
-                            "prev_error": 0.0,
-                            "prev_derivative": 0.0,
-                            "last_measurement_at": now,
-                        }
-                    },
-                )
+            await self._pid_state.persist(
+                zone_id=int(task.zone_id),
+                now=now,
+                updates={
+                    "ec": {
+                        "integral": 0.0,
+                        "prev_error": 0.0,
+                        "prev_derivative": 0.0,
+                        "last_measurement_at": now,
+                    }
+                },
+            )
         except Exception:
             _logger.warning(
                 "PID_EC_RESET failed zone_id=%s reason=%s",
@@ -2399,13 +2408,13 @@ class CorrectionHandler(BaseStageHandler):
         if runtime is None:
             runtime = self._require_runtime_plan(plan=plan)
         max_age = int(runtime.telemetry_max_age_sec)
-        correction_cfg = self._correction_config_for_task(task=task, runtime=runtime)
-        process_cfg = self._process_cfg_for_task(task=task, runtime=runtime)
+        correction_cfg = self._runtime_config.correction_config_for_task(task=task, runtime=runtime)
+        process_cfg = self._runtime_config.process_cfg_for_task(task=task, runtime=runtime)
         ph = await self._read_target_metric_window(
             zone_id=task.zone_id,
             sensor_type="PH",
             telemetry_max_age_sec=max_age,
-            config=self._observation_config(kind="ph", correction_cfg=correction_cfg, process_cfg=process_cfg),
+            config=self._runtime_config.observation_config(kind="ph", correction_cfg=correction_cfg, process_cfg=process_cfg),
             unavailable_error="two_tank_prepare_targets_unavailable",
             stale_error="two_tank_prepare_targets_stale",
             now=now,
@@ -2414,7 +2423,7 @@ class CorrectionHandler(BaseStageHandler):
             zone_id=task.zone_id,
             sensor_type="EC",
             telemetry_max_age_sec=max_age,
-            config=self._observation_config(kind="ec", correction_cfg=correction_cfg, process_cfg=process_cfg),
+            config=self._runtime_config.observation_config(kind="ec", correction_cfg=correction_cfg, process_cfg=process_cfg),
             unavailable_error="two_tank_prepare_targets_unavailable",
             stale_error="two_tank_prepare_targets_stale",
             now=now,
@@ -2423,20 +2432,20 @@ class CorrectionHandler(BaseStageHandler):
             return None
         current_ph = float(ph["value"])
         current_ec = float(ec["value"])
-        tolerance = self._prepare_tolerance_for_task(task=task, runtime=runtime)
-        target_ph = self._effective_ph_target(task=task, runtime=runtime)
-        target_ec = self._effective_ec_target(task=task, runtime=runtime)
+        tolerance = self._runtime_config.prepare_tolerance_for_task(task=task, runtime=runtime)
+        target_ph = self._runtime_config.effective_ph_target(task=task, runtime=runtime)
+        target_ec = self._runtime_config.effective_ec_target(task=task, runtime=runtime)
         targets_in_tolerance = self._planner.is_within_tolerance(
             current_ph=current_ph,
             current_ec=current_ec,
             target_ph=target_ph,
             target_ec=target_ec,
-            ph_tolerance_pct=self._required_prepare_tolerance_pct(tolerance=tolerance, key="ph_pct"),
-            ec_tolerance_pct=self._required_prepare_tolerance_pct(tolerance=tolerance, key="ec_pct"),
-            ph_min=self._effective_ph_min(task=task, runtime=runtime),
-            ph_max=self._effective_ph_max(task=task, runtime=runtime),
-            ec_min=self._effective_ec_min(task=task, runtime=runtime),
-            ec_max=self._effective_ec_max(task=task, runtime=runtime),
+            ph_tolerance_pct=self._runtime_config.required_prepare_tolerance_pct(tolerance=tolerance, key="ph_pct"),
+            ec_tolerance_pct=self._runtime_config.required_prepare_tolerance_pct(tolerance=tolerance, key="ec_pct"),
+            ph_min=self._runtime_config.effective_ph_min(task=task, runtime=runtime),
+            ph_max=self._runtime_config.effective_ph_max(task=task, runtime=runtime),
+            ec_min=self._runtime_config.effective_ec_min(task=task, runtime=runtime),
+            ec_max=self._runtime_config.effective_ec_max(task=task, runtime=runtime),
         )
         workflow_ready = self._workflow_ready_values_match(
             task=task,
@@ -2680,18 +2689,9 @@ class CorrectionHandler(BaseStageHandler):
         ]
 
         runtime = self._require_runtime_plan(plan=plan)
-        current_ec: Optional[float] = None
-        if self._pid_state_repository is not None:
-            try:
-                current_ec = await self._pid_state_repository.read_measured_value(
-                    zone_id=task.zone_id, pid_type="ec",
-                )
-            except Exception:
-                _logger.debug(
-                    "Не удалось прочитать EC pid_state для EC_BATCH_PARTIAL_FAILURE",
-                    exc_info=True,
-                )
-
+        current_ec = await self._pid_state.read_measurement_for_event(
+            zone_id=task.zone_id, pid_type="ec",
+        )
         payload = {
             "successful_components": successful,
             "failed_component": failed_component,
@@ -2701,7 +2701,7 @@ class CorrectionHandler(BaseStageHandler):
             "status": "degraded",
             "error_code": error_code,
             "error_message": error_message,
-            "target_ec": self._effective_ec_target(task=task, runtime=runtime),
+            "target_ec": self._runtime_config.effective_ec_target(task=task, runtime=runtime),
             "current_ec": current_ec,
             "node_uid": str(failed_item.get("node_uid") or "").strip() or None,
             "channel": str(failed_item.get("channel") or "").strip() or None,
@@ -2972,7 +2972,7 @@ class CorrectionHandler(BaseStageHandler):
         "Active" определяется через persistent pid_state.no_effect_count
         против observe.no_effect_limit — тот же порог что триггерит alert.
         """
-        safety_raw = self._mapping_value(correction_cfg, "safety")
+        safety_raw = self._runtime_config.mapping_value(correction_cfg, "safety")
         safety = safety_raw if isinstance(safety_raw, Mapping) else {}
         if not bool(safety.get("block_on_active_no_effect_alert") or False):
             return None
@@ -2984,7 +2984,7 @@ class CorrectionHandler(BaseStageHandler):
             count = int(entry.get("no_effect_count") or 0)
             if count <= 0:
                 continue
-            observe_cfg = self._observation_config(
+            observe_cfg = self._runtime_config.observation_config(
                 kind=pid_type,
                 correction_cfg=correction_cfg,
                 process_cfg=process_cfg,
@@ -3126,10 +3126,10 @@ class CorrectionHandler(BaseStageHandler):
         """
         runtime = self._require_runtime_plan(plan=plan)
         correction_cfg = self._correction_config(plan=plan, task=task)
-        process_cfg = self._process_cfg_for_task(task=task, runtime=runtime)
+        process_cfg = self._runtime_config.process_cfg_for_task(task=task, runtime=runtime)
         pid_state = runtime.pid_state if isinstance(runtime.pid_state, Mapping) else {}
         pid_entry = _pid_entry_or_none(pid_state, pid_type) or {}
-        observe_cfg = self._observation_config(
+        observe_cfg = self._runtime_config.observation_config(
             kind=pid_type,
             correction_cfg=correction_cfg,
             process_cfg=process_cfg,
@@ -3319,7 +3319,7 @@ class CorrectionHandler(BaseStageHandler):
             corr=corr,
             process_cfg=window.process_cfg,
             pid_entry=pid_entry,
-            phase_key=self._runtime_phase_key(task=task),
+            phase_key=self._runtime_config.runtime_phase_key(task=task),
         )
         threshold_effect = expected_effect * float(observe_cfg["min_effect_fraction"])
         response = self._observation_analyzer.analyze_window(
@@ -3374,8 +3374,8 @@ class CorrectionHandler(BaseStageHandler):
         # Integral freeze: full accumulate_integral=False contract (clock + D/prev,
         # no ΔI) for hold/observe dead time.
         runtime = plan.runtime
-        target_ph = float(self._effective_ph_target(task=task, runtime=runtime))
-        target_ec = float(self._effective_ec_target(task=task, runtime=runtime))
+        target_ph = float(self._runtime_config.effective_ph_target(task=task, runtime=runtime))
+        target_ec = float(self._runtime_config.effective_ec_target(task=task, runtime=runtime))
         if pid_type == "ec":
             gap_for_freeze = max(0.0, target_ec - float(observed_value))
         else:
@@ -3389,7 +3389,7 @@ class CorrectionHandler(BaseStageHandler):
             now=now,
             accumulate_integral=False,
         )
-        await self._persist_pid_state_updates(
+        await self._pid_state.persist(
             zone_id=task.zone_id,
             now=now,
             updates={
@@ -3411,8 +3411,8 @@ class CorrectionHandler(BaseStageHandler):
                 },
             },
         )
-        if pid_type == "ec" and self._pid_state_repository is not None:
-            await self._pid_state_repository.clear_feedforward_bias(zone_id=int(task.zone_id))
+        if pid_type == "ec":
+            await self._pid_state.clear_feedforward_bias(zone_id=int(task.zone_id))
 
         if next_no_effect_count >= int(observe_cfg["no_effect_limit"]):
             return await self._no_effect_limit_reached(
@@ -3569,11 +3569,11 @@ class CorrectionHandler(BaseStageHandler):
 
     def _correction_config(self, *, plan: Any, task: Any) -> Mapping[str, Any]:
         runtime = self._require_runtime_plan(plan=plan)
-        return self._correction_config_for_task(task=task, runtime=runtime)
+        return self._runtime_config.correction_config_for_task(task=task, runtime=runtime)
 
     def _resolve_actuators(self, *, runtime: Mapping[str, Any], task: Any, plan: Any) -> dict:
         corr = self._correction_config(plan=plan, task=task)
-        actuators_raw = self._mapping_value(corr, "actuators")
+        actuators_raw = self._runtime_config.mapping_value(corr, "actuators")
         actuators = actuators_raw if isinstance(actuators_raw, Mapping) else {}
         return {
             "ec": actuators.get("ec"),
@@ -3666,164 +3666,6 @@ class CorrectionHandler(BaseStageHandler):
         except Exception:
             _logger.debug("Не удалось записать PID_OUTPUT zone event", exc_info=True)
 
-    @staticmethod
-    def _select_pid_updates_for_persist(
-        *,
-        dose_plan: DosePlan,
-        selected_action: str,
-    ) -> dict[str, Any]:
-        """Commit plan PID I/D only for the controller about to dose.
-
-        Peer controller (pending dual EC+PH) gets a measurement-clock touch
-        without integral / prev_* — equivalent to ``accumulate_integral=False``
-        so hold/observe of the active dose cannot wind up the pending loop.
-        """
-        raw = dose_plan.pid_state_updates
-        if not isinstance(raw, Mapping):
-            return {}
-
-        def _clock_touch(entry: Mapping[str, Any]) -> dict[str, Any]:
-            touch: dict[str, Any] = {}
-            if "last_measurement_at" in entry:
-                touch["last_measurement_at"] = entry["last_measurement_at"]
-            if "last_measured_value" in entry:
-                touch["last_measured_value"] = entry["last_measured_value"]
-            # Sync D/prev without committing peer integral (full freeze contract).
-            if "prev_error" in entry:
-                touch["prev_error"] = entry["prev_error"]
-            if "prev_derivative" in entry:
-                touch["prev_derivative"] = entry["prev_derivative"]
-            return touch
-
-        out: dict[str, Any] = {}
-        action = str(selected_action or "").strip().lower()
-        if action == "ec":
-            ec = raw.get("ec")
-            if isinstance(ec, Mapping):
-                out["ec"] = dict(ec)
-            if (dose_plan.needs_ph_up or dose_plan.needs_ph_down):
-                ph = raw.get("ph")
-                if isinstance(ph, Mapping):
-                    touch = _clock_touch(ph)
-                    if touch:
-                        out["ph"] = touch
-        elif action in {"ph_up", "ph_down", "ph"}:
-            ph = raw.get("ph")
-            if isinstance(ph, Mapping):
-                out["ph"] = dict(ph)
-            if dose_plan.needs_ec:
-                ec = raw.get("ec")
-                if isinstance(ec, Mapping):
-                    touch = _clock_touch(ec)
-                    if touch:
-                        out["ec"] = touch
-        return out
-
-    async def _touch_pid_measurement_clock(
-        self,
-        *,
-        zone_id: int,
-        now: datetime,
-        current_ph: float,
-        current_ec: float,
-    ) -> None:
-        """Advance last_measurement_at without committing plan integral (discard retry)."""
-        if self._pid_state_repository is None:
-            return
-        await self._persist_pid_state_updates(
-            zone_id=zone_id,
-            now=now,
-            updates={
-                "ec": {
-                    "last_measurement_at": now,
-                    "last_measured_value": round(float(current_ec), 6),
-                    "prev_derivative": 0.0,
-                },
-                "ph": {
-                    "last_measurement_at": now,
-                    "last_measured_value": round(float(current_ph), 6),
-                    "prev_derivative": 0.0,
-                },
-            },
-        )
-
-    async def _reset_no_effect_counts_fail_closed(
-        self,
-        *,
-        task: Any,
-        corr: CorrectionState,
-        context: str,
-    ) -> None:
-        """Reset no_effect_count with one retry; fail-closed on persistent error.
-
-        Stale ``no_effect_count`` can block later corrections via alert-block
-        policy — silently swallowing the failure leaves the zone stuck.
-        """
-        if self._pid_state_repository is None:
-            return
-        zone_id = int(task.zone_id)
-        last_exc: Exception | None = None
-        for attempt in range(1, _PID_RESET_ATTEMPTS + 1):
-            try:
-                await self._pid_state_repository.reset_no_effect_counts(zone_id=zone_id)
-                return
-            except Exception as exc:
-                last_exc = exc
-                _logger.warning(
-                    "Failed to reset no_effect_count (%s) for zone %s attempt=%s",
-                    context,
-                    zone_id,
-                    attempt,
-                    exc_info=True,
-                )
-        CORRECTION_NO_EFFECT_RESET_FAILED.inc()
-        try:
-            await self._log_correction_event(
-                zone_id=zone_id,
-                event_type="CORRECTION_NO_EFFECT_RESET_FAILED",
-                task=task,
-                corr=corr,
-                payload={"context": context, "error": str(last_exc) if last_exc else "unknown"},
-            )
-        except Exception:
-            _logger.debug("Failed to emit CORRECTION_NO_EFFECT_RESET_FAILED", exc_info=True)
-        raise TaskExecutionError(
-            "corr_no_effect_reset_failed",
-            f"Не удалось сбросить no_effect_count для зоны {zone_id} ({context})",
-        ) from last_exc
-
-    async def _persist_pid_state_updates(
-        self,
-        *,
-        zone_id: Any,
-        updates: Mapping[str, Any],
-        now: datetime,
-    ) -> None:
-        """Persist PID state updates (integral, prev_error, etc.) to the DB.
-
-        Plan I/D updates are committed from ``_finalize_dose_plan_routing`` only
-        after dose routing is confirmed (not on flow_hold / discard / cooldown).
-        Observe finalize writes ``last_measurement_at`` without ΔI — equivalent
-        to ``accumulate_integral=False`` for hold/observe dead time.
-        ``last_dose_at`` is written only after terminal DONE in dose steps.
-        No-op if no repository is wired or the update dict is empty.
-        """
-        if not updates or self._pid_state_repository is None:
-            return
-        try:
-            await self._pid_state_repository.upsert_states(
-                zone_id=int(zone_id),
-                now=now,
-                updates=[
-                    {"pid_type": pid_type, **state_dict}
-                    for pid_type, state_dict in updates.items()
-                ],
-            )
-        except Exception:
-            raise TaskExecutionError(
-                "corr_pid_state_persist_failed",
-                f"Не удалось сохранить PID state для зоны {zone_id}",
-            )
 
     def _normalize_timestamp(self, value: datetime | None) -> datetime | None:
         if value is None:
@@ -3845,7 +3687,7 @@ class CorrectionHandler(BaseStageHandler):
         Hardcoded `default` parameter removed (was 30.0/60.0) — Pydantic
         enforces presence; missing field is a fail-closed config bug.
         """
-        raw_value = self._mapping_value(correction_cfg, key)
+        raw_value = self._runtime_config.mapping_value(correction_cfg, key)
         try:
             value = float(raw_value)
         except (TypeError, ValueError) as exc:

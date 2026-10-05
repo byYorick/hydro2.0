@@ -3,7 +3,6 @@ package com.hydro.app.core.network
 import com.hydro.app.core.i18n.ErrorCatalog
 import com.hydro.app.core.i18n.HumanErrorInput
 import com.squareup.moshi.Moshi
-import com.squareup.moshi.adapter
 import retrofit2.HttpException
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -13,7 +12,7 @@ class ApiErrorParser @Inject constructor(
     private val moshi: Moshi,
     private val errorCatalog: ErrorCatalog,
 ) {
-    private val adapter = moshi.adapter<ApiErrorBody>()
+    private val adapter = moshi.adapter(ApiErrorBody::class.java)
 
     fun fromApiResponse(
         status: String?,

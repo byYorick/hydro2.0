@@ -49,6 +49,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - `level_clean_max`
 - `level_solution_min`
 - `level_solution_max`
+- `solution_temp_c` (`TEMPERATURE`, non-stub telemetry)
 
 `nd-test-ph-1`:
 - `ph_sensor`
@@ -76,7 +77,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - `heater`
 
 `nd-test-light-1`:
-- `light_level`
+- `light_level` (`LIGHT_INTENSITY`, `unit=ppfd`; lux не конвертируется для DLI)
 - `white_light`
 
 ### 2.2. Служебные/alias каналы, не отражаемые в `config_report`

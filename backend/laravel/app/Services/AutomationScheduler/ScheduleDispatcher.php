@@ -4,6 +4,7 @@ namespace App\Services\AutomationScheduler;
 
 use App\Services\AlertService;
 use App\Services\AutomationConfigDocumentService;
+use App\Services\CropDay\SolutionRefreshRecommendation;
 use App\Services\ZoneAutomationIntentService;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Client\ConnectionException;
@@ -362,6 +363,18 @@ class ScheduleDispatcher
                     'reason' => 'intent_upsert_failed',
                 ],
             ];
+        }
+
+        if ($taskType === 'irrigation' || $taskType === 'solution_topup') {
+            try {
+                app(SolutionRefreshRecommendation::class)->considerWithIntent($zoneId);
+            } catch (\Throwable $e) {
+                Log::warning('solution_refresh_recommendation_failed', [
+                    'zone_id' => $zoneId,
+                    'task_type' => $taskType,
+                    'error' => $e->getMessage(),
+                ]);
+            }
         }
 
         $requestPayload = [

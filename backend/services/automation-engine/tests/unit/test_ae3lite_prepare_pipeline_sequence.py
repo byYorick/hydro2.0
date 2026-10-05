@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from ae3lite.application.services.correction_pipeline import maybe_advance_pipeline, pipeline_dose_flags
+from ae3lite.application.services.correction_pipeline import (
+    maybe_advance_pipeline,
+    pipeline_dose_flags,
+    recipe_ec_band_reached,
+)
 from ae3lite.domain.entities.workflow_state import CorrectionState
 from ae3lite.domain.services.nutrient_pipeline import (
     RECIRC_PIPELINE_STEPS,
@@ -35,6 +39,45 @@ def _corr(phase: str) -> CorrectionState:
 
 def test_recirc_pipeline_step_count() -> None:
     assert len(RECIRC_PIPELINE_STEPS) == 8
+
+
+def test_final_ec_gate_uses_recipe_band_not_wide_tolerance() -> None:
+    assert recipe_ec_band_reached(
+        pipeline_phase="recirc_ca",
+        current_ec=0.9,
+        ec_min=2.35,
+        ec_max=2.45,
+    )
+    assert not recipe_ec_band_reached(
+        pipeline_phase="recirc_micro",
+        current_ec=2.10,
+        ec_min=2.35,
+        ec_max=2.45,
+    )
+    assert recipe_ec_band_reached(
+        pipeline_phase="recirc_micro",
+        current_ec=2.40,
+        ec_min=2.35,
+        ec_max=2.45,
+    )
+    assert recipe_ec_band_reached(
+        pipeline_phase="recirc_micro",
+        current_ec=2.55,
+        ec_min=2.35,
+        ec_max=2.45,
+    )
+    assert not recipe_ec_band_reached(
+        pipeline_phase="recirc_micro",
+        current_ec=2.90,
+        ec_min=2.35,
+        ec_max=2.45,
+    )
+    assert not recipe_ec_band_reached(
+        pipeline_phase="recirc_ph_final",
+        current_ec=2.10,
+        ec_min=2.35,
+        ec_max=2.45,
+    )
 
 
 def test_advance_full_sequence() -> None:

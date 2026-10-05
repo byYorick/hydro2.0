@@ -419,6 +419,10 @@ interface SolutionTempTarget {
 - при устойчивом выходе ниже `min` N минут → `biz_solution_temp_low`;
 - проверка выполняется в `history-logger` на ingest-пути телеметрии (env `SOLUTION_TEMP_ALERT_DELAY_MINUTES`, default `10`).
 
+**Новый полив (AE3 decision gate).** Если в extensions фазы `solution_health.required=true` и обе колонки `solution_temp_min` и `solution_temp_max` заданы, gate до `irrigation_start` завершает задачу успешным `skip`, не `fail`. Нет свежего `solution_temp_c` — `solution_temp_unavailable`. Непрерывный ряд `telemetry_samples` вне `[min, max]` на всём `solution_health.breach_hold_sec` (по умолчанию 600) без дыры больше 600 с — `solution_temp_out_of_band`. Один образец и один `telemetry_last` hold не доказывают. `required=false` или пустой предел — температуру gate не смотрит; пустой min/max не копируется из target. Уже начатый полив не отменяется. Второй biz-алерт температуры не создаётся: `biz_solution_temp_*` остаётся на history-logger.
+
+**Запись фазы.** `solution_health.required=true` принимается только вместе с обеими колонками `solution_temp_min` и `solution_temp_max`; если обе заданы и min > max — 422. `breach_hold_sec` пустой или целое 60…86400. Нет ключей — контур выключен, не ноль. `extensions.solution_max_age_days` пустое или целое 1…60. `extensions.solution_refresh_after_topup_ml` пустое или число > 0. Остальные ключи `extensions` сохраняются. Горячая смена фазы — прежний PATCH ревизии, не новый endpoint.
+
 ### 4.3. Irrigation Controller
 
 ```typescript
@@ -541,6 +545,30 @@ interface LightingTarget {
 - `brightness_pct`: опционально `0..100`; при `desired_state="on"` — явная яркость тика; если не передано, AE3 резолвит из effective targets / day-night config; fallback `100`.
 
 **Идемпотентность:** повторный tick с тем же `desired_state` и той же фактической яркостью на узле — no-op (`NO_EFFECT` допустим); граница окна dispatch'ится один раз на переход. Retryable 409 на OFF-tick не двигает cursor. Битый `desired_state` — fail-closed skip.
+
+#### 4.4.3. Потолок `dli_target`
+
+Колонка фазы `dli_target` — моль/м²·сутки. Отдельного ключа `lighting.dli_mol_m2_day` нет, старые числа не конвертируются, фаза по DLI сама не переводится. Пока колонка пуста, duty света прежний. На записи колонка пустая или число > 0 и ≤ 100. Ноль и отрицательное — 422, в документ не пишутся и нулём цель не включается.
+
+Если цель задана, Laravel внутри открытого окна фотопериода дополнительно шлёт `desired_state=on` не чаще раза в 900 с (`dli_check_interval_sec`). Граница OFF не двигается. Idempotency key включает бакет интервала. `409 zone_busy` на OFF по-прежнему не двигает cursor.
+
+Интеграл считается отдельно в планировщике AE и в Laravel `day_balance`, общего писателя нет. AE читает телеметрию сам и в Laravel по HTTP не ходит:
+
+```text
+dli_mol = sum(ppfd_umol_m2_s * dt_sec) / 1_000_000
+```
+
+`dt_sec` — до следующего образца и не больше `dli_stale_gap_sec` (дефолт 600). Дыра больше этого: `dli_status=gap`, duty не режется. Ряд — уже привязанный канал света зоны (`lux_main` / `light` / `light_level`, либо наружный канал, если он явно указан в targets света). Единица конфига канала должна быть ровно `ppfd` или `umol_m2_s`. Люкс, пустая единица и смешанный ряд: `sensor_unavailable`, свет не гасится. Пример: 100 µmol/м²/с ровно 10 000 с = 1.0 моль/м².
+
+| Условие ON-тика | Duty | `dli_status` |
+|---|---|---|
+| цель пуста | как сейчас | `not_configured` |
+| нет ряда PPFD | как сейчас | `sensor_unavailable` |
+| дыра в ряде | как сейчас | `gap` |
+| интеграл ≥ цели | 0 | `capped` |
+| интеграл ниже цели | не выше запрошенного `brightness_pct` | `within_target` |
+
+Яркость выше рецепта не добирается. `sensor_unavailable` — не больше одного biz-алерта `dli_sensor_unavailable` на зону за местные сутки; пишет планировщик тика, не GET.
 
 **Пример (SCHEDULE + day/night):**
 ```json

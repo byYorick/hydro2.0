@@ -22,6 +22,7 @@ from ae3lite.infrastructure.metrics import (
     GREENHOUSE_CLIMATE_SENSOR_STALE_TOTAL,
     GREENHOUSE_CLIMATE_TICK_TOTAL,
     GREENHOUSE_CLIMATE_WIND_CLAMP_TOTAL,
+    record_greenhouse_climate_crop_metrics,
 )
 from common.alert_publisher import AlertPublisher
 from common.db import execute, fetch
@@ -684,6 +685,10 @@ def _greenhouse_targets(execution: Mapping[str, Any]) -> dict[str, float]:
         raise ValueError("greenhouse_targets temp_min_c must be <= temp_max_c")
     if out["humidity_min_pct"] > out["humidity_max_pct"]:
         raise ValueError("greenhouse_targets humidity_min_pct must be <= humidity_max_pct")
+    for key in ("vpd_min_kpa", "vpd_max_kpa"):
+        value = _as_float(raw.get(key))
+        if value is not None:
+            out[key] = value
     return out
 
 
@@ -1091,6 +1096,10 @@ async def run_greenhouse_climate_tick(
             current_right_pct=int(state.get("right_position_pct") or 0),
             now_ts=now_ts,
             last_command_ts=last_cmd_ts,
+        )
+        record_greenhouse_climate_crop_metrics(
+            greenhouse_id=int(greenhouse_id),
+            factors=decision.factors,
         )
         active_alerts = list(policy_alerts)
         active_alerts.extend(_spread_alerts(snap, execution))

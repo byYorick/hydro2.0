@@ -649,6 +649,27 @@ class AutomationConfigRegistry
             if (! is_array($profile) || array_is_list($profile)) {
                 throw new InvalidArgumentException("Profile {$mode} must be an object.");
             }
+            $this->validateIrrigationDecisionStrategy($profile, (string) $mode);
+        }
+    }
+
+    /**
+     * Проверяется только явная стратегия. lookback, hysteresis и command_plans не отвергаются.
+     *
+     * @param  array<string, mixed>  $profile
+     */
+    private function validateIrrigationDecisionStrategy(array $profile, string $mode): void
+    {
+        $decision = data_get($profile, 'subsystems.irrigation.decision');
+        if (! is_array($decision) || ! array_key_exists('strategy', $decision) || $decision['strategy'] === null) {
+            return;
+        }
+
+        $strategy = $decision['strategy'];
+        if (! is_string($strategy) || ! in_array($strategy, ['task', 'smart_soil_v1'], true)) {
+            throw new InvalidArgumentException(
+                "zone.logic_profile.profiles.{$mode}.subsystems.irrigation.decision.strategy must be task or smart_soil_v1."
+            );
         }
     }
 
@@ -837,6 +858,54 @@ class AutomationConfigRegistry
         if ((float) $targets['humidity_min_pct'] > (float) $targets['humidity_max_pct']) {
             throw new InvalidArgumentException("{$path}.greenhouse_targets humidity_min_pct must be <= humidity_max_pct.");
         }
+
+        $this->validateGreenhouseVpdTargets($targets, $path);
+    }
+
+    /**
+     * Пустая пара выключает контур. Ноль не подставляется.
+     *
+     * @param  array<string, mixed>  $targets
+     */
+    private function validateGreenhouseVpdTargets(array $targets, string $path): void
+    {
+        $min = $this->optionalTargetValue($targets, 'vpd_min_kpa');
+        $max = $this->optionalTargetValue($targets, 'vpd_max_kpa');
+        if (! $min['set'] && ! $max['set']) {
+            return;
+        }
+        if ($min['set'] !== $max['set']) {
+            throw new InvalidArgumentException(
+                "{$path}.greenhouse_targets vpd_min_kpa and vpd_max_kpa must both be set or both be empty."
+            );
+        }
+
+        foreach (['vpd_min_kpa' => $min['value'], 'vpd_max_kpa' => $max['value']] as $key => $value) {
+            if (! is_numeric($value)) {
+                throw new InvalidArgumentException("{$path}.greenhouse_targets.{$key} must be numeric.");
+            }
+            $number = (float) $value;
+            if ($number < 0.1 || $number > 3.0) {
+                throw new InvalidArgumentException("{$path}.greenhouse_targets.{$key} must be between 0.1 and 3.0.");
+            }
+        }
+
+        if ((float) $min['value'] >= (float) $max['value']) {
+            throw new InvalidArgumentException("{$path}.greenhouse_targets vpd_min_kpa must be < vpd_max_kpa.");
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $targets
+     * @return array{set: bool, value: mixed}
+     */
+    private function optionalTargetValue(array $targets, string $key): array
+    {
+        if (! array_key_exists($key, $targets) || $targets[$key] === null || $targets[$key] === '') {
+            return ['set' => false, 'value' => null];
+        }
+
+        return ['set' => true, 'value' => $targets[$key]];
     }
 
     /**

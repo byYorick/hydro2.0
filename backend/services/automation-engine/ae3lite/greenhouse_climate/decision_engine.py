@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Any, Mapping
 
@@ -26,6 +27,36 @@ def _f(x: Any) -> float | None:
     if isinstance(x, (int, float)):
         return float(x)
     return None
+
+
+def _air_moisture(temp_c: float | None, rh: float | None) -> tuple[float, float, float] | None:
+    """Воздушный VPD, точка росы и парциальное давление, кПа / °C.
+
+    RH клампится в [1, 100]: 0 — измерение, не пустой вход, и ln(0) не бросает.
+    Нет T или RH — None, ноль не подставляется.
+    """
+    if temp_c is None or rh is None:
+        return None
+    if not math.isfinite(temp_c) or not math.isfinite(rh):
+        return None
+    denom = temp_c + 237.3
+    if denom == 0.0:
+        return None
+    rh_c = _clamp(rh, 1.0, 100.0)
+    try:
+        es = 0.6108 * math.exp(17.27 * temp_c / denom)
+        gamma = math.log(rh_c / 100.0) + (17.27 * temp_c / denom)
+        dew_denom = 17.27 - gamma
+        if dew_denom == 0.0:
+            return None
+        ea = es * rh_c / 100.0
+        vpd = es - ea
+        dew = 237.3 * gamma / dew_denom
+    except (OverflowError, ValueError):
+        return None
+    if not (math.isfinite(vpd) and math.isfinite(dew) and math.isfinite(ea)):
+        return None
+    return vpd, dew, ea
 
 
 @dataclass(frozen=True)
@@ -183,6 +214,37 @@ def compute_climate_decision(
             humidity_open = _linear_map(rh_delta, 0.0, rh_full_delta, 0.0, 100.0)
         if outside_humidity is not None and rh_max_v is not None and outside_humidity > rh_max_v:
             humidity_open *= outside_wetter_gain
+
+    inside_air = _air_moisture(it_med, rh_max_v)
+    if inside_air is not None:
+        factors["air_vpd_kpa"] = inside_air[0]
+        factors["dew_point_c"] = inside_air[1]
+        factors["inside_vapor_pressure_kpa"] = inside_air[2]
+    outside_air = _air_moisture(outside_temp, outside_humidity) if weather_fresh else None
+    if outside_air is not None:
+        factors["outside_vapor_pressure_kpa"] = outside_air[2]
+
+    vpd_min = _f(gt.get("vpd_min_kpa"))
+    vpd_max = _f(gt.get("vpd_max_kpa"))
+    # Без обеих целей проценты не меняются, включая запрет влажного наружного воздуха.
+    if vpd_min is not None and vpd_max is not None and inside_air is not None and it_med is not None:
+        air_vpd = inside_air[0]
+        if air_vpd > vpd_max and it_med >= temp_min:
+            humidity_open = 0.0
+        if air_vpd < vpd_min:
+            humidity_open = max(
+                humidity_open,
+                _linear_map(vpd_min - air_vpd, 0.0, vpd_min, 0.0, 100.0),
+            )
+        if (
+            outside_air is not None
+            and outside_temp is not None
+            and outside_air[2] >= inside_air[2]
+            and outside_temp >= it_med
+            and not emergency_overheat
+        ):
+            humidity_open = 0.0
+            factors["moisture_vent_suppressed"] = True
 
     requested = float(fallback_open if not inside_fresh else max(base_open, temp_open, humidity_open))
     requested = _clamp(requested, float(min_open), float(max_open))

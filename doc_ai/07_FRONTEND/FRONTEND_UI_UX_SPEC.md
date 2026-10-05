@@ -250,6 +250,21 @@ resources/js/Pages/
 - `GET /api/zones/{id}/scheduler-diagnostics` (engineer/admin only);
 - полный grouped `zone_events` causal chain (живёт на Events tab; на Automation — только strip + deep-link).
 
+### 6.6.2.1. Секция «Сутки» (`CropDaySection`)
+
+Путь: `resources/js/Components/ZoneAutomation/CropDaySection.vue`.  
+Рендерится в `ZoneAutomationRuntimeSection` рядом с панелью диагностики. Новой страницы и новой роли нет.
+
+**Источник:** уже пришедший `GET /api/zones/{id}/state`: `day_balance`, `decision_factors` или `decision.factors`, `observability.hang_hints`. Клиент не интегрирует PPFD и не переводит секунды в миллилитры.
+
+- дата `local_date`; при `timezone_fallback` подпись, что пояс свалился в UTC;
+- `irrigation_commands` и `commanded_sec` как в ответе; при нуле команд миллилитры не рисуются нулём;
+- `commanded_ml` или текст «нет калибровки канала», если `commanded_ml_status=calibration_missing` или миллилитры `null`;
+- свет: `dli_mol` либо статус `not_configured` / `sensor_unavailable` / `gap` словами, не нулём. Фотопериод и яркость — только если эти числа уже лежат в `day_balance`;
+- климат: `air_vpd_kpa`, точка росы и `moisture_vent_suppressed`, только если поля уже есть в `day_balance` или decision factors. Иначе «нет снимка климата». На клиенте VPD не считается;
+- раствор: температура, только если поле уже есть; gate — `solution_health.required` фазы или состояния, иначе подсказка `solution_temp_blocked`; рекомендация подмены — hint `solution_refresh_due`;
+- подсказки `irrigation_sensor_blocked` и `solution_temp_blocked` текстом `message` / `recommendation`, не сырым `reason_code`.
+
 ### 6.6.3. Shared UI автоматики зоны
 
 Shared-компоненты автоматики зоны обязаны использовать одинаковый UX и contract ownership

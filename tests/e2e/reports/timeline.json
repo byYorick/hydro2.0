@@ -1,604 +1,2179 @@
 {
-  "test_suite": "E12_command_timeout",
-  "generated_at": "2026-04-28T20:19:56.397963",
+  "test_suite": "E103_ae3_recirculation_retry_limit_alert_resolve_ready_realhw",
+  "generated_at": "2026-10-05T01:40:05.993187",
   "test_cases": [
     {
-      "name": "start_node_simulator",
+      "name": "set_test_context",
       "status": "passed",
-      "duration": 6.669215440750122,
+      "duration": 4.76837158203125e-05,
       "error_message": null,
       "steps": [
         {
-          "name": "start_node_simulator",
+          "name": "set_test_context",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-04-28T20:18:15.191810"
+      "timestamp": "2026-10-05T01:30:44.912102"
     },
     {
-      "name": "set_test_uids",
+      "name": "capture_scenario_window",
       "status": "passed",
-      "duration": 1.239776611328125e-05,
+      "duration": 0.002824068069458008,
       "error_message": null,
       "steps": [
         {
-          "name": "set_test_uids",
+          "name": "capture_scenario_window",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-04-28T20:18:15.191995"
+      "timestamp": "2026-10-05T01:30:44.914952"
     },
     {
-      "name": "fetch_node_id",
+      "name": "load_zone_context",
       "status": "passed",
-      "duration": 0.008632183074951172,
+      "duration": 0.0056459903717041016,
       "error_message": null,
       "steps": [
         {
-          "name": "fetch_node_id",
+          "name": "load_zone_context",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-04-28T20:18:15.200663"
+      "timestamp": "2026-10-05T01:30:44.920655"
     },
     {
-      "name": "set_zone_and_node",
+      "name": "set_zone_context",
       "status": "passed",
-      "duration": 3.337860107421875e-06,
+      "duration": 7.152557373046875e-06,
       "error_message": null,
       "steps": [
         {
-          "name": "set_zone_and_node",
+          "name": "set_zone_context",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-04-28T20:18:15.200706"
+      "timestamp": "2026-10-05T01:30:44.920714"
     },
     {
-      "name": "subscribe_zone_channel",
+      "name": "load_irrig_node",
       "status": "passed",
-      "duration": 0.26663780212402344,
+      "duration": 0.0023005008697509766,
       "error_message": null,
       "steps": [
         {
-          "name": "subscribe_zone_channel",
+          "name": "load_irrig_node",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-04-28T20:18:15.467365"
+      "timestamp": "2026-10-05T01:30:44.923050"
     },
     {
-      "name": "stop_node_simulator_to_force_timeout",
+      "name": "load_ph_node",
       "status": "passed",
-      "duration": 10.38093113899231,
+      "duration": 0.0031409263610839844,
       "error_message": null,
       "steps": [
         {
-          "name": "stop_node_simulator_to_force_timeout",
+          "name": "load_ph_node",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-04-28T20:18:25.848329"
+      "timestamp": "2026-10-05T01:30:44.926253"
     },
     {
-      "name": "send_command",
+      "name": "load_ec_node",
       "status": "passed",
-      "duration": 0.37273406982421875,
+      "duration": 0.0007262229919433594,
       "error_message": null,
       "steps": [
         {
-          "name": "send_command",
+          "name": "load_ec_node",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-04-28T20:18:26.221148"
+      "timestamp": "2026-10-05T01:30:44.927045"
     },
     {
-      "name": "set_command_id_from_response",
+      "name": "set_node_ids",
       "status": "passed",
-      "duration": 0.0004222393035888672,
+      "duration": 9.775161743164062e-06,
       "error_message": null,
       "steps": [
         {
-          "name": "set_command_id_from_response",
+          "name": "set_node_ids",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-04-28T20:18:26.221619"
+      "timestamp": "2026-10-05T01:30:44.927110"
     },
     {
-      "name": "create_command_manually_if_needed",
-      "status": "skipped",
-      "duration": 8.726119995117188e-05,
-      "error_message": "Condition is false: ${not context.get('command_id')}",
-      "steps": [
-        {
-          "name": "create_command_manually_if_needed",
-          "status": "skipped"
-        }
-      ],
-      "timestamp": "2026-04-28T20:18:26.221755"
-    },
-    {
-      "name": "set_command_id_from_manual",
-      "status": "skipped",
-      "duration": 0.00010776519775390625,
-      "error_message": "Condition is false: ${context.get('manual_command') and len(context.get('manual_command')) > 0 and context.get('manual_command')[0].get('cmd_id')}",
-      "steps": [
-        {
-          "name": "set_command_id_from_manual",
-          "status": "skipped"
-        }
-      ],
-      "timestamp": "2026-04-28T20:18:26.221895"
-    },
-    {
-      "name": "wait_for_timeout_processing",
+      "name": "publish_irrig_node_config",
       "status": "passed",
-      "duration": 90.00189399719238,
+      "duration": 0.1963517665863037,
       "error_message": null,
       "steps": [
         {
-          "name": "wait_for_timeout_processing",
+          "name": "publish_irrig_node_config",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-04-28T20:19:56.223803"
+      "timestamp": "2026-10-05T01:30:45.123483"
     },
     {
-      "name": "wait_for_terminal_status_real_hw",
-      "status": "skipped",
-      "duration": 0.00016307830810546875,
-      "error_message": "Condition is false: ${int(context.get('real_hw') or 0) == 1}",
-      "steps": [
-        {
-          "name": "wait_for_terminal_status_real_hw",
-          "status": "skipped"
-        }
-      ],
-      "timestamp": "2026-04-28T20:19:56.224000"
-    },
-    {
-      "name": "fetch_command_status_for_assert",
+      "name": "publish_ph_node_config",
       "status": "passed",
-      "duration": 0.014373302459716797,
+      "duration": 0.18431830406188965,
       "error_message": null,
       "steps": [
         {
-          "name": "fetch_command_status_for_assert",
+          "name": "publish_ph_node_config",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-04-28T20:19:56.238431"
+      "timestamp": "2026-10-05T01:30:45.307851"
     },
     {
-      "name": "command_status_matches_mode",
+      "name": "publish_ec_node_config",
       "status": "passed",
-      "duration": 0.00018024444580078125,
+      "duration": 0.19603466987609863,
       "error_message": null,
       "steps": [
         {
-          "name": "command_status_matches_mode",
+          "name": "publish_ec_node_config",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-04-28T20:19:56.238636"
+      "timestamp": "2026-10-05T01:30:45.503945"
+    },
+    {
+      "name": "wait_irrigation_level_sensors_registered",
+      "status": "passed",
+      "duration": 0.0029296875,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_irrigation_level_sensors_registered",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:30:45.506939"
+    },
+    {
+      "name": "load_ec_pump_a_channel",
+      "status": "passed",
+      "duration": 0.0004932880401611328,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "load_ec_pump_a_channel",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:30:45.507497"
+    },
+    {
+      "name": "load_ec_pump_b_channel",
+      "status": "passed",
+      "duration": 0.0003590583801269531,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "load_ec_pump_b_channel",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:30:45.507893"
+    },
+    {
+      "name": "load_ec_pump_c_channel",
+      "status": "passed",
+      "duration": 0.0003457069396972656,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "load_ec_pump_c_channel",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:30:45.508274"
+    },
+    {
+      "name": "load_ec_pump_d_channel",
+      "status": "passed",
+      "duration": 0.0003681182861328125,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "load_ec_pump_d_channel",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:30:45.508677"
+    },
+    {
+      "name": "load_ph_up_channel",
+      "status": "passed",
+      "duration": 0.0003273487091064453,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "load_ph_up_channel",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:30:45.509042"
+    },
+    {
+      "name": "load_ph_down_channel",
+      "status": "passed",
+      "duration": 0.0003745555877685547,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "load_ph_down_channel",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:30:45.509454"
+    },
+    {
+      "name": "set_correction_channel_ids",
+      "status": "passed",
+      "duration": 4.76837158203125e-06,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "set_correction_channel_ids",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:30:45.509521"
+    },
+    {
+      "name": "wait_zone_ae_runtime_idle_before_cleanup",
+      "status": "passed",
+      "duration": 0.00439143180847168,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_zone_ae_runtime_idle_before_cleanup",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:30:45.513947"
+    },
+    {
+      "name": "cleanup_zone_ae_commands",
+      "status": "passed",
+      "duration": 0.0024042129516601562,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "cleanup_zone_ae_commands",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:30:45.516387"
+    },
+    {
+      "name": "cleanup_zone_ae_tasks",
+      "status": "passed",
+      "duration": 0.0004642009735107422,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "cleanup_zone_ae_tasks",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:30:45.516900"
+    },
+    {
+      "name": "cleanup_zone_ae_leases",
+      "status": "passed",
+      "duration": 0.00035953521728515625,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "cleanup_zone_ae_leases",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:30:45.517289"
+    },
+    {
+      "name": "cleanup_zone_workflow_state",
+      "status": "passed",
+      "duration": 0.001102447509765625,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "cleanup_zone_workflow_state",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:30:45.518425"
+    },
+    {
+      "name": "cleanup_zone_pid_state",
+      "status": "passed",
+      "duration": 0.0014154911041259766,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "cleanup_zone_pid_state",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:30:45.519876"
+    },
+    {
+      "name": "cleanup_zone_runtime_intents",
+      "status": "passed",
+      "duration": 0.0004355907440185547,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "cleanup_zone_runtime_intents",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:30:45.520356"
+    },
+    {
+      "name": "cleanup_retry_limit_alerts",
+      "status": "passed",
+      "duration": 0.0015931129455566406,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "cleanup_retry_limit_alerts",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:30:45.521984"
+    },
+    {
+      "name": "complete_existing_cycles",
+      "status": "passed",
+      "duration": 0.00176239013671875,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "complete_existing_cycles",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:30:45.523777"
+    },
+    {
+      "name": "switch_zone_to_ae3",
+      "status": "passed",
+      "duration": 0.0019927024841308594,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "switch_zone_to_ae3",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:30:45.525804"
+    },
+    {
+      "name": "load_test_node_correction_preset",
+      "status": "passed",
+      "duration": 0.0009021759033203125,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "load_test_node_correction_preset",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:30:45.526734"
+    },
+    {
+      "name": "apply_test_node_correction_preset",
+      "status": "passed",
+      "duration": 0.20488882064819336,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "apply_test_node_correction_preset",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:30:45.732456"
+    },
+    {
+      "name": "cleanup_existing_correction_bindings",
+      "status": "passed",
+      "duration": 0.003258943557739258,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "cleanup_existing_correction_bindings",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:30:45.735767"
+    },
+    {
+      "name": "cleanup_existing_correction_infra",
+      "status": "passed",
+      "duration": 0.0009632110595703125,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "cleanup_existing_correction_infra",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:30:45.736770"
+    },
+    {
+      "name": "cleanup_existing_e2e_calibrations",
+      "status": "passed",
+      "duration": 0.0012798309326171875,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "cleanup_existing_e2e_calibrations",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:30:45.738115"
+    },
+    {
+      "name": "insert_correction_infrastructure",
+      "status": "passed",
+      "duration": 0.0009965896606445312,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "insert_correction_infrastructure",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:30:45.739148"
+    },
+    {
+      "name": "insert_correction_bindings",
+      "status": "passed",
+      "duration": 0.002629995346069336,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "insert_correction_bindings",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:30:45.741854"
+    },
+    {
+      "name": "insert_correction_calibrations",
+      "status": "passed",
+      "duration": 0.0021257400512695312,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "insert_correction_calibrations",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:30:45.744068"
+    },
+    {
+      "name": "apply_solution_fill_process_calibration",
+      "status": "passed",
+      "duration": 0.20124101638793945,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "apply_solution_fill_process_calibration",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:30:45.945404"
+    },
+    {
+      "name": "apply_tank_recirc_process_calibration",
+      "status": "passed",
+      "duration": 0.20110440254211426,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "apply_tank_recirc_process_calibration",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:30:46.146641"
+    },
+    {
+      "name": "apply_irrigation_process_calibration",
+      "status": "passed",
+      "duration": 0.20102477073669434,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "apply_irrigation_process_calibration",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:30:46.347791"
+    },
+    {
+      "name": "apply_ae3_logic_profile",
+      "status": "passed",
+      "duration": 0.22167134284973145,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "apply_ae3_logic_profile",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:30:46.570116"
+    },
+    {
+      "name": "create_recipe",
+      "status": "passed",
+      "duration": 0.0014913082122802734,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "create_recipe",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:30:46.571666"
+    },
+    {
+      "name": "load_recipe",
+      "status": "passed",
+      "duration": 0.0005288124084472656,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "load_recipe",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:30:46.572253"
+    },
+    {
+      "name": "set_recipe_id",
+      "status": "passed",
+      "duration": 2.6226043701171875e-06,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "set_recipe_id",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:30:46.572283"
+    },
+    {
+      "name": "create_recipe_revision",
+      "status": "passed",
+      "duration": 0.0015339851379394531,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "create_recipe_revision",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:30:46.573849"
+    },
+    {
+      "name": "load_recipe_revision",
+      "status": "passed",
+      "duration": 0.00044035911560058594,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "load_recipe_revision",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:30:46.574349"
+    },
+    {
+      "name": "set_recipe_revision_id",
+      "status": "passed",
+      "duration": 3.0994415283203125e-06,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "set_recipe_revision_id",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:30:46.574384"
+    },
+    {
+      "name": "create_grow_cycle",
+      "status": "passed",
+      "duration": 0.0025701522827148438,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "create_grow_cycle",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:30:46.577004"
+    },
+    {
+      "name": "load_grow_cycle",
+      "status": "passed",
+      "duration": 0.0003921985626220703,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "load_grow_cycle",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:30:46.577448"
+    },
+    {
+      "name": "set_grow_cycle_id",
+      "status": "passed",
+      "duration": 2.384185791015625e-06,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "set_grow_cycle_id",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:30:46.577473"
+    },
+    {
+      "name": "create_phase",
+      "status": "passed",
+      "duration": 0.002061128616333008,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "create_phase",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:30:46.579618"
+    },
+    {
+      "name": "load_phase",
+      "status": "passed",
+      "duration": 0.0012288093566894531,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "load_phase",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:30:46.580887"
+    },
+    {
+      "name": "set_phase_id",
+      "status": "passed",
+      "duration": 2.6226043701171875e-06,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "set_phase_id",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:30:46.580911"
+    },
+    {
+      "name": "activate_grow_cycle",
+      "status": "passed",
+      "duration": 0.001020669937133789,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "activate_grow_cycle",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:30:46.581966"
+    },
+    {
+      "name": "apply_cycle_start_snapshot",
+      "status": "passed",
+      "duration": 0.18055462837219238,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "apply_cycle_start_snapshot",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:30:46.762563"
+    },
+    {
+      "name": "apply_cycle_phase_overrides_first",
+      "status": "passed",
+      "duration": 0.1901111602783203,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "apply_cycle_phase_overrides_first",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:30:46.952804"
+    },
+    {
+      "name": "wait_grow_cycle_bundle_ready_first",
+      "status": "passed",
+      "duration": 0.001537322998046875,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_grow_cycle_bundle_ready_first",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:30:46.954414"
+    },
+    {
+      "name": "wait_impossible_recirculation_targets_applied_first",
+      "status": "passed",
+      "duration": 2.0021145343780518,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_impossible_recirculation_targets_applied_first",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:30:48.956546"
+    },
+    {
+      "name": "reset_test_node_state",
+      "status": "passed",
+      "duration": 0.23272275924682617,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "reset_test_node_state",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:30:49.189351"
+    },
+    {
+      "name": "wait_reset_state_done",
+      "status": "passed",
+      "duration": 0.37295079231262207,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_reset_state_done",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:30:49.562365"
+    },
+    {
+      "name": "reset_test_node_state_confirm",
+      "status": "passed",
+      "duration": 0.2498931884765625,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "reset_test_node_state_confirm",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:30:49.812333"
+    },
+    {
+      "name": "wait_reset_state_done_confirm",
+      "status": "passed",
+      "duration": 0.4226644039154053,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_reset_state_done_confirm",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:30:50.235065"
+    },
+    {
+      "name": "wait_zero_level_telemetry",
+      "status": "passed",
+      "duration": 0.0017533302307128906,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_zero_level_telemetry",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:30:50.236930"
+    },
+    {
+      "name": "insert_scheduler_like_intent",
+      "status": "passed",
+      "duration": 0.0013284683227539062,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "insert_scheduler_like_intent",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:30:50.238318"
+    },
+    {
+      "name": "start_cycle_http",
+      "status": "passed",
+      "duration": 0.04715156555175781,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "start_cycle_http",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:30:50.285562"
+    },
+    {
+      "name": "set_task_id",
+      "status": "passed",
+      "duration": 4.5299530029296875e-06,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "set_task_id",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:30:50.285618"
+    },
+    {
+      "name": "wait_ae_command_accepted",
+      "status": "passed",
+      "duration": 0.4047276973724365,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_ae_command_accepted",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:30:50.690435"
+    },
+    {
+      "name": "wait_startup_commands_published",
+      "status": "passed",
+      "duration": 2.7253024578094482,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_startup_commands_published",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:30:53.415798"
+    },
+    {
+      "name": "wait_runtime_irr_state_snapshot",
+      "status": "passed",
+      "duration": 0.0209503173828125,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_runtime_irr_state_snapshot",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:30:53.436830"
+    },
+    {
+      "name": "wait_task_pending_clean_fill_check",
+      "status": "passed",
+      "duration": 0.5056273937225342,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_task_pending_clean_fill_check",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:30:53.942523"
+    },
+    {
+      "name": "wait_workflow_tank_filling",
+      "status": "passed",
+      "duration": 0.0011935234069824219,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_workflow_tank_filling",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:30:53.943777"
+    },
+    {
+      "name": "force_clean_tank_full",
+      "status": "passed",
+      "duration": 0.22903227806091309,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "force_clean_tank_full",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:30:54.172876"
+    },
+    {
+      "name": "wait_force_clean_tank_full_done",
+      "status": "passed",
+      "duration": 0.61873459815979,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_force_clean_tank_full_done",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:30:54.791680"
+    },
+    {
+      "name": "wait_clean_tank_full_telemetry",
+      "status": "passed",
+      "duration": 0.0014576911926269531,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_clean_tank_full_telemetry",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:30:54.793199"
+    },
+    {
+      "name": "load_task_after_clean_override",
+      "status": "passed",
+      "duration": 0.00041222572326660156,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "load_task_after_clean_override",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:30:54.793660"
+    },
+    {
+      "name": "wait_solution_fill_stage",
+      "status": "passed",
+      "duration": 24.765601634979248,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_solution_fill_stage",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:31:19.559310"
+    },
+    {
+      "name": "wait_solution_fill_commands",
+      "status": "passed",
+      "duration": 0.0012726783752441406,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_solution_fill_commands",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:31:19.560649"
+    },
+    {
+      "name": "wait_ph_ec_telemetry_available",
+      "status": "passed",
+      "duration": 0.0012607574462890625,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_ph_ec_telemetry_available",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:31:19.561964"
+    },
+    {
+      "name": "force_solution_tank_full",
+      "status": "passed",
+      "duration": 0.22954034805297852,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "force_solution_tank_full",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:31:19.791594"
+    },
+    {
+      "name": "wait_force_solution_tank_full_done",
+      "status": "passed",
+      "duration": 0.7161986827850342,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_force_solution_tank_full_done",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:31:20.507870"
+    },
+    {
+      "name": "seed_solution_fill_sensor_baseline",
+      "status": "passed",
+      "duration": 0.2322397232055664,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "seed_solution_fill_sensor_baseline",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:31:20.740231"
+    },
+    {
+      "name": "wait_seed_solution_fill_sensor_baseline_done",
+      "status": "passed",
+      "duration": 0.4270663261413574,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_seed_solution_fill_sensor_baseline_done",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:31:21.167381"
+    },
+    {
+      "name": "wait_fill_ec_correction_command",
+      "status": "passed",
+      "duration": 9.761628150939941,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_fill_ec_correction_command",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:31:30.929076"
+    },
+    {
+      "name": "load_fill_ph_correction_commands_if_any",
+      "status": "passed",
+      "duration": 0.0005896091461181641,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "load_fill_ph_correction_commands_if_any",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:31:30.929740"
+    },
+    {
+      "name": "complete_solution_fill_after_ec_correction",
+      "status": "passed",
+      "duration": 0.24981451034545898,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "complete_solution_fill_after_ec_correction",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:31:31.179623"
+    },
+    {
+      "name": "wait_complete_solution_fill_after_ec_correction_done",
+      "status": "passed",
+      "duration": 1.535522699356079,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_complete_solution_fill_after_ec_correction_done",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:31:32.715226"
+    },
+    {
+      "name": "wait_prepare_recirculation_stage",
+      "status": "passed",
+      "duration": 8.655960083007812,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_prepare_recirculation_stage",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:31:41.371266"
+    },
+    {
+      "name": "wait_prepare_recirculation_commands",
+      "status": "passed",
+      "duration": 0.0012869834899902344,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_prepare_recirculation_commands",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:31:41.372645"
+    },
+    {
+      "name": "wait_task_failed_retry_limit_first",
+      "status": "passed",
+      "duration": 113.07294297218323,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_task_failed_retry_limit_first",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:33:34.445650"
+    },
+    {
+      "name": "load_retry_limit_alert_first",
+      "status": "passed",
+      "duration": 0.0007479190826416016,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "load_retry_limit_alert_first",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:33:34.446474"
+    },
+    {
+      "name": "load_recirc_command_counts_first",
+      "status": "passed",
+      "duration": 0.0010569095611572266,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "load_recirc_command_counts_first",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:33:34.447605"
+    },
+    {
+      "name": "load_runtime_reset_commands_first",
+      "status": "passed",
+      "duration": 0.0003695487976074219,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "load_runtime_reset_commands_first",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:33:34.448028"
+    },
+    {
+      "name": "restore_normal_targets_after_first_failure",
+      "status": "passed",
+      "duration": 0.19176173210144043,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "restore_normal_targets_after_first_failure",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:33:34.639834"
+    },
+    {
+      "name": "wait_grow_cycle_bundle_restored_after_first_failure",
+      "status": "passed",
+      "duration": 0.0008685588836669922,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_grow_cycle_bundle_restored_after_first_failure",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:33:34.640778"
+    },
+    {
+      "name": "ack_retry_limit_alert_first",
+      "status": "passed",
+      "duration": 0.20982122421264648,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "ack_retry_limit_alert_first",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:33:34.850668"
+    },
+    {
+      "name": "wait_retry_limit_alert_first_resolved",
+      "status": "passed",
+      "duration": 0.0008575916290283203,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_retry_limit_alert_first_resolved",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:33:34.851603"
+    },
+    {
+      "name": "soften_correction_config_for_second_run",
+      "status": "passed",
+      "duration": 0.2852962017059326,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "soften_correction_config_for_second_run",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:33:35.137962"
+    },
+    {
+      "name": "wait_soften_correction_config_second_run",
+      "status": "passed",
+      "duration": 2.0013108253479004,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_soften_correction_config_second_run",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:33:37.139311"
+    },
+    {
+      "name": "reset_test_node_state_second_run",
+      "status": "passed",
+      "duration": 0.22232604026794434,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "reset_test_node_state_second_run",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:33:37.361723"
+    },
+    {
+      "name": "wait_reset_state_second_run_done",
+      "status": "passed",
+      "duration": 0.8435695171356201,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_reset_state_second_run_done",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:33:38.205360"
+    },
+    {
+      "name": "wait_zero_level_telemetry_second_run",
+      "status": "passed",
+      "duration": 0.0011997222900390625,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_zero_level_telemetry_second_run",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:33:38.206628"
+    },
+    {
+      "name": "force_pump_main_off_second_run",
+      "status": "passed",
+      "duration": 0.2279796600341797,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "force_pump_main_off_second_run",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:33:38.434667"
+    },
+    {
+      "name": "wait_force_pump_main_off_second_run_done",
+      "status": "passed",
+      "duration": 0.3137683868408203,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_force_pump_main_off_second_run_done",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:33:38.748520"
+    },
+    {
+      "name": "probe_state_after_reset_second_run",
+      "status": "passed",
+      "duration": 0.21197772026062012,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "probe_state_after_reset_second_run",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:33:38.960573"
+    },
+    {
+      "name": "wait_probe_state_after_reset_second_run_done",
+      "status": "passed",
+      "duration": 2.14220929145813,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_probe_state_after_reset_second_run_done",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:33:41.102861"
+    },
+    {
+      "name": "wait_runtime_irr_state_snapshot_after_reset_second_run",
+      "status": "passed",
+      "duration": 0.004698991775512695,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_runtime_irr_state_snapshot_after_reset_second_run",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:33:41.107641"
+    },
+    {
+      "name": "complete_existing_cycles_second_run",
+      "status": "passed",
+      "duration": 0.0009467601776123047,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "complete_existing_cycles_second_run",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:33:41.108630"
+    },
+    {
+      "name": "wait_zone_ae_runtime_idle_before_second_cleanup",
+      "status": "passed",
+      "duration": 0.0013713836669921875,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_zone_ae_runtime_idle_before_second_cleanup",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:33:41.110047"
+    },
+    {
+      "name": "cleanup_zone_ae_commands_second_run",
+      "status": "passed",
+      "duration": 0.0014462471008300781,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "cleanup_zone_ae_commands_second_run",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:33:41.111526"
+    },
+    {
+      "name": "cleanup_zone_ae_tasks_second_run",
+      "status": "passed",
+      "duration": 0.002508401870727539,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "cleanup_zone_ae_tasks_second_run",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:33:41.114069"
+    },
+    {
+      "name": "cleanup_zone_ae_leases_second_run",
+      "status": "passed",
+      "duration": 0.0003514289855957031,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "cleanup_zone_ae_leases_second_run",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:33:41.114471"
+    },
+    {
+      "name": "cleanup_zone_workflow_state_second_run",
+      "status": "passed",
+      "duration": 0.0010116100311279297,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "cleanup_zone_workflow_state_second_run",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:33:41.115518"
+    },
+    {
+      "name": "cleanup_zone_pid_state_second_run",
+      "status": "passed",
+      "duration": 0.0006983280181884766,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "cleanup_zone_pid_state_second_run",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:33:41.116258"
+    },
+    {
+      "name": "create_grow_cycle_second",
+      "status": "passed",
+      "duration": 0.0015759468078613281,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "create_grow_cycle_second",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:33:41.117885"
+    },
+    {
+      "name": "load_grow_cycle_second",
+      "status": "passed",
+      "duration": 0.00040650367736816406,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "load_grow_cycle_second",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:33:41.118348"
+    },
+    {
+      "name": "set_grow_cycle_id_second",
+      "status": "passed",
+      "duration": 2.86102294921875e-06,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "set_grow_cycle_id_second",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:33:41.118377"
+    },
+    {
+      "name": "create_phase_second",
+      "status": "passed",
+      "duration": 0.0010297298431396484,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "create_phase_second",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:33:41.119494"
+    },
+    {
+      "name": "load_phase_second",
+      "status": "passed",
+      "duration": 0.0003561973571777344,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "load_phase_second",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:33:41.119897"
+    },
+    {
+      "name": "set_phase_id_second",
+      "status": "passed",
+      "duration": 3.5762786865234375e-06,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "set_phase_id_second",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:33:41.119928"
+    },
+    {
+      "name": "activate_grow_cycle_second",
+      "status": "passed",
+      "duration": 0.0008881092071533203,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "activate_grow_cycle_second",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:33:41.120850"
+    },
+    {
+      "name": "apply_cycle_start_snapshot_second",
+      "status": "passed",
+      "duration": 0.1823596954345703,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "apply_cycle_start_snapshot_second",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:33:41.303266"
+    },
+    {
+      "name": "apply_cycle_phase_overrides_second",
+      "status": "passed",
+      "duration": 0.1873626708984375,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "apply_cycle_phase_overrides_second",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:33:41.490768"
+    },
+    {
+      "name": "wait_grow_cycle_bundle_ready_second",
+      "status": "passed",
+      "duration": 0.0011229515075683594,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_grow_cycle_bundle_ready_second",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:33:41.491970"
+    },
+    {
+      "name": "insert_scheduler_like_intent_second",
+      "status": "passed",
+      "duration": 0.0012042522430419922,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "insert_scheduler_like_intent_second",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:33:41.493270"
+    },
+    {
+      "name": "start_cycle_http_second",
+      "status": "passed",
+      "duration": 0.04364752769470215,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "start_cycle_http_second",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:33:41.537043"
+    },
+    {
+      "name": "set_task_id_second",
+      "status": "passed",
+      "duration": 4.5299530029296875e-06,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "set_task_id_second",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:33:41.537098"
+    },
+    {
+      "name": "wait_solution_fill_stage_second",
+      "status": "passed",
+      "duration": 36.12266254425049,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_solution_fill_stage_second",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:34:17.659811"
+    },
+    {
+      "name": "force_solution_tank_full_second",
+      "status": "passed",
+      "duration": 0.2792043685913086,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "force_solution_tank_full_second",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:34:17.939095"
+    },
+    {
+      "name": "wait_force_solution_tank_full_second_done",
+      "status": "passed",
+      "duration": 0.41406726837158203,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_force_solution_tank_full_second_done",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:34:18.353256"
+    },
+    {
+      "name": "seed_solution_fill_sensor_baseline_second",
+      "status": "passed",
+      "duration": 0.27616453170776367,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "seed_solution_fill_sensor_baseline_second",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:34:18.629519"
+    },
+    {
+      "name": "wait_seed_solution_fill_sensor_baseline_second_done",
+      "status": "passed",
+      "duration": 0.3076589107513428,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_seed_solution_fill_sensor_baseline_second_done",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:34:18.937260"
+    },
+    {
+      "name": "wait_fill_ec_correction_command_second",
+      "status": "passed",
+      "duration": 0.20258498191833496,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_fill_ec_correction_command_second",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:34:19.139923"
+    },
+    {
+      "name": "load_fill_ph_correction_commands_if_any_second",
+      "status": "passed",
+      "duration": 0.0005674362182617188,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "load_fill_ph_correction_commands_if_any_second",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:34:19.140551"
+    },
+    {
+      "name": "complete_solution_fill_after_ec_correction_second",
+      "status": "passed",
+      "duration": 0.23699331283569336,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "complete_solution_fill_after_ec_correction_second",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:34:19.377617"
+    },
+    {
+      "name": "wait_complete_solution_fill_after_ec_correction_second_done",
+      "status": "passed",
+      "duration": 1.6330597400665283,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_complete_solution_fill_after_ec_correction_second_done",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:34:21.010749"
+    },
+    {
+      "name": "wait_prepare_recirculation_stage_second",
+      "status": "passed",
+      "duration": 7.747732639312744,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_prepare_recirculation_stage_second",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:34:28.758568"
+    },
+    {
+      "name": "force_recirculation_low_targets_for_correction_second",
+      "status": "passed",
+      "duration": 0.23448967933654785,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "force_recirculation_low_targets_for_correction_second",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:34:28.993139"
+    },
+    {
+      "name": "wait_force_recirculation_low_targets_second_done",
+      "status": "passed",
+      "duration": 0.6167571544647217,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_force_recirculation_low_targets_second_done",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:34:29.609961"
+    },
+    {
+      "name": "wait_recirculation_ec_correction_command_second",
+      "status": "passed",
+      "duration": 8.762397289276123,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_recirculation_ec_correction_command_second",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:34:38.372446"
+    },
+    {
+      "name": "load_recirculation_ph_correction_command_count_second",
+      "status": "passed",
+      "duration": 0.0005018711090087891,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "load_recirculation_ph_correction_command_count_second",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:34:38.373017"
+    },
+    {
+      "name": "force_recirculation_near_target_band_second",
+      "status": "passed",
+      "duration": 0.2679760456085205,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "force_recirculation_near_target_band_second",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:34:38.641056"
+    },
+    {
+      "name": "wait_force_recirculation_near_target_second_done",
+      "status": "passed",
+      "duration": 2.3420724868774414,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_force_recirculation_near_target_second_done",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:34:40.983207"
+    },
+    {
+      "name": "wait_recirculation_window_back_to_check_second",
+      "status": "passed",
+      "duration": 6.74241828918457,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_recirculation_window_back_to_check_second",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:34:47.725720"
+    },
+    {
+      "name": "wait_task_completed_second",
+      "status": "passed",
+      "duration": 317.1804621219635,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_task_completed_second",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:40:04.906264"
+    },
+    {
+      "name": "wait_workflow_ready_second",
+      "status": "passed",
+      "duration": 0.0007939338684082031,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_workflow_ready_second",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:40:04.907119"
+    },
+    {
+      "name": "force_near_target_before_second_samples_assert",
+      "status": "passed",
+      "duration": 0.21745991706848145,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "force_near_target_before_second_samples_assert",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:40:05.124639"
+    },
+    {
+      "name": "wait_force_near_target_before_second_samples_done",
+      "status": "passed",
+      "duration": 0.4148743152618408,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_force_near_target_before_second_samples_done",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:40:05.539594"
+    },
+    {
+      "name": "load_targets_reached_from_samples_second",
+      "status": "passed",
+      "duration": 0.003958463668823242,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "load_targets_reached_from_samples_second",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:40:05.543703"
+    },
+    {
+      "name": "load_recirc_command_counts_second",
+      "status": "passed",
+      "duration": 0.001226663589477539,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "load_recirc_command_counts_second",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:40:05.545026"
+    },
+    {
+      "name": "load_runtime_reset_commands_second",
+      "status": "passed",
+      "duration": 0.00037932395935058594,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "load_runtime_reset_commands_second",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:40:05.545452"
+    },
+    {
+      "name": "first_task_failed_by_retry_limit",
+      "status": "passed",
+      "duration": 8.7738037109375e-05,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "first_task_failed_by_retry_limit",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:40:05.545551"
+    },
+    {
+      "name": "first_alert_active",
+      "status": "passed",
+      "duration": 4.458427429199219e-05,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "first_alert_active",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:40:05.545602"
+    },
+    {
+      "name": "first_alert_retry_count_is_3",
+      "status": "passed",
+      "duration": 7.581710815429688e-05,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "first_alert_retry_count_is_3",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:40:05.545682"
+    },
+    {
+      "name": "first_recirc_commands_attempted_three_times",
+      "status": "passed",
+      "duration": 5.14984130859375e-05,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "first_recirc_commands_attempted_three_times",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:40:05.545737"
+    },
+    {
+      "name": "first_runtime_never_resets_node_during_task",
+      "status": "passed",
+      "duration": 3.123283386230469e-05,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "first_runtime_never_resets_node_during_task",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:40:05.545772"
+    },
+    {
+      "name": "first_alert_ack_http_200",
+      "status": "passed",
+      "duration": 2.5987625122070312e-05,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "first_alert_ack_http_200",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:40:05.545801"
+    },
+    {
+      "name": "first_alert_resolved",
+      "status": "passed",
+      "duration": 3.314018249511719e-05,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "first_alert_resolved",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:40:05.545838"
+    },
+    {
+      "name": "second_start_cycle_http_200",
+      "status": "passed",
+      "duration": 2.47955322265625e-05,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "second_start_cycle_http_200",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:40:05.545866"
+    },
+    {
+      "name": "second_prepare_recirculation_stage_reached",
+      "status": "passed",
+      "duration": 6.0558319091796875e-05,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "second_prepare_recirculation_stage_reached",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:40:05.545930"
+    },
+    {
+      "name": "second_targets_reached",
+      "status": "passed",
+      "duration": 2.3126602172851562e-05,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "second_targets_reached",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:40:05.545957"
+    },
+    {
+      "name": "second_recirc_commands_attempted_three_times",
+      "status": "passed",
+      "duration": 4.4345855712890625e-05,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "second_recirc_commands_attempted_three_times",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:40:05.546005"
+    },
+    {
+      "name": "second_recirc_ph_count_loaded",
+      "status": "passed",
+      "duration": 2.8848648071289062e-05,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "second_recirc_ph_count_loaded",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:40:05.546037"
+    },
+    {
+      "name": "second_runtime_never_resets_node_during_task",
+      "status": "passed",
+      "duration": 2.6464462280273438e-05,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "second_runtime_never_resets_node_during_task",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:40:05.546067"
+    },
+    {
+      "name": "second_task_completed",
+      "status": "passed",
+      "duration": 2.9325485229492188e-05,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "second_task_completed",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:40:05.546100"
+    },
+    {
+      "name": "second_workflow_ready",
+      "status": "passed",
+      "duration": 2.9802322387695312e-05,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "second_workflow_ready",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-10-05T01:40:05.546133"
     }
   ],
   "timeline": [],
   "artifacts": {
-    "E12_command_timeout": {
-      "ws_messages": [
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":1,\"updates\":[{\"node_id\":7,\"channel\":\"ph_sensor\",\"metric_type\":\"PH\",\"value\":6,\"ts\":1777396699000},{\"node_id\":7,\"channel\":\"ec_sensor\",\"metric_type\":\"EC\",\"value\":1.5,\"ts\":1777396699000},{\"node_id\":7,\"channel\":\"solution_temp_c\",\"metric_type\":\"TEMPERATURE\",\"value\":20,\"ts\":1777396699000},{\"node_id\":7,\"channel\":\"air_temp_c\",\"metric_type\":\"TEMPERATURE\",\"value\":22,\"ts\":1777396699000},{\"node_id\":7,\"channel\":\"air_rh\",\"metric_type\":\"HUMIDITY\",\"value\":60,\"ts\":1777396699000},{\"node_id\":7,\"channel\":\"pump_bus_current\",\"metric_type\":\"PUMP_CURRENT\",\"value\":50,\"ts\":1777396699000},{\"node_id\":7,\"channel\":\"flow_present\",\"metric_type\":\"FLOW_RATE\",\"value\":0,\"ts\":1777396699000}],\"event_id\":1777396700000000856,\"server_ts\":1777396700000}",
-            "channel": "private-hydro.zones.1"
-          },
-          "timestamp": "2026-04-28T20:18:25.850331"
-        },
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":1,\"updates\":[{\"node_id\":1,\"channel\":\"level_clean_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396700000},{\"node_id\":1,\"channel\":\"level_clean_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396700000},{\"node_id\":1,\"channel\":\"level_solution_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396700000},{\"node_id\":1,\"channel\":\"level_solution_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396700000}],\"event_id\":1777396701000000857,\"server_ts\":1777396701000}",
-            "channel": "private-hydro.zones.1"
-          },
-          "timestamp": "2026-04-28T20:18:25.850352"
-        },
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":1,\"updates\":[{\"node_id\":1,\"channel\":\"level_clean_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396702000},{\"node_id\":1,\"channel\":\"level_clean_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396702000},{\"node_id\":1,\"channel\":\"level_solution_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396702000},{\"node_id\":1,\"channel\":\"level_solution_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396702000}],\"event_id\":1777396703000000858,\"server_ts\":1777396703000}",
-            "channel": "private-hydro.zones.1"
-          },
-          "timestamp": "2026-04-28T20:18:25.850368"
-        },
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":1,\"updates\":[{\"node_id\":7,\"channel\":\"ph_sensor\",\"metric_type\":\"PH\",\"value\":6,\"ts\":1777396704000},{\"node_id\":7,\"channel\":\"ec_sensor\",\"metric_type\":\"EC\",\"value\":1.5,\"ts\":1777396704000},{\"node_id\":7,\"channel\":\"solution_temp_c\",\"metric_type\":\"TEMPERATURE\",\"value\":20,\"ts\":1777396704000},{\"node_id\":7,\"channel\":\"air_temp_c\",\"metric_type\":\"TEMPERATURE\",\"value\":22,\"ts\":1777396704000},{\"node_id\":7,\"channel\":\"air_rh\",\"metric_type\":\"HUMIDITY\",\"value\":60,\"ts\":1777396704000},{\"node_id\":7,\"channel\":\"pump_bus_current\",\"metric_type\":\"PUMP_CURRENT\",\"value\":50,\"ts\":1777396704000},{\"node_id\":7,\"channel\":\"flow_present\",\"metric_type\":\"FLOW_RATE\",\"value\":0,\"ts\":1777396704000},{\"node_id\":1,\"channel\":\"level_clean_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396704000},{\"node_id\":1,\"channel\":\"level_clean_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396704000},{\"node_id\":1,\"channel\":\"level_solution_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396704000},{\"node_id\":1,\"channel\":\"level_solution_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396704000}],\"event_id\":1777396705000000859,\"server_ts\":1777396705000}",
-            "channel": "private-hydro.zones.1"
-          },
-          "timestamp": "2026-04-28T20:18:25.850387"
-        },
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":1,\"updates\":[{\"node_id\":1,\"channel\":\"level_clean_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396706000},{\"node_id\":1,\"channel\":\"level_clean_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396706000},{\"node_id\":1,\"channel\":\"level_solution_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396706000},{\"node_id\":1,\"channel\":\"level_solution_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396706000}],\"event_id\":1777396707000000862,\"server_ts\":1777396707000}",
-            "channel": "private-hydro.zones.1"
-          },
-          "timestamp": "2026-04-28T20:18:27.324267"
-        },
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":1,\"updates\":[{\"node_id\":1,\"channel\":\"level_clean_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396708000},{\"node_id\":1,\"channel\":\"level_clean_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396708000},{\"node_id\":1,\"channel\":\"level_solution_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396708000},{\"node_id\":1,\"channel\":\"level_solution_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396708000}],\"event_id\":1777396709000000863,\"server_ts\":1777396709000}",
-            "channel": "private-hydro.zones.1"
-          },
-          "timestamp": "2026-04-28T20:18:29.479944"
-        },
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":1,\"updates\":[{\"node_id\":1,\"channel\":\"level_clean_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396710000},{\"node_id\":1,\"channel\":\"level_clean_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396710000},{\"node_id\":1,\"channel\":\"level_solution_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396710000},{\"node_id\":1,\"channel\":\"level_solution_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396710000}],\"event_id\":1777396711000000864,\"server_ts\":1777396711000}",
-            "channel": "private-hydro.zones.1"
-          },
-          "timestamp": "2026-04-28T20:18:31.641991"
-        },
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":1,\"updates\":[{\"node_id\":1,\"channel\":\"level_clean_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396712000},{\"node_id\":1,\"channel\":\"level_clean_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396712000},{\"node_id\":1,\"channel\":\"level_solution_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396712000},{\"node_id\":1,\"channel\":\"level_solution_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396712000}],\"event_id\":1777396713000000865,\"server_ts\":1777396713000}",
-            "channel": "private-hydro.zones.1"
-          },
-          "timestamp": "2026-04-28T20:18:33.306382"
-        },
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":1,\"updates\":[{\"node_id\":1,\"channel\":\"level_clean_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396714000},{\"node_id\":1,\"channel\":\"level_clean_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396714000},{\"node_id\":1,\"channel\":\"level_solution_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396714000},{\"node_id\":1,\"channel\":\"level_solution_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396714000}],\"event_id\":1777396715000000866,\"server_ts\":1777396715000}",
-            "channel": "private-hydro.zones.1"
-          },
-          "timestamp": "2026-04-28T20:18:35.460540"
-        },
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":1,\"updates\":[{\"node_id\":1,\"channel\":\"level_clean_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396716000},{\"node_id\":1,\"channel\":\"level_clean_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396716000},{\"node_id\":1,\"channel\":\"level_solution_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396716000},{\"node_id\":1,\"channel\":\"level_solution_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396716000}],\"event_id\":1777396717000000867,\"server_ts\":1777396717000}",
-            "channel": "private-hydro.zones.1"
-          },
-          "timestamp": "2026-04-28T20:18:37.612700"
-        },
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":1,\"updates\":[{\"node_id\":1,\"channel\":\"level_clean_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396718000},{\"node_id\":1,\"channel\":\"level_clean_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396718000}],\"event_id\":1777396719000000868,\"server_ts\":1777396719000}",
-            "channel": "private-hydro.zones.1"
-          },
-          "timestamp": "2026-04-28T20:18:39.277244"
-        },
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":1,\"updates\":[{\"node_id\":1,\"channel\":\"level_solution_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396718000},{\"node_id\":1,\"channel\":\"level_solution_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396718000}],\"event_id\":1777396719000000869,\"server_ts\":1777396719000}",
-            "channel": "private-hydro.zones.1"
-          },
-          "timestamp": "2026-04-28T20:18:39.929022"
-        },
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":1,\"updates\":[{\"node_id\":1,\"channel\":\"level_clean_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396720000},{\"node_id\":1,\"channel\":\"level_clean_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396720000},{\"node_id\":1,\"channel\":\"level_solution_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396720000},{\"node_id\":1,\"channel\":\"level_solution_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396720000}],\"event_id\":1777396721000000870,\"server_ts\":1777396721000}",
-            "channel": "private-hydro.zones.1"
-          },
-          "timestamp": "2026-04-28T20:18:41.587863"
-        },
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":1,\"updates\":[{\"node_id\":1,\"channel\":\"level_clean_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396722000},{\"node_id\":1,\"channel\":\"level_clean_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396722000},{\"node_id\":1,\"channel\":\"level_solution_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396722000},{\"node_id\":1,\"channel\":\"level_solution_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396722000}],\"event_id\":1777396723000000871,\"server_ts\":1777396723000}",
-            "channel": "private-hydro.zones.1"
-          },
-          "timestamp": "2026-04-28T20:18:43.239792"
-        },
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":1,\"updates\":[{\"node_id\":1,\"channel\":\"level_clean_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396724000},{\"node_id\":1,\"channel\":\"level_clean_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396724000},{\"node_id\":1,\"channel\":\"level_solution_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396724000},{\"node_id\":1,\"channel\":\"level_solution_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396724000}],\"event_id\":1777396725000000872,\"server_ts\":1777396725000}",
-            "channel": "private-hydro.zones.1"
-          },
-          "timestamp": "2026-04-28T20:18:45.405520"
-        },
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":1,\"updates\":[{\"node_id\":1,\"channel\":\"level_clean_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396726000},{\"node_id\":1,\"channel\":\"level_clean_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396726000},{\"node_id\":1,\"channel\":\"level_solution_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396726000},{\"node_id\":1,\"channel\":\"level_solution_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396726000}],\"event_id\":1777396727000000873,\"server_ts\":1777396727000}",
-            "channel": "private-hydro.zones.1"
-          },
-          "timestamp": "2026-04-28T20:18:47.568075"
-        },
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":1,\"updates\":[{\"node_id\":1,\"channel\":\"level_clean_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396728000},{\"node_id\":1,\"channel\":\"level_clean_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396728000},{\"node_id\":1,\"channel\":\"level_solution_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396728000},{\"node_id\":1,\"channel\":\"level_solution_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396728000}],\"event_id\":1777396729000000874,\"server_ts\":1777396729000}",
-            "channel": "private-hydro.zones.1"
-          },
-          "timestamp": "2026-04-28T20:18:49.225227"
-        },
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":1,\"updates\":[{\"node_id\":1,\"channel\":\"level_clean_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396730000},{\"node_id\":1,\"channel\":\"level_clean_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396730000},{\"node_id\":1,\"channel\":\"level_solution_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396730000},{\"node_id\":1,\"channel\":\"level_solution_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396730000}],\"event_id\":1777396731000000875,\"server_ts\":1777396731000}",
-            "channel": "private-hydro.zones.1"
-          },
-          "timestamp": "2026-04-28T20:18:51.379115"
-        },
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":1,\"updates\":[{\"node_id\":1,\"channel\":\"level_clean_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396732000},{\"node_id\":1,\"channel\":\"level_clean_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396732000},{\"node_id\":1,\"channel\":\"level_solution_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396732000},{\"node_id\":1,\"channel\":\"level_solution_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396732000}],\"event_id\":1777396733000000876,\"server_ts\":1777396733000}",
-            "channel": "private-hydro.zones.1"
-          },
-          "timestamp": "2026-04-28T20:18:53.536262"
-        },
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":1,\"updates\":[{\"node_id\":1,\"channel\":\"level_clean_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396734000},{\"node_id\":1,\"channel\":\"level_clean_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396734000},{\"node_id\":1,\"channel\":\"level_solution_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396734000},{\"node_id\":1,\"channel\":\"level_solution_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396734000}],\"event_id\":1777396735000000877,\"server_ts\":1777396735000}",
-            "channel": "private-hydro.zones.1"
-          },
-          "timestamp": "2026-04-28T20:18:55.191176"
-        },
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":1,\"updates\":[{\"node_id\":1,\"channel\":\"level_clean_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396736000},{\"node_id\":1,\"channel\":\"level_clean_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396736000},{\"node_id\":1,\"channel\":\"level_solution_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396736000},{\"node_id\":1,\"channel\":\"level_solution_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396736000}],\"event_id\":1777396737000000878,\"server_ts\":1777396737000}",
-            "channel": "private-hydro.zones.1"
-          },
-          "timestamp": "2026-04-28T20:18:57.342021"
-        },
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":1,\"updates\":[{\"node_id\":1,\"channel\":\"level_clean_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396738000},{\"node_id\":1,\"channel\":\"level_clean_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396738000},{\"node_id\":1,\"channel\":\"level_solution_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396738000},{\"node_id\":1,\"channel\":\"level_solution_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396738000}],\"event_id\":1777396739000000879,\"server_ts\":1777396739000}",
-            "channel": "private-hydro.zones.1"
-          },
-          "timestamp": "2026-04-28T20:18:59.497475"
-        },
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":1,\"updates\":[{\"node_id\":1,\"channel\":\"level_clean_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396740000},{\"node_id\":1,\"channel\":\"level_clean_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396740000},{\"node_id\":1,\"channel\":\"level_solution_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396740000},{\"node_id\":1,\"channel\":\"level_solution_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396740000}],\"event_id\":1777396741000000880,\"server_ts\":1777396741000}",
-            "channel": "private-hydro.zones.1"
-          },
-          "timestamp": "2026-04-28T20:19:01.646893"
-        },
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":1,\"updates\":[{\"node_id\":1,\"channel\":\"level_clean_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396742000},{\"node_id\":1,\"channel\":\"level_clean_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396742000},{\"node_id\":1,\"channel\":\"level_solution_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396742000},{\"node_id\":1,\"channel\":\"level_solution_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396742000}],\"event_id\":1777396743000000881,\"server_ts\":1777396743000}",
-            "channel": "private-hydro.zones.1"
-          },
-          "timestamp": "2026-04-28T20:19:03.299302"
-        },
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":1,\"updates\":[{\"node_id\":1,\"channel\":\"level_clean_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396744000},{\"node_id\":1,\"channel\":\"level_clean_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396744000},{\"node_id\":1,\"channel\":\"level_solution_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396744000},{\"node_id\":1,\"channel\":\"level_solution_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396744000}],\"event_id\":1777396745000000882,\"server_ts\":1777396745000}",
-            "channel": "private-hydro.zones.1"
-          },
-          "timestamp": "2026-04-28T20:19:05.457630"
-        },
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":1,\"updates\":[{\"node_id\":1,\"channel\":\"level_clean_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396746000},{\"node_id\":1,\"channel\":\"level_clean_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396746000},{\"node_id\":1,\"channel\":\"level_solution_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396746000},{\"node_id\":1,\"channel\":\"level_solution_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396746000}],\"event_id\":1777396747000000883,\"server_ts\":1777396747000}",
-            "channel": "private-hydro.zones.1"
-          },
-          "timestamp": "2026-04-28T20:19:07.608149"
-        },
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":1,\"updates\":[{\"node_id\":1,\"channel\":\"level_clean_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396749000},{\"node_id\":1,\"channel\":\"level_clean_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396749000},{\"node_id\":1,\"channel\":\"level_solution_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396749000},{\"node_id\":1,\"channel\":\"level_solution_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396749000}],\"event_id\":1777396749000000884,\"server_ts\":1777396749000}",
-            "channel": "private-hydro.zones.1"
-          },
-          "timestamp": "2026-04-28T20:19:09.317945"
-        },
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":1,\"updates\":[{\"node_id\":1,\"channel\":\"level_clean_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396751000},{\"node_id\":1,\"channel\":\"level_clean_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396751000},{\"node_id\":1,\"channel\":\"level_solution_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396751000},{\"node_id\":1,\"channel\":\"level_solution_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396751000}],\"event_id\":1777396751000000885,\"server_ts\":1777396751000}",
-            "channel": "private-hydro.zones.1"
-          },
-          "timestamp": "2026-04-28T20:19:11.470746"
-        },
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":1,\"updates\":[{\"node_id\":1,\"channel\":\"level_clean_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396753000},{\"node_id\":1,\"channel\":\"level_clean_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396753000},{\"node_id\":1,\"channel\":\"level_solution_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396753000},{\"node_id\":1,\"channel\":\"level_solution_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396753000}],\"event_id\":1777396753000000886,\"server_ts\":1777396753000}",
-            "channel": "private-hydro.zones.1"
-          },
-          "timestamp": "2026-04-28T20:19:13.634884"
-        },
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":1,\"updates\":[{\"node_id\":1,\"channel\":\"level_clean_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396755000},{\"node_id\":1,\"channel\":\"level_clean_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396755000},{\"node_id\":1,\"channel\":\"level_solution_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396755000},{\"node_id\":1,\"channel\":\"level_solution_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396755000}],\"event_id\":1777396755000000887,\"server_ts\":1777396755000}",
-            "channel": "private-hydro.zones.1"
-          },
-          "timestamp": "2026-04-28T20:19:15.297899"
-        },
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":1,\"updates\":[{\"node_id\":1,\"channel\":\"level_clean_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396757000},{\"node_id\":1,\"channel\":\"level_clean_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396757000},{\"node_id\":1,\"channel\":\"level_solution_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396757000},{\"node_id\":1,\"channel\":\"level_solution_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396757000}],\"event_id\":1777396757000000888,\"server_ts\":1777396757000}",
-            "channel": "private-hydro.zones.1"
-          },
-          "timestamp": "2026-04-28T20:19:17.454125"
-        },
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":1,\"updates\":[{\"node_id\":1,\"channel\":\"level_clean_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396759000},{\"node_id\":1,\"channel\":\"level_clean_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396759000},{\"node_id\":1,\"channel\":\"level_solution_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396759000},{\"node_id\":1,\"channel\":\"level_solution_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396759000}],\"event_id\":1777396759000000889,\"server_ts\":1777396759000}",
-            "channel": "private-hydro.zones.1"
-          },
-          "timestamp": "2026-04-28T20:19:19.612630"
-        },
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":1,\"updates\":[{\"node_id\":1,\"channel\":\"level_clean_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396761000},{\"node_id\":1,\"channel\":\"level_clean_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396761000},{\"node_id\":1,\"channel\":\"level_solution_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396761000},{\"node_id\":1,\"channel\":\"level_solution_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396761000}],\"event_id\":1777396761000000890,\"server_ts\":1777396761000}",
-            "channel": "private-hydro.zones.1"
-          },
-          "timestamp": "2026-04-28T20:19:21.270711"
-        },
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":1,\"updates\":[{\"node_id\":1,\"channel\":\"level_clean_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396763000},{\"node_id\":1,\"channel\":\"level_clean_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396763000},{\"node_id\":1,\"channel\":\"level_solution_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396763000},{\"node_id\":1,\"channel\":\"level_solution_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396763000}],\"event_id\":1777396763000000891,\"server_ts\":1777396763000}",
-            "channel": "private-hydro.zones.1"
-          },
-          "timestamp": "2026-04-28T20:19:23.423580"
-        },
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":1,\"updates\":[{\"node_id\":1,\"channel\":\"level_clean_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396765000},{\"node_id\":1,\"channel\":\"level_clean_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396765000},{\"node_id\":1,\"channel\":\"level_solution_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396765000},{\"node_id\":1,\"channel\":\"level_solution_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396765000}],\"event_id\":1777396765000000892,\"server_ts\":1777396765000}",
-            "channel": "private-hydro.zones.1"
-          },
-          "timestamp": "2026-04-28T20:19:25.587101"
-        },
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":1,\"updates\":[{\"node_id\":1,\"channel\":\"level_clean_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396767000},{\"node_id\":1,\"channel\":\"level_clean_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396767000},{\"node_id\":1,\"channel\":\"level_solution_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396767000},{\"node_id\":1,\"channel\":\"level_solution_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396767000}],\"event_id\":1777396767000000893,\"server_ts\":1777396767000}",
-            "channel": "private-hydro.zones.1"
-          },
-          "timestamp": "2026-04-28T20:19:27.239101"
-        },
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":1,\"updates\":[{\"node_id\":1,\"channel\":\"level_clean_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396769000},{\"node_id\":1,\"channel\":\"level_clean_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396769000},{\"node_id\":1,\"channel\":\"level_solution_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396769000},{\"node_id\":1,\"channel\":\"level_solution_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396769000}],\"event_id\":1777396769000000894,\"server_ts\":1777396769000}",
-            "channel": "private-hydro.zones.1"
-          },
-          "timestamp": "2026-04-28T20:19:29.394126"
-        },
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":1,\"updates\":[{\"node_id\":1,\"channel\":\"level_clean_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396771000},{\"node_id\":1,\"channel\":\"level_clean_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396771000},{\"node_id\":1,\"channel\":\"level_solution_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396771000},{\"node_id\":1,\"channel\":\"level_solution_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396771000}],\"event_id\":1777396771000000896,\"server_ts\":1777396771000}",
-            "channel": "private-hydro.zones.1"
-          },
-          "timestamp": "2026-04-28T20:19:31.552097"
-        },
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":1,\"updates\":[{\"node_id\":1,\"channel\":\"level_clean_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396773000},{\"node_id\":1,\"channel\":\"level_clean_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396773000},{\"node_id\":1,\"channel\":\"level_solution_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396773000},{\"node_id\":1,\"channel\":\"level_solution_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396773000}],\"event_id\":1777396773000000897,\"server_ts\":1777396773000}",
-            "channel": "private-hydro.zones.1"
-          },
-          "timestamp": "2026-04-28T20:19:33.705236"
-        },
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":1,\"updates\":[{\"node_id\":1,\"channel\":\"level_clean_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396775000},{\"node_id\":1,\"channel\":\"level_clean_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396775000},{\"node_id\":1,\"channel\":\"level_solution_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396775000},{\"node_id\":1,\"channel\":\"level_solution_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396775000}],\"event_id\":1777396775000000898,\"server_ts\":1777396775000}",
-            "channel": "private-hydro.zones.1"
-          },
-          "timestamp": "2026-04-28T20:19:35.356894"
-        },
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":1,\"updates\":[{\"node_id\":1,\"channel\":\"level_clean_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396777000},{\"node_id\":1,\"channel\":\"level_clean_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396777000},{\"node_id\":1,\"channel\":\"level_solution_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396777000},{\"node_id\":1,\"channel\":\"level_solution_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396777000}],\"event_id\":1777396777000000899,\"server_ts\":1777396777000}",
-            "channel": "private-hydro.zones.1"
-          },
-          "timestamp": "2026-04-28T20:19:37.507229"
-        },
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":1,\"updates\":[{\"node_id\":1,\"channel\":\"level_clean_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396779000},{\"node_id\":1,\"channel\":\"level_clean_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396779000},{\"node_id\":1,\"channel\":\"level_solution_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396779000},{\"node_id\":1,\"channel\":\"level_solution_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396779000}],\"event_id\":1777396779000000900,\"server_ts\":1777396779000}",
-            "channel": "private-hydro.zones.1"
-          },
-          "timestamp": "2026-04-28T20:19:39.671865"
-        },
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":1,\"updates\":[{\"node_id\":1,\"channel\":\"level_clean_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396781000},{\"node_id\":1,\"channel\":\"level_clean_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396781000},{\"node_id\":1,\"channel\":\"level_solution_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396781000},{\"node_id\":1,\"channel\":\"level_solution_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396781000}],\"event_id\":1777396781000000901,\"server_ts\":1777396781000}",
-            "channel": "private-hydro.zones.1"
-          },
-          "timestamp": "2026-04-28T20:19:41.335907"
-        },
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":1,\"updates\":[{\"node_id\":1,\"channel\":\"level_clean_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396783000},{\"node_id\":1,\"channel\":\"level_clean_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396783000},{\"node_id\":1,\"channel\":\"level_solution_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396783000},{\"node_id\":1,\"channel\":\"level_solution_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396783000}],\"event_id\":1777396783000000902,\"server_ts\":1777396783000}",
-            "channel": "private-hydro.zones.1"
-          },
-          "timestamp": "2026-04-28T20:19:43.492081"
-        },
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":1,\"updates\":[{\"node_id\":1,\"channel\":\"level_clean_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396785000},{\"node_id\":1,\"channel\":\"level_clean_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396785000},{\"node_id\":1,\"channel\":\"level_solution_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396785000},{\"node_id\":1,\"channel\":\"level_solution_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396785000}],\"event_id\":1777396785000000903,\"server_ts\":1777396785000}",
-            "channel": "private-hydro.zones.1"
-          },
-          "timestamp": "2026-04-28T20:19:45.653928"
-        },
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":1,\"updates\":[{\"node_id\":1,\"channel\":\"level_clean_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396787000},{\"node_id\":1,\"channel\":\"level_clean_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396787000},{\"node_id\":1,\"channel\":\"level_solution_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396787000},{\"node_id\":1,\"channel\":\"level_solution_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396787000}],\"event_id\":1777396787000000904,\"server_ts\":1777396787000}",
-            "channel": "private-hydro.zones.1"
-          },
-          "timestamp": "2026-04-28T20:19:47.306789"
-        },
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":1,\"updates\":[{\"node_id\":1,\"channel\":\"level_clean_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396789000},{\"node_id\":1,\"channel\":\"level_clean_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396789000},{\"node_id\":1,\"channel\":\"level_solution_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396789000},{\"node_id\":1,\"channel\":\"level_solution_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396789000}],\"event_id\":1777396789000000905,\"server_ts\":1777396789000}",
-            "channel": "private-hydro.zones.1"
-          },
-          "timestamp": "2026-04-28T20:19:49.462678"
-        },
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":1,\"updates\":[{\"node_id\":1,\"channel\":\"level_clean_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396791000},{\"node_id\":1,\"channel\":\"level_clean_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396791000},{\"node_id\":1,\"channel\":\"level_solution_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396791000},{\"node_id\":1,\"channel\":\"level_solution_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396791000}],\"event_id\":1777396791000000906,\"server_ts\":1777396791000}",
-            "channel": "private-hydro.zones.1"
-          },
-          "timestamp": "2026-04-28T20:19:51.612912"
-        },
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":1,\"updates\":[{\"node_id\":1,\"channel\":\"level_clean_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396793000},{\"node_id\":1,\"channel\":\"level_clean_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396793000},{\"node_id\":1,\"channel\":\"level_solution_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396793000},{\"node_id\":1,\"channel\":\"level_solution_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396793000}],\"event_id\":1777396793000000907,\"server_ts\":1777396793000}",
-            "channel": "private-hydro.zones.1"
-          },
-          "timestamp": "2026-04-28T20:19:53.265270"
-        },
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":1,\"updates\":[{\"node_id\":1,\"channel\":\"level_clean_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396795000},{\"node_id\":1,\"channel\":\"level_clean_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396795000},{\"node_id\":1,\"channel\":\"level_solution_min\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396795000},{\"node_id\":1,\"channel\":\"level_solution_max\",\"metric_type\":\"WATER_LEVEL_SWITCH\",\"value\":0,\"ts\":1777396795000}],\"event_id\":1777396795000000908,\"server_ts\":1777396795000}",
-            "channel": "private-hydro.zones.1"
-          },
-          "timestamp": "2026-04-28T20:19:55.424900"
-        }
-      ],
+    "E103_ae3_recirculation_retry_limit_alert_resolve_ready_realhw": {
+      "ws_messages": [],
       "mqtt_messages": [],
       "api_responses": [],
       "context_vars": {
         "zone_id": 1,
-        "node_id": 7,
-        "test_zone_id": 1,
-        "test_node_id": 7,
-        "command_id": "611d0a60-2768-447d-952b-8ab7eec0edce",
-        "ws_last_event_id": 1777396795000000908
+        "node_id": 2,
+        "scheduler_trace_id": "ae3-realhw-setup-trace-1791153044000",
+        "greenhouse_id": 1,
+        "irrig_node_id": 2,
+        "ph_node_id": 3,
+        "ec_node_id": 4,
+        "ec_pump_channel_id": 29,
+        "ec_pump_a_channel_id": 29,
+        "ec_pump_b_channel_id": 30,
+        "ec_pump_c_channel_id": 31,
+        "ec_pump_d_channel_id": 32,
+        "ph_up_channel_id": 26,
+        "ph_down_channel_id": 25,
+        "recipe_id": 55,
+        "recipe_revision_id": 55,
+        "grow_cycle_id": 1,
+        "phase_id": 1,
+        "task_id": 1
       }
     }
   }

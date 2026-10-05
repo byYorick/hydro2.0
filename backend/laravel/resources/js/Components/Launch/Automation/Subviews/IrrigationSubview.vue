@@ -22,6 +22,13 @@
       </div>
     </div>
 
+    <p
+      data-testid="irrigation-strategy-caption"
+      class="m-0 text-xs leading-snug text-[var(--text-muted)]"
+    >
+      task поливает по расписанию. smart_soil_v1 без свежей влажности пропускает полив и не помечает задачу сбоем.
+    </p>
+
     <div class="grid grid-cols-1 md:grid-cols-3 gap-2.5 items-center">
       <Field
         :label="meta('intervalMinutes').label"
@@ -70,22 +77,49 @@
       </Field>
     </div>
 
+    <div class="text-[10px] font-bold uppercase tracking-widest text-[var(--text-dim)] pb-1 border-b border-dashed border-[var(--border-muted)]">
+      Окно влажности
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-2.5">
+      <Field
+        :label="meta('irrigationDecisionLookbackSeconds').label"
+        :hint="meta('irrigationDecisionLookbackSeconds').hint"
+      >
+        <input
+          v-bind="numAttrs"
+          data-testid="irrigation-decision-lookback"
+          :title="meta('irrigationDecisionLookbackSeconds').details"
+          :value="waterForm.irrigationDecisionLookbackSeconds ?? 0"
+          @input="upd('irrigationDecisionLookbackSeconds', toInt($event))"
+        />
+      </Field>
+      <Field
+        :label="meta('irrigationDecisionStaleAfterSeconds').label"
+        :hint="meta('irrigationDecisionStaleAfterSeconds').hint"
+      >
+        <input
+          v-bind="numAttrs"
+          data-testid="irrigation-decision-stale"
+          :title="meta('irrigationDecisionStaleAfterSeconds').details"
+          :value="waterForm.irrigationDecisionStaleAfterSeconds ?? 0"
+          @input="upd('irrigationDecisionStaleAfterSeconds', toInt($event))"
+        />
+      </Field>
+      <Field
+        :label="meta('irrigationDecisionHysteresisPct').label"
+        :hint="meta('irrigationDecisionHysteresisPct').hint"
+      >
+        <input
+          v-bind="numAttrs"
+          data-testid="irrigation-decision-hysteresis"
+          :title="meta('irrigationDecisionHysteresisPct').details"
+          :value="waterForm.irrigationDecisionHysteresisPct ?? 0"
+          @input="upd('irrigationDecisionHysteresisPct', toNum($event))"
+        />
+      </Field>
+    </div>
     <template v-if="smart">
-      <div class="text-[10px] font-bold uppercase tracking-widest text-[var(--text-dim)] pb-1 border-b border-dashed border-[var(--border-muted)]">
-        SMART soil v1 — параметры решения
-      </div>
       <div class="grid grid-cols-1 md:grid-cols-3 gap-2.5">
-        <Field
-          :label="meta('irrigationDecisionLookbackSeconds').label"
-          :hint="meta('irrigationDecisionLookbackSeconds').hint"
-        >
-          <input
-            v-bind="numAttrs"
-            :title="meta('irrigationDecisionLookbackSeconds').details"
-            :value="waterForm.irrigationDecisionLookbackSeconds ?? 0"
-            @input="upd('irrigationDecisionLookbackSeconds', toInt($event))"
-          />
-        </Field>
         <Field
           :label="meta('irrigationDecisionMinSamples').label"
           :hint="meta('irrigationDecisionMinSamples').hint"
@@ -95,28 +129,6 @@
             :title="meta('irrigationDecisionMinSamples').details"
             :value="waterForm.irrigationDecisionMinSamples ?? 0"
             @input="upd('irrigationDecisionMinSamples', toInt($event))"
-          />
-        </Field>
-        <Field
-          :label="meta('irrigationDecisionStaleAfterSeconds').label"
-          :hint="meta('irrigationDecisionStaleAfterSeconds').hint"
-        >
-          <input
-            v-bind="numAttrs"
-            :title="meta('irrigationDecisionStaleAfterSeconds').details"
-            :value="waterForm.irrigationDecisionStaleAfterSeconds ?? 0"
-            @input="upd('irrigationDecisionStaleAfterSeconds', toInt($event))"
-          />
-        </Field>
-        <Field
-          :label="meta('irrigationDecisionHysteresisPct').label"
-          :hint="meta('irrigationDecisionHysteresisPct').hint"
-        >
-          <input
-            v-bind="numAttrs"
-            :title="meta('irrigationDecisionHysteresisPct').details"
-            :value="waterForm.irrigationDecisionHysteresisPct ?? 0"
-            @input="upd('irrigationDecisionHysteresisPct', toNum($event))"
           />
         </Field>
         <Field
@@ -157,10 +169,7 @@
     </div>
 
     <Hint :show="showHints">
-      SMART soil v1 принимает решение о поливе по выборке датчиков
-      влажности. Без сенсора используйте <span class="font-mono">task</span>
-      (по времени). Коррекция на поливе — всегда pH + EC;
-      для EC выбирается кальций или NPK.
+      Коррекция на поливе — всегда pH и EC; для EC выбирается кальций или NPK.
     </Hint>
   </div>
 </template>
@@ -230,7 +239,7 @@ const IRRIGATION_FIELD_META: Partial<Record<keyof WaterFormState, FieldMeta>> = 
   irrigationDecisionStaleAfterSeconds: {
     label: 'Устаревание данных SMART, сек',
     hint: 'Макс. возраст данных',
-    details: 'После этого времени данные считаются устаревшими и SMART-решение блокируется.',
+    details: 'После этого времени данные считаются устаревшими: smart_soil_v1 пропускает полив и не помечает задачу сбоем.',
   },
   irrigationDecisionHysteresisPct: {
     label: 'Гистерезис SMART, %',

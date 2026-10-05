@@ -106,7 +106,13 @@
         "scheduler_intent_pending",
         "scheduler_intent_claimed_stuck",
         "scheduler_intent_running_stuck",
-        "state_snapshot_stale"
+        "state_snapshot_stale",
+        "irrigation_sensor_blocked",
+        "solution_temp_blocked",
+        "dli_sensor_unavailable",
+        "dli_gap",
+        "solution_refresh_due",
+        "moisture_vent_suppressed"
       ]
     },
     "hang_hint": {

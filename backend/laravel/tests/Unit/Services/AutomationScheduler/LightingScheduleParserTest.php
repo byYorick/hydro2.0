@@ -80,6 +80,24 @@ class LightingScheduleParserTest extends TestCase
         $this->assertSame(90, $items[0]->intervalSec);
     }
 
+    public function test_positive_dli_target_is_copied_and_empty_target_is_not(): void
+    {
+        $parser = new LightingScheduleParser;
+        $now = CarbonImmutable::parse('2026-08-17 10:00:00', 'UTC');
+        $withTarget = $parser->parse(5, [
+            'interval_sec' => 60,
+            'brightness' => 40,
+            'dli_target' => 12.5,
+        ], null, $now);
+        $empty = $parser->parse(5, [
+            'interval_sec' => 60,
+            'dli_target' => null,
+        ], null, $now);
+
+        $this->assertSame(12.5, $withTarget[0]->payload['dli_target']);
+        $this->assertArrayNotHasKey('dli_target', $empty[0]->payload);
+    }
+
     public function test_parse_supports_lighting_schedule_window_string(): void
     {
         $parser = new LightingScheduleParser;

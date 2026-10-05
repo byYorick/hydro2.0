@@ -719,6 +719,10 @@ runtime = plan.runtime
 9. при active task или active lease возвращает controlled error (`409 start_irrigation_zone_busy` / `start_cycle_zone_busy`) **без** терминации requested intent — Laravel трактует 409 busy как retryable backpressure с тем же `idempotency_key`.
 10. default plan `irrigation_start`: `valve_solution_supply`/`valve_irrigation` latched `set_relay true`, `pump_main/run_pump {duration_ms}` (не latched насос). Duration из `requested_duration_sec` / `irrigation_execution` (fallback 120 с).
 
+`smart_soil_target_missing` и `smart_soil_telemetry_missing_or_stale` — успешный `skip` (`completed_skip`), не `error_code` задачи и не `fail`. Biz-алерт на эти reason не создаётся: причина лежит в `ae_tasks.irrigation_decision_outcome` и `irrigation_decision_reason_code`.
+
+`solution_temp_unavailable` и `solution_temp_out_of_band` — тот же успешный `skip`, не `fail` и не biz-алерт на каждый тик. Decision gate проверяет их после стратегии полива и до `irrigation_start`, только если `RuntimePlan.solution_health.required=true` и заданы оба `min_c`/`max_c` (колонки фазы `solution_temp_min`/`solution_temp_max`; `required` и `breach_hold_sec` — extensions фазы, hold по умолчанию 600 с). Нет свежего `solution_temp_c` — `solution_temp_unavailable`. Каждый образец окна вне `[min, max]`, окно покрыто целиком и дыра между соседними не больше 600 с (отдельного stale этого канала нет) — `solution_temp_out_of_band`. Один образец или `telemetry_last` hold не доказывает. Если стратегия уже вернула `skip`, в задачу пишется один итог; reason температуры заменяет его только когда сработал и её skip. Уже начатая доза не отменяется. `biz_solution_temp_*` по-прежнему пишет history-logger, второй алерт AE не создаёт.
+
 ### 7.2.1 `POST /zones/{id}/start-lighting-tick`
 
 Обязательный внешний ingress для scheduler-driven освещения (`task_type='lighting_tick'`, C1 + этап A day/night).
@@ -800,7 +804,7 @@ Ingress для **greenhouse-level** rule-based климата крыши (две
 3. читает конфиг из `greenhouses.logic_profile` (compiled bundle namespace `greenhouse.logic_profile`) и телеметрию из read-model
 4. публикует команды только через `history-logger` `POST /commands` с `cmd='set_position'`
 5. обновляет строку `greenhouse_automation_state` (в т.ч. snapshot полей для UI)
-6. полная семантика, метрики и DD — в `GREENHOUSE_CLIMATE_CONTROL_PLAN.md`
+6. полная семантика, метрики и DD — в `GREENHOUSE_CLIMATE_CONTROL_PLAN.md`; воздушный VPD и точка росы форточек — §8 этого плана
 
 ### 7.3 `GET /internal/tasks/{task_id}`
 
@@ -964,6 +968,7 @@ Canonical status endpoint для зон на `ae3`.
 5. Level-hints (`level_*_unlatched`) эмитятся только на релевантных check-стадиях при доступной telemetry.
 6. `active_processes.active_doses[]` собирается AE из `CorrectionState` только на `corr_dose_ec|corr_dose_ph`
    (channel/kind/component/ml/ms); Laravel зеркалит в `observability.correction.active_doses` без SQL.
+7. Суточные подсказки не пересчитывают решение. `build_automation_observability` читает последнюю задачу `irrigation_start`: `skip` с `smart_soil_target_missing` или `smart_soil_telemetry_missing_or_stale` даёт `irrigation_sensor_blocked`, с `solution_temp_out_of_band` или `solution_temp_unavailable` — `solution_temp_blocked` (оба critical). Laravel только дописывает проекцию уже записанных строк: `dli_sensor_unavailable` и `dli_gap` из `day_balance.dli_status`, `solution_refresh_due` если `SOLUTION_REFRESH_RECOMMENDED` моложе 24 часов и подмена после него не завершена (warning), `moisture_vent_suppressed` из `decision_factors` теплицы зоны (info). Нет строки — нет подсказки. На stale-cache эти проекции не подменяются чужим расчётом. PHP VPD не считает.
 
 Полная схема полей, таблица hint-кодов и пороги — `doc_ai/04_BACKEND_CORE/API_SPEC_FRONTEND_BACKEND_FULL.md` §3.5.7.
 
@@ -982,6 +987,16 @@ Prometheus runtime минимум для lifecycle intents:
 5. `ae3_fail_safe_transition_total{topology,stage,reason,source}`
 6. `ae3_emergency_stop_reconcile_total{topology,stage,outcome}`
 7. `ae3_node_runtime_event_kick_total{event_type,channel}`
+
+Метрики суток культуры не несут `zone_id`, текст ошибки и payload:
+1. `ae3_irrigation_decision_total` — как раньше; `outcome=skip` отличим от `run`.
+2. `ae3_crop_irrigation_blocked_total{reason}` — один раз на задачу, когда decision впервые вернула blocking skip (`smart_soil_target_missing`, `smart_soil_telemetry_missing_or_stale`, `solution_temp_out_of_band`, `solution_temp_unavailable`). Повторный poll той же задачи не крутит счётчик.
+3. `greenhouse_climate_air_vpd_kpa{greenhouse_id}` — gauge на тике, где VPD посчитан.
+4. `greenhouse_climate_moisture_vent_suppressed_total{greenhouse_id}` — один раз на climate tick, если флаг true, не один раз навсегда. Отдельного alert нет.
+5. `ae3_dli_tick_total{status}` — один раз на построенный lighting plan: `not_configured`, `sensor_unavailable`, `gap`, `capped`, `within_target`.
+6. `ae3_solution_refresh_recommended_total` — без меток, один раз на записанное событие `SOLUTION_REFRESH_RECOMMENDED` в Laravel. GET состояния не инкрементирует.
+
+Алерты `AE3SmartSoilBlocked` и `AE3DliSensorMissing` одинаковы в dev и prod. `SolutionTempOutOfBand` остаётся одним правилом `sum(solution_temp_breach_active) > 0` в каждом файле.
 
 Минимальные event/log точки для irrigation observability:
 1. `AE_TASK_STARTED` включает `bundle_revision` и locked irrigation decision strategy при наличии

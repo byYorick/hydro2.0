@@ -2,7 +2,6 @@ package com.hydro.app.core.i18n
 
 import android.content.Context
 import com.squareup.moshi.Moshi
-import com.squareup.moshi.adapter
 
 class AlertCatalog private constructor(
     private val descriptionsByCode: Map<String, String>,
@@ -31,7 +30,7 @@ class AlertCatalog private constructor(
         fun load(context: Context, moshi: Moshi): AlertCatalog {
             return try {
                 val json = context.assets.open("i18n/alert_codes.json").bufferedReader().use { it.readText() }
-                val catalog = moshi.adapter<AlertCatalogFile>().fromJson(json) ?: return empty()
+                val catalog = moshi.adapter(AlertCatalogFile::class.java).fromJson(json) ?: return empty()
                 val descriptions = mutableMapOf<String, String>()
                 val titles = mutableMapOf<String, String>()
                 for (entry in catalog.codes) {

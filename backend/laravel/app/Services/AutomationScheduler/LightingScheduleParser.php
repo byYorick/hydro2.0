@@ -132,6 +132,11 @@ final class LightingScheduleParser
             $payload['brightness_night'] = $brightnessNight;
         }
 
+        $dliTarget = $lightingConfig['dli_target'] ?? null;
+        if (is_numeric($dliTarget) && (float) $dliTarget > 0) {
+            $payload['dli_target'] = (float) $dliTarget;
+        }
+
         return $payload;
     }
 

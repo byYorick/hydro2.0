@@ -464,8 +464,7 @@ import {
 } from '@/composables/greenhouseLogicProfileAuthority'
 import { applyAutomationFromRecipe } from '@/composables/zoneAutomationFormLogic'
 import {
-  buildGreenhouseClimateSubsystemPayload,
-  validateGreenhouseClimateForm,
+  greenhouseClimateSavePayload,
 } from '@/composables/zoneAutomationProfilePayload'
 import { formatTime } from '@/utils/formatTime'
 import type { ClimateFormState, LightingFormState, WaterFormState, ZoneClimateFormState } from '@/composables/zoneAutomationTypes'
@@ -563,6 +562,8 @@ const climateForm = reactive<ClimateFormState>({
   manualOverrideEnabled: true,
   overrideMinutes: 30,
   maxVentStepPct: 25,
+  vpdMinKpa: null,
+  vpdMaxKpa: null,
 })
 
 const maintenanceSubmitting = ref(false)
@@ -630,10 +631,6 @@ const lightingForm = reactive<LightingFormState>({
 })
 
 const zoneClimateForm = reactive<ZoneClimateFormState>({ enabled: false })
-
-function buildGreenhouseClimateSubsystem(): Record<string, unknown> {
-  return buildGreenhouseClimateSubsystemPayload(climateForm, greenhouseClimateEnabled.value)
-}
 
 async function loadAvailableNodes(): Promise<void> {
   try {
@@ -725,9 +722,9 @@ async function saveGreenhouseClimate(): Promise<void> {
 
   climateSubmitting.value = true
   try {
-    const climateErr = validateGreenhouseClimateForm(climateForm)
-    if (climateErr) {
-      showToast(climateErr, 'warning', TOAST_TIMEOUT.NORMAL)
+    const climateSave = greenhouseClimateSavePayload(climateForm, greenhouseClimateEnabled.value)
+    if (climateSave.error) {
+      showToast(climateSave.error, 'warning', TOAST_TIMEOUT.NORMAL)
       return
     }
 
@@ -757,7 +754,7 @@ async function saveGreenhouseClimate(): Promise<void> {
         setup: {
           mode: 'setup',
           is_active: true,
-          subsystems: buildGreenhouseClimateSubsystem(),
+          subsystems: climateSave.payload,
           updated_at: new Date().toISOString(),
         },
       },

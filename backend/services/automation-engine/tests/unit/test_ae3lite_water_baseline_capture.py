@@ -132,10 +132,10 @@ async def test_fill_reenter_does_not_overwrite_water_baseline(monkeypatch: pytes
             {"ready": True, "value": 0.9},  # post-Ca EC — must NOT become new water_ec
         ]
     )
-    handler._correction_config_for_task = lambda **_kw: runtime.correction  # type: ignore[method-assign]
-    handler._process_cfg_for_task = lambda **_kw: {}  # type: ignore[method-assign]
-    handler._observation_config = lambda **_kw: {}  # type: ignore[method-assign]
-    handler._irrigation_ec_target = lambda **_kw: 2.0  # type: ignore[method-assign]
+    handler._runtime_config.correction_config_for_task = lambda **_kw: runtime.correction  # type: ignore[method-assign]
+    handler._runtime_config.process_cfg_for_task = lambda **_kw: {}  # type: ignore[method-assign]
+    handler._runtime_config.observation_config = lambda **_kw: {}  # type: ignore[method-assign]
+    handler._runtime_config.irrigation_ec_target = lambda **_kw: 2.0  # type: ignore[method-assign]
     handler._probe_snapshot_correction_fields = lambda **_kw: {}  # type: ignore[method-assign]
 
     corr = await handler._enter_fill_calcium_correction(
@@ -232,12 +232,12 @@ async def test_fill_ignores_stale_zone_wide_baseline(monkeypatch: pytest.MonkeyP
             {"ready": True, "value": 0.45},
         ]
     )
-    handler._correction_config_for_task = lambda **_kw: runtime.correction  # type: ignore[method-assign]
-    handler._process_cfg_for_task = lambda **_kw: {}  # type: ignore[method-assign]
-    handler._observation_config = lambda **_kw: {}  # type: ignore[method-assign]
-    handler._irrigation_ec_target = lambda **_kw: 2.0  # type: ignore[method-assign]
+    handler._runtime_config.correction_config_for_task = lambda **_kw: runtime.correction  # type: ignore[method-assign]
+    handler._runtime_config.process_cfg_for_task = lambda **_kw: {}  # type: ignore[method-assign]
+    handler._runtime_config.observation_config = lambda **_kw: {}  # type: ignore[method-assign]
+    handler._runtime_config.irrigation_ec_target = lambda **_kw: 2.0  # type: ignore[method-assign]
     handler._probe_snapshot_correction_fields = lambda **_kw: {}  # type: ignore[method-assign]
-    handler._full_ec_component_ratios = (  # type: ignore[method-assign]
+    handler._runtime_config.full_ec_component_ratios = (  # type: ignore[method-assign]
         lambda **_kw: runtime.correction_by_phase["tank_recirc"].ec_component_ratios
     )
 

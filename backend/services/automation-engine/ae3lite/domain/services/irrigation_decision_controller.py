@@ -152,9 +152,9 @@ class SmartSoilDecisionStrategy:
 
         if target_min is None or target_max is None:
             return IrrigationDecision(
-                outcome="degraded_run",
+                outcome="skip",
                 reason_code="smart_soil_target_missing",
-                degraded=True,
+                degraded=False,
             )
 
         sensor_data = await runtime_monitor.read_metric_windows(
@@ -180,9 +180,9 @@ class SmartSoilDecisionStrategy:
 
         if not per_sensor_values or stale:
             return IrrigationDecision(
-                outcome="degraded_run",
+                outcome="skip",
                 reason_code="smart_soil_telemetry_missing_or_stale",
-                degraded=True,
+                degraded=False,
                 details={"samples": total_samples, "sensor_count": len(per_sensor_values)},
             )
 

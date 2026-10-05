@@ -109,6 +109,10 @@
             :is-ec-correction-active="isEcCorrectionActive"
             :is-irrigation-active="isIrrigationActive"
           />
+          <CropDaySection
+            :automation-state="automationState"
+            :recipe-phase="recipePhase"
+          />
           <AutomationObservabilityPanel :automation-state="automationState" />
           <AutomationTimeline :events="timelineEvents" />
         </aside>
@@ -125,6 +129,7 @@ import AutomationTimeline from '@/Components/AutomationTimeline.vue'
 import AutomationRuntimeAlerts from '@/Components/ZoneAutomation/AutomationRuntimeAlerts.vue'
 import AutomationRuntimeMetrics from '@/Components/ZoneAutomation/AutomationRuntimeMetrics.vue'
 import AutomationObservabilityPanel from '@/Components/ZoneAutomation/AutomationObservabilityPanel.vue'
+import CropDaySection from '@/Components/ZoneAutomation/CropDaySection.vue'
 import Badge from '@/Components/Badge.vue'
 import { useAutomationPanel } from '@/composables/useAutomationPanel'
 import { useAutomationRuntimeMeta } from '@/composables/useAutomationRuntimeMeta'
@@ -138,6 +143,7 @@ interface Props {
   fallbackSystemType?: IrrigationSystem
   automationStateRefreshSeq?: number
   pumpCalibrationSaveSeq?: number
+  recipePhase?: unknown
 }
 
 const props = withDefaults(defineProps<Props>(), {

@@ -169,4 +169,4 @@ class PrepareRecircWindowHandler(BaseStageHandler):
 
     def _correction_config(self, *, plan: Any, task: Any) -> Mapping[str, Any]:
         runtime = self._require_runtime_plan(plan=plan)
-        return self._correction_config_for_task(task=task, runtime=runtime)
+        return self._runtime_config.correction_config_for_task(task=task, runtime=runtime)

@@ -95,6 +95,8 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 
 Гибрид обязателен: если orchestrator уходит только в interval-ветку, на `off_time` **не** уйдёт `desired_state=off` и свет останется включённым до конца следующего окна. Retryable 409 на lighting OFF **не** двигает zone cursor (`holdCursorOnRetryable`). Битый `desired_state` — fail-closed skip в `ScheduleDispatcher` (не подменять на `"on"`).
 
+Если у фазы задан `dli_target` (моль/м²·сутки) и у окна нет своего `interval_sec`, тот же dispatcher внутри открытого окна дополнительно шлёт `desired_state=on` не чаще раза в `dli_check_interval_sec` (дефолт 900) через `POST /zones/{id}/start-lighting-tick`. Это не новый task type. Idempotency key включает бакет интервала. Пустая цель дополнительных тиков не добавляет. 409 на OFF cursor не двигает. Яркость этого ON режет планировщик AE по интегралу PPFD, не Laravel.
+
 ### 7.3. HTTP-контракт `POST /zones/{id}/start-lighting-tick`
 
 Канонический ingress AE3 (не меняется URL). Тело запроса (`StartLightingTickRequest`):

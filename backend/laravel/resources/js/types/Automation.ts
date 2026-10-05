@@ -81,6 +81,7 @@ export interface AutomationState {
     buffer_tank_level_percent?: number | null
     ph: number | null
     ec: number | null
+    solution_temp_c?: number | null
   }
   active_processes: {
     pump_in: boolean
@@ -108,8 +109,36 @@ export interface AutomationState {
     config?: Record<string, unknown> | null
     bundle_revision?: string | null
     degraded?: boolean | null
+    /** Уже посчитанные factors климатического тика, если они пришли в состоянии. */
+    factors?: Record<string, unknown> | null
   } | null
+  /** Read-model суток. Клиент эти числа не пересчитывает. */
+  day_balance?: ZoneDayBalance | null
+  /** Снимок `greenhouse_automation_state.decision_factors`, если он уже вложен в состояние зоны. */
+  decision_factors?: Record<string, unknown> | null
   observability?: AutomationObservability | null
+}
+
+export interface ZoneDayBalance {
+  local_date?: string | null
+  window_start?: string | null
+  window_end?: string | null
+  timezone?: string | null
+  timezone_fallback?: boolean
+  irrigation_commands?: number | null
+  commanded_sec?: number | null
+  commanded_ml?: number | null
+  commanded_ml_status?: string | null
+  dli_mol?: number | null
+  dli_status?: string | null
+  air_vpd_kpa?: number | null
+  dew_point_c?: number | null
+  moisture_vent_suppressed?: boolean | null
+  solution_temp_c?: number | null
+  photoperiod_hours?: number | null
+  brightness?: number | null
+  solution_health_required?: boolean | null
+  solution_health?: { required?: boolean | null } | null
 }
 
 export type AutomationObservabilityHealth = 'idle' | 'active' | 'warning' | 'critical'

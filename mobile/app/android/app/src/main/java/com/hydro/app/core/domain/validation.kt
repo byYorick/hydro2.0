@@ -7,7 +7,8 @@ object Validator {
     /**
      * Паттерн для валидации email адреса.
      */
-    private val EMAIL_PATTERN = android.util.Patterns.EMAIL_ADDRESS
+    // Не зависит от android.util.Patterns: валидатор используется и в JVM unit-тестах.
+    private val EMAIL_PATTERN = Regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$")
 
     /**
      * Валидирует email адрес.
@@ -15,7 +16,7 @@ object Validator {
      * @return true если email валиден, false в противном случае
      */
     fun isValidEmail(email: String): Boolean {
-        return email.isNotBlank() && EMAIL_PATTERN.matcher(email).matches()
+        return email.isNotBlank() && EMAIL_PATTERN.matches(email)
     }
 
     /**
@@ -46,4 +47,3 @@ object Validator {
         return !value.isNullOrBlank()
     }
 }
-

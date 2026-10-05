@@ -288,17 +288,17 @@ class PrepareRecircCheckHandler(BaseStageHandler):
         return_stage_success: str,
         return_stage_fail: str,
     ) -> CorrectionState:
-        correction_cfg = self._correction_config_for_task(task=task, runtime=runtime)
-        ec_max_attempts = self._required_correction_int(
+        correction_cfg = self._runtime_config.correction_config_for_task(task=task, runtime=runtime)
+        ec_max_attempts = self._runtime_config.required_correction_int(
             correction_cfg=correction_cfg,
             key="max_ec_correction_attempts",
         )
-        ph_max_attempts = self._required_correction_int(
+        ph_max_attempts = self._runtime_config.required_correction_int(
             correction_cfg=correction_cfg,
             key="max_ph_correction_attempts",
         )
         per_pid_attempt_limit = max(ec_max_attempts, ph_max_attempts)
-        overall_attempt_limit = self._required_correction_int(
+        overall_attempt_limit = self._runtime_config.required_correction_int(
             correction_cfg=correction_cfg,
             key="prepare_recirculation_max_correction_attempts",
         )
@@ -308,7 +308,7 @@ class PrepareRecircCheckHandler(BaseStageHandler):
             ec_max_attempts=ec_max_attempts,
             ph_max_attempts=ph_max_attempts,
             activated_here=not sensors_already_active,
-            stabilization_sec=self._required_correction_int(
+            stabilization_sec=self._runtime_config.required_correction_int(
                 correction_cfg=correction_cfg,
                 key="stabilization_sec",
             ),

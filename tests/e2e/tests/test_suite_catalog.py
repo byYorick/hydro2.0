@@ -60,6 +60,7 @@ class TestSuiteCatalog(unittest.TestCase):
             "scenarios/ae3lite/E107_ae3_irrigation_runtime_test_node.yaml",
             "scenarios/ae3lite/E108_ae3_soil_moisture_telemetry_contract.yaml",
             "scenarios/ae3lite/E109_ae3_irrigation_inline_correction_test_node.yaml",
+            "scenarios/ae3lite/E122_ae3_crop_day_sensor_contract_realhw.yaml",
         ]:
             self.assert_contains_scenario(scenarios, suffix)
         self.assert_missing_scenario(
@@ -153,8 +154,12 @@ class TestSuiteCatalog(unittest.TestCase):
             scenarios,
             "scenarios/calibration/E117_sensor_calibration_realhw_happy_path.yaml",
         )
-        # ae3lite realhw (+E118/E119/E120) ∪ smart_irrigation ∪ calibration
-        self.assertEqual(len(scenarios), 21)
+        # ae3lite realhw ∪ smart_irrigation ∪ crop-day E122 ∪ calibration
+        self.assertEqual(len(scenarios), 22)
+        self.assert_contains_scenario(
+            scenarios,
+            "scenarios/ae3lite/E122_ae3_crop_day_sensor_contract_realhw.yaml",
+        )
         self.assert_contains_scenario(
             scenarios,
             "scenarios/ae3lite/E118_ae3_water_baseline_and_ca_fill_realhw.yaml",

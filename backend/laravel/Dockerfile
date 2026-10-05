@@ -26,14 +26,31 @@ COPY package.json package-lock.json* ./
 
 # Install Composer dependencies (without scripts to avoid artisan requirement)
 # Use ARG to control dev dependencies installation
+# Retries + lower parallelism: flaky GitHub HTTP/2 (curl 18/28) during full rebuilds.
 ARG INSTALL_DEV_DEPS=true
-RUN if [ -f composer.json ]; then \
+RUN --mount=type=cache,target=/tmp/composer-cache \
+    export COMPOSER_CACHE_DIR=/tmp/composer-cache \
+           COMPOSER_MAX_PARALLEL_HTTP=4 \
+           COMPOSER_PROCESS_TIMEOUT=900; \
+    if [ -f composer.json ]; then \
         if [ "$INSTALL_DEV_DEPS" = "true" ]; then \
             echo "Installing ALL Composer dependencies (including dev)..."; \
-            composer install --optimize-autoloader --no-interaction --prefer-dist --no-scripts; \
+            ok=0; \
+            for i in 1 2 3 4 5; do \
+                composer install --optimize-autoloader --no-interaction --prefer-dist --no-scripts && { ok=1; break; }; \
+                echo "composer install failed (attempt $i), retrying..."; \
+                sleep $((i * 5)); \
+            done; \
+            test "$ok" = "1"; \
         else \
             echo "Installing production Composer dependencies only..."; \
-            composer install --no-dev --optimize-autoloader --no-interaction --prefer-dist --no-scripts; \
+            ok=0; \
+            for i in 1 2 3 4 5; do \
+                composer install --no-dev --optimize-autoloader --no-interaction --prefer-dist --no-scripts && { ok=1; break; }; \
+                echo "composer install failed (attempt $i), retrying..."; \
+                sleep $((i * 5)); \
+            done; \
+            test "$ok" = "1"; \
         fi \
     fi
 

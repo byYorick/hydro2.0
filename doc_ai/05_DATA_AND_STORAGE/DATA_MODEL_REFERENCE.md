@@ -524,7 +524,7 @@ duration_hours INT NULL
 duration_days INT NULL
 base_temp_c DECIMAL(4,2) NULL
 target_gdd DECIMAL(8,2) NULL
-dli_target DECIMAL(6,2) NULL
+dli_target DECIMAL(6,2) NULL  -- моль/м²·сутки; старые числа не конвертируются
 
 -- Расширения
 extensions JSONB NULL
@@ -671,7 +671,7 @@ duration_hours INT NULL
 duration_days INT NULL
 base_temp_c DECIMAL(4,2) NULL
 target_gdd DECIMAL(8,2) NULL
-dli_target DECIMAL(6,2) NULL
+dli_target DECIMAL(6,2) NULL  -- моль/м²·сутки; старые числа не конвертируются
 
 extensions JSONB NULL
 
@@ -1678,6 +1678,7 @@ zone_events_zone_id_id_idx
   `CORRECTION_NO_EFFECT`, `CORRECTION_EXHAUSTED`)
   обязаны использовать `payload_json` как canonical source и по возможности включать
   `stage`, `workflow_phase`, `corr_step`, `attempt`, `ec_attempt`, `ph_attempt`.
+- `SOLUTION_REFRESH_RECOMMENDED` пишет только Laravel scheduler-dispatch: рядом с intent полива или долива, до вызова AE, либо отдельным обходом зон не чаще раза в час внутри той же команды, если intent в проходе не создан. Пороги — `extensions` текущей фазы: `solution_max_age_days` (целое 1…60) и `solution_refresh_after_topup_ml` (число > 0). Оба пустые — события нет. Возраст от последнего `ae_tasks` `solution_change` со статусом `completed`, иначе от последнего перехода `cycle_start` в `workflow_phase=ready` (`ae_stage_transitions`). Объём доливов — сумма `DONE` команд с plan key `solution_topup` с того же момента; без калибровки канала миллилитры не выдумываются и порог по мл не считается выполненным. Повтор того же события зоны не чаще одного раза за 24 часа; вместе с ним один biz-alert `solution_refresh_recommended`. GET состояния, decision gate AE, `POST /start-solution-change` и intent `solution_change` это событие не создают.
 - Для observability startup recovery AE3 пишет `AE_STARTUP_RECOVERY_OUTCOME`
   (source: `StartupRecoveryUseCase` в automation-engine). Минимальный `payload_json`:
   `task_id`, `outcome` (`failed` | `completed` | `waiting_command` | `recovered_waiting_command`),

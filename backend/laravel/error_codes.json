@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "updated_at": "2026-08-24T11:48:38Z",
+  "updated_at": "2026-10-04T16:12:21Z",
   "codes": [
     {
       "code": "actuator_apply_failed",
@@ -13,6 +13,11 @@
       "title": "Исполнительный канал занят",
       "message": "Исполнительный канал занят. Проверьте конфигурацию, логи сервиса и состояние зоны.",
       "source_layer": "firmware_mqtt"
+    },
+    {
+      "code": "actuators_load_failed",
+      "title": "Actuators Load Failed",
+      "message": "Actuators Load Failed. Проверьте конфигурацию, логи сервиса и состояние зоны."
     },
     {
       "code": "ae3_api_http_5xx",
@@ -245,6 +250,11 @@
       "message": "Этап workflow завершился с ошибкой."
     },
     {
+      "code": "ae3_stage_system_mismatch",
+      "title": "AE3 Stage System Mismatch",
+      "message": "AE3 Stage System Mismatch. Проверьте конфигурацию, логи сервиса и состояние зоны."
+    },
+    {
       "code": "ae3_stale_task_reclaimed",
       "title": "Stale task reclaimed",
       "message": "Задача застряла в claimed/running и переведена в failed фоновым janitor'ом."
@@ -298,6 +308,11 @@
       "code": "ae3_task_missing_owner",
       "title": "Нет владельца задачи",
       "message": "У задачи отсутствует claimed_by."
+    },
+    {
+      "code": "ae3_task_overall_deadline_exceeded",
+      "title": "AE3 Task Overall Deadline Exceeded",
+      "message": "AE3 Task Overall Deadline Exceeded. Проверьте конфигурацию, логи сервиса и состояние зоны."
     },
     {
       "code": "ae3_task_running_transition_failed",
@@ -520,6 +535,11 @@
       "message": "Контур полива зоны ещё не инициализирован."
     },
     {
+      "code": "dli_sensor_unavailable",
+      "title": "Нет ряда PPFD для DLI",
+      "message": "Проверьте канал света: нужна единица ppfd или umol_m2_s. Люксы не пересчитываются, свет не гасится."
+    },
+    {
       "code": "drain_abandon",
       "title": "Drain прерван",
       "message": "Очередь команд history-logger прервала drain без завершения."
@@ -562,6 +582,11 @@
       "message": "Запуск climate tick отклонён: предыдущий tick ещё выполняется."
     },
     {
+      "code": "greenhouse_climate_lease_lost",
+      "title": "Greenhouse Climate Lease Lost",
+      "message": "Greenhouse Climate Lease Lost. Проверьте конфигурацию, логи сервиса и состояние зоны."
+    },
+    {
       "code": "greenhouse_climate_stale_running",
       "title": "Завис climate tick",
       "message": "Greenhouse climate tick остался в running дольше допустимого."
@@ -570,6 +595,11 @@
       "code": "greenhouse_climate_tick_failed",
       "title": "Ошибка climate tick",
       "message": "Выполнение greenhouse climate tick завершилось с ошибкой."
+    },
+    {
+      "code": "greenhouse_vent_command_failed",
+      "title": "Greenhouse Vent Command Failed",
+      "message": "Greenhouse Vent Command Failed. Проверьте конфигурацию, логи сервиса и состояние зоны."
     },
     {
       "code": "hmac_required",
@@ -931,6 +961,16 @@
       "source_layer": "firmware_mqtt"
     },
     {
+      "code": "smart_soil_target_missing",
+      "title": "Нет цели влажности",
+      "message": "Полив пропущен: не задана цель влажности. Это успешный пропуск, задача не в сбое."
+    },
+    {
+      "code": "smart_soil_telemetry_missing_or_stale",
+      "title": "Нет свежей влажности",
+      "message": "Полив пропущен: нет свежего измерения влажности. Это успешный пропуск, задача не в сбое."
+    },
+    {
       "code": "solution_change_aborted_by_operator",
       "title": "Подмена отменена оператором",
       "message": "Подмена раствора отменена оператором."
@@ -990,10 +1030,25 @@
       "source_layer": "firmware_mqtt"
     },
     {
+      "code": "solution_refresh_recommended",
+      "title": "Пора подменить раствор",
+      "message": "Подмените раствор вручную, когда зона готова. Подмена сама не запускается."
+    },
+    {
       "code": "solution_tank_not_filled_timeout",
       "title": "Таймаут бака раствора",
       "message": "Бак раствора не наполнился за отведённое время.",
       "source_layer": "firmware_mqtt"
+    },
+    {
+      "code": "solution_temp_out_of_band",
+      "title": "Температура раствора вне пределов",
+      "message": "Новый полив пропущен: температура раствора дольше допустимого вне пределов фазы. Задача не в сбое."
+    },
+    {
+      "code": "solution_temp_unavailable",
+      "title": "Нет температуры раствора",
+      "message": "Новый полив пропущен: обязательный датчик температуры раствора недоступен. Задача не в сбое."
     },
     {
       "code": "solution_topup_leak_detected",

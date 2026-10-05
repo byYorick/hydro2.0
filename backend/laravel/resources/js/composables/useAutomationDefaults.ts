@@ -173,6 +173,8 @@ export function createDefaultClimateForm(defaults: AutomationDefaultsSettings): 
     rightRoofNormalDeg: null,
     targetPolicy: 'greenhouse_targets',
     primaryZoneId: null,
+    vpdMinKpa: null,
+    vpdMaxKpa: null,
     manualOverrideEnabled: defaults.climate_manual_override_enabled,
     manualEmergencyOverrideEnabled: false,
     overrideMinutes: defaults.climate_manual_override_minutes,

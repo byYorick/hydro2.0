@@ -16,6 +16,15 @@ from common.observability_thresholds import (
 _ACTIVE_TASK_STATUSES = frozenset({"pending", "claimed", "running", "waiting_command"})
 _DISPATCH_STUCK_STATUSES = frozenset({"pending", "claimed"})
 
+_SENSOR_BLOCK_REASONS = frozenset({
+    "smart_soil_target_missing",
+    "smart_soil_telemetry_missing_or_stale",
+})
+_SOLUTION_TEMP_BLOCK_REASONS = frozenset({
+    "solution_temp_out_of_band",
+    "solution_temp_unavailable",
+})
+
 _HANG_HINT_LABELS: dict[str, str] = {
     "stage_deadline_exceeded": "Превышен дедлайн текущего этапа",
     "waiting_command_stuck": "Задача ждёт ответа по команде дольше ожидаемого",
@@ -30,6 +39,8 @@ _HANG_HINT_LABELS: dict[str, str] = {
     "level_clean_max_unlatched": "Верхний уровень чистой воды не подтверждён",
     "level_solution_max_unlatched": "Верхний уровень раствора не подтверждён",
     "level_solution_min_unlatched": "Нижний уровень раствора не подтверждён",
+    "irrigation_sensor_blocked": "Полив пропущен: нет цели влажности или свежего измерения",
+    "solution_temp_blocked": "Полив пропущен: температура раствора вне допуска или датчик недоступен",
 }
 
 _HANG_HINT_RECOMMENDATIONS: dict[str, str] = {
@@ -46,6 +57,8 @@ _HANG_HINT_RECOMMENDATIONS: dict[str, str] = {
     "level_clean_max_unlatched": "Перезапустите clean fill или проверьте level_clean_max / симулятор.",
     "level_solution_max_unlatched": "Перезапустите solution fill или проверьте level_solution_max.",
     "level_solution_min_unlatched": "Проверьте уровень раствора и гидравлику бака.",
+    "irrigation_sensor_blocked": "Проверьте датчик влажности и цель в профиле зоны. Это успешный пропуск, не сбой задачи.",
+    "solution_temp_blocked": "Проверьте датчик раствора и пределы фазы. Уже идущая доза не обрывается. Это не сбой задачи.",
 }
 
 
@@ -99,6 +112,7 @@ def build_automation_observability(
     now: datetime,
     node_rows: Sequence[Mapping[str, Any]] | None = None,
     thresholds: Mapping[str, Any] | None = None,
+    irrigation_task: Any | None = None,
 ) -> dict[str, Any]:
     """Собирает runtime-диагностику для `/zones/{id}/state`."""
     cfg = resolved_thresholds(thresholds)
@@ -358,6 +372,10 @@ def build_automation_observability(
                 message=_HANG_HINT_LABELS["level_solution_max_unlatched"],
                 details={"solution_max_triggered": solution_max, "current_stage": current_stage},
             )
+    _append_irrigation_block_hint(
+        hints,
+        irrigation_task if irrigation_task is not None else task,
+    )
     nodes_summary = _summarize_required_nodes(node_rows or (), cfg)
     if nodes_summary.get("offline_required"):
         _append_hint(
@@ -375,6 +393,44 @@ def build_automation_observability(
         "hang_hints": _dedupe_hints(hints),
         "overall_health": overall,
     }
+
+
+def _append_irrigation_block_hint(hints: list[dict[str, Any]], task: Any | None) -> None:
+    """Подсказка по колонкам последней задачи полива. Не решает полив заново."""
+    if task is None:
+        return
+    task_type = str(getattr(task, "task_type", "") or "").strip().lower()
+    if task_type not in {"", "irrigation_start"}:
+        return
+    outcome = str(getattr(task, "irrigation_decision_outcome", "") or "").strip().lower()
+    if outcome != "skip":
+        return
+    reason = str(getattr(task, "irrigation_decision_reason_code", "") or "").strip().lower()
+    if reason in _SENSOR_BLOCK_REASONS:
+        code = "irrigation_sensor_blocked"
+        if reason == "smart_soil_target_missing":
+            message = "Полив пропущен: не задана цель влажности. Насос не запускался."
+        else:
+            message = "Полив пропущен: нет свежего измерения влажности. Насос не запускался."
+    elif reason in _SOLUTION_TEMP_BLOCK_REASONS:
+        code = "solution_temp_blocked"
+        if reason == "solution_temp_unavailable":
+            message = "Полив пропущен: нет свежей температуры раствора. Насос не запускался."
+        else:
+            message = "Полив пропущен: температура раствора вне пределов фазы. Насос не запускался."
+    else:
+        return
+    details: dict[str, Any] = {"reason_code": reason}
+    task_id = getattr(task, "id", None)
+    if task_id is not None:
+        details["task_id"] = task_id
+    _append_hint(
+        hints,
+        code=code,
+        severity="critical",
+        message=message,
+        details=details,
+    )
 
 
 def _summarize_required_nodes(rows: Sequence[Mapping[str, Any]], cfg: Mapping[str, int]) -> dict[str, Any]:

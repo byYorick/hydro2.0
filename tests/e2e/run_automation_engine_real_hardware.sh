@@ -158,6 +158,9 @@ SMART_IRRIGATION_SCENARIOS=(
   "scenarios/ae3lite/E108_ae3_soil_moisture_telemetry_contract.yaml"
   "scenarios/ae3lite/E109_ae3_irrigation_inline_correction_test_node.yaml"
 )
+CROP_DAY_SCENARIOS=(
+  "scenarios/ae3lite/E122_ae3_crop_day_sensor_contract_realhw.yaml"
+)
 INLINE_IRRIGATION_SCENARIOS=(
   "scenarios/ae3lite/E109_ae3_irrigation_inline_correction_test_node.yaml"
 )
@@ -170,10 +173,10 @@ CALIBRATION_SCENARIOS=(
 usage() {
   cat <<'EOF'
 Usage:
-  tests/e2e/run_automation_engine_real_hardware.sh [--set ae3lite|smart_irrigation|inline_irrigation|calibration|full] [--list]
+  tests/e2e/run_automation_engine_real_hardware.sh [--set ae3lite|smart_irrigation|crop_day|inline_irrigation|calibration|full] [--list]
 
 Env:
-  SCENARIO_SET=ae3lite|smart_irrigation|inline_irrigation|calibration|full   # default: full
+  SCENARIO_SET=ae3lite|smart_irrigation|crop_day|inline_irrigation|calibration|full   # default: full
   TEST_NODE_UID/TEST_WORKFLOW_NODE_UID/TEST_PH_NODE_UID/TEST_EC_NODE_UID/TEST_SOIL_NODE_UID=auto|<uid>
   REAL_HW_REBOOT_CMD=restart|reboot       # default: restart
   E2E_NODE_UID_REGEX=<regex>              # default: ^nd-test-
@@ -186,6 +189,7 @@ collect_full_scenarios() {
   printf '%s\n' \
     "${AE3LITE_SCENARIOS[@]}" \
     "${SMART_IRRIGATION_SCENARIOS[@]}" \
+    "${CROP_DAY_SCENARIOS[@]}" \
     "${CALIBRATION_SCENARIOS[@]}" \
     | LC_ALL=C sort -u
 }
@@ -226,6 +230,9 @@ resolve_scenarios() {
     smart_irrigation)
       SCENARIOS=("${SMART_IRRIGATION_SCENARIOS[@]}")
       ;;
+    crop_day)
+      SCENARIOS=("${CROP_DAY_SCENARIOS[@]}")
+      ;;
     inline_irrigation)
       SCENARIOS=("${INLINE_IRRIGATION_SCENARIOS[@]}")
       ;;
@@ -237,7 +244,7 @@ resolve_scenarios() {
       ;;
     automation|workflow)
       echo "❌ SCENARIO_SET=$SCENARIO_SET удалён: legacy aliases на E100 больше не в realhw launcher."
-      echo "   Используйте --set=ae3lite|smart_irrigation|inline_irrigation|calibration|full"
+      echo "   Используйте --set=ae3lite|smart_irrigation|crop_day|inline_irrigation|calibration|full"
       echo "   Sim-сценарии E64/E65/E74/E96/E97 — через tools/testing/run_e2e.sh (node_sim)."
       exit 1
       ;;
@@ -1187,8 +1194,8 @@ wait_nodes_recreated_in_db() {
           AND (
             (zone_id IS NULL AND lifecycle_state = 'REGISTERED_BACKEND')
             OR (
-              '${test_zone_id}' <> ''
-              AND zone_id = CAST('${test_zone_id}' AS bigint)
+              NULLIF('${test_zone_id}', '') IS NOT NULL
+              AND zone_id = CAST(NULLIF('${test_zone_id}', '') AS bigint)
               AND lifecycle_state IN ('ASSIGNED_TO_ZONE', 'ACTIVE')
             )
           )
@@ -1527,6 +1534,12 @@ prepare_real_hardware_node() {
   local zone_row
   zone_row="$(db_query_line "SELECT z.id, z.uid, g.uid FROM zones z JOIN greenhouses g ON g.id = z.greenhouse_id WHERE z.uid = '${TEST_NODE_ZONE_UID}' LIMIT 1;")"
   if [ -z "$zone_row" ]; then
+    echo "⚠️ Зона ${TEST_NODE_ZONE_UID} не найдена. Сею E2eDataSeeder."
+    "${DOCKER_COMPOSE[@]}" -f "$SCRIPT_DIR/docker-compose.e2e.yml" exec -T \
+      laravel php artisan db:seed --class=Database\\Seeders\\E2eDataSeeder --force --no-interaction
+    zone_row="$(db_query_line "SELECT z.id, z.uid, g.uid FROM zones z JOIN greenhouses g ON g.id = z.greenhouse_id WHERE z.uid = '${TEST_NODE_ZONE_UID}' LIMIT 1;")"
+  fi
+  if [ -z "$zone_row" ]; then
     echo "❌ Не найдена тестовая зона uid=${TEST_NODE_ZONE_UID}"
     exit 1
   fi
@@ -1570,6 +1583,24 @@ prepare_real_hardware_node() {
 
   echo "🧹 Удаляю все ноды из БД перед тестом..."
   db_query_line "TRUNCATE TABLE nodes RESTART IDENTITY CASCADE;" >/dev/null
+
+  # greenhouses.shared_weather_station_node_id ссылается на nodes, поэтому
+  # TRUNCATE nodes CASCADE удаляет и теплицу, и зону. Без зоны bind получает 422.
+  zone_row="$(db_query_line "SELECT z.id, z.uid, g.uid FROM zones z JOIN greenhouses g ON g.id = z.greenhouse_id WHERE z.uid = '${TEST_NODE_ZONE_UID}' LIMIT 1;")"
+  if [ -z "$zone_row" ]; then
+    echo "⚠️ Зона ${TEST_NODE_ZONE_UID} исчезла после очистки нод. Восстанавливаю теплицу и зону."
+    "${DOCKER_COMPOSE[@]}" -f "$SCRIPT_DIR/docker-compose.e2e.yml" exec -T \
+      laravel php artisan db:seed --class=Database\\Seeders\\E2eDataSeeder --force --no-interaction
+    db_query_line "DELETE FROM nodes WHERE uid = 'nd-ph-test-1';" >/dev/null || true
+    zone_row="$(db_query_line "SELECT z.id, z.uid, g.uid FROM zones z JOIN greenhouses g ON g.id = z.greenhouse_id WHERE z.uid = '${TEST_NODE_ZONE_UID}' LIMIT 1;")"
+  fi
+  if [ -z "$zone_row" ]; then
+    echo "❌ Не найдена тестовая зона uid=${TEST_NODE_ZONE_UID} после восстановления"
+    exit 1
+  fi
+  IFS='|' read -r zone_id zone_uid gh_uid <<<"$zone_row"
+  target_zone_uid="$zone_uid"
+  target_gh_uid="$gh_uid"
 
   local live_topics_file
   live_topics_file="$(mktemp /tmp/e2e_live_topics.XXXXXX)"

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from types import SimpleNamespace
 
 from ae3lite.application.services.automation_observability import build_automation_observability
@@ -226,3 +228,121 @@ def test_ready_workflow_after_failure_rollback_reports_complete_ready_stage():
     assert payload["runtime"]["workflow_phase"] == "ready"
     assert payload["runtime"]["current_stage"] == "complete_ready"
     assert payload["runtime"]["task_is_active"] is False
+
+
+def _irrigation_task(*, outcome: str, reason: str, task_type: str = "irrigation_start"):
+    task = _task(
+        status="completed",
+        current_stage="decision_gate",
+        workflow_phase="idle",
+        stage_entered_at=NOW - timedelta(seconds=5),
+    )
+    task.task_type = task_type
+    task.irrigation_decision_outcome = outcome
+    task.irrigation_decision_reason_code = reason
+    return task
+
+
+def test_moisture_skip_emits_one_irrigation_sensor_blocked():
+    task = _irrigation_task(outcome="skip", reason="smart_soil_telemetry_missing_or_stale")
+    payload = build_automation_observability(
+        zone_id=6,
+        task=task,
+        workflow_state=None,
+        telemetry={},
+        telemetry_fetch_ok=True,
+        now=NOW,
+    )
+    blocked = [hint for hint in payload["hang_hints"] if hint["code"] == "irrigation_sensor_blocked"]
+    assert len(blocked) == 1
+    assert blocked[0]["severity"] == "critical"
+    assert blocked[0]["details"]["reason_code"] == "smart_soil_telemetry_missing_or_stale"
+    assert blocked[0]["message"] == "Полив пропущен: нет свежего измерения влажности. Насос не запускался."
+    assert not any(hint["code"] == "solution_temp_blocked" for hint in payload["hang_hints"])
+
+    target_missing = _irrigation_task(outcome="skip", reason="smart_soil_target_missing")
+    target_payload = build_automation_observability(
+        zone_id=6,
+        task=target_missing,
+        workflow_state=None,
+        telemetry={},
+        telemetry_fetch_ok=True,
+        now=NOW,
+    )
+    target_hints = [hint for hint in target_payload["hang_hints"] if hint["code"] == "irrigation_sensor_blocked"]
+    assert len(target_hints) == 1
+    assert target_hints[0]["details"]["reason_code"] == "smart_soil_target_missing"
+
+
+def test_healthy_irrigation_run_does_not_emit_irrigation_sensor_blocked():
+    task = _irrigation_task(outcome="run", reason="smart_soil_below_min")
+    task.status = "running"
+    payload = build_automation_observability(
+        zone_id=6,
+        task=task,
+        workflow_state=None,
+        telemetry={},
+        telemetry_fetch_ok=True,
+        now=NOW,
+    )
+    codes = {hint["code"] for hint in payload["hang_hints"]}
+    assert "irrigation_sensor_blocked" not in codes
+    assert "solution_temp_blocked" not in codes
+
+
+def test_solution_temp_skip_emits_one_solution_temp_blocked():
+    task = _irrigation_task(outcome="skip", reason="solution_temp_out_of_band")
+    payload = build_automation_observability(
+        zone_id=6,
+        task=task,
+        workflow_state=None,
+        telemetry={},
+        telemetry_fetch_ok=True,
+        now=NOW,
+    )
+    blocked = [hint for hint in payload["hang_hints"] if hint["code"] == "solution_temp_blocked"]
+    assert len(blocked) == 1
+    assert blocked[0]["severity"] == "critical"
+    assert not any(hint["code"] == "irrigation_sensor_blocked" for hint in payload["hang_hints"])
+
+
+def test_within_band_skip_and_other_task_type_do_not_emit_irrigation_block():
+    within_band = _irrigation_task(outcome="skip", reason="smart_soil_within_band")
+    lighting = _irrigation_task(
+        outcome="skip",
+        reason="smart_soil_telemetry_missing_or_stale",
+        task_type="lighting_tick",
+    )
+    for task in (within_band, lighting):
+        payload = build_automation_observability(
+            zone_id=6,
+            task=task,
+            workflow_state=None,
+            telemetry={},
+            telemetry_fetch_ok=True,
+            now=NOW,
+        )
+        codes = {hint["code"] for hint in payload["hang_hints"]}
+        assert "irrigation_sensor_blocked" not in codes
+        assert "solution_temp_blocked" not in codes
+
+
+def test_crop_day_codes_exist_in_error_catalog():
+    path = Path("/app/error_codes.json")
+    if not path.is_file():
+        path = Path(__file__).resolve().parents[1] / "error_codes.json"
+    catalog = json.loads(path.read_text(encoding="utf-8"))
+    by_code = {row["code"]: row for row in catalog["codes"]}
+    for code in (
+        "smart_soil_target_missing",
+        "smart_soil_telemetry_missing_or_stale",
+        "solution_temp_out_of_band",
+        "solution_temp_unavailable",
+        "dli_sensor_unavailable",
+        "solution_refresh_recommended",
+    ):
+        row = by_code[code]
+        assert any("а" <= ch <= "я" or "А" <= ch <= "Я" for ch in row["title"])
+        assert row["message"].strip()
+    for code in ("dli_sensor_unavailable", "solution_refresh_recommended"):
+        assert any("а" <= ch <= "я" or "А" <= ch <= "Я" for ch in by_code[code]["message"])

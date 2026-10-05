@@ -100,6 +100,9 @@ vi.mock('@/services/api', () => ({
       validateGreenhouseClimateDevices: setupWizardValidateMock,
       applyGreenhouseClimateBindings: setupWizardApplyMock,
     },
+    greenhouses: {
+      update: vi.fn().mockResolvedValue({ data: { status: 'ok' } }),
+    },
   },
 }))
 

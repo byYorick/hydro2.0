@@ -847,7 +847,7 @@ class GetZoneAutomationStateUseCase:
             completed_at=getattr(task, "completed_at", None),
         )
 
-        return self._attach_observability(
+        return await self._attach_observability(
             {
             "zone_id": zone_id,
             "state": state,
@@ -957,7 +957,7 @@ class GetZoneAutomationStateUseCase:
             pending_manual_step=pending_manual_step,
         )
 
-        return self._attach_observability(
+        return await self._attach_observability(
             {
             "zone_id": zone_id,
             "state": state,
@@ -1038,7 +1038,7 @@ class GetZoneAutomationStateUseCase:
             since_ts=self._idle_timeline_since(),
         )
         control_ctx = await self._control_mode_context(zone_id=zone_id, current_stage=None)
-        return self._attach_observability(
+        return await self._attach_observability(
             {
             "zone_id": zone_id,
             "state": "IDLE",
@@ -1102,7 +1102,23 @@ class GetZoneAutomationStateUseCase:
             observability_thresholds=observability_thresholds,
         )
 
-    def _attach_observability(
+    async def _latest_irrigation_task(self, *, zone_id: int, task: Optional[Any]) -> Any | None:
+        if task is not None and str(getattr(task, "task_type", "") or "").strip().lower() == "irrigation_start":
+            return task
+        getter = getattr(self._task_repository, "get_last_irrigation_for_zone", None)
+        if getter is None:
+            return None
+        try:
+            return await getter(zone_id=zone_id)
+        except Exception:
+            logger.warning(
+                "AE3 automation state: last irrigation task read failed for zone_id=%s",
+                zone_id,
+                exc_info=True,
+            )
+            return None
+
+    async def _attach_observability(
         self,
         payload: dict[str, Any],
         *,
@@ -1114,6 +1130,7 @@ class GetZoneAutomationStateUseCase:
         node_rows: list[dict[str, Any]] | None,
         observability_thresholds: dict[str, int] | None = None,
     ) -> dict[str, Any]:
+        irrigation_task = await self._latest_irrigation_task(zone_id=zone_id, task=task)
         observability = build_automation_observability(
             zone_id=zone_id,
             task=task,
@@ -1123,6 +1140,7 @@ class GetZoneAutomationStateUseCase:
             now=self._now(),
             node_rows=node_rows or [],
             thresholds=observability_thresholds,
+            irrigation_task=irrigation_task,
         )
         payload["observability"] = observability
         return payload

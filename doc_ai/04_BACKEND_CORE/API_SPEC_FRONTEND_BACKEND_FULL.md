@@ -633,6 +633,8 @@ authority-документ `zone.logic_profile` через API `/api/automation-
   - **`state_meta.is_stale=true`:** пересобирает `observability.runtime` и `observability.nodes` из PostgreSQL
     (`ae_tasks`, `zone_workflow_state`, `nodes`, `zone_automation_intents`), сбрасывает AE-hints и пересчитывает
     Laravel runtime-hints; `stage_elapsed_sec` берётся из БД, а не из устаревшего `state_details.elapsed_sec`;
+    суточные проекции (`dli_*`, `solution_refresh_due`, `moisture_vent_suppressed`) после этого дописываются из уже
+    записанных строк и не заменяются пересчётом VPD;
   - `observability.runtime.source=laravel_db_fallback` выставляется только на DB-path.
 - **Terminal failure UX:** если `state_details.failed=true`, но в зоне **нет** ACTIVE policy-managed alert
   (`AlertPolicyService::policyManagedCodes()`, напр. `biz_ae3_task_failed`), Laravel очищает
@@ -700,6 +702,14 @@ authority-документ `zone.logic_profile` через API `/api/automation-
 | `scheduler_intent_running_stuck` | warning | Laravel only | running intent age ≥ 600 с |
 | `scheduler_intent_task_drift` | warning | Laravel only | intent `claimed|running` + ae_task `pending` с тем же `idempotency_key` |
 | `state_snapshot_stale` | warning | Frontend client | `state_meta.is_stale=true` (добавляется UI, если hint ещё нет) |
+| `irrigation_sensor_blocked` | critical | AE3 | последняя `irrigation_start`: outcome `skip` и reason `smart_soil_target_missing` или `smart_soil_telemetry_missing_or_stale` |
+| `solution_temp_blocked` | critical | AE3 | тот же skip с reason `solution_temp_out_of_band` или `solution_temp_unavailable` |
+| `dli_sensor_unavailable` | warning | Laravel | проекция `day_balance.dli_status=sensor_unavailable`, без нового расчёта |
+| `dli_gap` | warning | Laravel | проекция `day_balance.dli_status=gap` |
+| `solution_refresh_due` | warning | Laravel | `SOLUTION_REFRESH_RECOMMENDED` моложе 24 часов и подмена после него не завершена |
+| `moisture_vent_suppressed` | info | Laravel | флаг `greenhouse_automation_state.decision_factors`; VPD в PHP не считается |
+
+Нет исходной строки — подсказку не выдумывать. Старые коды таблицы выше не меняются.
 
 - **AE3 per-stage пороги `stage_elapsed_long` (warn / critical, сек):**
   `startup` 120/600; `clean_fill_check` 300/1800; `solution_fill_check` 600/3600;

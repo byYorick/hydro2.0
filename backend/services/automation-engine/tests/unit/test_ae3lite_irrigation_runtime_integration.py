@@ -28,9 +28,9 @@ def _plan(*, named_plans=None, **runtime_overrides):
 class _DecisionControllerStub:
     async def evaluate(self, **_kwargs):
         return SimpleNamespace(
-            outcome="degraded_run",
+            outcome="skip",
             reason_code="smart_soil_telemetry_missing_or_stale",
-            degraded=True,
+            degraded=False,
             details={
                 "sensor_count": 1,
                 "samples": 0,
@@ -150,7 +150,8 @@ async def test_decision_gate_persists_irrigation_decision_columns() -> None:
         )
 
         assert outcome.kind == "transition"
-        assert outcome.next_stage == "irrigation_start"
+        assert outcome.kind != "fail"
+        assert outcome.next_stage == "completed_skip"
 
         rows = await fetch(
             """
@@ -168,9 +169,10 @@ async def test_decision_gate_persists_irrigation_decision_columns() -> None:
         assert len(rows) == 1
         row = rows[0]
         assert row["irrigation_decision_strategy"] == "smart_soil_v1"
-        assert row["irrigation_decision_outcome"] == "degraded_run"
+        assert row["irrigation_decision_outcome"] == "skip"
+        assert row["irrigation_decision_outcome"] != "fail"
         assert row["irrigation_decision_reason_code"] == "smart_soil_telemetry_missing_or_stale"
-        assert row["irrigation_decision_degraded"] is True
+        assert row["irrigation_decision_degraded"] is False
 
         event_rows = await fetch(
             """
@@ -189,11 +191,19 @@ async def test_decision_gate_persists_irrigation_decision_columns() -> None:
         assert event_rows[0]["type"] == "IRRIGATION_DECISION_EVALUATED"
         assert payload["task_id"] == int(task.id)
         assert payload["strategy"] == "smart_soil_v1"
-        assert payload["outcome"] == "degraded_run"
+        assert payload["outcome"] == "skip"
+        assert payload["outcome"] != "fail"
         assert payload["reason_code"] == "smart_soil_telemetry_missing_or_stale"
-        assert payload["degraded"] is True
+        assert payload["degraded"] is False
         assert payload["details"]["sensor_count"] == 1
         assert payload["details"]["samples"] == 0
+
+        status_rows = await fetch(
+            "SELECT status, error_code FROM ae_tasks WHERE id = $1",
+            int(task.id),
+        )
+        assert status_rows[0]["status"] != "failed"
+        assert status_rows[0]["error_code"] is None
     finally:
         await _cleanup(prefix)
 

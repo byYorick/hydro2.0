@@ -30,7 +30,7 @@ def _handler() -> PrepareRecircCheckHandler:
         runtime_monitor=SimpleNamespace(),
         command_gateway=SimpleNamespace(),
     )
-    handler._correction_config_for_task = lambda **_kw: _runtime().correction  # type: ignore[method-assign]
+    handler._runtime_config.correction_config_for_task = lambda **_kw: _runtime().correction  # type: ignore[method-assign]
     handler._probe_snapshot_correction_fields = lambda **_kw: {}  # type: ignore[method-assign]
     return handler
 

@@ -88,6 +88,162 @@ class RecipePhaseTargetValidator
         );
 
         $this->validateDayNightExtensions($validator, $data, $attributePrefix);
+        $this->validateCropDayExtensions($validator, $data, $attributePrefix);
+        $this->validateCropDayPhase($validator, $data, $existingPhase, $attributePrefix);
+    }
+
+    /**
+     * Новые ключи extensions. Остальной объект не пересобирается и не отвергается.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    private function validateCropDayExtensions($validator, array $data, string $attributePrefix): void
+    {
+        $extensions = is_array($data['extensions'] ?? null) ? $data['extensions'] : null;
+        if ($extensions === null) {
+            return;
+        }
+
+        if (array_key_exists('solution_max_age_days', $extensions)) {
+            $age = $extensions['solution_max_age_days'];
+            if (! $this->isEmptyCropDayValue($age) && (filter_var($age, FILTER_VALIDATE_INT) === false || (int) $age < 1 || (int) $age > 60)) {
+                $validator->errors()->add(
+                    $attributePrefix.'extensions.solution_max_age_days',
+                    'solution_max_age_days пустое или целое 1…60.'
+                );
+            }
+        }
+
+        if (array_key_exists('solution_refresh_after_topup_ml', $extensions)) {
+            $milliliters = $extensions['solution_refresh_after_topup_ml'];
+            if (! $this->isEmptyCropDayValue($milliliters) && (! is_numeric($milliliters) || (float) $milliliters <= 0)) {
+                $validator->errors()->add(
+                    $attributePrefix.'extensions.solution_refresh_after_topup_ml',
+                    'solution_refresh_after_topup_ml пустое или число больше 0.'
+                );
+            }
+        }
+
+        if (! array_key_exists('solution_health', $extensions) || $this->isEmptyCropDayValue($extensions['solution_health'])) {
+            return;
+        }
+
+        $health = $extensions['solution_health'];
+        if (! is_array($health) || array_is_list($health)) {
+            $validator->errors()->add(
+                $attributePrefix.'extensions.solution_health',
+                'solution_health должен быть объектом.'
+            );
+
+            return;
+        }
+
+        if (array_key_exists('required', $health) && ! $this->isEmptyCropDayValue($health['required']) && ! $this->isNullableBoolean($health['required'])) {
+            $validator->errors()->add(
+                $attributePrefix.'extensions.solution_health.required',
+                'solution_health.required должен быть boolean.'
+            );
+        }
+
+        if (array_key_exists('breach_hold_sec', $health) && ! $this->isEmptyCropDayValue($health['breach_hold_sec'])) {
+            $hold = $health['breach_hold_sec'];
+            if (filter_var($hold, FILTER_VALIDATE_INT) === false || (int) $hold < 60 || (int) $hold > 86400) {
+                $validator->errors()->add(
+                    $attributePrefix.'extensions.solution_health.breach_hold_sec',
+                    'breach_hold_sec пустой или целое 60…86400.'
+                );
+            }
+        }
+    }
+
+    private function isEmptyCropDayValue(mixed $value): bool
+    {
+        return $value === null || $value === '';
+    }
+
+    private function isNullableBoolean(mixed $value): bool
+    {
+        return in_array($value, [true, false, 0, 1, '0', '1'], true);
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    private function validateCropDayPhase($validator, array $data, ?RecipeRevisionPhase $existingPhase, string $attributePrefix): void
+    {
+        $this->validateSolutionHealthRequired($validator, $data, $existingPhase, $attributePrefix);
+        $this->validateSolutionTempOrder($validator, $data, $existingPhase, $attributePrefix);
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    private function validateSolutionHealthRequired($validator, array $data, ?RecipeRevisionPhase $existingPhase, string $attributePrefix): void
+    {
+        $extensions = is_array($data['extensions'] ?? null) ? $data['extensions'] : null;
+        if ($extensions === null || ! array_key_exists('solution_health', $extensions)) {
+            return;
+        }
+
+        $health = $extensions['solution_health'];
+        if (! is_array($health) || ! $this->isSolutionHealthRequired($health['required'] ?? null)) {
+            return;
+        }
+
+        $min = $this->resolvedPhaseColumn($data, $existingPhase, 'solution_temp_min');
+        $max = $this->resolvedPhaseColumn($data, $existingPhase, 'solution_temp_max');
+        if (! is_numeric($min) || ! is_numeric($max)) {
+            $validator->errors()->add(
+                $attributePrefix.'extensions.solution_health.required',
+                'solution_health.required=true только вместе с solution_temp_min и solution_temp_max.'
+            );
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    private function validateSolutionTempOrder($validator, array $data, ?RecipeRevisionPhase $existingPhase, string $attributePrefix): void
+    {
+        if (! array_key_exists('solution_temp_min', $data) && ! array_key_exists('solution_temp_max', $data)) {
+            return;
+        }
+
+        $min = $this->resolvedPhaseColumn($data, $existingPhase, 'solution_temp_min');
+        $max = $this->resolvedPhaseColumn($data, $existingPhase, 'solution_temp_max');
+        if (is_numeric($min) && is_numeric($max) && (float) $min > (float) $max) {
+            $validator->errors()->add(
+                $attributePrefix.'solution_temp_min',
+                'Температура раствора: min не может быть больше max.'
+            );
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    private function resolvedPhaseColumn(array $data, ?RecipeRevisionPhase $existingPhase, string $field): mixed
+    {
+        if (array_key_exists($field, $data)) {
+            $value = $data[$field];
+            if ($value === null || $value === '') {
+                return null;
+            }
+
+            return $value;
+        }
+
+        $stored = $existingPhase?->{$field};
+        if ($stored === null || $stored === '') {
+            return null;
+        }
+
+        return $stored;
+    }
+
+    private function isSolutionHealthRequired(mixed $value): bool
+    {
+        return $value === true || $value === 1 || $value === '1';
     }
 
     /**

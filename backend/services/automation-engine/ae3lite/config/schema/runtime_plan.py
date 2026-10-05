@@ -293,6 +293,22 @@ class SolutionRuntimeSlice(BaseModel):
     solution_change_operator_confirm_timeout_sec: Annotated[int, Field(ge=60, le=86400)] = 3600
 
 
+class SolutionHealth(BaseModel):
+    """Температура раствора для пропуска нового полива.
+
+    ``required`` и ``breach_hold_sec`` приходят из extensions фазы.
+    ``min_c`` / ``max_c`` — колонки ``solution_temp_min`` / ``solution_temp_max``,
+    без подстановки target. Пустой предел выключает gate.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    required: bool = False
+    min_c: float | None = None
+    max_c: float | None = None
+    breach_hold_sec: Annotated[int, Field(ge=60, le=86400)] = 600
+
+
 class IrrigationRuntimeSlice(BaseModel):
     """Полив: irr_state, fail-safe и decision."""
 
@@ -310,6 +326,7 @@ class IrrigationRuntimeSlice(BaseModel):
     irr_state_wait_poll_interval_sec: Annotated[float, Field(ge=0.0, le=5.0)] | None = None
     soil_moisture_target: SoilMoistureTarget | None = None
     semi_allows_active_flow: bool = False
+    solution_health: SolutionHealth = Field(default_factory=SolutionHealth)
 
 
 class CorrectionRuntimeSlice(BaseModel):
@@ -391,6 +408,7 @@ __all__ = [
     "IrrigationRecovery",
     "RecircDiluteConfig",
     "IrrigationSafety",
+    "SolutionHealth",
     "SoilMoistureTarget",
     "DayNightConfig",
     "DayNightLighting",

@@ -255,6 +255,8 @@ Laravel использует authority для:
 - если irrigation decision strategy = `task`, timed irrigation (`mode`, `interval`, `duration`)
   является recipe-owned и zone override игнорируется compiler/runtime;
 - если irrigation decision strategy = `smart_soil_v1`, trigger/config принадлежат zone automation;
+- явный `profiles.*.subsystems.irrigation.decision.strategy` — только `task` или `smart_soil_v1`, иначе 422 и документ не пишется. Нет ключа — как раньше. `lookback`, `hysteresis`, `command_plans` и прочие уже лежащие ключи из-за этого не отвергаются;
+- `greenhouse_targets.vpd_min_kpa` и `vpd_max_kpa`: оба пустые или оба заданы. Пустое выключает контур и не становится нулём. Каждый 0.1…3.0, min < max. Иначе 422, документ и bundle климата не обновляются. Горячая смена — тот же PUT `greenhouse.logic_profile`, следующий climate tick читает bundle;
 - frontend больше не владеет `subsystems.irrigation.execution.correction_strategy`
   и `subsystems.irrigation.dosing_rules`: runtime derivation идёт из recipe/correction authority.
 

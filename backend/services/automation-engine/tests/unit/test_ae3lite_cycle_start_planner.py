@@ -1164,9 +1164,9 @@ def test_planner_lighting_tick_on_explicit_brightness_pct_overrides_targets() ->
 
 
 def test_planner_lighting_tick_on_uses_night_brightness_when_not_day(monkeypatch: pytest.MonkeyPatch) -> None:
-    from ae3lite.application.handlers.base import BaseStageHandler
+    from ae3lite.application.services.stage_runtime_config import StageRuntimeConfig
 
-    monkeypatch.setattr(BaseStageHandler, "_is_day_now", staticmethod(lambda _cfg: False))
+    monkeypatch.setattr(StageRuntimeConfig, "is_day_now", staticmethod(lambda _cfg: False))
     planner = CycleStartPlanner()
     base = _snapshot()
     snapshot = ZoneSnapshot(

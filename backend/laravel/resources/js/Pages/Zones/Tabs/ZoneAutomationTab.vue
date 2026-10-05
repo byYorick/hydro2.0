@@ -116,6 +116,7 @@
           :fallback-system-type="waterForm.systemType"
           :automation-state-refresh-seq="automationStateRefreshSeq ?? 0"
           :pump-calibration-save-seq="props.pumpCalibrationSaveSeq ?? 0"
+          :recipe-phase="props.currentRecipePhase ?? null"
           @state-snapshot="handleProcessStateSnapshot"
         />
       </div>

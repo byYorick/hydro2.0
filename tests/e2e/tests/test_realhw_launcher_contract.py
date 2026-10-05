@@ -70,6 +70,12 @@ class TestRealHardwareLauncherContract(unittest.TestCase):
             '"scenarios/ae3lite/E120_ae3_recirc_dilute_overshoot_realhw.yaml"',
             self.script,
         )
+        self.assertIn("CROP_DAY_SCENARIOS=(", self.script)
+        self.assertIn(
+            '"scenarios/ae3lite/E122_ae3_crop_day_sensor_contract_realhw.yaml"',
+            self.script,
+        )
+        self.assertIn("crop_day)", self.script)
         # E118 before E119 before E120: launcher exits on first failure.
         self.assertLess(
             self.script.index('"scenarios/ae3lite/E118_ae3_water_baseline_and_ca_fill_realhw.yaml"'),

@@ -84,7 +84,7 @@ async def test_irrigation_check_enters_correction_when_targets_not_met_and_flag_
         "_load_irrigation_nutrient_baseline",
         AsyncMock(return_value=(None, None, None, None, None)),
     )
-    monkeypatch.setattr(handler, "_correction_config_for_task", lambda **_kwargs: {"max_ec_correction_attempts": 2, "max_ph_correction_attempts": 2, "stabilization_sec": 1})
+    monkeypatch.setattr(handler._runtime_config, "correction_config_for_task", lambda **_kwargs: {"max_ec_correction_attempts": 2, "max_ph_correction_attempts": 2, "stabilization_sec": 1})
 
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     task = SimpleNamespace(
@@ -144,8 +144,8 @@ async def test_irrigation_check_enters_calcium_correction_when_ec_component_set(
     monkeypatch.setattr(handler, "_targets_reached", _targets)
     monkeypatch.setattr(handler, "_load_irrigation_nutrient_baseline", _baseline)
     monkeypatch.setattr(
-        handler,
-        "_correction_config_for_task",
+        handler._runtime_config,
+        "correction_config_for_task",
         lambda **_kwargs: {
             "max_ec_correction_attempts": 4,
             "max_ph_correction_attempts": 3,
@@ -211,8 +211,8 @@ async def test_irrigation_check_enters_npk_correction_when_ec_component_set(
     monkeypatch.setattr(handler, "_targets_reached", _targets)
     monkeypatch.setattr(handler, "_load_irrigation_nutrient_baseline", _baseline)
     monkeypatch.setattr(
-        handler,
-        "_correction_config_for_task",
+        handler._runtime_config,
+        "correction_config_for_task",
         lambda **_kwargs: {
             "max_ec_correction_attempts": 5,
             "max_ph_correction_attempts": 2,
@@ -857,8 +857,8 @@ async def test_irrigation_check_ignores_stale_solution_low_event_when_probe_and_
     )
     monkeypatch.setattr(handler, "_targets_reached", AsyncMock(return_value=False))
     monkeypatch.setattr(
-        handler,
-        "_correction_config_for_task",
+        handler._runtime_config,
+        "correction_config_for_task",
         lambda **_kwargs: {
             "max_ec_correction_attempts": 2,
             "max_ph_correction_attempts": 2,

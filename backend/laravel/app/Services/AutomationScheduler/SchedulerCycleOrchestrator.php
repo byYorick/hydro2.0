@@ -4,6 +4,7 @@ namespace App\Services\AutomationScheduler;
 
 use App\Models\SchedulerLog;
 use App\Models\ZoneManualSchedule;
+use App\Services\CropDay\SolutionRefreshRecommendation;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -11,6 +12,8 @@ use Illuminate\Support\Str;
 
 class SchedulerCycleOrchestrator
 {
+    private const DLI_CHECK_INTERVAL_SEC = 900;
+
     private const BACKPRESSURE_REASONS = [
         'schedule_busy',
         'zone_setup_pending',
@@ -112,6 +115,7 @@ class SchedulerCycleOrchestrator
             }
 
             if ($zoneIds !== []) {
+                app(SolutionRefreshRecommendation::class)->beginCycle();
                 $workflowRows = DB::table('zone_workflow_state')
                     ->select(['zone_id', 'workflow_phase'])
                     ->whereIn('zone_id', $zoneIds)
@@ -614,6 +618,7 @@ class SchedulerCycleOrchestrator
                 if (is_string($startTime) && is_string($endTime) && $startTime !== '' && $endTime !== '') {
                     $desiredNow = $this->finalizer->isUtcMomentInWindow($now, $startTime, $endTime, $clockTimezone);
                     $desiredLast = $this->finalizer->isUtcMomentInWindow($last, $startTime, $endTime, $clockTimezone);
+                    $windowTransitionQueued = false;
                     if ($desiredNow !== $desiredLast) {
                         if (ScheduleSpecHelper::matchesDayOfWeek(
                             $now->setTimezone($clockTimezone),
@@ -626,9 +631,27 @@ class SchedulerCycleOrchestrator
                                 desiredNow: $desiredNow,
                                 timezone: $clockTimezone,
                             );
+                            $windowTransitionQueued = true;
                             if (count($batchDispatchJobs) >= $dispatchParallelism) {
                                 $flushBatchDispatchJobs();
                             }
+                        }
+                    }
+                    if (
+                        ! $windowTransitionQueued
+                        && $desiredNow
+                        && $schedule->manualScheduleId === null
+                        && $taskType === 'lighting'
+                        && $this->lightingDliTargetIsSet($schedule)
+                        && ScheduleSpecHelper::matchesDayOfWeek(
+                            $now->setTimezone($clockTimezone),
+                            $schedule->daysOfWeek,
+                        )
+                        && $this->dliCheckDue($schedule->zoneId, $now)
+                    ) {
+                        $batchDispatchJobs[] = $this->makeDliCheckDispatchJob($schedule, $now);
+                        if (count($batchDispatchJobs) >= $dispatchParallelism) {
+                            $flushBatchDispatchJobs();
                         }
                     }
                     $executedKeys[$scheduleKey] = true;
@@ -640,6 +663,14 @@ class SchedulerCycleOrchestrator
             }
 
             $flushBatchDispatchJobs();
+
+            try {
+                app(SolutionRefreshRecommendation::class)->sweepUncovered($zoneIds);
+            } catch (\Throwable $e) {
+                Log::warning('solution_refresh_recommendation_failed', [
+                    'error' => $e->getMessage(),
+                ]);
+            }
 
             $zonesPendingTimeRetry = 0;
             foreach ($zoneNow as $zoneId => $now) {
@@ -875,6 +906,56 @@ class SchedulerCycleOrchestrator
             'scheduleKey' => $schedule->scheduleKey,
             'taskType' => $schedule->taskType,
             'holdCursorOnRetryable' => true,
+        ];
+    }
+
+    private function lightingDliTargetIsSet(ScheduleItem $schedule): bool
+    {
+        $raw = $schedule->payload['dli_target'] ?? null;
+
+        return is_numeric($raw) && (float) $raw > 0;
+    }
+
+    private function dliCheckDue(int $zoneId, CarbonImmutable $now): bool
+    {
+        $bucket = SchedulerRuntimeHelper::dliCheckBucket($now, self::DLI_CHECK_INTERVAL_SEC);
+        $bucketSql = $bucket->format('Y-m-d H:i:s');
+
+        return ! DB::table('laravel_scheduler_active_tasks')
+            ->where('zone_id', $zoneId)
+            ->where('task_type', 'lighting')
+            ->where(function ($query) use ($bucketSql): void {
+                $query->where('accepted_at', '>=', $bucketSql)
+                    ->orWhere('terminal_at', '>=', $bucketSql);
+            })
+            ->exists();
+    }
+
+    /**
+     * @return array{
+     *     zoneId: int,
+     *     schedule: ScheduleItem,
+     *     triggerTime: CarbonImmutable,
+     *     scheduleKey: string,
+     *     taskType: string,
+     *     holdCursorOnRetryable: bool
+     * }
+     */
+    private function makeDliCheckDispatchJob(ScheduleItem $schedule, CarbonImmutable $now): array
+    {
+        $bucket = SchedulerRuntimeHelper::dliCheckBucket($now, self::DLI_CHECK_INTERVAL_SEC);
+        $payload = array_merge($schedule->payload, [
+            'desired_state' => 'on',
+            'catchup_original_trigger_time' => SchedulerRuntimeHelper::toIso($bucket),
+        ]);
+
+        return [
+            'zoneId' => $schedule->zoneId,
+            'schedule' => $schedule->withPayload($payload),
+            'triggerTime' => $bucket,
+            'scheduleKey' => $schedule->scheduleKey,
+            'taskType' => $schedule->taskType,
+            'holdCursorOnRetryable' => false,
         ];
     }
 

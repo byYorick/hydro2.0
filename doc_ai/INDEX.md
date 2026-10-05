@@ -1,7 +1,7 @@
 # Индекс документации hydro 2.0
 
 **Версия:** 2.5  
-**Дата обновления:** 2026-08-24
+**Дата обновления:** 2026-10-04
 
 Точка входа — четыре документа (остальное — по слою задачи, не «прочитать всё»):
 
@@ -29,10 +29,9 @@ Breaking-change: обратная совместимость со старыми
 - [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) — live / planned / frozen (`guide`, не SoT runtime)
 - [TASKS_FOR_AI_AGENTS.md](TASKS_FOR_AI_AGENTS.md) — постановка задач для ИИ (`guide`)
 
-Планы (`plan`, не runtime SoT): `ROADMAP_2.0.md`, `AGRO_AUTONOMY_MASTER_PLAN.md` (product-gaps), `FIRMWARE_OPTIMIZATION_PLAN.md`.  
-`SYNC_PLAN.md` — code-first drift backlog; не structural plan и не противоречит P0 SoT.
+Открытая очередь для агента без отдельного поручения — одна: [суточный контур культуры, версия 1.2.0](04_BACKEND_CORE/AE3_CROP_DAY_LOOP_PLAN_FOR_AI_AGENTS.md).
 
-`00_ARCHIVE/` — не SoT.
+Остальные файлы с именами `*PLAN*`, `*ROADMAP*` и `SYNC_PLAN.md` в рабочих папках — заглушки. Полный текст лежит в `00_ARCHIVE/PLANS/`. Архив не читать как задание и не исполнять. Исключение, которое остаётся спецификацией, а не очередью: `06_DOMAIN_ZONES_RECIPES/GREENHOUSE_CLIMATE_CONTROL_PLAN.md` (алгоритм уже построенных форточек).
 
 ---
 
@@ -105,8 +104,7 @@ Breaking-change: обратная совместимость со старыми
 - `04_BACKEND_CORE/AUTOMATION_CONFIG_AUTHORITY.md` — единый authority automation/runtime-конфигов
 - `04_BACKEND_CORE/PYTHON_SERVICES_ARCH.md` — архитектура Python-сервисов
 - `04_BACKEND_CORE/ae3lite.md` — каноническая спецификация AE3-Lite (automation-engine), rollout/rollback; §9.4.1 UI `observability` в `/state` (`canonical`)
-- [04_BACKEND_CORE/AE3_ARCHITECTURE_REVIEW.md](04_BACKEND_CORE/AE3_ARCHITECTURE_REVIEW.md) — аудит AE3 и предложение по архитектуре исполнения (`guide`, 2026-10-03; не canonical)
-- [04_BACKEND_CORE/AE3_EXECUTION_HARDENING_PLAN_FOR_AI_AGENTS.md](04_BACKEND_CORE/AE3_EXECUTION_HARDENING_PLAN_FOR_AI_AGENTS.md) — план исправлений AE3 для ИИ-агентов с регрессионными тестами и прогонами (`plan`)
+- [04_BACKEND_CORE/AE3_CROP_DAY_LOOP_PLAN_FOR_AI_AGENTS.md](04_BACKEND_CORE/AE3_CROP_DAY_LOOP_PLAN_FOR_AI_AGENTS.md) — единственная открытая очередь агента: суточный контур культуры, версия 1.2.0 (`plan`)
 - `04_BACKEND_CORE/LARAVEL_AE3_READ_MODEL_CONTRACT.md` — snapshot-контракт read-model Laravel↔AE3 + CI-job (`canonical`)
 - `04_BACKEND_CORE/AE3_RUNTIME_EVENT_CONTRACT.md` — runtime-event контракт AE3 (`canonical`)
 - `04_BACKEND_CORE/AE3_IRR_FAILSAFE_AND_ESTOP_CONTRACT.md` — failsafe / E-Stop контракт irrigation (`canonical`)
@@ -119,8 +117,7 @@ Breaking-change: обратная совместимость со старыми
 - `04_BACKEND_CORE/REALTIME_UPDATES_ARCH.md` — архитектура real-time обновлений
 - `04_BACKEND_CORE/FULL_STACK_DEPLOY_DOCKER.md` — деплой стека через Docker
 - `04_BACKEND_CORE/TECH_STACK_LARAVEL_INERTIA_VUE3_PG.md` — технологический стек
-- Living plans (`plan`): `AE3_STARTUP_RECOVERY_IMPROVEMENT_PLAN.md`, `AE3_NODE_AVAILABILITY_DETECTION_PLAN.md`, `AE3_SETUP_BEFORE_IRRIGATION_PLAN.md`
-- Архив plans (stubs → `00_ARCHIVE/PLANS/`): `AE3_RELIABILITY_AUDIT_*`, `AE3_REFACTORING_PLAN_*`, `BACKEND_REFACTOR_PLAN`, `REFACTORING_PLAN`
+- Заглушки планов AE3 (полный текст в `00_ARCHIVE/PLANS/`, не исполнять): startup recovery, node availability, setup-before-irrigation, hardening, architecture review, reliability audit, refactoring
 
 **См. также:** [README](04_BACKEND_CORE/README.md)
 
@@ -173,7 +170,7 @@ Breaking-change: обратная совместимость со старыми
 - `07_FRONTEND/API_MAPPING.md` — маппинг frontend → backend API
 - `07_FRONTEND/FRONTEND_TESTING.md` — стратегия тестирования фронтенда (`guide`)
 - `07_FRONTEND/ui_refs/` — референсы UI/UX (изображения)
-- Living plans (`plan`): `ROLE_BASED_UX_IMPROVEMENT_PLAN.md`, `LAUNCH_REDESIGN.md`, `AUTOMATION_WIZARD_UNIFICATION_PLAN.md`, `ZONE_AUTOMATION_PRESETS_PLAN.md`, `SCHEDULER_COCKPIT_REDESIGN.md`, `SCHEDULER_COCKPIT_IMPLEMENTATION.md`, `SCHEDULER_COCKPIT_MONITORING.md`
+- Планы фронтенда в этой папке — заглушки на `00_ARCHIVE/PLANS/`. Не исполнять. Канон UI — `FRONTEND_ARCH_FULL.md` и `FRONTEND_UI_UX_SPEC.md`.
 - Архив plans (stubs → `00_ARCHIVE/PLANS/`): `UI_UX_IMPROVEMENT_PLAN`, `FRONTEND_REWORK_PLAN`, `LAUNCH_LEGACY_CLEANUP_PLAN`
 
 **См. также:** [README](07_FRONTEND/README.md)
@@ -200,20 +197,9 @@ Breaking-change: обратная совместимость со старыми
 
 ---
 
-### [09_AI_AND_DIGITAL_TWIN](09_AI_AND_DIGITAL_TWIN/) — AI и цифровой двойник (`plan`, не default runtime)
+### [09_AI_AND_DIGITAL_TWIN](09_AI_AND_DIGITAL_TWIN/) — AI и цифровой двойник
 
-Раздел **не** входит в default `make up` (`digital-twin` / `feature-builder` / `node-emulator` — только по запросу). Документы — `plan` / engine draft, не SoT runtime.
-
-**Ключевые документы:**
-- `09_AI_AND_DIGITAL_TWIN/AI_ARCH_FULL.md` — полная архитектура AI-слоя
-- `09_AI_AND_DIGITAL_TWIN/AI_ROADMAP.md` — дорожная карта AI/ML pipeline'ов
-- `09_AI_AND_DIGITAL_TWIN/ML_FEATURE_PIPELINE.md` — feature pipeline для ML-моделей
-- `09_AI_AND_DIGITAL_TWIN/VISION_PIPELINE.md` — computer vision pipeline
-- `09_AI_AND_DIGITAL_TWIN/IRRIGATION_ML_PIPELINE.md` — ML pipeline умного полива
-- `09_AI_AND_DIGITAL_TWIN/DIGITAL_TWIN_ENGINE.md` — движок цифрового двойника
-- `09_AI_AND_DIGITAL_TWIN/ZONE_SIMULATION_ENGINE.md` — симуляция зон
-- `09_AI_AND_DIGITAL_TWIN/AI_OPTIMIZATION_ENGINE.md` — оптимизация
-- `09_AI_AND_DIGITAL_TWIN/ENERGY_OPTIMIZATION_ENGINE.md` — энергооптимизация (`plan` / engine draft)
+Не очередь и не runtime. Файлы раздела — заглушки. Полный текст в `00_ARCHIVE/PLANS/digital_twin/`. Не реализовывать. `feature-builder` не входит в обычный `make up`.
 
 **См. также:** [README](09_AI_AND_DIGITAL_TWIN/README.md)
 

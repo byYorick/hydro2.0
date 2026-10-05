@@ -166,7 +166,7 @@ class ZoneReadinessServiceTest extends TestCase
         $this->assertContains('1 нода офлайн', $result['warnings']);
     }
 
-    public function test_check_zone_readiness_ignores_unbound_nodes_for_online_check(): void
+    public function test_check_zone_readiness_counts_unbound_zone_nodes(): void
     {
         $zone = Zone::factory()->create();
 
@@ -186,9 +186,11 @@ class ZoneReadinessServiceTest extends TestCase
         $readiness = $this->service->checkZoneReadiness($zone);
 
         $this->assertTrue($readiness['ready']);
-        $this->assertSame(1, $readiness['nodes']['total']);
+        $this->assertSame(2, $readiness['nodes']['total']);
         $this->assertSame(1, $readiness['nodes']['online']);
-        $this->assertEmpty($readiness['warnings']);
+        $this->assertFalse($readiness['nodes']['all_online']);
+        $this->assertSame('offline_nodes', $readiness['warning_details'][0]['type'] ?? null);
+        $this->assertSame(1, $readiness['warning_details'][0]['count'] ?? null);
     }
 
     public function test_check_zone_readiness_accepts_greenhouse_level_bindings(): void

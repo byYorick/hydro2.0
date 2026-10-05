@@ -14,7 +14,6 @@ from ae3lite.application.handlers.correction import CorrectionHandler, _Measurem
 from ae3lite.application.services.correction_pipeline import should_dilute
 from ae3lite.domain.entities.planned_command import PlannedCommand
 from ae3lite.domain.entities.workflow_state import CorrectionState
-from ae3lite.domain.errors import ErrorCodes, TaskExecutionError
 from ae3lite.domain.services.nutrient_pipeline import ec_overshoot_requires_dilute
 
 
@@ -61,7 +60,7 @@ def test_full_ec_component_ratios_prefers_tank_recirc() -> None:
             "solution_fill": SimpleNamespace(ec_component_ratios={"calcium": 30}),
         },
     )
-    ratios = handler._full_ec_component_ratios(
+    ratios = handler._runtime_config.full_ec_component_ratios(
         runtime=runtime,
         correction_cfg={"ec_component_ratios": {"calcium": 1.0}},
     )
@@ -130,7 +129,7 @@ def _make_dilute_handler(
         pid_state_repository=pid,
     )
     handler._log_correction_event = AsyncMock()  # type: ignore[method-assign]
-    handler._persist_pid_state_updates = AsyncMock()  # type: ignore[method-assign]
+    handler._pid_state.persist = AsyncMock()  # type: ignore[method-assign]
     handler._check_no_effect_block = lambda **_kw: None  # type: ignore[method-assign]
     handler._should_log_limit_policy = lambda **_kw: False  # type: ignore[method-assign]
     handler._irrigation_ready_short_circuit = lambda **_kw: False  # type: ignore[method-assign]
@@ -172,18 +171,18 @@ def _wire_check_runtime(handler: CorrectionHandler, *, t_step: float = 1.0) -> N
         irr_state_max_age_sec=15,
         prepare_recirculation_correction_slack_sec=0,
     )
-    handler._effective_ph_target = lambda **_kw: 6.0  # type: ignore[method-assign]
-    handler._effective_ec_target = lambda **_kw: t_step  # type: ignore[method-assign]
-    handler._effective_ph_min = lambda **_kw: None  # type: ignore[method-assign]
-    handler._effective_ph_max = lambda **_kw: None  # type: ignore[method-assign]
-    handler._effective_ec_min = lambda **_kw: None  # type: ignore[method-assign]
-    handler._effective_ec_max = lambda **_kw: None  # type: ignore[method-assign]
-    handler._prepare_tolerance_for_task = lambda **_kw: {"ph_pct": 15.0, "ec_pct": 15.0}  # type: ignore[method-assign]
-    handler._required_prepare_tolerance_pct = (  # type: ignore[method-assign]
+    handler._runtime_config.effective_ph_target = lambda **_kw: 6.0  # type: ignore[method-assign]
+    handler._runtime_config.effective_ec_target = lambda **_kw: t_step  # type: ignore[method-assign]
+    handler._runtime_config.effective_ph_min = lambda **_kw: None  # type: ignore[method-assign]
+    handler._runtime_config.effective_ph_max = lambda **_kw: None  # type: ignore[method-assign]
+    handler._runtime_config.effective_ec_min = lambda **_kw: None  # type: ignore[method-assign]
+    handler._runtime_config.effective_ec_max = lambda **_kw: None  # type: ignore[method-assign]
+    handler._runtime_config.prepare_tolerance_for_task = lambda **_kw: {"ph_pct": 15.0, "ec_pct": 15.0}  # type: ignore[method-assign]
+    handler._runtime_config.required_prepare_tolerance_pct = (  # type: ignore[method-assign]
         lambda *, tolerance, key: float(tolerance[key])
     )
     handler._correction_config = lambda **_kw: {}  # type: ignore[method-assign]
-    handler._process_cfg_for_task = lambda **_kw: {}  # type: ignore[method-assign]
+    handler._runtime_config.process_cfg_for_task = lambda **_kw: {}  # type: ignore[method-assign]
 
 
 @pytest.mark.asyncio
@@ -323,10 +322,11 @@ async def test_run_dilute_pulse_blocked_on_solution_max() -> None:
     )
     plan = SimpleNamespace(named_plans={"recirc_dilute_start": _dilute_cmds(state=True)})
 
-    with pytest.raises(TaskExecutionError) as exc:
-        await handler._run_dilute_pulse(task=task, plan=plan, corr=corr, now=NOW)
+    outcome = await handler._run_dilute_pulse(task=task, plan=plan, corr=corr, now=NOW)
 
-    assert exc.value.code == ErrorCodes.AE3_RECIRC_DILUTE_BLOCKED_SOLUTION_MAX
+    assert outcome.kind == "enter_correction"
+    assert outcome.correction is not None
+    assert outcome.correction.corr_step == "corr_check"
     events = [c.kwargs.get("event_type") for c in handler._log_correction_event.await_args_list]
     assert "RECIRC_DILUTE_BLOCKED" in events
     gateway.run_batch.assert_not_awaited()
@@ -373,7 +373,7 @@ async def test_run_dilute_settle_resets_pid_and_emits_completed() -> None:
     assert stop_cmds[0].channel == "valve_clean_supply"
     assert stop_cmds[0].payload["params"]["state"] is False
     pid.reset_no_effect_counts.assert_awaited_once_with(zone_id=120)
-    handler._persist_pid_state_updates.assert_awaited()
+    handler._pid_state.persist.assert_awaited()
     events = [c.kwargs.get("event_type") for c in handler._log_correction_event.await_args_list]
     assert "PID_EC_RESET" in events
     assert "RECIRC_DILUTE_COMPLETED" in events

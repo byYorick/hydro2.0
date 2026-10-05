@@ -62,6 +62,20 @@ WAIT_SEC=45
 # Лабораторный fallback: типичный LAN IP хоста (не docker DNS).
 LAB_DEFAULT_HOST="192.168.3.2"
 
+is_cgnat_host() {
+  local host="${1:-}" o1="" o2=""
+  IFS='.' read -r o1 o2 _ _ <<< "${host}"
+  [[ "${o1}" == "100" && "${o2}" =~ ^[0-9]+$ && "${o2}" -ge 64 && "${o2}" -le 127 ]]
+}
+
+is_rfc1918_host() {
+  local host="${1:-}" o1="" o2=""
+  IFS='.' read -r o1 o2 _ _ <<< "${host}"
+  [[ "${o1}" == "10" ]] && return 0
+  [[ "${o1}" == "192" && "${o2}" == "168" ]] && return 0
+  [[ "${o1}" == "172" && "${o2}" =~ ^[0-9]+$ && "${o2}" -ge 16 && "${o2}" -le 31 ]]
+}
+
 is_unusable_node_host() {
   local host="${1:-}"
   case "${host}" in
@@ -69,13 +83,26 @@ is_unusable_node_host() {
       return 0
       ;;
   esac
+  if is_cgnat_host "${host}"; then
+    return 0
+  fi
   return 1
 }
 
 detect_lan_host() {
-  local src=""
+  local iface="" state="" addr="" ip="" src=""
+  while read -r iface state addr _; do
+    case "${iface}" in
+      lo|docker*|br-*|amn*|tailscale*|wg*|tun*|zt*|veth*) continue ;;
+    esac
+    ip="${addr%%/*}"
+    if is_rfc1918_host "${ip}" && ! is_unusable_node_host "${ip}"; then
+      printf '%s\n' "${ip}"
+      return 0
+    fi
+  done < <(ip -4 -br addr 2>/dev/null)
   src="$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for (i = 1; i <= NF; i++) if ($i == "src") { print $(i + 1); exit }}')"
-  if [ -n "${src}" ] && ! is_unusable_node_host "${src}"; then
+  if [ -n "${src}" ] && is_rfc1918_host "${src}" && ! is_unusable_node_host "${src}"; then
     printf '%s\n' "${src}"
     return 0
   fi

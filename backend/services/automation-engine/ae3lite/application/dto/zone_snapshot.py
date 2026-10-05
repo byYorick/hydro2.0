@@ -45,3 +45,5 @@ class ZoneSnapshot:
     # Phase 5: zones.config_revision at snapshot-load time. Used for live-mode
     # hot-reload detection.
     config_revision: Optional[int] = None
+    # Ряд света за местные сутки. None — цель DLI не задана, планировщик ряд не читает.
+    dli_light_series: Optional[Mapping[str, Any]] = None

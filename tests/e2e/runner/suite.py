@@ -147,6 +147,7 @@ class TestSuite:
             str(base_path / "ae3lite" / "E107_ae3_irrigation_runtime_test_node.yaml"),
             str(base_path / "ae3lite" / "E108_ae3_soil_moisture_telemetry_contract.yaml"),
             str(base_path / "ae3lite" / "E109_ae3_irrigation_inline_correction_test_node.yaml"),
+            str(base_path / "ae3lite" / "E122_ae3_crop_day_sensor_contract_realhw.yaml"),
         ]
         ae3lite_v1 = list(ae3lite_contract)
         ae3lite_realhw = ae3lite_testnode_realhw_core + ae3lite_testnode_realhw_irrigation

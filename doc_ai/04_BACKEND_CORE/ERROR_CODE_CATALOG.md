@@ -1,8 +1,8 @@
 # ERROR_CODE_CATALOG.md
 # Канонический каталог кодов ошибок automation/runtime
 
-**Версия:** 1.8
-**Дата:** 2026-09-30
+**Версия:** 1.9
+**Дата:** 2026-10-04
 **Статус:** Актуально (`ae3_snapshot_required_node_type_missing` читает `TopologyPack.required_node_types`; ранее: фаза 5 прошивки/MQTT command_response; solution_topup/solution_change runtime codes)
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
@@ -308,6 +308,19 @@ Stage-terminal коды используются `WorkflowRouter._fail_task` д�
 | `solution_topup_source_empty` | `solution_topup_*` | Чистый бак пуст во время topup | `Автодолив остановлен: нет воды в баке чистой воды.` |
 | `solution_topup_leak_detected` | `solution_topup_*` | `solution_min` пропал во время fill | `Автодолив остановлен: возможна утечка раствора.` |
 | `solution_topup_timeout` | `solution_topup_check` | Истёк `solution_topup_timeout_sec` | `Автодолив не завершился за отведённое время.` |
+
+## Причины успешного skip полива
+
+Эти значения пишутся в `ae_tasks.irrigation_decision_reason_code` при `irrigation_decision_outcome=skip`. Они не являются `error_code` сбоя задачи: `ae_tasks.error_code` не ставится, статус не становится `failed`. Подсказка оператору — `irrigation_sensor_blocked` или `solution_temp_blocked`.
+
+| reason | Когда | Подсказка |
+| --- | --- | --- |
+| `smart_soil_target_missing` | Нет цели влажности | `irrigation_sensor_blocked` |
+| `smart_soil_telemetry_missing_or_stale` | Нет свежего измерения влажности | `irrigation_sensor_blocked` |
+| `solution_temp_out_of_band` | Температура раствора дольше допустимого вне пределов фазы | `solution_temp_blocked` |
+| `solution_temp_unavailable` | Обязательный датчик температуры раствора недоступен | `solution_temp_blocked` |
+
+Biz-коды `dli_sensor_unavailable` и `solution_refresh_recommended` — отдельные алерты планировщика, не коды сбоя задачи. У обоих русский заголовок и действие в `backend/alert_codes.json`.
 
 ## Deprecated коды
 

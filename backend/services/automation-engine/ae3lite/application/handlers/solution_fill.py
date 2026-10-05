@@ -341,12 +341,12 @@ class SolutionFillCheckHandler(BaseStageHandler):
         return_stage_success: str,
         return_stage_fail: str,
     ) -> CorrectionState:
-        correction_cfg = self._correction_config_for_task(task=task, runtime=runtime)
-        ec_max_attempts = self._required_correction_int(
+        correction_cfg = self._runtime_config.correction_config_for_task(task=task, runtime=runtime)
+        ec_max_attempts = self._runtime_config.required_correction_int(
             correction_cfg=correction_cfg,
             key="max_ec_correction_attempts",
         )
-        ph_max_attempts = self._required_correction_int(
+        ph_max_attempts = self._runtime_config.required_correction_int(
             correction_cfg=correction_cfg,
             key="max_ph_correction_attempts",
         )
@@ -356,7 +356,7 @@ class SolutionFillCheckHandler(BaseStageHandler):
             ec_max_attempts=ec_max_attempts,
             ph_max_attempts=0,  # no pH on fill
             activated_here=not sensors_already_active,
-            stabilization_sec=self._required_correction_int(
+            stabilization_sec=self._runtime_config.required_correction_int(
                 correction_cfg=correction_cfg,
                 key="stabilization_sec",
             ),
@@ -372,13 +372,13 @@ class SolutionFillCheckHandler(BaseStageHandler):
         if runtime is None:
             runtime = self._require_runtime_plan(plan=plan)
         max_age = int(runtime.telemetry_max_age_sec)
-        correction_cfg = self._correction_config_for_task(task=task, runtime=runtime)
-        process_cfg = self._process_cfg_for_task(task=task, runtime=runtime)
+        correction_cfg = self._runtime_config.correction_config_for_task(task=task, runtime=runtime)
+        process_cfg = self._runtime_config.process_cfg_for_task(task=task, runtime=runtime)
         ec = await self._read_target_metric_window(
             zone_id=task.zone_id,
             sensor_type="EC",
             telemetry_max_age_sec=max_age,
-            config=self._observation_config(kind="ec", correction_cfg=correction_cfg, process_cfg=process_cfg),
+            config=self._runtime_config.observation_config(kind="ec", correction_cfg=correction_cfg, process_cfg=process_cfg),
             unavailable_error="two_tank_prepare_targets_unavailable",
             stale_error="two_tank_prepare_targets_stale",
             now=now,
@@ -386,9 +386,9 @@ class SolutionFillCheckHandler(BaseStageHandler):
         if not ec.get("ready"):
             return False
         ec_target = await self._resolve_fill_ec_target(task=task, runtime=runtime)
-        tolerance = self._prepare_tolerance_for_task(task=task, runtime=runtime)
+        tolerance = self._runtime_config.prepare_tolerance_for_task(task=task, runtime=runtime)
         ec_tol = abs(ec_target) * (
-            self._required_prepare_tolerance_pct(tolerance=tolerance, key="ec_pct") / 100.0
+            self._runtime_config.required_prepare_tolerance_pct(tolerance=tolerance, key="ec_pct") / 100.0
         )
         current_ec = float(ec["value"])
         return (ec_target - ec_tol) <= current_ec <= (ec_target + ec_tol)
@@ -407,7 +407,7 @@ class SolutionFillCheckHandler(BaseStageHandler):
                 pipeline_phase="fill_ca",
                 active_component="calcium",
                 targets=targets,
-                fallback_target_ec=float(self._irrigation_ec_target(runtime=runtime)),
+                fallback_target_ec=float(self._runtime_config.irrigation_ec_target(runtime=runtime)),
             )
         corr = getattr(task, "correction", None)
         if corr is not None:
@@ -417,9 +417,9 @@ class SolutionFillCheckHandler(BaseStageHandler):
                     pipeline_phase=getattr(corr, "pipeline_phase", None) or "fill_ca",
                     active_component=getattr(corr, "active_component", None) or "calcium",
                     targets=targets,
-                    fallback_target_ec=float(self._irrigation_ec_target(runtime=runtime)),
+                    fallback_target_ec=float(self._runtime_config.irrigation_ec_target(runtime=runtime)),
                 )
-        return float(self._effective_ec_target(task=task, runtime=runtime))
+        return float(self._runtime_config.effective_ec_target(task=task, runtime=runtime))
 
     @staticmethod
     def _corr_has_fill_baseline(corr: Any) -> bool:
@@ -555,13 +555,13 @@ class SolutionFillCheckHandler(BaseStageHandler):
 
         # First entry only: capture + persist + WATER_BASELINE_CAPTURED
         max_age = int(runtime.telemetry_max_age_sec)
-        correction_cfg = self._correction_config_for_task(task=task, runtime=runtime)
-        process_cfg = self._process_cfg_for_task(task=task, runtime=runtime)
+        correction_cfg = self._runtime_config.correction_config_for_task(task=task, runtime=runtime)
+        process_cfg = self._runtime_config.process_cfg_for_task(task=task, runtime=runtime)
         ph_win = await self._read_target_metric_window(
             zone_id=task.zone_id,
             sensor_type="PH",
             telemetry_max_age_sec=max_age,
-            config=self._observation_config(kind="ph", correction_cfg=correction_cfg, process_cfg=process_cfg),
+            config=self._runtime_config.observation_config(kind="ph", correction_cfg=correction_cfg, process_cfg=process_cfg),
             unavailable_error="two_tank_prepare_targets_unavailable",
             stale_error="two_tank_prepare_targets_stale",
             now=now,
@@ -570,7 +570,7 @@ class SolutionFillCheckHandler(BaseStageHandler):
             zone_id=task.zone_id,
             sensor_type="EC",
             telemetry_max_age_sec=max_age,
-            config=self._observation_config(kind="ec", correction_cfg=correction_cfg, process_cfg=process_cfg),
+            config=self._runtime_config.observation_config(kind="ec", correction_cfg=correction_cfg, process_cfg=process_cfg),
             unavailable_error="two_tank_prepare_targets_unavailable",
             stale_error="two_tank_prepare_targets_stale",
             now=now,
@@ -583,11 +583,11 @@ class SolutionFillCheckHandler(BaseStageHandler):
         current_ec = float(ec_win["value"])
         current_ph = float(ph_win["value"])
         # Prefer full recipe target_ec (not T_step) for budget math
-        target_ec = float(self._irrigation_ec_target(runtime=runtime))
+        target_ec = float(self._runtime_config.irrigation_ec_target(runtime=runtime))
         # Cumulative T_* must use FULL recipe ratios (tank_recirc), not the
         # fill-phase calcium-only map. Calcium-only → T_ca==T_full and breaks
         # dilute-on-overshoot (seed above T_ca never exceeds T_full*(1+pct)).
-        ratios = self._full_ec_component_ratios(runtime=runtime, correction_cfg=correction_cfg)
+        ratios = self._runtime_config.full_ec_component_ratios(runtime=runtime, correction_cfg=correction_cfg)
         targets = compute_component_targets(
             water_ec=float(current_ec),
             water_ph=float(current_ph),

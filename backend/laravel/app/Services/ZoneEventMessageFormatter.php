@@ -166,6 +166,7 @@ class ZoneEventMessageFormatter
             'SOLUTION_FILL_TIMEOUT' => 'Раствор: таймаут заполнения',
             'SOLUTION_CHANGE_GATE_PASSED' => 'Смена раствора: проверка пройдена',
             'SOLUTION_CHANGE_COMPLETED' => 'Смена раствора завершена',
+            'SOLUTION_REFRESH_RECOMMENDED' => 'Пора подменить раствор',
             'SOLUTION_CHANGE_ABORTED' => 'Смена раствора прервана',
             'SOLUTION_TOPUP_DONE' => 'Долив раствора завершён',
             'RECIRC_STARTED' => 'Рециркуляция запущена',

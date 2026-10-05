@@ -54,6 +54,10 @@ export interface ClimateFormState {
   rightRoofNormalDeg?: number | null
   targetPolicy?: 'greenhouse_targets' | 'primary_zone' | 'active_zones_strictest'
   primaryZoneId?: number | null
+  /** Воздушный VPD, кПа. Пусто вместе с max — контур выключен, не ноль. */
+  vpdMinKpa?: number | null
+  /** Воздушный VPD, кПа. Пусто вместе с min — контур выключен, не ноль. */
+  vpdMaxKpa?: number | null
   manualOverrideEnabled: boolean
   manualEmergencyOverrideEnabled?: boolean
   overrideMinutes: number

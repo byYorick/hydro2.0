@@ -50,6 +50,11 @@ describe('AuthorityFieldCatalogForm', () => {
           waiting_command_warn_sec: 120,
         },
       },
+      global: {
+        stubs: {
+          Modal: { name: 'Modal', props: ['open'], template: '<div v-if="open"><slot /><slot name="footer" /></div>' },
+        },
+      },
     })
 
     expect(wrapper.text()).toContain('Команды')

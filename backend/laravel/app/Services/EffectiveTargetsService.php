@@ -234,6 +234,11 @@ class EffectiveTargetsService
                     : null,
             ];
         }
+        if ($phase->dli_target !== null && is_numeric($phase->dli_target) && (float) $phase->dli_target > 0) {
+            $lighting = is_array($targets['lighting'] ?? null) ? $targets['lighting'] : [];
+            $lighting['dli_target'] = (float) $phase->dli_target;
+            $targets['lighting'] = $lighting;
+        }
 
         // Температура раствора
         if ($phase->solution_temp_target !== null) {

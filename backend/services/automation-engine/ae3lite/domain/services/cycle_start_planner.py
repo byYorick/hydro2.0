@@ -7,7 +7,7 @@ import time
 from typing import Any, Callable, Iterable, List, Mapping, Sequence
 
 from ae3lite.application.dto import CommandPlan, ZoneActuatorRef, ZoneSnapshot
-from ae3lite.application.handlers.base import BaseStageHandler
+from ae3lite.application.services.stage_runtime_config import StageRuntimeConfig
 from ae3lite.application.services.topology_pack import subsystem_enabled_flags
 from ae3lite.application.services.workflow_topology import TopologyRegistry
 from ae3lite.config.errors import ConfigValidationError
@@ -19,7 +19,14 @@ from ae3lite.config.runtime_plan_builder import (
 )
 from ae3lite.domain.entities import AutomationTask, PlannedCommand
 from ae3lite.domain.errors import ErrorCodes, PlannerConfigurationError
-from ae3lite.infrastructure.metrics import SHADOW_CONFIG_VALIDATION
+from ae3lite.domain.services.dli_integral import (
+    DliTickDecision,
+    decide_on_tick_duty,
+    parse_dli_moment,
+    parse_observation_samples,
+    positive_dli_target,
+)
+from ae3lite.infrastructure.metrics import SHADOW_CONFIG_VALIDATION, record_dli_tick_status
 
 _logger = logging.getLogger(__name__)
 
@@ -31,9 +38,16 @@ class CycleStartPlanner:
     _CORRECTION_PRECHECK_KEYS = ("ec", "ph_up", "ph_down")
     _SHADOW_WARNING_WINDOW_SEC = 60.0
 
-    def __init__(self, *, monotonic_clock: Callable[[], float] | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        monotonic_clock: Callable[[], float] | None = None,
+        dli_alert_writer: Callable[[int, str], None] | None = None,
+    ) -> None:
         self._monotonic_clock = monotonic_clock or time.monotonic
         self._shadow_warning_last_logged_at: dict[object, float] = {}
+        self._dli_alert_writer = dli_alert_writer or _schedule_dli_sensor_alert
+        self._dli_alerted_local_days: set[tuple[int, str]] = set()
 
     def build(self, *, task: AutomationTask, snapshot: ZoneSnapshot) -> CommandPlan:
         """Build a deterministic command plan for the task+snapshot pair.
@@ -409,13 +423,28 @@ class CycleStartPlanner:
         channel = str(ref.channel or "").strip().lower()
         if desired_state == "off":
             cmd, params = self._lighting_cmd_for_channel(channel=channel, duty=0, desired_on=False)
+            dli_fields: dict[str, Any] = {}
         else:
             duty = self._resolve_lighting_on_duty(
                 task=task,
                 snapshot=snapshot,
                 lighting_targets=lighting_targets,
             )
-            cmd, params = self._lighting_cmd_for_channel(channel=channel, duty=duty, desired_on=True)
+            decision = self._apply_dli_ceiling(
+                task=task,
+                snapshot=snapshot,
+                lighting_targets=lighting_targets,
+                requested_duty=duty,
+            )
+            cmd, params = self._lighting_cmd_for_channel(
+                channel=channel,
+                duty=decision.duty,
+                desired_on=decision.duty > 0,
+            )
+            dli_fields = {
+                "dli_status": decision.status,
+                "dli_mol": decision.dli_mol,
+            }
         planned = PlannedCommand(
             step_no=1,
             node_uid=ref.node_uid,
@@ -425,9 +454,10 @@ class CycleStartPlanner:
                 "cmd": cmd,
                 "params": params,
                 "complete_on_ack": True,
+                **dli_fields,
             },
         )
-        return CommandPlan(
+        plan = CommandPlan(
             task_type=task.task_type,
             workflow="lighting_tick",
             topology="lighting_tick",
@@ -436,6 +466,10 @@ class CycleStartPlanner:
             named_plans={},
             runtime=None,
         )
+        status = dli_fields.get("dli_status")
+        if status is not None:
+            record_dli_tick_status(str(status))
+        return plan
 
     def _build_solution_topup_plan(
         self,
@@ -560,6 +594,50 @@ class CycleStartPlanner:
                 continue
         return None
 
+    def _apply_dli_ceiling(
+        self,
+        *,
+        task: AutomationTask,
+        snapshot: ZoneSnapshot,
+        lighting_targets: Mapping[str, Any],
+        requested_duty: int,
+    ) -> DliTickDecision:
+        observation = getattr(snapshot, "dli_light_series", None)
+        observation_map = observation if isinstance(observation, Mapping) else {}
+        window_start = parse_dli_moment(observation_map.get("window_start"))
+        window_end = parse_dli_moment(observation_map.get("as_of"))
+        timezone_name = observation_map.get("timezone") or (
+            snapshot.targets.get("greenhouse_timezone") if isinstance(snapshot.targets, Mapping) else None
+        )
+        unit = observation_map.get("unit") if observation_map else None
+        decision = decide_on_tick_duty(
+            requested_duty=requested_duty,
+            dli_target=positive_dli_target(lighting_targets.get("dli_target")),
+            unit=None if unit is None else str(unit),
+            samples=parse_observation_samples(observation_map),
+            window_start=window_start,
+            window_end=window_end,
+            timezone_name=timezone_name,
+        )
+        if decision.status == "sensor_unavailable":
+            self._note_dli_sensor_unavailable(zone_id=int(task.zone_id), local_date=decision.local_date)
+        return decision
+
+    def _note_dli_sensor_unavailable(self, *, zone_id: int, local_date: str) -> None:
+        key = (int(zone_id), str(local_date))
+        if key in self._dli_alerted_local_days:
+            return
+        self._dli_alerted_local_days.add(key)
+        try:
+            self._dli_alert_writer(int(zone_id), str(local_date))
+        except Exception:
+            self._dli_alerted_local_days.discard(key)
+            _logger.warning(
+                "ae3_dli_sensor_unavailable_alert_failed",
+                extra={"zone_id": int(zone_id), "local_date": str(local_date)},
+                exc_info=True,
+            )
+
     def _resolve_lighting_on_duty(
         self,
         *,
@@ -576,7 +654,7 @@ class CycleStartPlanner:
         if day_duty is not None or night_duty is not None:
             day_night_cfg = _build_day_night_config(snapshot)
             is_day = (
-                BaseStageHandler._is_day_now(day_night_cfg)
+                StageRuntimeConfig.is_day_now(day_night_cfg)
                 if bool(day_night_cfg.get("enabled"))
                 else True
             )
@@ -977,3 +1055,28 @@ class CycleStartPlanner:
                 f"{[item.node_uid for item in equally_ranked]}"
             )
         return equally_ranked[0]
+
+
+def _schedule_dli_sensor_alert(zone_id: int, local_date: str) -> None:
+    """Один biz-алерт на зону за местные сутки. GET суток сюда не заходит."""
+    try:
+        import asyncio
+
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return
+
+    async def _send() -> None:
+        from common.biz_alerts import send_biz_alert
+
+        await send_biz_alert(
+            code="dli_sensor_unavailable",
+            message="Нет ряда PPFD для потолка DLI. Свет не гасится.",
+            zone_id=int(zone_id),
+            alert_type="DLI sensor unavailable",
+            severity="warning",
+            dedupe_key=f"dli_sensor_unavailable:zone:{int(zone_id)}:day:{local_date}",
+            details={"local_date": local_date},
+        )
+
+    loop.create_task(_send())

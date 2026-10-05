@@ -41,6 +41,7 @@ describe('PumpCalibrationModal', () => {
       },
       global: {
         stubs: {
+          Modal: { name: 'Modal', props: ['open'], template: '<div v-if="open"><slot /><slot name="footer" /></div>' },
           ZonePumpCalibrationSettingsCard: { template: '<div class="pump-runtime-bounds-stub" />' },
         },
       },
@@ -71,6 +72,7 @@ describe('PumpCalibrationModal', () => {
       },
       global: {
         stubs: {
+          Modal: { name: 'Modal', props: ['open'], template: '<div v-if="open"><slot /><slot name="footer" /></div>' },
           ZonePumpCalibrationSettingsCard: { template: '<div class="pump-runtime-bounds-stub" />' },
         },
       },
@@ -107,6 +109,7 @@ describe('PumpCalibrationModal', () => {
       },
       global: {
         stubs: {
+          Modal: { name: 'Modal', props: ['open'], template: '<div v-if="open"><slot /><slot name="footer" /></div>' },
           ZonePumpCalibrationSettingsCard: { template: '<div class="pump-runtime-bounds-stub" />' },
         },
       },
@@ -173,6 +176,7 @@ describe('PumpCalibrationModal', () => {
       },
       global: {
         stubs: {
+          Modal: { name: 'Modal', props: ['open'], template: '<div v-if="open"><slot /><slot name="footer" /></div>' },
           ZonePumpCalibrationSettingsCard: { template: '<div class="pump-runtime-bounds-stub" />' },
         },
       },
@@ -200,6 +204,7 @@ describe('PumpCalibrationModal', () => {
       },
       global: {
         stubs: {
+          Modal: { name: 'Modal', props: ['open'], template: '<div v-if="open"><slot /><slot name="footer" /></div>' },
           ZonePumpCalibrationSettingsCard: { template: '<div class="pump-runtime-bounds-stub">Runtime bounds stub</div>' },
         },
       },
@@ -224,6 +229,7 @@ describe('PumpCalibrationModal', () => {
       },
       global: {
         stubs: {
+          Modal: { name: 'Modal', props: ['open'], template: '<div v-if="open"><slot /><slot name="footer" /></div>' },
           ZonePumpCalibrationSettingsCard: { template: '<div class="pump-runtime-bounds-stub" />' },
         },
       },
@@ -284,6 +290,7 @@ describe('PumpCalibrationModal', () => {
       },
       global: {
         stubs: {
+          Modal: { name: 'Modal', props: ['open'], template: '<div v-if="open"><slot /><slot name="footer" /></div>' },
           ZonePumpCalibrationSettingsCard: { template: '<div class="pump-runtime-bounds-stub" />' },
         },
       },

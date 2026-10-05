@@ -1,4 +1,4 @@
-import { mount } from '@vue/test-utils'
+import { enableAutoUnmount, mount } from '@vue/test-utils'
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest'
 import { nextTick, reactive } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
@@ -197,6 +197,8 @@ vi.mock('@/utils/logger', () => ({
 describe('Zones/Show.vue - WebSocket Integration', () => {
   let ShowComponent: any
 
+  enableAutoUnmount(afterEach)
+
   beforeAll(async () => {
     const module = await import('../Show.vue')
     ShowComponent = module.default
@@ -214,6 +216,31 @@ describe('Zones/Show.vue - WebSocket Integration', () => {
       listen: vi.fn(),
       stopListening: vi.fn(),
     }))
+
+    usePageMock.mockReturnValue({
+      props: {
+        zoneId: 1,
+        zone: {
+          id: 1,
+          name: 'Test Zone',
+          status: 'RUNNING',
+          description: 'Test Description',
+          recipeInstance: {
+            recipe: { id: 1, name: 'Test Recipe' },
+            current_phase_index: 0,
+          },
+        },
+        telemetry: { ph: 5.8, ec: 1.6, temperature: 22, humidity: 55 },
+        targets: {
+          ph: { min: 5.6, max: 6.0 },
+          ec: { min: 1.4, max: 1.8 },
+        },
+        devices: [],
+        events: [],
+        cycles: {},
+        auth: { user: { role: 'operator' } },
+      },
+    })
 
     ;(globalThis.window as any).Echo = {
       private: mockEchoPrivate,
@@ -290,7 +317,7 @@ describe('Zones/Show.vue - WebSocket Integration', () => {
       .mockReturnValueOnce(unsubscribeZone1)
       .mockReturnValueOnce(unsubscribeZone2)
 
-    usePageMock.mockReturnValueOnce({
+    usePageMock.mockReturnValue({
       props: reactivePageProps,
     })
 
@@ -558,7 +585,7 @@ describe('Zones/Show.vue - WebSocket Integration', () => {
     }
 
     try {
-      usePageMock.mockReturnValueOnce({
+      usePageMock.mockReturnValue({
         props: reactivePageProps,
       })
 

@@ -122,7 +122,7 @@ async def test_component_switch_resets_no_effect_with_pid() -> None:
         command_gateway=SimpleNamespace(),
         pid_state_repository=pid_repo,
     )
-    handler._persist_pid_state_updates = AsyncMock()  # type: ignore[method-assign]
+    handler._pid_state.persist = AsyncMock()  # type: ignore[method-assign]
     handler._log_correction_event = AsyncMock()  # type: ignore[method-assign]
     handler._check_no_effect_block = lambda **_kw: None  # type: ignore[method-assign]
     handler._should_log_limit_policy = lambda **_kw: False  # type: ignore[method-assign]
@@ -147,18 +147,18 @@ async def test_component_switch_resets_no_effect_with_pid() -> None:
         day_night_config=None,
     )
     handler._irrigation_ready_short_circuit = lambda **_kw: False  # type: ignore[method-assign]
-    handler._effective_ph_target = lambda **_kw: 6.0  # type: ignore[method-assign]
-    handler._effective_ec_target = lambda **_kw: 2.0  # type: ignore[method-assign]
-    handler._effective_ph_min = lambda **_kw: None  # type: ignore[method-assign]
-    handler._effective_ph_max = lambda **_kw: None  # type: ignore[method-assign]
-    handler._effective_ec_min = lambda **_kw: None  # type: ignore[method-assign]
-    handler._effective_ec_max = lambda **_kw: None  # type: ignore[method-assign]
-    handler._prepare_tolerance_for_task = lambda **_kw: {"ph_pct": 15.0, "ec_pct": 25.0}  # type: ignore[method-assign]
-    handler._required_prepare_tolerance_pct = (  # type: ignore[method-assign]
+    handler._runtime_config.effective_ph_target = lambda **_kw: 6.0  # type: ignore[method-assign]
+    handler._runtime_config.effective_ec_target = lambda **_kw: 2.0  # type: ignore[method-assign]
+    handler._runtime_config.effective_ph_min = lambda **_kw: None  # type: ignore[method-assign]
+    handler._runtime_config.effective_ph_max = lambda **_kw: None  # type: ignore[method-assign]
+    handler._runtime_config.effective_ec_min = lambda **_kw: None  # type: ignore[method-assign]
+    handler._runtime_config.effective_ec_max = lambda **_kw: None  # type: ignore[method-assign]
+    handler._runtime_config.prepare_tolerance_for_task = lambda **_kw: {"ph_pct": 15.0, "ec_pct": 25.0}  # type: ignore[method-assign]
+    handler._runtime_config.required_prepare_tolerance_pct = (  # type: ignore[method-assign]
         lambda *, tolerance, key: float(tolerance[key])
     )
     handler._correction_config = lambda **_kw: {}  # type: ignore[method-assign]
-    handler._process_cfg_for_task = lambda **_kw: {}  # type: ignore[method-assign]
+    handler._runtime_config.process_cfg_for_task = lambda **_kw: {}  # type: ignore[method-assign]
     handler._enforce_attempt_caps = lambda **_kw: True  # type: ignore[method-assign]
 
     from ae3lite.application.handlers.correction import _MeasurementSnapshot
@@ -192,7 +192,7 @@ async def test_component_switch_resets_no_effect_with_pid() -> None:
     assert outcome.correction is not None
     assert outcome.correction.pipeline_phase == "recirc_mg"
     pid_repo.reset_no_effect_counts.assert_awaited_once_with(zone_id=90)
-    handler._persist_pid_state_updates.assert_awaited()
+    handler._pid_state.persist.assert_awaited()
     events = [c.kwargs.get("event_type") for c in handler._log_correction_event.await_args_list]
     assert "PIPELINE_STEP_CHANGED" in events
     assert "PID_EC_RESET" in events

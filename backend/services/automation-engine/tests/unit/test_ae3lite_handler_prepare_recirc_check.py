@@ -134,8 +134,9 @@ def _make_task(
     retry_count=0,
     control_mode: str = "auto",
     pending_manual_step: str | None = None,
+    corr_pipeline_phase: str | None = None,
 ) -> AutomationTask:
-    return AutomationTask.from_row({
+    row = {
         "id": 5, "zone_id": 50, "task_type": "cycle_start", "status": "running",
         "idempotency_key": "k5", "scheduled_for": NOW, "due_at": NOW,
         "claimed_by": "w1", "claimed_at": NOW,
@@ -149,8 +150,12 @@ def _make_task(
         "stage_entered_at": NOW, "clean_fill_cycle": 1,
         "control_mode_snapshot": control_mode,
         "pending_manual_step": pending_manual_step,
-        "corr_step": None,
-    })
+        "corr_step": "corr_check" if corr_pipeline_phase else None,
+    }
+    if corr_pipeline_phase:
+        row["corr_pipeline_phase"] = corr_pipeline_phase
+        row["corr_active_component"] = "calcium"
+    return AutomationTask.from_row(row)
 
 
 _IRR_MATCH = {
@@ -405,6 +410,51 @@ async def test_targets_below_prepare_and_irrigation_enter_correction() -> None:
 
     assert outcome.kind == "enter_correction"
     assert outcome.correction is not None
+
+
+def _sequential_runtime() -> dict:
+    runtime = dict(RUNTIME)
+    runtime.update({
+        "target_ph": 5.0,
+        "target_ph_min": 4.90,
+        "target_ph_max": 5.10,
+        "target_ec": 2.4,
+        "target_ec_min": 2.35,
+        "target_ec_max": 2.45,
+        "target_ec_prepare": 0.864,
+        "target_ec_prepare_min": 0.846,
+        "target_ec_prepare_max": 0.882,
+        "npk_ec_share": 0.36,
+    })
+    return runtime
+
+
+@pytest.mark.asyncio
+async def test_open_recirc_pipeline_does_not_finish_on_calcium_band() -> None:
+    """EC ≈ T_ca и pH в фазовом окне не закрывают recirc, пока pipeline открыт."""
+    handler = _make_handler(monitor=_Monitor(ph=5.0, ec=0.86))
+    outcome = await handler.run(
+        task=_make_task(corr_pipeline_phase="recirc_ca"),
+        plan=_MockPlan(runtime=_sequential_runtime()),
+        stage_def=_StageDef(),
+        now=NOW,
+    )
+    assert outcome.kind == "enter_correction"
+    assert outcome.next_stage is None
+
+
+@pytest.mark.asyncio
+async def test_open_recirc_pipeline_still_stops_in_full_irrigation_band() -> None:
+    """EC уже в полном recipe-band → irrigation short-circuit, без добора шагов."""
+    handler = _make_handler(monitor=_Monitor(ph=5.0, ec=2.40))
+    outcome = await handler.run(
+        task=_make_task(corr_pipeline_phase="recirc_micro"),
+        plan=_MockPlan(runtime=_sequential_runtime()),
+        stage_def=_StageDef(),
+        now=NOW,
+    )
+    assert outcome.kind == "transition"
+    assert outcome.next_stage == "prepare_recirculation_stop_to_ready"
 
 
 @pytest.mark.asyncio

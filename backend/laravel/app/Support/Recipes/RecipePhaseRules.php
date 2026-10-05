@@ -85,7 +85,10 @@ class RecipePhaseRules
             $prefix.'duration_days' => ['nullable', 'integer', 'min:0'],
             $prefix.'base_temp_c' => ['nullable', 'numeric'],
             $prefix.'target_gdd' => ['nullable', 'numeric', 'min:0'],
-            $prefix.'dli_target' => ['nullable', 'numeric', 'min:0'],
+            $prefix.'solution_temp_target' => ['nullable', 'numeric'],
+            $prefix.'solution_temp_min' => ['nullable', 'numeric'],
+            $prefix.'solution_temp_max' => ['nullable', 'numeric'],
+            $prefix.'dli_target' => ['nullable', 'numeric', 'gt:0', 'lte:100'],
             $prefix.'extensions' => ['nullable', 'array'],
         ];
     }

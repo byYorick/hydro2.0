@@ -139,6 +139,7 @@ typedef struct {
     const char *name;
     const char *type;
     const char *metric;
+    const char *unit;
     bool is_actuator;
 } channel_def_t;
 
@@ -157,6 +158,7 @@ typedef struct {
     /** Dilute asymptote; updated by set_fault_mode ec_value seed (clean-water baseline). */
     float water_ec_baseline;
     float soil_moisture;
+    float solution_temp_c;
     float water_level;
     float solution_level;
     float air_temp;
@@ -180,6 +182,8 @@ typedef struct {
     bool fan_on;
     bool heater_on;
     bool light_on;
+    /** set_fault_mode light_ppfd держит значение, пока не придёт light_ppfd < 0. */
+    bool light_ppfd_hold;
     bool ph_sensor_mode_active;
     bool ec_sensor_mode_active;
     bool force_clean_sensor_conflict;
@@ -327,6 +331,10 @@ typedef struct {
     float ec_value;
     bool soil_moisture_present;
     float soil_moisture;
+    bool solution_temp_present;
+    float solution_temp_c;
+    bool light_ppfd_present;
+    float light_ppfd;
     bool estop_pressed_present;
     bool estop_pressed;
     bool calibrate_stage_present;
@@ -349,6 +357,7 @@ static const channel_def_t IRRIGATION_CHANNELS[] = {
     {.name = "level_clean_max", .type = "SENSOR", .metric = "WATER_LEVEL_SWITCH", .is_actuator = false},
     {.name = "level_solution_min", .type = "SENSOR", .metric = "WATER_LEVEL_SWITCH", .is_actuator = false},
     {.name = "level_solution_max", .type = "SENSOR", .metric = "WATER_LEVEL_SWITCH", .is_actuator = false},
+    {.name = "solution_temp_c", .type = "SENSOR", .metric = "TEMPERATURE", .unit = "C", .is_actuator = false},
 };
 
 static const channel_def_t PH_CORRECTION_CHANNELS[] = {
@@ -378,8 +387,9 @@ static const channel_def_t CLIMATE_CHANNELS[] = {
 };
 
 static const channel_def_t LIGHT_CHANNELS[] = {
-    {.name = "light_level", .type = "SENSOR", .metric = "LIGHT_INTENSITY", .is_actuator = false},
+    {.name = "light_level", .type = "SENSOR", .metric = "LIGHT_INTENSITY", .unit = "ppfd", .is_actuator = false},
     {.name = "white_light", .type = "ACTUATOR", .metric = NULL, .is_actuator = true},
+    {.name = "system", .type = "ACTUATOR", .metric = NULL, .is_actuator = true},
 };
 
 static const channel_def_t SOIL_CHANNELS[] = {
@@ -474,11 +484,12 @@ static const virtual_state_t DEFAULT_VIRTUAL_STATE = {
     .ec_value = 0.60f,
     .water_ec_baseline = WATER_EC_BASELINE_DEFAULT,
     .soil_moisture = SOIL_MOISTURE_DEFAULT_PCT,
+    .solution_temp_c = 20.0f,
     .water_level = 0.05f,
     .solution_level = 0.05f,
     .air_temp = 24.0f,
     .air_humidity = 60.0f,
-    .light_level = 18000.0f,
+    .light_level = 400.0f,
     .irrigation_on = false,
     .main_pump_on = false,
     .valve_clean_fill_on = false,
@@ -533,11 +544,12 @@ static virtual_state_t s_virtual_state = {
     .ec_value = 0.60f,
     .water_ec_baseline = WATER_EC_BASELINE_DEFAULT,
     .soil_moisture = SOIL_MOISTURE_DEFAULT_PCT,
+    .solution_temp_c = 20.0f,
     .water_level = 0.05f,
     .solution_level = 0.05f,
     .air_temp = 24.0f,
     .air_humidity = 60.0f,
-    .light_level = 18000.0f,
+    .light_level = 400.0f,
     .irrigation_on = false,
     .main_pump_on = false,
     .valve_clean_fill_on = false,
@@ -2345,10 +2357,10 @@ static void publish_telemetry_for_node(const char *node_uid, const char *channel
             sensor_mode_active ? "true" : "false",
             sensor_mode_active ? "true" : "false"
         );
-    } else if (channel && strcmp(channel, "soil_moisture") == 0) {
-        /* smart_soil_v1 (E107) читает SOIL_MOISTURE через read_metric_windows и
-         * отбрасывает stub/metadata.stub — иначе outcome=degraded_run
-         * (smart_soil_telemetry_missing_or_stale) вместо skip/run. */
+    } else if (channel && (strcmp(channel, "soil_moisture") == 0 || strcmp(channel, "solution_temp_c") == 0 || strcmp(channel, "light_level") == 0)) {
+        /* Контуры smart_soil_v1 и crop-day отбрасывают stub/metadata.stub.
+         * PPFD должен быть пригоден для расчёта DLI, как и влажность — для
+         * smart_soil_v1; иначе выполнение деградирует до skip/degraded_run. */
         len = snprintf(
             payload,
             sizeof(payload),
@@ -2459,6 +2471,9 @@ static esp_err_t publish_config_report_for_node(const virtual_node_t *node) {
             }
         } else {
             cJSON_AddStringToObject(channel_json, "metric", channel->metric ? channel->metric : "UNKNOWN");
+            if (channel->unit) {
+                cJSON_AddStringToObject(channel_json, "unit", channel->unit);
+            }
             cJSON_AddNumberToObject(channel_json, "poll_interval_ms", TELEMETRY_INTERVAL_MS);
         }
 
@@ -3073,10 +3088,14 @@ static cJSON *build_sensor_probe_details(const char *channel) {
         cJSON_AddStringToObject(details, "metric_type", "HUMIDITY");
         cJSON_AddNumberToObject(details, "value", s_virtual_state.air_humidity);
         cJSON_AddStringToObject(details, "unit", "%");
+    } else if (strcmp(channel, "solution_temp_c") == 0) {
+        cJSON_AddStringToObject(details, "metric_type", "TEMPERATURE");
+        cJSON_AddNumberToObject(details, "value", s_virtual_state.solution_temp_c);
+        cJSON_AddStringToObject(details, "unit", "C");
     } else if (strcmp(channel, "light_level") == 0) {
         cJSON_AddStringToObject(details, "metric_type", "LIGHT_INTENSITY");
         cJSON_AddNumberToObject(details, "value", s_virtual_state.light_level);
-        cJSON_AddStringToObject(details, "unit", "lux");
+        cJSON_AddStringToObject(details, "unit", "ppfd");
     } else if (strcmp(channel, "soil_moisture") == 0) {
         cJSON_AddStringToObject(details, "metric_type", "SOIL_MOISTURE");
         cJSON_AddNumberToObject(details, "value", s_virtual_state.soil_moisture);
@@ -3638,6 +3657,18 @@ static void extract_command_params(cJSON *command_json, pending_command_t *job) 
         job->soil_moisture = (float)cJSON_GetNumberValue(soil_moisture);
     }
 
+    cJSON *solution_temp = cJSON_GetObjectItem(params, "solution_temp_c");
+    if (solution_temp && cJSON_IsNumber(solution_temp)) {
+        job->solution_temp_present = true;
+        job->solution_temp_c = (float)cJSON_GetNumberValue(solution_temp);
+    }
+
+    cJSON *light_ppfd = cJSON_GetObjectItem(params, "light_ppfd");
+    if (light_ppfd && cJSON_IsNumber(light_ppfd)) {
+        job->light_ppfd_present = true;
+        job->light_ppfd = (float)cJSON_GetNumberValue(light_ppfd);
+    }
+
     cJSON *estop_pressed = cJSON_GetObjectItem(params, "estop_pressed");
     if (estop_pressed && (cJSON_IsBool(estop_pressed) || cJSON_IsNumber(estop_pressed))) {
         job->estop_pressed_present = true;
@@ -3996,6 +4027,8 @@ static void update_virtual_state_from_command(const pending_command_t *job, cJSO
             bool publish_ph = false;
             bool publish_ec = false;
             bool publish_soil = false;
+            bool publish_solution_temp = false;
+            bool publish_light = false;
 
             if (job->clean_sensor_conflict_present) {
                 s_virtual_state.force_clean_sensor_conflict = job->clean_sensor_conflict;
@@ -4043,6 +4076,19 @@ static void update_virtual_state_from_command(const pending_command_t *job, cJSO
                 s_virtual_state.soil_moisture = clamp_soil_moisture_param(job->soil_moisture);
                 publish_soil = true;
             }
+            if (job->solution_temp_present) {
+                s_virtual_state.solution_temp_c = clamp_float(job->solution_temp_c, -10.0f, 60.0f);
+                publish_solution_temp = true;
+            }
+            if (job->light_ppfd_present) {
+                if (job->light_ppfd < 0.0f) {
+                    s_virtual_state.light_ppfd_hold = false;
+                } else {
+                    s_virtual_state.light_level = clamp_float(job->light_ppfd, 0.0f, 3600.0f);
+                    s_virtual_state.light_ppfd_hold = true;
+                }
+                publish_light = true;
+            }
             if (job->estop_pressed_present) {
                 handle_virtual_irrigation_estop(job->estop_pressed);
             }
@@ -4065,6 +4111,12 @@ static void update_virtual_state_from_command(const pending_command_t *job, cJSO
                 cJSON_AddBoolToObject(details, "solution_fill_forced_complete", true);
             }
             publish_current_virtual_sensor_snapshot(publish_levels, publish_ph, publish_ec, publish_soil);
+            if (publish_solution_temp) {
+                publish_telemetry_for_node("nd-test-irrig-1", "solution_temp_c", "TEMPERATURE", s_virtual_state.solution_temp_c);
+            }
+            if (publish_light) {
+                publish_telemetry_for_node("nd-test-light-1", "light_level", "LIGHT_INTENSITY", s_virtual_state.light_level);
+            }
             cJSON_AddBoolToObject(details, "sensor_conflict_clean", s_virtual_state.force_clean_sensor_conflict);
             cJSON_AddBoolToObject(details, "sensor_conflict_solution", s_virtual_state.force_solution_sensor_conflict);
             cJSON_AddBoolToObject(details, "clean_fill_timeout_mode", s_virtual_state.simulate_clean_fill_timeout);
@@ -4089,6 +4141,12 @@ static void update_virtual_state_from_command(const pending_command_t *job, cJSO
             }
             if (job->soil_moisture_present) {
                 cJSON_AddNumberToObject(details, "soil_moisture_pct", s_virtual_state.soil_moisture);
+            }
+            if (job->solution_temp_present) {
+                cJSON_AddNumberToObject(details, "solution_temp_c", s_virtual_state.solution_temp_c);
+            }
+            if (job->light_ppfd_present) {
+                cJSON_AddNumberToObject(details, "light_ppfd", s_virtual_state.light_level);
             }
             handled = true;
         } else if (strcmp(job->cmd, "reset_binding") == 0) {
@@ -4830,6 +4888,14 @@ static void config_callback(const char *topic, const char *data, int data_len, v
             cJSON_IsNumber(mqtt_port_item)
         ) {
             uint16_t next_mqtt_port = (uint16_t)cJSON_GetNumberValue(mqtt_port_item);
+            unsigned cgnat_a = 0;
+            unsigned cgnat_b = 0;
+            if (sscanf(mqtt_host_item->valuestring, "%u.%u.", &cgnat_a, &cgnat_b) == 2
+                && cgnat_a == 100 && cgnat_b >= 64 && cgnat_b <= 127) {
+                ESP_LOGW(TAG, "MQTT retarget ignored: %s is not reachable from ESP Wi-Fi", mqtt_host_item->valuestring);
+                cJSON_Delete(config_json);
+                return;
+            }
             config_storage_mqtt_t current_mqtt = {0};
             bool mqtt_changed = true;
 
@@ -5034,14 +5100,16 @@ static void apply_passive_drift(void) {
         );
     }
 
-    if (s_virtual_state.light_on) {
-        float pwm_factor = (float)s_virtual_state.light_pwm / 255.0f;
-        if (pwm_factor < 0.1f) {
-            pwm_factor = 1.0f;
+    if (!s_virtual_state.light_ppfd_hold) {
+        if (s_virtual_state.light_on) {
+            float pwm_factor = (float)s_virtual_state.light_pwm / 255.0f;
+            if (pwm_factor < 0.1f) {
+                pwm_factor = 1.0f;
+            }
+            s_virtual_state.light_level = clamp_float(200.0f + (pwm_factor * 1000.0f), 100.0f, 3600.0f);
+        } else {
+            s_virtual_state.light_level = clamp_float(s_virtual_state.light_level - 30.0f, 0.0f, 3600.0f);
         }
-        s_virtual_state.light_level = clamp_float(12000.0f + (pwm_factor * 18000.0f), 2000.0f, 36000.0f);
-    } else {
-        s_virtual_state.light_level = clamp_float(s_virtual_state.light_level - 700.0f, 100.0f, 36000.0f);
     }
 
     s_virtual_state.flow_rate = irrigation_active ? 1.20f : 0.0f;
@@ -5100,6 +5168,7 @@ static void publish_virtual_telemetry_batch(void) {
     }
 
     publish_telemetry_for_node("nd-test-soil-1", "soil_moisture", "SOIL_MOISTURE", s_virtual_state.soil_moisture);
+    publish_telemetry_for_node("nd-test-irrig-1", "solution_temp_c", "TEMPERATURE", s_virtual_state.solution_temp_c);
 
     publish_telemetry_for_node("nd-test-climate-1", "air_temp_c", "TEMPERATURE", s_virtual_state.air_temp);
     publish_telemetry_for_node("nd-test-climate-1", "air_rh", "HUMIDITY", s_virtual_state.air_humidity);
@@ -5814,6 +5883,20 @@ esp_err_t test_node_app_init(void) {
         ESP_LOGW(TAG, "MQTT config invalid, running setup mode");
         test_node_ui_show_step("MQTT config invalid, setup mode");
         return run_setup_portal_blocking();
+    }
+    {
+        unsigned cgnat_a = 0;
+        unsigned cgnat_b = 0;
+        if (sscanf(mqtt_host, "%u.%u.", &cgnat_a, &cgnat_b) == 2
+            && cgnat_a == 100 && cgnat_b >= 64 && cgnat_b <= 127) {
+            ESP_LOGW(TAG, "MQTT host %s is VPN/CGNAT, restoring 192.168.1.116:1883", mqtt_host);
+            snprintf(mqtt_host, CONFIG_STORAGE_MAX_STRING_LEN, "192.168.1.116");
+            mqtt_config.host = mqtt_host;
+            mqtt_config.port = 1883;
+            if (config_storage_set_mqtt_broker(mqtt_host, 1883) != ESP_OK) {
+                ESP_LOGW(TAG, "Failed to persist restored MQTT broker");
+            }
+        }
     }
     test_node_ui_show_step("App init: MQTT config OK");
 

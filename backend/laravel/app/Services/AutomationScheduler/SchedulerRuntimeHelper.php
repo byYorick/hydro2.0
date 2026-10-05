@@ -90,4 +90,12 @@ final class SchedulerRuntimeHelper
 
         return CarbonImmutable::createFromTimestamp($bucketTs, 'UTC')->setMicroseconds(0);
     }
+
+    public static function dliCheckBucket(CarbonImmutable $now, int $intervalSec = 900): CarbonImmutable
+    {
+        $interval = max(1, $intervalSec);
+        $bucketTs = intdiv($now->getTimestamp(), $interval) * $interval;
+
+        return CarbonImmutable::createFromTimestamp($bucketTs, 'UTC')->setMicroseconds(0);
+    }
 }

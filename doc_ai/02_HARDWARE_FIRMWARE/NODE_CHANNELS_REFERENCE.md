@@ -109,7 +109,7 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
 - Domain key: `lux_main`
 - Firmware channel id: `light` (real light-node), `light_level` (test_node)
 - Тип: `SENSOR`
-- Единицы: lux или PPFD (фиксируется в конфиге).
+- Единицы: lux или PPFD (фиксируется в конфиге канала). В интеграл DLI входят только токены конфига `ppfd` и `umol_m2_s`. Люкс и пустая единица не пересчитываются.
 
 ### 2.7. Уровень воды
 

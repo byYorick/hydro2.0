@@ -27,11 +27,12 @@ ESP32-прошивка, которая эмулирует несколько о�
 - `nd-test-ec-1` — коррекция EC
 - `nd-test-soil-1` — датчик влажности субстрата
 - `nd-test-climate-1` — климат (опционально)
-- `nd-test-light-1` — свет (опционально)
+- `nd-test-light-1` — свет / PPFD (опционально)
 
 Каналы объединённого узла `nd-test-irrig-1`:
 - актуаторы: `pump_main`, `valve_clean_fill`, `valve_clean_supply`, `valve_solution_fill`, `valve_solution_supply`, `valve_irrigation`
 - уровни баков: `level_clean_min`, `level_clean_max`, `level_solution_min`, `level_solution_max`
+- температура раствора: `solution_temp_c` (`TEMPERATURE`, non-stub)
 
 Каналы `nd-test-ph-1`:
 - сенсор: `ph_sensor`
@@ -68,7 +69,7 @@ ESP32-прошивка, которая эмулирует несколько о�
   с непустым `calibration.ph` / `calibration.ec` (финализация Laravel/HL session → `completed`).
   Negative-path: `params.force_invalid=true` → terminal `INVALID`
   (`details.error=forced_invalid_sensor_calibration_command`).
-- Телеметрия `ph_sensor` / `ec_sensor` / `soil_moisture` публикуется с `stub:false`
+- Телеметрия `ph_sensor` / `ec_sensor` / `soil_moisture` / `solution_temp_c` / `light_level` публикуется с `stub:false`
   (AE `read_metric_windows` / `smart_soil_v1` отбрасывают stub). Остальные метрики test_node —
   `stub:true` (эмуляция).
 - Команда `state` обрабатывается через отдельную deferred queue (`storage_state/state` barrier path).
@@ -210,8 +211,10 @@ ESP32-прошивка, которая эмулирует несколько о�
   также обновляет `water_ec_baseline` (асимптота dilute) — используйте низкий EC
   (`~0.45..0.55`) для seed «чистой воды» перед `solution_fill` / baseline capture.
 - `soil_moisture_pct` — принудительно установить текущую влажность субстрата в диапазоне `0..100`.
+- `solution_temp_c` — принудительно установить температуру раствора в диапазоне `-10..60 °C`.
+- `light_ppfd` — установить PPFD для `light_level` в диапазоне `0..3600 µmol/m²/s` и удерживать его до `light_ppfd < 0`. Lux не эмулируется. Канал `system` есть и у `nd-test-light-1`, чтобы seed шёл через history-logger.
 - Для возврата в автоматический режим используйте значение `< 0` (например, `-1`) у нужного `*_override`.
-- При изменении `*_override`, `ph_value`, `ec_value` или `soil_moisture_pct` тест-нода сразу публикует свежий telemetry snapshot, без ожидания следующего `2s` tick.
+- При изменении `*_override`, `ph_value`, `ec_value`, `soil_moisture_pct`, `solution_temp_c` или `light_ppfd` тест-нода сразу публикует свежий telemetry snapshot, без ожидания следующего `2s` tick. Удержанный PPFD не затирается пассивным спадом, пока hold не снят.
 
 Каноничное real-hardware использование:
 

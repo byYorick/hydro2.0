@@ -330,6 +330,46 @@
                 :disabled="!canConfigure"
               >
             </label>
+            <p
+              data-testid="air-vpd-caption"
+              class="md:col-span-3 text-xs leading-snug text-[color:var(--text-muted)]"
+            >
+              VPD воздуха, не листа. Оба поля пустые или оба заполнены. Пустое не становится нулём.
+            </p>
+            <label
+              class="text-xs text-[color:var(--text-muted)]"
+              :title="fieldHelp('climate.vpdMinKpa')"
+            >
+              VPD min, кПа
+              <input
+                data-testid="greenhouse-climate-vpd-min"
+                type="number"
+                min="0.1"
+                max="3"
+                step="0.01"
+                class="input-field mt-1 w-full"
+                :value="optionalKpaValue('vpdMinKpa')"
+                :disabled="!canConfigure"
+                @input="setOptionalKpa('vpdMinKpa', $event)"
+              >
+            </label>
+            <label
+              class="text-xs text-[color:var(--text-muted)]"
+              :title="fieldHelp('climate.vpdMaxKpa')"
+            >
+              VPD max, кПа
+              <input
+                data-testid="greenhouse-climate-vpd-max"
+                type="number"
+                min="0.1"
+                max="3"
+                step="0.01"
+                class="input-field mt-1 w-full"
+                :value="optionalKpaValue('vpdMaxKpa')"
+                :disabled="!canConfigure"
+                @input="setOptionalKpa('vpdMaxKpa', $event)"
+              >
+            </label>
             <label
               class="text-xs text-[color:var(--text-muted)]"
               :title="fieldHelp('climate.ventMinPercent')"
@@ -752,6 +792,8 @@ const FIELD_HELP: Record<string, string> = {
   'climate.nightTemp': 'Целевая температура воздуха в ночном режиме теплицы.',
   'climate.dayHumidity': 'Целевая влажность воздуха в дневном режиме.',
   'climate.nightHumidity': 'Целевая влажность воздуха в ночном режиме.',
+  'climate.vpdMinKpa': 'Нижняя граница VPD воздуха, не листа. Пустое вместе с максимумом выключает контур и не становится нулём.',
+  'climate.vpdMaxKpa': 'Верхняя граница VPD воздуха, не листа. Оба поля пустые или оба заполнены, минимум меньше максимума.',
   'climate.ventMinPercent': 'Минимальный процент открытия форточек, ниже которого automation не будет опускаться.',
   'climate.ventMaxPercent': 'Верхний лимит открытия форточек для greenhouse climate control.',
   'climate.maxVentStepPct': 'Максимальное изменение положения форточек за один tick AE (`max_step_pct`), 1–100%.',
@@ -914,6 +956,21 @@ function setNullableNumberField(key: keyof ClimateFormState, event: Event): void
   const input = event.target as HTMLInputElement
   const raw = input.value.trim()
   ;(climateForm.value as unknown as Record<string, unknown>)[key] = raw === '' ? null : Number(raw)
+}
+
+function optionalKpaValue(key: 'vpdMinKpa' | 'vpdMaxKpa'): string {
+  const value = climateForm.value[key]
+  return typeof value === 'number' && Number.isFinite(value) ? String(value) : ''
+}
+
+function setOptionalKpa(key: 'vpdMinKpa' | 'vpdMaxKpa', event: Event): void {
+  const raw = (event.target as HTMLInputElement).value.trim()
+  if (raw === '') {
+    climateForm.value[key] = null
+    return
+  }
+  const parsed = Number(raw)
+  climateForm.value[key] = Number.isFinite(parsed) ? parsed : null
 }
 
 const climateSensorCandidates = computed(() => {

@@ -130,14 +130,14 @@ async def test_fill_gate_is_ec_only_ignores_ph(monkeypatch: pytest.MonkeyPatch) 
     handler._read_target_metric_window = AsyncMock(  # type: ignore[method-assign]
         return_value={"ready": True, "value": targets.T_ca},
     )
-    handler._prepare_tolerance_for_task = lambda **_kw: {"ph_pct": 5.0, "ec_pct": 10.0}  # type: ignore[method-assign]
-    handler._required_prepare_tolerance_pct = (  # type: ignore[method-assign]
+    handler._runtime_config.prepare_tolerance_for_task = lambda **_kw: {"ph_pct": 5.0, "ec_pct": 10.0}  # type: ignore[method-assign]
+    handler._runtime_config.required_prepare_tolerance_pct = (  # type: ignore[method-assign]
         lambda *, tolerance, key: float(tolerance[key])
     )
-    handler._correction_config_for_task = lambda **_kw: {}  # type: ignore[method-assign]
-    handler._process_cfg_for_task = lambda **_kw: {}  # type: ignore[method-assign]
-    handler._observation_config = lambda **_kw: {}  # type: ignore[method-assign]
-    handler._irrigation_ec_target = lambda **_kw: 2.0  # type: ignore[method-assign]
+    handler._runtime_config.correction_config_for_task = lambda **_kw: {}  # type: ignore[method-assign]
+    handler._runtime_config.process_cfg_for_task = lambda **_kw: {}  # type: ignore[method-assign]
+    handler._runtime_config.observation_config = lambda **_kw: {}  # type: ignore[method-assign]
+    handler._runtime_config.irrigation_ec_target = lambda **_kw: 2.0  # type: ignore[method-assign]
 
     reached = await handler._fill_ec_target_reached(
         task=task,

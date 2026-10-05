@@ -1,0 +1,112 @@
+name: E122_ae3_crop_day_sensor_contract_realhw
+auth_role: admin
+description: |
+  Реальный MQTT → history-logger → PostgreSQL контракт crop-day: non-stub
+  solution_temp_c для irrigation gate и PPFD (не lux) для DLI. Seed-команды
+  проходят только через history-logger.
+
+actions:
+  - step: context
+    type: set
+    zone_uid: ${TEST_NODE_ZONE_UID}
+    irrig_uid: ${TEST_NODE_UID}
+    light_uid: nd-test-light-1
+  - step: zone
+    type: database_query
+    query: SELECT id AS zone_id FROM zones WHERE uid = :uid LIMIT 1
+    params:
+      uid: ${zone_uid}
+    expected_rows: 1
+    save: zone
+  - step: wait_ppfd_channel_contract
+    type: db.wait
+    query: |
+      SELECT 1 FROM node_channels nc JOIN nodes n ON n.id = nc.node_id
+      WHERE n.zone_id = :zone_id AND n.uid = :light_uid
+        AND nc.channel = 'light_level' AND nc.metric = 'LIGHT_INTENSITY' AND nc.unit = 'ppfd'
+      LIMIT 1
+    params:
+      zone_id: ${zone.0.zone_id}
+      light_uid: ${light_uid}
+    timeout: 45
+    expected_rows: 1
+  - step: seed_solution_temp
+    type: hardware_set_fault_mode
+    zone_id: ${zone.0.zone_id}
+    node_uid: ${irrig_uid}
+    channel: storage_state
+    params:
+      solution_temp_c: 18.5
+    save: solution_seed
+  - step: solution_seed_done
+    type: db.wait
+    query: SELECT id FROM commands WHERE cmd_id = :cmd_id AND status = 'DONE' LIMIT 1
+    params:
+      cmd_id: ${solution_seed.data.cmd_id}
+    timeout: 20
+    expected_rows: 1
+  - step: seed_ppfd
+    type: hardware_set_fault_mode
+    zone_id: ${zone.0.zone_id}
+    node_uid: ${light_uid}
+    channel: system
+    params:
+      light_ppfd: 320.0
+    save: ppfd_seed
+  - step: ppfd_seed_done
+    type: db.wait
+    query: SELECT id FROM commands WHERE cmd_id = :cmd_id AND status = 'DONE' LIMIT 1
+    params:
+      cmd_id: ${ppfd_seed.data.cmd_id}
+    timeout: 20
+    expected_rows: 1
+  - step: crop_day_sensors_arrived
+    type: db.wait
+    query: |
+      SELECT s.label FROM sensors s JOIN telemetry_last tl ON tl.sensor_id = s.id
+      WHERE s.zone_id = :zone_id
+        AND ((s.label = 'solution_temp_c' AND tl.last_value BETWEEN 18.0 AND 19.0)
+          OR (s.label = 'light_level' AND tl.last_value BETWEEN 319.0 AND 321.0))
+        AND COALESCE(tl.last_ts, tl.updated_at) >= NOW() - INTERVAL '30 seconds'
+      ORDER BY s.label
+    params:
+      zone_id: ${zone.0.zone_id}
+    timeout: 30
+    expected_rows: 2
+
+assertions:
+  - name: solution_temperature_is_non_stub
+    type: database_query
+    query: |
+      SELECT 1 AS ok FROM telemetry_samples ts JOIN sensors s ON s.id = ts.sensor_id
+      WHERE s.zone_id = :zone_id AND s.label = 'solution_temp_c'
+        AND COALESCE(ts.quality, 'GOOD') <> 'STUB'
+        AND COALESCE(ts.metadata->>'stub', 'false') NOT IN ('true', '1')
+        AND ts.value BETWEEN 18.0 AND 19.0 ORDER BY ts.ts DESC LIMIT 1
+    params:
+      zone_id: ${zone.0.zone_id}
+    expected_rows: 1
+  - name: dli_channel_declares_ppfd_unit
+    type: database_query
+    query: |
+      SELECT nc.unit FROM node_channels nc JOIN nodes n ON n.id = nc.node_id
+      WHERE n.zone_id = :zone_id AND n.uid = :light_uid AND nc.channel = 'light_level'
+    params:
+      zone_id: ${zone.0.zone_id}
+      light_uid: ${light_uid}
+    expected_rows: 1
+    expected:
+      - field: unit
+        operator: equals
+        value: ppfd
+  - name: ppfd_telemetry_is_non_stub
+    type: database_query
+    query: |
+      SELECT 1 AS ok FROM telemetry_samples ts JOIN sensors s ON s.id = ts.sensor_id
+      WHERE s.zone_id = :zone_id AND s.label = 'light_level'
+        AND COALESCE(ts.quality, 'GOOD') <> 'STUB'
+        AND COALESCE(ts.metadata->>'stub', 'false') NOT IN ('true', '1')
+        AND ts.value BETWEEN 319.0 AND 321.0 ORDER BY ts.ts DESC LIMIT 1
+    params:
+      zone_id: ${zone.0.zone_id}
+    expected_rows: 1

@@ -37,7 +37,7 @@ export const ZONE_AUTOMATION_FIELD_HELP: Record<string, string> = {
   'water.solutionFillSolutionMinCheckDelayMs': 'Через сколько миллисекунд после старта solution_fill выполняется leak-check по level_solution_min.',
   'water.recirculationStopOnSolutionMin': 'Fail-closed guard: prepare recirculation должен останавливаться при lower solution level.',
   'water.estopDebounceMs': 'Debounce физической кнопки аварийной остановки. Пока кнопка нажата, node принудительно держит все актуаторы OFF.',
-  'water.irrigationDecisionStrategy': 'Decision-controller штатного полива: task принудительно выполняет запуск по плану, smart_soil_v1 сначала оценивает soil moisture и качество телеметрии.',
+  'water.irrigationDecisionStrategy': 'task поливает по расписанию. smart_soil_v1 без свежей влажности пропускает полив и не помечает задачу сбоем.',
   'water.irrigationDecisionLookbackSeconds': 'Глубина окна истории телеметрии, из которого decision-controller берёт soil moisture samples.',
   'water.irrigationDecisionMinSamples': 'Минимум samples в lookback-окне, без которого smart_soil_v1 должен деградировать или skip-нуть запуск.',
   'water.irrigationDecisionStaleAfterSeconds': 'Порог stale telemetry: если последние данные старше этого окна, decision-controller не должен считать их надёжными.',

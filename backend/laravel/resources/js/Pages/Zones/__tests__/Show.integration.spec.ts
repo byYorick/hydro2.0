@@ -266,7 +266,7 @@ describe('Zones/Show.vue - Интеграционные тесты', () => {
     
     const wrapper = mount(ZonesShow)
 
-    const automationTab = wrapper.findAll('button').find((button) => button.text().includes('Автоматизация'))
+    const automationTab = wrapper.findAll('button').find((button) => button.text().includes('Действия'))
     expect(automationTab).toBeTruthy()
     await automationTab!.trigger('click')
     await wrapper.vm.$nextTick()

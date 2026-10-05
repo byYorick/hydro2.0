@@ -113,12 +113,22 @@ static esp_err_t start_softap(const char *ssid, const char *password) {
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
 
+    /* Setup AP is used only at arm's length to provision one device.  Some
+     * USB-powered ESP32-S3 test boards brown out when the radio starts at its
+     * default TX power, before the provisioning page can be opened.  Cap the
+     * temporary AP at 5 dBm; normal STA operation is initialized after reboot
+     * by wifi_manager and is not affected. */
+    esp_err_t tx_power_err = esp_wifi_set_max_tx_power(20);
+    if (tx_power_err != ESP_OK) {
+        ESP_LOGW(TAG, "Unable to limit setup SoftAP TX power: %s", esp_err_to_name(tx_power_err));
+    }
+
     wifi_config_t wifi_config = {0};
     strncpy((char *)wifi_config.ap.ssid, ssid, sizeof(wifi_config.ap.ssid) - 1);
     wifi_config.ap.ssid_len = strlen(ssid);
     strncpy((char *)wifi_config.ap.password, password, sizeof(wifi_config.ap.password) - 1);
     wifi_config.ap.channel = 6;
-    wifi_config.ap.max_connection = 4;
+    wifi_config.ap.max_connection = 1;
     wifi_config.ap.beacon_interval = 100;
     wifi_config.ap.authmode = (strlen(password) > 0) ? WIFI_AUTH_WPA_WPA2_PSK : WIFI_AUTH_OPEN;
     wifi_config.ap.ssid_hidden = 0;

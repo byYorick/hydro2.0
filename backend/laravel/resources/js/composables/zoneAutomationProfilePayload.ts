@@ -64,6 +64,36 @@ function optionalAngle(value: unknown): number | null {
   return clamp(parsed, 0, 359.999)
 }
 
+/** Пустая строка остаётся пустой. Number('') дал бы 0 и включил бы контур. */
+export function optionalKpa(value: unknown): number | null {
+  if (value === null || value === undefined) {
+    return null
+  }
+  if (typeof value === 'string' && value.trim() === '') {
+    return null
+  }
+  const parsed = typeof value === 'number' ? value : Number(value)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+export function airVpdTargetError(minRaw: unknown, maxRaw: unknown): string | null {
+  const min = optionalKpa(minRaw)
+  const max = optionalKpa(maxRaw)
+  if (min === null && max === null) {
+    return null
+  }
+  if (min === null || max === null) {
+    return 'VPD воздуха: заполните оба поля или оставьте оба пустыми.'
+  }
+  if (min < 0.1 || min > 3 || max < 0.1 || max > 3) {
+    return 'VPD воздуха: каждое значение от 0.1 до 3.0 кПа.'
+  }
+  if (min >= max) {
+    return 'VPD воздуха: минимум должен быть меньше максимума.'
+  }
+  return null
+}
+
 function optionalPositiveId(value: unknown): number | null {
   if (value === null || value === undefined || value === '') {
     return null
@@ -146,6 +176,8 @@ export function buildGreenhouseClimateSubsystemPayload(
           temp_max_c: tempMax,
           humidity_min_pct: humidityMin,
           humidity_max_pct: humidityMax,
+          vpd_min_kpa: optionalKpa(climateForm.vpdMinKpa),
+          vpd_max_kpa: optionalKpa(climateForm.vpdMaxKpa),
         },
         manual_emergency_override_enabled: Boolean(climateForm.manualEmergencyOverrideEnabled ?? false),
         manual_override_max_sec: overrideSec,
@@ -183,8 +215,28 @@ export function validateGreenhouseClimateForm(climateForm: ZoneAutomationForms['
   if (climateForm.targetPolicy === 'primary_zone' && !optionalPositiveId(climateForm.primaryZoneId)) {
     return 'Для target policy primary_zone укажите primary_zone_id.'
   }
+  const vpdError = airVpdTargetError(climateForm.vpdMinKpa, climateForm.vpdMaxKpa)
+  if (vpdError) {
+    return vpdError
+  }
 
   return null
+}
+
+/** Тело запроса климата. При ошибке формы payload нет: кривая пара VPD в запрос не попадает. */
+export function greenhouseClimateSavePayload(
+  climateForm: ZoneAutomationForms['climateForm'],
+  enabled: boolean,
+): { error: string; payload: null } | { error: null; payload: Record<string, unknown> } {
+  const error = validateGreenhouseClimateForm(climateForm)
+  if (error) {
+    return { error, payload: null }
+  }
+
+  return {
+    error: null,
+    payload: buildGreenhouseClimateSubsystemPayload(climateForm, enabled),
+  }
 }
 
 export function validateForms(forms: Pick<ZoneAutomationForms, 'climateForm' | 'waterForm'>): string | null {

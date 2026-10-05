@@ -84,8 +84,7 @@ import { resolveRecipePhaseSystemType } from '@/composables/recipeSystemType';
 import { autoSelectAssignmentsByNodeType } from '@/composables/zoneAutomationAssignmentAutoSelect';
 import { applyAutomationFromRecipe } from '@/composables/zoneAutomationFormLogic';
 import {
-    buildGreenhouseClimateSubsystemPayload,
-    validateGreenhouseClimateForm,
+    greenhouseClimateSavePayload,
 } from '@/composables/zoneAutomationProfilePayload';
 import {
     GREENHOUSE_LOGIC_PROFILE_NAMESPACE,
@@ -521,9 +520,12 @@ async function saveGreenhouseClimate(): Promise<void> {
 
     greenhouseClimateSubmitting.value = true;
     try {
-        const climateError = validateGreenhouseClimateForm(greenhouseClimateForm);
-        if (climateError) {
-            showToast(climateError, 'warning');
+        const climateSave = greenhouseClimateSavePayload(
+            greenhouseClimateForm,
+            greenhouseClimateEnabled.value,
+        );
+        if (climateSave.error) {
+            showToast(climateSave.error, 'warning');
             return;
         }
 
@@ -552,10 +554,7 @@ async function saveGreenhouseClimate(): Promise<void> {
             setup: {
                 mode: 'setup',
                 is_active: true,
-                subsystems: buildGreenhouseClimateSubsystemPayload(
-                    greenhouseClimateForm,
-                    greenhouseClimateEnabled.value,
-                ),
+                subsystems: climateSave.payload,
                 updated_at: new Date().toISOString(),
             },
         };

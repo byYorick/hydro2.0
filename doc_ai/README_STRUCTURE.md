@@ -35,8 +35,8 @@ Breaking-change: обратная совместимость со старыми
 - `11_WEBSOCKET_ARCHITECTURE.md` — WebSocket/Reverb и real-time UI (`canonical`)
 - `IMPLEMENTATION_STATUS.md` — сводный статус реализации (`guide`)
 - `README_STRUCTURE.md` — это описание структуры папок
-- Планы в корне (`plan`, не runtime SoT): `ROADMAP_2.0.md`, `AGRO_AUTONOMY_MASTER_PLAN.md` (product-gaps), `FIRMWARE_OPTIMIZATION_PLAN.md`
-- `SYNC_PLAN.md` — code-first drift backlog (не structural plan, не SoT)
+- Открытая очередь агента: `04_BACKEND_CORE/AE3_CROP_DAY_LOOP_PLAN_FOR_AI_AGENTS.md` (версия 1.2.0).
+- `ROADMAP_2.0.md`, `AGRO_AUTONOMY_MASTER_PLAN.md`, `FIRMWARE_OPTIMIZATION_PLAN.md`, `SYNC_PLAN.md` — заглушки. Полный текст в `00_ARCHIVE/PLANS/`, не исполнять.
 - Исторический спринт-план firmware: stub `DEVELOPMENT_PRIORITIES.md` → `00_ARCHIVE/PLANS/`
 - Закрытые audit-plans: stubs `AUDIT_*.md` → полные тексты в `00_ARCHIVE/PLANS/`
 

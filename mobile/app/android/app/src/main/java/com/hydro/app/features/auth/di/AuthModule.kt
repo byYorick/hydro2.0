@@ -1,6 +1,7 @@
 package com.hydro.app.features.auth.di
 
 import com.hydro.app.core.prefs.PreferencesDataSource
+import com.hydro.app.core.network.ApiErrorParser
 import com.hydro.app.features.auth.data.AuthApi
 import com.hydro.app.features.auth.data.AuthRepository
 import dagger.Module
@@ -21,10 +22,9 @@ object AuthModule {
 	@Singleton
 	fun provideAuthRepository(
 		api: AuthApi,
-		prefs: PreferencesDataSource
+		prefs: PreferencesDataSource,
+		apiErrorParser: ApiErrorParser,
 	): AuthRepository {
-		return AuthRepository(api, prefs)
+		return AuthRepository(api, prefs, apiErrorParser)
 	}
 }
-
-

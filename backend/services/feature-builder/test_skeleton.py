@@ -34,7 +34,10 @@ def client_with_pool():
         async def close(self):
             return None
 
-    with patch.object(main, "_pool", FakePool()):
+    with (
+        patch.object(main, "_pool", FakePool()),
+        patch.object(main, "_init_pool", AsyncMock()),
+    ):
         with TestClient(main.app) as c:
             yield c
 

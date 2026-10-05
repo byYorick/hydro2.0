@@ -32,6 +32,7 @@ import {
   shouldShowProgressPercent,
 } from '@/utils/automationStatusDisplay'
 import { normalizeActiveDoses, normalizeObservability } from '@/utils/automationObservability'
+import { normalizeDayBalance, readOptionalSolutionTemp, readUnknownRecord } from '@/utils/cropDayView'
 import { automationIndicatesActiveFailure } from '@/utils/automationFailureState'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -430,6 +431,7 @@ export function useAutomationPanel(
         buffer_tank_level_percent: source.current_levels?.buffer_tank_level_percent ?? null,
         ph: source.current_levels?.ph ?? null,
         ec: source.current_levels?.ec ?? null,
+        solution_temp_c: readOptionalSolutionTemp(source.current_levels),
       },
       active_processes: {
         pump_in: Boolean(source.active_processes?.pump_in),
@@ -468,8 +470,11 @@ export function useAutomationPanel(
             config: (rawDecision.config as Record<string, unknown> | null | undefined) ?? null,
             bundle_revision: (rawDecision.bundle_revision as string | null | undefined) ?? null,
             degraded: (rawDecision.degraded as boolean | null | undefined) ?? null,
+            factors: readUnknownRecord(rawDecision.factors),
           }
         : null,
+      day_balance: normalizeDayBalance(sourceAny.day_balance),
+      decision_factors: readUnknownRecord(sourceAny.decision_factors),
       observability: normalizeObservability(sourceAny.observability),
     }
   }

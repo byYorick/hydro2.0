@@ -90,13 +90,14 @@ Breaking-change: несовместимые изменения в защищён
 #### [LARAVEL_AE3_READ_MODEL_CONTRACT.md](LARAVEL_AE3_READ_MODEL_CONTRACT.md)
 Snapshot-контракт read-model Laravel↔AE3 (`canonical`)
 
-### Аудиты (`guide`)
+### Открытый план
 
-- [AE3_ARCHITECTURE_REVIEW.md](AE3_ARCHITECTURE_REVIEW.md) — аудит кода, воспроизведённые дефекты и предложение по исполнению (`guide`, 2026-10-03; не canonical).
+- [AE3_CROP_DAY_LOOP_PLAN_FOR_AI_AGENTS.md](AE3_CROP_DAY_LOOP_PLAN_FOR_AI_AGENTS.md) — единственная очередь агента без отдельного поручения. Версия 1.2.0, этапы G0–G12. Не канон runtime.
 
-### Living plans (`plan`)
+### Заглушки (полный текст в `../00_ARCHIVE/PLANS/`, не исполнять)
 
-- [AE3_EXECUTION_HARDENING_PLAN_FOR_AI_AGENTS.md](AE3_EXECUTION_HARDENING_PLAN_FOR_AI_AGENTS.md) — устранение дефектов архитектурного аудита, исправление регрессионных тестов и обязательные прогоны в Docker.
+- [AE3_EXECUTION_HARDENING_PLAN_FOR_AI_AGENTS.md](AE3_EXECUTION_HARDENING_PLAN_FOR_AI_AGENTS.md)
+- [AE3_ARCHITECTURE_REVIEW.md](AE3_ARCHITECTURE_REVIEW.md)
 - [AE3_STARTUP_RECOVERY_IMPROVEMENT_PLAN.md](AE3_STARTUP_RECOVERY_IMPROVEMENT_PLAN.md)
 - [AE3_NODE_AVAILABILITY_DETECTION_PLAN.md](AE3_NODE_AVAILABILITY_DETECTION_PLAN.md)
 - [AE3_SETUP_BEFORE_IRRIGATION_PLAN.md](AE3_SETUP_BEFORE_IRRIGATION_PLAN.md)

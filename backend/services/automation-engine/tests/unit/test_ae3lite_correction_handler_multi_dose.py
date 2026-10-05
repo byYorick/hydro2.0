@@ -79,13 +79,13 @@ async def test_corr_dose_ec_dispatches_sequence_ca_mg_micro(monkeypatch) -> None
         return kwargs["task"]
 
     monkeypatch.setattr(handler, "_log_correction_event", _noop_async)
-    monkeypatch.setattr(handler, "_persist_pid_state_updates", _noop_async)
+    monkeypatch.setattr(handler._pid_state, "persist", _noop_async)
     monkeypatch.setattr(handler, "_ensure_command_targets_online", _noop_async)
     monkeypatch.setattr(handler, "_ensure_sensor_mode_active_for_dosing", _identity_task)
     monkeypatch.setattr(handler, "_interrupt_for_control_mode_dosing", _noop_async)
-    monkeypatch.setattr(handler, "_process_cfg_for_task", lambda **_kwargs: {"ec_gain_per_ml": 0.1})
+    monkeypatch.setattr(handler._runtime_config, "process_cfg_for_task", lambda **_kwargs: {"ec_gain_per_ml": 0.1})
     monkeypatch.setattr(handler, "_correction_config", lambda **_kwargs: {"stabilization_sec": 1})
-    monkeypatch.setattr(handler, "_observation_config", lambda **_kwargs: {"hold_window_sec": 1})
+    monkeypatch.setattr(handler._runtime_config, "observation_config", lambda **_kwargs: {"hold_window_sec": 1})
 
     now = datetime(2026, 3, 31, 12, 0, 0, tzinfo=timezone.utc).replace(tzinfo=None)
     seq = [
@@ -142,13 +142,13 @@ async def test_corr_dose_ec_partial_failure_emits_event_and_fails_window(monkeyp
         return kwargs["task"]
 
     monkeypatch.setattr(handler, "_log_correction_event", _capture_event)
-    monkeypatch.setattr(handler, "_persist_pid_state_updates", _noop_async)
+    monkeypatch.setattr(handler._pid_state, "persist", _noop_async)
     monkeypatch.setattr(handler, "_ensure_command_targets_online", _noop_async)
     monkeypatch.setattr(handler, "_ensure_sensor_mode_active_for_dosing", _identity_task)
     monkeypatch.setattr(handler, "_interrupt_for_control_mode_dosing", _noop_async)
-    monkeypatch.setattr(handler, "_process_cfg_for_task", lambda **_kwargs: {"ec_gain_per_ml": 0.1})
+    monkeypatch.setattr(handler._runtime_config, "process_cfg_for_task", lambda **_kwargs: {"ec_gain_per_ml": 0.1})
     monkeypatch.setattr(handler, "_correction_config", lambda **_kwargs: {"stabilization_sec": 1})
-    monkeypatch.setattr(handler, "_observation_config", lambda **_kwargs: {"hold_window_sec": 1})
+    monkeypatch.setattr(handler._runtime_config, "observation_config", lambda **_kwargs: {"hold_window_sec": 1})
 
     now = datetime(2026, 3, 31, 12, 0, 0, tzinfo=timezone.utc).replace(tzinfo=None)
     seq = [
@@ -207,13 +207,13 @@ async def test_corr_dose_ec_first_component_failure_raises(monkeypatch) -> None:
         return kwargs["task"]
 
     monkeypatch.setattr(handler, "_log_correction_event", _capture_event)
-    monkeypatch.setattr(handler, "_persist_pid_state_updates", _noop_async)
+    monkeypatch.setattr(handler._pid_state, "persist", _noop_async)
     monkeypatch.setattr(handler, "_ensure_command_targets_online", _noop_async)
     monkeypatch.setattr(handler, "_ensure_sensor_mode_active_for_dosing", _identity_task)
     monkeypatch.setattr(handler, "_interrupt_for_control_mode_dosing", _noop_async)
-    monkeypatch.setattr(handler, "_process_cfg_for_task", lambda **_kwargs: {"ec_gain_per_ml": 0.1})
+    monkeypatch.setattr(handler._runtime_config, "process_cfg_for_task", lambda **_kwargs: {"ec_gain_per_ml": 0.1})
     monkeypatch.setattr(handler, "_correction_config", lambda **_kwargs: {"stabilization_sec": 1})
-    monkeypatch.setattr(handler, "_observation_config", lambda **_kwargs: {"hold_window_sec": 1})
+    monkeypatch.setattr(handler._runtime_config, "observation_config", lambda **_kwargs: {"hold_window_sec": 1})
 
     now = datetime(2026, 3, 31, 12, 0, 0, tzinfo=timezone.utc).replace(tzinfo=None)
     seq = [

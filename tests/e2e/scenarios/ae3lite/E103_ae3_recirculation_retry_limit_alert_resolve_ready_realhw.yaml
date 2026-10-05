@@ -2080,6 +2080,7 @@ actions:
     cmd: set_fault_mode
     params:
       ph_value: 5.10
+      ec_value: 2.20
   save: force_recirculation_near_target_second_response
 - step: wait_force_recirculation_near_target_second_done
   type: db.wait

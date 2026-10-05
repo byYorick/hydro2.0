@@ -2,15 +2,15 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\StoreRecipeRevisionPhaseRequest;
+use App\Http\Requests\UpdateRecipeRevisionPhaseRequest;
 use App\Models\RecipeRevision;
 use App\Models\RecipeRevisionPhase;
 use App\Services\RecipeRevisionPhaseService;
 use App\Support\Recipes\RecipePhasePayloadNormalizer;
 use App\Support\Recipes\RecipePhasePresenter;
-use App\Support\Recipes\RecipePhaseRules;
 use App\Support\Recipes\RecipePhaseTargetValidator;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 use Symfony\Component\HttpFoundation\Response;
@@ -28,7 +28,7 @@ class RecipeRevisionPhaseController extends Controller
      * Создать фазу в ревизии рецепта
      * POST /api/recipe-revisions/{recipeRevision}/phases
      */
-    public function store(Request $request, RecipeRevision $recipeRevision): JsonResponse
+    public function store(StoreRecipeRevisionPhaseRequest $request, RecipeRevision $recipeRevision): JsonResponse
     {
         $user = $request->user();
         if (! $user) {
@@ -38,7 +38,7 @@ class RecipeRevisionPhaseController extends Controller
             ], 401);
         }
 
-        $data = $request->validate(RecipePhaseRules::store());
+        $data = $request->validated();
         $data = $this->payloadNormalizer->normalizeForWrite($data);
         $this->targetValidator->validateForStore($data);
         $this->validateNutritionRatioSum($data);
@@ -72,7 +72,7 @@ class RecipeRevisionPhaseController extends Controller
      * Обновить фазу ревизии
      * PATCH /api/recipe-revision-phases/{recipeRevisionPhase}
      */
-    public function update(Request $request, RecipeRevisionPhase $recipeRevisionPhase): JsonResponse
+    public function update(UpdateRecipeRevisionPhaseRequest $request, RecipeRevisionPhase $recipeRevisionPhase): JsonResponse
     {
         $user = $request->user();
         if (! $user) {
@@ -82,7 +82,7 @@ class RecipeRevisionPhaseController extends Controller
             ], 401);
         }
 
-        $data = $request->validate(RecipePhaseRules::update());
+        $data = $request->validated();
         $data = $this->payloadNormalizer->normalizeForWrite($data);
         $this->targetValidator->validateForUpdate($data, $recipeRevisionPhase);
         $this->validateNutritionRatioSum($data, $recipeRevisionPhase);

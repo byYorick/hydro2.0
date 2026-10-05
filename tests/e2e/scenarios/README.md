@@ -56,6 +56,7 @@ Realhw на физической `test_node`: [`../AGENTS.md`](../AGENTS.md), к
 - `ae3lite/E118_ae3_water_baseline_and_ca_fill_realhw.yaml` — live-short: `WATER_BASELINE_CAPTURED` + Ca fill (`pump_b`), zero pH doses in fill-window
 - `ae3lite/E119_ae3_prepare_pipeline_sequence_realhw.yaml` — live-short: Ca→pH→Mg (`pump_b` → pH → `pump_c`) + `PIPELINE_STEP_CHANGED`
 - `ae3lite/E120_ae3_recirc_dilute_overshoot_realhw.yaml` — live-short: EC overshoot → `RECIRC_DILUTE_*` + `valve_clean_supply`
+- `ae3lite/E122_ae3_crop_day_sensor_contract_realhw.yaml` — realhw ingest `solution_temp_c` (non-stub) и PPFD для crop-day DLI
 - `ae3lite/E119`–`E121` stubs (+ `E119_*_test_node` / `E120_*_test_node`) — sequential nutrient **contract stubs** (`status: stub`, `skip_live`):
   - E119 stub — documents full Ca→…→Micro order; live-short = `E119_*_realhw.yaml`
   - E120 stub — documents dilute keys; live = `E120_*_realhw.yaml`

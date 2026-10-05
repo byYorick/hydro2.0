@@ -214,12 +214,12 @@ class IrrigationCheckHandler(BaseStageHandler):
         if correction_enabled:
             stage_retry_count = int(getattr(task.workflow, "stage_retry_count", 0) or 0)
             if stage_retry_count <= 0 and not await self._targets_reached(task=task, plan=plan, now=now, runtime=runtime):
-                correction_cfg = self._correction_config_for_task(task=task, runtime=runtime)
-                ec_max_attempts = self._required_correction_int(
+                correction_cfg = self._runtime_config.correction_config_for_task(task=task, runtime=runtime)
+                ec_max_attempts = self._runtime_config.required_correction_int(
                     correction_cfg=correction_cfg,
                     key="max_ec_correction_attempts",
                 )
-                ph_max_attempts = self._required_correction_int(
+                ph_max_attempts = self._runtime_config.required_correction_int(
                     correction_cfg=correction_cfg,
                     key="max_ph_correction_attempts",
                 )
@@ -253,7 +253,7 @@ class IrrigationCheckHandler(BaseStageHandler):
                     ec_max_attempts=allow_ec_attempts,
                     ph_max_attempts=ph_max_attempts,
                     activated_here=False,  # irrigation_start already ran sensor_mode_activate
-                    stabilization_sec=self._required_correction_int(
+                    stabilization_sec=self._runtime_config.required_correction_int(
                         correction_cfg=correction_cfg,
                         key="stabilization_sec",
                     ),

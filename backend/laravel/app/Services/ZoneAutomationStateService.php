@@ -4,6 +4,8 @@ namespace App\Services;
 
 use App\Models\Alert;
 use App\Models\Zone;
+use App\Services\CropDay\DliDayBalance;
+use DateTimeZone;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\Client\Response;
@@ -24,6 +26,7 @@ class ZoneAutomationStateService
         private readonly ErrorCodeCatalogService $errorCodeCatalog,
         private readonly AlertPolicyService $alertPolicy,
         private readonly ZoneAutomationObservabilityService $observabilityService,
+        private readonly DliDayBalance $dliDayBalance,
     ) {}
 
     /**
@@ -597,6 +600,7 @@ class ZoneAutomationStateService
         }
 
         $payload = $this->enrichPayloadWithZoneControlMode($payload, $zone);
+        $payload['day_balance'] = $this->dayBalance($zone);
         $payload = $this->observabilityService->enrichPayload((int) $zone->id, $payload, $isStale);
         $payload['last_terminal_failure'] = $this->fetchLastTerminalFailure((int) $zone->id);
 
@@ -607,6 +611,133 @@ class ZoneAutomationStateService
         ];
 
         return $payload;
+    }
+
+    /**
+     * Commanded-полив за местные сутки теплицы. Только чтение.
+     *
+     * @return array{
+     *     local_date: string,
+     *     window_start: string,
+     *     window_end: string,
+     *     timezone_fallback: bool,
+     *     irrigation_commands: int,
+     *     commanded_sec: float,
+     *     commanded_ml: float|null,
+     *     commanded_ml_status: string,
+     *     dli_mol: float|null,
+     *     dli_status: string
+     * }
+     */
+    private function dayBalance(Zone $zone): array
+    {
+        $window = $this->greenhouseLocalDayWindow($zone);
+        $row = DB::selectOne(
+            "SELECT
+                COUNT(*)::int AS irrigation_commands,
+                COALESCE(SUM(c.duration_ms), 0)::numeric / 1000.0 AS commanded_sec,
+                COUNT(*) FILTER (WHERE cal.ml_per_sec IS NULL)::int AS missing_calibration,
+                SUM((c.duration_ms::numeric / 1000.0) * cal.ml_per_sec) AS commanded_ml
+             FROM commands AS c
+             INNER JOIN ae_commands AS ac
+                ON ac.external_id = c.id::text
+             INNER JOIN ae_tasks AS t
+                ON t.id = ac.task_id
+               AND t.task_type = 'irrigation_start'
+             LEFT JOIN LATERAL (
+                SELECT pc.ml_per_sec
+                FROM node_channels AS nc
+                INNER JOIN pump_calibrations AS pc
+                    ON pc.node_channel_id = nc.id
+                WHERE nc.node_id = c.node_id
+                  AND nc.channel = c.channel
+                  AND pc.is_active IS TRUE
+                  AND pc.ml_per_sec IS NOT NULL
+                  AND pc.valid_from <= ?
+                  AND (pc.valid_to IS NULL OR pc.valid_to > ?)
+                ORDER BY pc.valid_from DESC, pc.id DESC
+                LIMIT 1
+             ) AS cal ON TRUE
+             WHERE c.status = 'DONE'
+               AND c.zone_id = ?
+               AND c.created_at >= ?
+               AND c.created_at <= ?
+               AND (
+                    ac.planner_step = 'irrigation_start'
+                    OR ac.planner_step LIKE 'irrigation\\_start%' ESCAPE '\\'
+               )
+               AND ac.planner_step NOT LIKE 'clean\\_fill%' ESCAPE '\\'
+               AND ac.planner_step NOT LIKE 'solution\\_fill%' ESCAPE '\\'
+               AND ac.planner_step NOT LIKE 'prepare\\_recirculation%' ESCAPE '\\'
+               AND ac.planner_step NOT LIKE 'solution\\_topup%' ESCAPE '\\'",
+            [
+                $window['as_of'],
+                $window['as_of'],
+                (int) $zone->id,
+                $window['start'],
+                $window['end'],
+            ],
+        );
+
+        $missingCalibration = (int) ($row->missing_calibration ?? 0);
+        $commandedMl = null;
+        if ($missingCalibration === 0) {
+            $commandedMl = $row === null || $row->commanded_ml === null
+                ? 0.0
+                : round((float) $row->commanded_ml, 6);
+        }
+
+        return [
+            'local_date' => $window['local_date'],
+            'window_start' => $window['window_start'],
+            'window_end' => $window['window_end'],
+            'timezone_fallback' => $window['timezone_fallback'],
+            'irrigation_commands' => (int) ($row->irrigation_commands ?? 0),
+            'commanded_sec' => round((float) ($row->commanded_sec ?? 0), 3),
+            'commanded_ml' => $commandedMl,
+            'commanded_ml_status' => $missingCalibration === 0 ? 'ok' : 'calibration_missing',
+            ...$this->dliDayBalance->forZone($zone, $window),
+        ];
+    }
+
+    /**
+     * @return array{
+     *     local_date: string,
+     *     window_start: string,
+     *     window_end: string,
+     *     timezone_fallback: bool,
+     *     start: string,
+     *     end: string,
+     *     as_of: string
+     * }
+     */
+    private function greenhouseLocalDayWindow(Zone $zone): array
+    {
+        $timezoneName = trim((string) ($zone->greenhouse?->timezone ?? ''));
+        $timezoneFallback = $timezoneName === '';
+        $timezone = new DateTimeZone('UTC');
+        if (! $timezoneFallback) {
+            try {
+                $timezone = new DateTimeZone($timezoneName);
+            } catch (\Throwable) {
+                $timezoneFallback = true;
+            }
+        }
+
+        $end = now()->copy()->utc();
+        $local = $end->copy()->timezone($timezone);
+        $localDate = $local->toDateString();
+        $start = $local->copy()->startOfDay()->utc();
+
+        return [
+            'local_date' => $localDate,
+            'window_start' => $start->toIso8601String(),
+            'window_end' => $end->toIso8601String(),
+            'timezone_fallback' => $timezoneFallback,
+            'start' => $start->format('Y-m-d H:i:s'),
+            'end' => $end->format('Y-m-d H:i:s'),
+            'as_of' => $end->format('Y-m-d H:i:s'),
+        ];
     }
 
     /**

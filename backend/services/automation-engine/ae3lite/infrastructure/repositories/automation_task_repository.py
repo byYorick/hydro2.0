@@ -231,6 +231,21 @@ class PgAutomationTaskRepository:
         )
         return self._task_from_row(row)
 
+    async def get_last_irrigation_for_zone(self, *, zone_id: int) -> AutomationTask | None:
+        """Последняя задача полива зоны, независимо от статуса."""
+        row = await self._fetchrow(
+            """
+            SELECT *
+            FROM ae_tasks
+            WHERE zone_id = $1
+              AND task_type = 'irrigation_start'
+            ORDER BY updated_at DESC, id DESC
+            LIMIT 1
+            """,
+            zone_id,
+        )
+        return self._task_from_row(row)
+
     async def get_by_id(self, *, task_id: int) -> AutomationTask | None:
         row = await self._fetchrow(
             """

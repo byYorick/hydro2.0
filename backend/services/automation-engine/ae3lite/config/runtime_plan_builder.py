@@ -414,6 +414,7 @@ def resolve_two_tank_runtime(snapshot: Any) -> dict[str, Any]:
         "irrigation_recovery": _build_irrigation_recovery(snapshot),
         "irrigation_safety": _build_irrigation_safety(snapshot, execution),
         "soil_moisture_target": _build_soil_moisture_target(snapshot),
+        "solution_health": _build_solution_health(snapshot),
     }
     _validate_prepare_recirculation_timing(runtime)
 
@@ -1231,6 +1232,38 @@ def _build_irrigation_safety(snapshot: Any, execution: Mapping[str, Any] | None 
             )
         ),
     }
+
+
+def _build_solution_health(snapshot: Any) -> dict[str, Any]:
+    """min/max — колонки фазы в phase_targets, не target и не extensions.targets."""
+    phase_targets = _to_mapping(getattr(snapshot, "phase_targets", None))
+    solution = _to_mapping(phase_targets.get("solution_temp"))
+    if not solution:
+        solution = _to_mapping(_to_mapping(getattr(snapshot, "targets", None)).get("solution_temp"))
+    extensions = _to_mapping(phase_targets.get("extensions"))
+    health = _to_mapping(extensions.get("solution_health"))
+    return {
+        "required": _optional_bool(health.get("required"), False),
+        "min_c": _optional_float(solution.get("min")),
+        "max_c": _optional_float(solution.get("max")),
+        "breach_hold_sec": _resolve_bounded_int(health.get("breach_hold_sec"), 600, 60, 86400),
+    }
+
+
+def _optional_bool(raw_value: Any, default: bool) -> bool:
+    if raw_value is None:
+        return default
+    if isinstance(raw_value, bool):
+        return raw_value
+    if isinstance(raw_value, (int, float)):
+        return int(raw_value) == 1
+    if isinstance(raw_value, str):
+        normalized = raw_value.strip().lower()
+        if normalized in {"1", "true", "yes", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "off", ""}:
+            return False
+    return default
 
 
 def _build_soil_moisture_target(snapshot: Any) -> dict[str, Any] | None:

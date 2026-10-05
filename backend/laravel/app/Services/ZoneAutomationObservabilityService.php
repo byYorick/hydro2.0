@@ -182,7 +182,17 @@ class ZoneAutomationObservabilityService
         if ($isStale) {
             $observability['runtime'] = $this->buildRuntimeFromDatabase($zoneId, $payload, preferDatabaseTiming: true);
             $observability['nodes'] = $this->buildNodesContext($zoneId);
-            $hangHints = [];
+            $incomingHints = is_array($rawObservability['hang_hints'] ?? null)
+                ? $rawObservability['hang_hints']
+                : [];
+            $hangHints = array_values(array_filter(
+                $incomingHints,
+                static fn (mixed $hint): bool => is_array($hint) && in_array(
+                    (string) ($hint['code'] ?? ''),
+                    ['irrigation_sensor_blocked', 'solution_temp_blocked'],
+                    true,
+                ),
+            ));
         } else {
             if (! is_array($observability['runtime'] ?? null) || $observability['runtime'] === []) {
                 $observability['runtime'] = $this->buildRuntimeFromDatabase($zoneId, $payload);
@@ -213,6 +223,10 @@ class ZoneAutomationObservabilityService
             foreach ($this->runtimeHangHints($observability['runtime'] ?? []) as $hint) {
                 $hangHints[] = $hint;
             }
+        }
+
+        foreach ($this->cropDayHangHints($zoneId, $payload) as $hint) {
+            $hangHints[] = $hint;
         }
 
         $observability['hang_hints'] = $this->dedupeHangHints($hangHints);
@@ -732,6 +746,146 @@ class ZoneAutomationObservabilityService
                 'idempotency_key' => is_string($row->idempotency_key ?? null) ? $row->idempotency_key : null,
             ],
         ]];
+    }
+
+    /**
+     * Проекция уже записанных строк суток. Решение полива и VPD здесь не считаются.
+     *
+     * @param  array<string,mixed>  $payload
+     * @return list<array<string,mixed>>
+     */
+    private function cropDayHangHints(int $zoneId, array $payload): array
+    {
+        $hints = [];
+        foreach ($this->dliHangHints($payload) as $hint) {
+            $hints[] = $hint;
+        }
+        $refresh = $this->solutionRefreshHangHint($zoneId);
+        if ($refresh !== null) {
+            $hints[] = $refresh;
+        }
+        $vent = $this->moistureVentHangHint($zoneId);
+        if ($vent !== null) {
+            $hints[] = $vent;
+        }
+
+        return $hints;
+    }
+
+    /**
+     * @param  array<string,mixed>  $payload
+     * @return list<array<string,mixed>>
+     */
+    private function dliHangHints(array $payload): array
+    {
+        $balance = $payload['day_balance'] ?? null;
+        if (! is_array($balance)) {
+            return [];
+        }
+        $status = strtolower(trim((string) ($balance['dli_status'] ?? '')));
+        if ($status === 'sensor_unavailable') {
+            return [[
+                'code' => 'dli_sensor_unavailable',
+                'severity' => 'warning',
+                'message' => 'Интеграл света неизвестен: нет ряда PPFD.',
+                'recommendation' => 'Проверьте канал света с единицей ppfd или umol_m2_s. Люксы не пересчитываются, свет не гасится.',
+                'details' => ['dli_status' => 'sensor_unavailable'],
+            ]];
+        }
+        if ($status === 'gap') {
+            return [[
+                'code' => 'dli_gap',
+                'severity' => 'warning',
+                'message' => 'Интеграл света разорван: в ряде PPFD слишком большая пауза.',
+                'recommendation' => 'Проверьте, что датчик PPFD присылает показания без длинных пропусков. Яркость этого тика не режется.',
+                'details' => ['dli_status' => 'gap'],
+            ]];
+        }
+
+        return [];
+    }
+
+    /**
+     * @return array<string,mixed>|null
+     */
+    private function solutionRefreshHangHint(int $zoneId): ?array
+    {
+        if ($zoneId <= 0) {
+            return null;
+        }
+
+        $event = DB::table('zone_events')
+            ->where('zone_id', $zoneId)
+            ->where('type', 'SOLUTION_REFRESH_RECOMMENDED')
+            ->where('created_at', '>=', now()->subHours(24))
+            ->orderByDesc('created_at')
+            ->orderByDesc('id')
+            ->first(['id', 'created_at']);
+        if ($event === null) {
+            return null;
+        }
+
+        $completedAfter = DB::table('ae_tasks')
+            ->where('zone_id', $zoneId)
+            ->where('task_type', 'solution_change')
+            ->where('status', 'completed')
+            ->whereRaw('COALESCE(completed_at, updated_at) >= ?', [$event->created_at])
+            ->exists();
+        if ($completedAfter) {
+            return null;
+        }
+
+        return [
+            'code' => 'solution_refresh_due',
+            'severity' => 'warning',
+            'message' => 'Пора подменить раствор. Подмена сама не запускается.',
+            'recommendation' => 'Подмените раствор вручную, когда зона готова. Пока подмена после рекомендации не завершена, напоминание остаётся.',
+            'details' => ['event_id' => (int) $event->id],
+        ];
+    }
+
+    /**
+     * @return array<string,mixed>|null
+     */
+    private function moistureVentHangHint(int $zoneId): ?array
+    {
+        if ($zoneId <= 0) {
+            return null;
+        }
+
+        $greenhouseId = DB::table('zones')->where('id', $zoneId)->value('greenhouse_id');
+        if ($greenhouseId === null) {
+            return null;
+        }
+
+        $raw = DB::table('greenhouse_automation_state')
+            ->where('greenhouse_id', (int) $greenhouseId)
+            ->value('decision_factors');
+        $factors = $this->decodeDecisionFactors($raw);
+        if (! is_array($factors) || ($factors['moisture_vent_suppressed'] ?? null) !== true) {
+            return null;
+        }
+
+        return [
+            'code' => 'moisture_vent_suppressed',
+            'severity' => 'info',
+            'message' => 'Влажностное открытие форточек подавлено.',
+            'recommendation' => 'Это уже записанное решение климатического тика. Воздушный VPD здесь не пересчитывается.',
+            'details' => ['moisture_vent_suppressed' => true],
+        ];
+    }
+
+    /**
+     * @return array<string,mixed>|null
+     */
+    private function decodeDecisionFactors(mixed $raw): ?array
+    {
+        if (is_string($raw) && $raw !== '') {
+            $decoded = json_decode($raw, true);
+            $raw = is_array($decoded) ? $decoded : null;
+        }
+
+        return is_array($raw) ? $raw : null;
     }
 
     /**

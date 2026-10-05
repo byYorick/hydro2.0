@@ -60,6 +60,20 @@ export function applyClimateFromTargets(targets: Dictionary, climateForm: Climat
   applyExternalGuard(climateBehavior, climateTargets, climateForm)
   applySchedule(climateBehavior, climateTargets, climateForm)
   applyManualOverride(climateBehavior, climateTargets, climateForm)
+  applyAirVpdTargets(climateSubsystem, climateBehavior, climateForm)
+}
+
+function applyAirVpdTargets(
+  climateSubsystem: Dictionary | null,
+  climateBehavior: Dictionary | null,
+  climateForm: ClimateFormState,
+): void {
+  if (!climateSubsystem) {
+    return
+  }
+  const targets = asRecord(climateBehavior?.greenhouse_targets)
+  climateForm.vpdMinKpa = readNumber(targets?.vpd_min_kpa)
+  climateForm.vpdMaxKpa = readNumber(targets?.vpd_max_kpa)
 }
 
 function applyTemperatureHumidity(

@@ -361,6 +361,7 @@ services:
       - HISTORY_LOGGER_API_TOKEN=${HISTORY_LOGGER_API_TOKEN:-${PY_INGEST_TOKEN:-dev-token-12345}}
       - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:-dev-token-12345}
       - CONFIG_FETCH_MIN_INTERVAL_SECONDS=60
+      - HYDRO_CONFIGS_DIR=/hydro-configs
     depends_on:
       mqtt:
         condition: service_healthy
@@ -375,6 +376,8 @@ services:
       - ./services/common:/app/common
       - ./api_error_raw_translations.json:/app/api_error_raw_translations.json:ro
       - ./error_codes.json:/app/error_codes.json:ro
+      # Алерты и дашборды для контрактных тестов AE. В образ они не копируются.
+      - ./configs:/hydro-configs:ro
       # Canonical JSON Schemas (repo root) — для parity test (Pydantic ↔ JSON Schema)
       - ../schemas:/schemas:ro
     healthcheck:
@@ -645,6 +648,8 @@ services:
       - FEATURE_BUILDER_HORIZONS=5,15,60
       - FEATURE_BUILDER_SCHEMA_VERSION=1
       - FEATURE_BUILDER_PORT=9410
+    volumes:
+      - ./services/feature-builder/main.py:/app/main.py:ro
     depends_on:
       db:
         condition: service_healthy

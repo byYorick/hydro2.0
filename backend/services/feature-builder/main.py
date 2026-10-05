@@ -174,8 +174,8 @@ def _install_signal_handlers() -> None:
     for sig in (signal.SIGTERM, signal.SIGINT):
         try:
             loop.add_signal_handler(sig, _shutdown.set)
-        except NotImplementedError:
-            # Windows dev-кейсы
+        except (NotImplementedError, RuntimeError, ValueError):
+            # TestClient и Windows поднимают цикл не в главном потоке.
             pass
 
 

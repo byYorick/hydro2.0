@@ -54,6 +54,13 @@ export interface RecipePhaseFormState {
   nutrient_solution_volume_l: number | null
   day_night_enabled: boolean
   day_night: RecipePhaseDayNightState
+  solution_temp_min: number | null
+  solution_temp_max: number | null
+  solution_health_required: boolean
+  solution_health_breach_hold_sec: number | null
+  dli_target: number | null
+  solution_max_age_days: number | null
+  solution_refresh_after_topup_ml: number | null
 }
 
 export interface RecipeEditorFormState {
@@ -89,6 +96,30 @@ export function toNullableNumber(value: unknown, fallback: number | null = null)
 
   const parsed = Number(value)
   return Number.isFinite(parsed) ? parsed : fallback
+}
+
+/** Пустая строка и пробелы — null. Number('') равен 0, для порогов культуры это включение контура. */
+export function nullableDraftNumber(value: unknown): number | null {
+  if (value === null || value === undefined) {
+    return null
+  }
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null
+  }
+  const text = String(value).trim()
+  if (text === '') {
+    return null
+  }
+  const parsed = Number(text)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+export function nullableDraftInt(value: unknown): number | null {
+  const parsed = nullableDraftNumber(value)
+  if (parsed === null) {
+    return null
+  }
+  return Math.round(parsed)
 }
 
 export function toNullableInt(value: unknown, fallback: number | null = null): number | null {
@@ -180,6 +211,13 @@ export function createDefaultRecipePhase(phaseIndex: number): RecipePhaseFormSta
     nutrient_ec_stop_tolerance: DEFAULT_NUTRIENT_EC_STOP_TOLERANCE,
     nutrient_solution_volume_l: null,
     day_night_enabled: false,
+    solution_temp_min: null,
+    solution_temp_max: null,
+    solution_health_required: false,
+    solution_health_breach_hold_sec: null,
+    dli_target: null,
+    solution_max_age_days: null,
+    solution_refresh_after_topup_ml: null,
     day_night: {
       ph: { day: 5.8, night: 5.7, night_min: 5.6, night_max: 5.8 },
       ec: { day: 1.6, night: 1.4, night_min: 1.3, night_max: 1.5 },
@@ -294,6 +332,17 @@ export function hydrateRecipePhaseForm(phase: Partial<RecipePhase> | null | unde
   result.day_night.soil_moisture.night = toNullableNumber(soilMoisture?.night, result.day_night.soil_moisture.night)
   result.day_night.lighting.day_start_time = normalizeTimeString(lighting?.day_start_time ?? result.lighting_start_time, result.lighting_start_time)
   result.day_night.lighting.day_hours = toNullableNumber(lighting?.day_hours, result.lighting_photoperiod_hours)
+
+  const solutionHealth = asRecord(extensions?.solution_health)
+  result.solution_temp_min = nullableDraftNumber(phase?.solution_temp_min ?? phase?.targets?.solution_temp?.min)
+  result.solution_temp_max = nullableDraftNumber(phase?.solution_temp_max ?? phase?.targets?.solution_temp?.max)
+  result.solution_health_required = solutionHealth?.required === true
+    || solutionHealth?.required === 1
+    || solutionHealth?.required === '1'
+  result.solution_health_breach_hold_sec = nullableDraftInt(solutionHealth?.breach_hold_sec)
+  result.dli_target = nullableDraftNumber(phase?.dli_target)
+  result.solution_max_age_days = nullableDraftInt(extensions?.solution_max_age_days)
+  result.solution_refresh_after_topup_ml = nullableDraftNumber(extensions?.solution_refresh_after_topup_ml)
 
   return result
 }
@@ -433,6 +482,9 @@ export function buildRecipePhasePayload(phase: RecipePhaseFormState): Record<str
     nutrient_dose_delay_sec: toNullableInt(phase.nutrient_dose_delay_sec),
     nutrient_ec_stop_tolerance: toNullableNumber(phase.nutrient_ec_stop_tolerance),
     nutrient_solution_volume_l: toNullableNumber(phase.nutrient_solution_volume_l),
+    solution_temp_min: nullableDraftNumber(phase.solution_temp_min),
+    solution_temp_max: nullableDraftNumber(phase.solution_temp_max),
+    dli_target: nullableDraftNumber(phase.dli_target),
     extensions: {
       day_night: {
         ph: {
@@ -471,6 +523,12 @@ export function buildRecipePhasePayload(phase: RecipePhaseFormState): Record<str
           },
         },
       },
+      solution_health: {
+        required: phase.solution_health_required === true,
+        breach_hold_sec: nullableDraftInt(phase.solution_health_breach_hold_sec),
+      },
+      solution_max_age_days: nullableDraftInt(phase.solution_max_age_days),
+      solution_refresh_after_topup_ml: nullableDraftNumber(phase.solution_refresh_after_topup_ml),
     },
   }
 }
@@ -536,6 +594,18 @@ function validateBoundedTarget(
   return null
 }
 
+function cropDayPhaseError(phase: RecipePhaseFormState): string | null {
+  const min = nullableDraftNumber(phase.solution_temp_min)
+  const max = nullableDraftNumber(phase.solution_temp_max)
+  if (min !== null && max !== null && min > max) {
+    return 'Температура раствора: min не может быть больше max'
+  }
+  if (phase.solution_health_required === true && (min === null || max === null)) {
+    return 'Обязательная температура раствора задаётся только вместе с min и max'
+  }
+  return null
+}
+
 export function getRecipePhaseTargetValidationError(phase: RecipePhaseFormState): string | null {
   return validateBoundedTarget(
     'pH',
@@ -547,7 +617,7 @@ export function getRecipePhaseTargetValidationError(phase: RecipePhaseFormState)
     toNullableNumber(phase.ec_target),
     toNullableNumber(phase.ec_min),
     toNullableNumber(phase.ec_max),
-  )
+  ) ?? cropDayPhaseError(phase)
 }
 
 export function filterProductsByComponent(products: NutrientProduct[], component: NutrientProduct['component']): NutrientProduct[] {

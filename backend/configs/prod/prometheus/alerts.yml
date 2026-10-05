@@ -643,3 +643,36 @@ groups:
         annotations:
           summary: "Zone telemetry_last is stale"
           description: "telemetry_last_age_seconds max is {{ $value }}s (threshold 600s) for 5 minutes."
+
+  - name: agronomy_alerts
+    interval: 30s
+    rules:
+      - alert: SolutionTempOutOfBand
+        expr: sum(solution_temp_breach_active) > 0
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Solution temperature outside recipe thresholds"
+          description: "At least one zone has active biz_solution_temp_high/low alert (solution_temp_c breach)."
+
+  - name: crop_day_alerts
+    interval: 30s
+    rules:
+      - alert: AE3SmartSoilBlocked
+        expr: sum(increase(ae3_crop_irrigation_blocked_total{reason=~"smart_soil_.+"}[15m])) > 0
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Smart soil irrigation is blocked"
+          description: "A blocking irrigation skip means the strategy sensor is silent (smart_soil_target_missing or smart_soil_telemetry_missing_or_stale)."
+
+      - alert: AE3DliSensorMissing
+        expr: sum(increase(ae3_dli_tick_total{status="sensor_unavailable"}[1h])) > 0
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "DLI light sensor is unavailable"
+          description: "Lighting ticks reported sensor_unavailable for 1 hour. Ticks exist only while the light dispatcher is alive."

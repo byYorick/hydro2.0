@@ -3,7 +3,9 @@
 namespace App\Services\AutomationScheduler;
 
 use App\Services\AutomationRuntimeConfigService;
+use App\Services\CropDay\SolutionRefreshRecommendation;
 use Carbon\CarbonImmutable;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
@@ -33,6 +35,8 @@ class SchedulerPrometheusMetricsExporter
             ...$this->renderLockSkippedCounter(),
             '',
             ...$this->renderHangHintsGauges(),
+            '',
+            ...$this->renderSolutionRefreshRecommendedCounter(),
             '',
         ];
 
@@ -275,6 +279,27 @@ class SchedulerPrometheusMetricsExporter
         }
 
         return $lines;
+    }
+
+    /**
+     * Счётчик читается при scrape. Инкремент — только рядом с записью события G6.
+     *
+     * @return list<string>
+     */
+    private function renderSolutionRefreshRecommendedCounter(): array
+    {
+        $metricName = SolutionRefreshRecommendation::METRIC_NAME;
+        $raw = Cache::get(SolutionRefreshRecommendation::METRIC_CACHE_KEY, 0);
+        $total = is_numeric($raw) ? (float) $raw : 0.0;
+        if ($total < 0) {
+            $total = 0.0;
+        }
+
+        return [
+            '# HELP '.$metricName.' Recorded solution refresh recommendations.',
+            '# TYPE '.$metricName.' counter',
+            $this->renderMetricLine($metricName, [], $total),
+        ];
     }
 
     /**

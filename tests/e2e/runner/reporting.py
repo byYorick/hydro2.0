@@ -15,13 +15,17 @@ logger = logging.getLogger(__name__)
 class TestReporter:
     """Генератор отчетов для E2E тестов."""
     
-    def __init__(self, output_dir: str = "tests/e2e/reports"):
+    def __init__(self, output_dir: Optional[str] = None):
         """
         Инициализация репортера.
-        
+
         Args:
-            output_dir: Директория для сохранения отчетов
+            output_dir: Директория для сохранения отчетов.
+                По умолчанию tests/e2e/reports рядом с пакетом runner,
+                независимо от cwd (launcher делает cd в tests/e2e).
         """
+        if output_dir is None:
+            output_dir = str(Path(__file__).resolve().parent.parent / "reports")
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
         

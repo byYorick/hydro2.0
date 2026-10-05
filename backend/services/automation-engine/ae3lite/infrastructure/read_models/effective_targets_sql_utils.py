@@ -271,6 +271,11 @@ def build_base_targets(phase: Dict[str, Any]) -> Dict[str, Any]:
             "photoperiod_hours": to_float(phase.get("lighting_photoperiod_hours")),
             "start_time": normalize_time_string(phase.get("lighting_start_time")),
         }
+    dli_target = to_float(phase.get("dli_target"))
+    if dli_target is not None and dli_target > 0:
+        lighting = targets.get("lighting") if isinstance(targets.get("lighting"), dict) else {}
+        lighting["dli_target"] = dli_target
+        targets["lighting"] = lighting
     climate_request: Dict[str, Any] = {}
     if phase.get("temp_air_target") is not None:
         climate_request["temp_air_target"] = float(phase["temp_air_target"])
@@ -286,6 +291,19 @@ def build_base_targets(phase: Dict[str, Any]) -> Dict[str, Any]:
             "duration_sec": phase.get("mist_duration_sec"),
             "mode": phase.get("mist_mode"),
         }
+    solution_temp: Dict[str, Any] = {}
+    solution_temp_target = to_float(phase.get("solution_temp_target"))
+    solution_temp_min = to_float(phase.get("solution_temp_min"))
+    solution_temp_max = to_float(phase.get("solution_temp_max"))
+    # Пустая колонка остаётся пустой: target не подставляется в min/max.
+    if solution_temp_target is not None:
+        solution_temp["target"] = solution_temp_target
+    if solution_temp_min is not None:
+        solution_temp["min"] = solution_temp_min
+    if solution_temp_max is not None:
+        solution_temp["max"] = solution_temp_max
+    if solution_temp:
+        targets["solution_temp"] = solution_temp
     if isinstance(phase.get("extensions"), dict):
         targets["extensions"] = dict(phase["extensions"])
     return targets

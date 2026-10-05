@@ -3,13 +3,23 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Mapping
 
 from ae3lite.application.dto.stage_outcome import StageOutcome
 from ae3lite.application.handlers.base import BaseStageHandler
 from ae3lite.domain.errors import TaskExecutionError
-from ae3lite.infrastructure.metrics import IRRIGATION_DECISION, inc_observability_write_failed
+from ae3lite.domain.services.irrigation_decision_controller import IrrigationDecision
+from ae3lite.domain.services.solution_temp_irrigation_guard import (
+    DEFAULT_SOLUTION_TEMP_STALE_SEC,
+    evaluate_solution_temp_hold,
+    solution_temp_gate_active,
+)
+from ae3lite.infrastructure.metrics import (
+    CROP_IRRIGATION_BLOCKED,
+    IRRIGATION_DECISION,
+    inc_observability_write_failed,
+)
 from ae3lite.hydraulics.failure_report import note_upward_report
 from common.db import create_zone_event
 
@@ -21,6 +31,30 @@ def _irrigation_decision_alert_dedupe_key(*, outcome: str, zone_id: int, reason_
     """Стабильный dedupe_key без task_id, чтобы Laravel/alert ingest не плодил дубли на частых skip/degraded."""
     rc = str(reason_code or "").strip() or "unknown"
     return f"ae3_irrigation_decision|{outcome}|z{int(zone_id)}|{rc}"
+
+
+_QUIET_SUCCESS_SKIP_REASONS = frozenset({
+    "smart_soil_target_missing",
+    "smart_soil_telemetry_missing_or_stale",
+    "solution_temp_unavailable",
+    "solution_temp_out_of_band",
+})
+
+
+def _task_already_blocking_skip(task: Any) -> bool:
+    """Повторный poll читает колонки уже записанного blocking skip."""
+    outcome = str(getattr(task, "irrigation_decision_outcome", "") or "").strip()
+    reason = str(getattr(task, "irrigation_decision_reason_code", "") or "").strip()
+    return outcome == "skip" and reason in _QUIET_SUCCESS_SKIP_REASONS
+
+
+def _record_blocking_irrigation_skip(*, task: Any, decision: Any) -> None:
+    reason = str(getattr(decision, "reason_code", "") or "").strip()
+    if str(getattr(decision, "outcome", "") or "") != "skip":
+        return
+    if reason not in _QUIET_SUCCESS_SKIP_REASONS or _task_already_blocking_skip(task):
+        return
+    CROP_IRRIGATION_BLOCKED.labels(reason=reason).inc()
 
 
 class DecisionGateHandler(BaseStageHandler):
@@ -55,6 +89,12 @@ class DecisionGateHandler(BaseStageHandler):
             requested_duration_sec=getattr(task, "irrigation_requested_duration_sec", None),
             now=now,
         )
+        decision = await self._apply_solution_temp_gate(
+            decision=decision,
+            task=task,
+            runtime=runtime,
+            now=now,
+        )
         updated = await self._task_repository.update_irrigation_runtime(
             task_id=int(task.id),
             owner=owner,
@@ -73,6 +113,7 @@ class DecisionGateHandler(BaseStageHandler):
             strategy=str(runtime.irrigation_decision.strategy or ""),
             outcome=str(decision.outcome or ""),
         ).inc()
+        _record_blocking_irrigation_skip(task=task, decision=decision)
 
         await self._emit_irrigation_decision_event(
             task=updated,
@@ -81,7 +122,8 @@ class DecisionGateHandler(BaseStageHandler):
         )
 
         try:
-            if decision.outcome == "skip":
+            reason_code = str(getattr(decision, "reason_code", "") or "")
+            if decision.outcome == "skip" and reason_code not in _QUIET_SUCCESS_SKIP_REASONS:
                 await note_upward_report(
                     code="biz_irrigation_decision_skip",
                     alert_type="AE3 Irrigation Decision Skip",
@@ -91,7 +133,7 @@ class DecisionGateHandler(BaseStageHandler):
                     dedupe_key=_irrigation_decision_alert_dedupe_key(
                         outcome="skip",
                         zone_id=int(task.zone_id),
-                        reason_code=str(getattr(decision, "reason_code", "") or ""),
+                        reason_code=reason_code,
                     ),
                     details={
                         "task_id": int(getattr(task, "id", 0) or 0),
@@ -99,7 +141,7 @@ class DecisionGateHandler(BaseStageHandler):
                         "stage": "decision_gate",
                         "strategy": str(runtime.irrigation_decision.strategy or ""),
                         "bundle_revision": str(runtime.bundle_revision or ""),
-                        "reason_code": str(getattr(decision, "reason_code", "") or ""),
+                        "reason_code": reason_code,
                         "degraded": bool(getattr(decision, "degraded", False)),
                     },
                     scope_parts=("stage:decision_gate",),
@@ -170,6 +212,57 @@ class DecisionGateHandler(BaseStageHandler):
                 error_message="Decision-controller полива вернул отказ",
             )
         return StageOutcome(kind="transition", next_stage="irrigation_start")
+
+    async def _apply_solution_temp_gate(
+        self,
+        *,
+        decision: Any,
+        task: Any,
+        runtime: Any,
+        now: datetime,
+    ) -> Any:
+        """После стратегии G1 и до irrigation_start. Итог один, дозу не отменяет."""
+        if str(getattr(decision, "outcome", "") or "") == "fail":
+            return decision
+        health = getattr(runtime, "solution_health", None)
+        required = bool(getattr(health, "required", False))
+        min_c = getattr(health, "min_c", None)
+        max_c = getattr(health, "max_c", None)
+        if not solution_temp_gate_active(required=required, min_c=min_c, max_c=max_c):
+            return decision
+
+        hold_sec = int(getattr(health, "breach_hold_sec", DEFAULT_SOLUTION_TEMP_STALE_SEC) or DEFAULT_SOLUTION_TEMP_STALE_SEC)
+        try:
+            reading = await self._runtime_monitor.read_solution_temp_window(
+                zone_id=int(task.zone_id),
+                since_ts=now - timedelta(seconds=hold_sec),
+                until_ts=now,
+            )
+        except Exception:
+            _logger.warning(
+                "AE3 solution temp gate не прочитал telemetry zone_id=%s task_id=%s",
+                int(getattr(task, "zone_id", 0) or 0),
+                int(getattr(task, "id", 0) or 0),
+                exc_info=True,
+            )
+            reading = None
+
+        verdict = evaluate_solution_temp_hold(
+            min_c=float(min_c),
+            max_c=float(max_c),
+            hold_sec=hold_sec,
+            stale_sec=DEFAULT_SOLUTION_TEMP_STALE_SEC,
+            now=now,
+            reading=reading if isinstance(reading, Mapping) else None,
+        )
+        if verdict is None:
+            return decision
+        return IrrigationDecision(
+            outcome="skip",
+            reason_code=verdict.reason_code,
+            degraded=False,
+            details=verdict.details,
+        )
 
     async def _emit_irrigation_decision_event(
         self,

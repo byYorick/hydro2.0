@@ -72,6 +72,40 @@ def pipeline_dose_flags(corr: CorrectionState) -> dict[str, Any]:
     }
 
 
+FINAL_EC_GATE_PHASES = frozenset({"recirc_micro", "recirc_ph_final", "recirc_ph_3"})
+
+
+def recipe_ec_band_reached(
+    *,
+    pipeline_phase: str | None,
+    current_ec: float,
+    ec_min: float | None,
+    ec_max: float | None,
+) -> bool:
+    """Финальные шаги recirc (micro / final pH) сверяют EC с recipe min/max.
+
+    ±prepare_tolerance (часто 15%) шире фазового окна 2.35–2.45 и закрывает
+    пайплайн на нижней кромке, не доводя EC до полосы, которую ждёт рецепт.
+    Промежуточные шаги (T_ca, T_ca_mg, …) этот фильтр не трогает.
+    """
+    phase = str(pipeline_phase or "").strip().lower()
+    if phase not in FINAL_EC_GATE_PHASES:
+        return True
+    if ec_min is None or ec_max is None:
+        return True
+    try:
+        value = float(current_ec)
+        low = float(ec_min)
+        high = float(ec_max)
+    except (TypeError, ValueError):
+        return False
+    # Небольшой перелёт над recipe max ещё не повод для dilute (порог ~15%),
+    # но и не даёт шаг закрыть. Иначе EC зависает между max и dilute:
+    # вверх не дозируем, разбавление не стартует, пайплайн не завершается.
+    ceiling = high + 0.15
+    return low <= value <= ceiling
+
+
 def step_targets_reached(
     *,
     corr: CorrectionState,

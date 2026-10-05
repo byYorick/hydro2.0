@@ -1073,6 +1073,77 @@
           </div>
         </div>
 
+        <div class="rounded-md border border-[color:var(--border-muted)] p-2.5 space-y-2">
+          <div class="text-[12px] font-bold uppercase tracking-[0.16em] text-[color:var(--text-muted)]">
+            Температура раствора и подмена
+          </div>
+          <label class="flex items-center gap-2 text-[12px] text-[color:var(--text-primary)] font-medium">
+            <input
+              v-model="phase.solution_health_required"
+              type="checkbox"
+            />
+            Температура раствора обязательна
+          </label>
+          <p class="text-[12px] text-[color:var(--text-muted)] m-0 leading-snug">
+            Включается только вместе с min и max. Непрерывный выход за границы дольше удержания пропускает новый полив и не помечает задачу сбоем.
+          </p>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3 max-w-xl">
+            <div>
+              <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">Мин. температура раствора, °C</label>
+              <input
+                type="number"
+                step="0.1"
+                class="input-field"
+                :value="cropDayInputValue(phase.solution_temp_min)"
+                @input="setCropDayNumber(phase, 'solution_temp_min', $event)"
+              />
+            </div>
+            <div>
+              <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">Макс. температура раствора, °C</label>
+              <input
+                type="number"
+                step="0.1"
+                class="input-field"
+                :value="cropDayInputValue(phase.solution_temp_max)"
+                @input="setCropDayNumber(phase, 'solution_temp_max', $event)"
+              />
+            </div>
+            <div>
+              <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">Удержание выхода за пределы, сек</label>
+              <input
+                type="number"
+                step="1"
+                class="input-field"
+                :value="cropDayInputValue(phase.solution_health_breach_hold_sec)"
+                @input="setCropDayNumber(phase, 'solution_health_breach_hold_sec', $event)"
+              />
+            </div>
+            <div>
+              <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">Возраст раствора до рекомендации, дни</label>
+              <input
+                type="number"
+                step="1"
+                class="input-field"
+                :value="cropDayInputValue(phase.solution_max_age_days)"
+                @input="setCropDayNumber(phase, 'solution_max_age_days', $event)"
+              />
+            </div>
+            <div>
+              <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">Объём доливов до рекомендации, мл</label>
+              <input
+                type="number"
+                step="1"
+                class="input-field"
+                :value="cropDayInputValue(phase.solution_refresh_after_topup_ml)"
+                @input="setCropDayNumber(phase, 'solution_refresh_after_topup_ml', $event)"
+              />
+            </div>
+          </div>
+          <p class="text-[12px] text-[color:var(--text-muted)] m-0 leading-snug">
+            Пустое поле выключает порог и уходит как пустое, не как ноль.
+          </p>
+        </div>
+
         <!-- Свет -->
         <div class="rounded-md border border-[color:var(--border-muted)] p-2.5 space-y-2">
           <div class="text-[12px] font-bold uppercase tracking-[0.16em] text-[color:var(--text-muted)]">
@@ -1112,6 +1183,20 @@
                 type="time"
                 class="input-field"
               />
+            </div>
+            <div class="col-span-2">
+              <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">DLI, моль/м²·сутки</label>
+              <input
+                data-testid="recipe-phase-dli-target"
+                type="number"
+                step="0.01"
+                class="input-field"
+                :value="cropDayInputValue(phase.dli_target)"
+                @input="setCropDayNumber(phase, 'dli_target', $event)"
+              />
+              <p class="text-[12px] text-[color:var(--text-muted)] mt-1 mb-0 leading-snug">
+                Нужен канал с единицей PPFD. Люксы не пересчитываются. Если цель задана, внутри окна появятся проверочные тики света.
+              </p>
             </div>
           </div>
         </div>
@@ -1157,7 +1242,7 @@ import RecipeSummaryStats from '@/Components/Recipes/RecipeSummaryStats.vue'
 import { buildRecipePhaseVisuals, summarizeRecipePhases } from '@/utils/recipeVisualization'
 import type { NutrientProduct } from '@/types'
 import type { PlantOption, RecipeEditorFormState, RecipePhaseFormState } from '@/composables/recipeEditorShared'
-import { computeEcBreakdown, normalizePhaseRatios, nutrientRatioSum } from '@/composables/recipeEditorShared'
+import { computeEcBreakdown, normalizePhaseRatios, nullableDraftNumber, nutrientRatioSum } from '@/composables/recipeEditorShared'
 import type { EcBreakdown } from '@/composables/recipeEditorShared'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import { useToast } from '@/composables/useToast'
@@ -1376,6 +1461,22 @@ function setDurationIrrigFromString(phase: RecipePhaseFormState, value: string):
   const m = Math.max(0, Number(parts[0]) || 0)
   const s = parts.length > 1 ? Math.max(0, Math.min(59, Number(parts[1]) || 0)) : 0
   phase.irrigation_duration_sec = m * 60 + s
+}
+
+type CropDayNumberKey =
+  | 'solution_temp_min'
+  | 'solution_temp_max'
+  | 'solution_health_breach_hold_sec'
+  | 'dli_target'
+  | 'solution_max_age_days'
+  | 'solution_refresh_after_topup_ml'
+
+function cropDayInputValue(value: number | null): string | number {
+  return value === null || value === undefined ? '' : value
+}
+
+function setCropDayNumber(phase: RecipePhaseFormState, key: CropDayNumberKey, event: Event): void {
+  phase[key] = nullableDraftNumber((event.target as HTMLInputElement).value)
 }
 
 function onPhTargetChange(phase: RecipePhaseFormState): void {

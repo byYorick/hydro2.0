@@ -15,6 +15,12 @@
         <p class="mt-2 mb-0">
           Общий климат теплицы редактируется на уровне теплицы.
         </p>
+        <p
+          data-testid="zone-irrigation-strategy-caption"
+          class="mt-2 mb-0"
+        >
+          task поливает по расписанию. smart_soil_v1 без свежей влажности пропускает полив и не помечает задачу сбоем.
+        </p>
       </div>
 
       <div

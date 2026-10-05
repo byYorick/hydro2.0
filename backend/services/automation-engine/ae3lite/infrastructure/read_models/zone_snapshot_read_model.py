@@ -96,6 +96,10 @@ class PgZoneSnapshotReadModel:
                         gcp.mist_interval_sec,
                         gcp.mist_duration_sec,
                         gcp.mist_mode,
+                        gcp.solution_temp_target,
+                        gcp.solution_temp_min,
+                        gcp.solution_temp_max,
+                        gcp.dli_target,
                         gcp.extensions AS phase_extensions
                     FROM zones z
                     LEFT JOIN greenhouses g
@@ -401,6 +405,19 @@ class PgZoneSnapshotReadModel:
                 ),
             )
 
+        from .dli_light_series import load_dli_light_series
+
+        dli_light_series = await load_dli_light_series(
+            conn,
+            zone_id=zone_id,
+            targets=targets,
+            greenhouse_timezone=(
+                str(zone_row.get("greenhouse_timezone")).strip()
+                if isinstance(zone_row.get("greenhouse_timezone"), str)
+                else None
+            ),
+        )
+
         return ZoneSnapshot(
             zone_id=int(zone_row["zone_id"]),
             greenhouse_id=int(zone_row["greenhouse_id"]) if zone_row.get("greenhouse_id") is not None else None,
@@ -426,6 +443,7 @@ class PgZoneSnapshotReadModel:
                 if zone_row.get("zone_config_revision") is not None
                 else None
             ),
+            dli_light_series=dli_light_series,
         )
 
     @staticmethod

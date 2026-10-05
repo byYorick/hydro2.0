@@ -9,6 +9,8 @@ Prometheus-метрики AE3-Lite v2.
 - command dispatch latency
 """
 
+from typing import Mapping
+
 from prometheus_client import Counter, Gauge, Histogram
 
 # ─── Intent lifecycle ───────────────────────────────────────────────
@@ -266,6 +268,27 @@ IRRIGATION_BLOCKED = Counter(
     "Ingress blocks for start-irrigation before task creation",
     ["reason"],
 )
+
+# Блокирующий skip полива. reason — только код решения, без текста ошибки и zone_id.
+CROP_IRRIGATION_BLOCKED = Counter(
+    "ae3_crop_irrigation_blocked_total",
+    "Blocking irrigation skips counted once per task",
+    ["reason"],
+)
+
+DLI_TICK_TOTAL = Counter(
+    "ae3_dli_tick_total",
+    "Built lighting plans grouped by DLI status",
+    ["status"],
+)
+
+_DLI_TICK_STATUSES = frozenset({
+    "not_configured",
+    "sensor_unavailable",
+    "gap",
+    "capped",
+    "within_target",
+})
 
 # ─── Active tasks gauge ─────────────────────────────────────────────
 
@@ -568,6 +591,43 @@ GREENHOUSE_CLIMATE_COMMAND_FAILED_TOTAL = Counter(
     "Greenhouse climate actuator command failures grouped by side and failure code",
     ["side", "failure"],
 )
+
+GREENHOUSE_CLIMATE_AIR_VPD_KPA = Gauge(
+    "greenhouse_climate_air_vpd_kpa",
+    "Air VPD in kPa on a climate tick where it was computed",
+    ["greenhouse_id"],
+)
+
+GREENHOUSE_CLIMATE_MOISTURE_VENT_SUPPRESSED_TOTAL = Counter(
+    "greenhouse_climate_moisture_vent_suppressed_total",
+    "Climate ticks where moisture vent suppression was active",
+    ["greenhouse_id"],
+)
+
+
+def record_dli_tick_status(status: str) -> None:
+    """Один inc на построенный lighting plan. Чужой status в метку не пишется."""
+    normalized = str(status or "").strip()
+    if normalized not in _DLI_TICK_STATUSES:
+        return
+    DLI_TICK_TOTAL.labels(status=normalized).inc()
+
+
+def record_greenhouse_climate_crop_metrics(*, greenhouse_id: int, factors: object) -> None:
+    """Gauge VPD и counter подавления: один вызов на climate tick, не навсегда."""
+    if isinstance(greenhouse_id, bool):
+        return
+    try:
+        label = str(int(greenhouse_id))
+    except (TypeError, ValueError):
+        return
+    if not isinstance(factors, Mapping):
+        return
+    air_vpd = factors.get("air_vpd_kpa")
+    if isinstance(air_vpd, (int, float)) and not isinstance(air_vpd, bool):
+        GREENHOUSE_CLIMATE_AIR_VPD_KPA.labels(greenhouse_id=label).set(float(air_vpd))
+    if factors.get("moisture_vent_suppressed") is True:
+        GREENHOUSE_CLIMATE_MOISTURE_VENT_SUPPRESSED_TOTAL.labels(greenhouse_id=label).inc()
 
 
 def inc_observability_write_failed(*, kind: str) -> None:

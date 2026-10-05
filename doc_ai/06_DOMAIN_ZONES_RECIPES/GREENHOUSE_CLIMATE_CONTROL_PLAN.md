@@ -91,7 +91,9 @@ V1 должен быть детерминированным rule-based controlle
 18. Alerts/events/metrics.
 19. Тесты алгоритма, API и command pipeline.
 
-### 2.2. V2: спроектировать, но не реализовывать в V1
+### 2.2. V2: не брать этот список в работу
+
+Этот подраздел не очередь. Прогноз, экраны, отопление, CO₂, туман, температура листа и ML отсюда не реализовывать. Воздушный VPD и точка росы уже входят в расчёт существующих форточек (§8) и не открывают остальные пункты этого списка.
 
 V2 items можно учитывать в структуре state/debug payload, но нельзя делать их runtime
 критической зависимостью V1:
@@ -607,7 +609,43 @@ else:
 Если `outside_humidity > inside_rh_max`, V1 все равно открывает форточки, но применяет
 `outside_wetter_gain`.
 
+### 8.7.1. Воздушный VPD и точка росы
+
+Считаются из уже имеющихся температуры и влажности. Новых приводов нет. Это не VPD листа.
+Прогноз, экраны, отопление, CO₂, туман и температура листа в расчёт не входят.
+
+Влажность перед формулой клампится в `[1, 100]`. Нет температуры или RH — ключи VPD не
+пишутся и `0` не подставляется. Внутренние T/RH — `inside_temp_median` и `inside_rh_max`,
+только если они свежие.
+
+```text
+es(T) = 0.6108 * exp(17.27 * T / (T + 237.3))
+ea    = es(T) * RH_clamped / 100
+VPD   = es(T_inside) - ea_inside
+gamma = ln(RH_clamped / 100) + 17.27 * T / (T + 237.3)
+Tdew  = 237.3 * gamma / (17.27 - gamma)
+```
+
+В `factors`: при свежей внутренней паре `air_vpd_kpa`, `dew_point_c`,
+`inside_vapor_pressure_kpa`; при свежей наружной паре `outside_vapor_pressure_kpa`.
+
+Сначала считаются `base_open_pct`, `temp_open_pct`, `humidity_open_pct`.
+`outside_hotter_gain` умножает только температурную ветку.
+
+Если `greenhouse_targets.vpd_min_kpa` и `vpd_max_kpa` заданы не оба, проценты не меняются.
+Если заданы оба и внутренний воздух свежий:
+
+- `air_vpd > vpd_max` и `inside_temp_median >= temp_min_c`: `humidity_open_pct = 0`;
+- `air_vpd < vpd_min`: `humidity_open_pct = max(прежний, linear_map(vpd_min - air_vpd, 0..vpd_min, 0..100))`;
+- затем, если наружные T и RH свежие, `outside_vapor_pressure >= inside_vapor_pressure`,
+  `outside_temp >= inside_temp_median` и нет emergency overheat: `humidity_open_pct = 0`,
+  `factors.moisture_vent_suppressed=true`. `temp_open_pct` и `base_open_pct` не уменьшаются.
+
+Дальше §8.8. Emergency overheat по-прежнему открывает, и запрет влаги к нему не применяется.
+
 ### 8.8. Combine climate demand
+
+`humidity_open_pct` здесь уже после §8.7.1.
 
 ```text
 requested_open_pct = max(base_open_pct, temp_open_pct, humidity_open_pct)

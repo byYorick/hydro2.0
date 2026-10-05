@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "updated_at": "2026-08-24T11:48:37Z",
+  "updated_at": "2026-10-04T16:12:21Z",
   "codes": [
     {
       "code": "ae3_api_http_5xx",
@@ -60,6 +60,16 @@
       "title": "Исчерпано окно коррекции pH/EC",
       "description": "Automation-engine исчерпал лимит попыток дозирования в текущем окне коррекции и не достиг целевых pH/EC.",
       "recommendation": "Проверьте калибровки дозирующих насосов и наличие реагентов в ёмкостях. Убедитесь, что датчики pH/EC дают свежие и правдоподобные показания. При необходимости выполните ручную коррекцию раствора и перезапустите цикл после устранения причины.",
+      "node_related": false
+    },
+    {
+      "code": "ae3_dli_sensor_missing",
+      "source": "infra",
+      "category": "operations",
+      "severity": "warning",
+      "title": "AE3 Dli Sensor Missing",
+      "description": "AE3 Dli Sensor Missing: требуется проверка по журналам и метрикам.",
+      "recommendation": "Проверьте логи сервисов, метрики Prometheus и состояние зоны.",
       "node_related": false
     },
     {
@@ -209,6 +219,16 @@
       "severity": "warning",
       "title": "AE3 Reconcile Loop Degraded",
       "description": "AE3 Reconcile Loop Degraded: требуется проверка по журналам и метрикам.",
+      "recommendation": "Проверьте логи сервисов, метрики Prometheus и состояние зоны.",
+      "node_related": false
+    },
+    {
+      "code": "ae3_smart_soil_blocked",
+      "source": "infra",
+      "category": "operations",
+      "severity": "warning",
+      "title": "AE3 Smart Soil Blocked",
+      "description": "AE3 Smart Soil Blocked: требуется проверка по журналам и метрикам.",
       "recommendation": "Проверьте логи сервисов, метрики Prometheus и состояние зоны.",
       "node_related": false
     },
@@ -770,6 +790,16 @@
       "title": "Не заданы целевые значения фазы рецепта",
       "description": "В активной фазе рецепта отсутствуют обязательные целевые параметры (pH, EC, климат и др.).",
       "recommendation": "Откройте рецепт и активную фазу — заполните все обязательные targets. Убедитесь, что цикл выращивания привязан к правильному рецепту. После исправления перезапустите или возобновите цикл.",
+      "node_related": false
+    },
+    {
+      "code": "dli_sensor_unavailable",
+      "source": "biz",
+      "category": "agronomy",
+      "severity": "warning",
+      "title": "Нет ряда PPFD для DLI",
+      "description": "Интеграл света за сутки неизвестен: у канала света нет единицы ppfd или umol_m2_s. Люксы не пересчитываются, свет не гасится.",
+      "recommendation": "Проверьте единицу канала света. Пока ряда PPFD нет, потолок DLI не применяется.",
       "node_related": false
     },
     {
@@ -1650,6 +1680,16 @@
       "title": "Сервис не отдаёт метрики health",
       "description": "Prometheus не получает метрики up=1 с одного из сервисов платформы (automation-engine, history-logger, mqtt-bridge, laravel-scheduler).",
       "recommendation": "Определите какой job недоступен в Prometheus (Status → Targets). Проверьте контейнер: docker compose ps и docker compose logs <service>. Перезапустите сервис после устранения причины падения.",
+      "node_related": false
+    },
+    {
+      "code": "solution_refresh_recommended",
+      "source": "biz",
+      "category": "agronomy",
+      "severity": "warning",
+      "title": "Пора подменить раствор",
+      "description": "Возраст раствора или объём доливов выше порога фазы. Подмена сама не запускается.",
+      "recommendation": "Подмените раствор вручную, когда зона готова. Повторная рекомендация в те же сутки не создаётся.",
       "node_related": false
     },
     {
