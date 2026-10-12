@@ -22,7 +22,7 @@ import math
 import os
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
-from typing import Any, Mapping, Optional, Sequence
+from typing import Any, Callable, Mapping, Optional, Sequence
 
 from ae3lite.application.dto.stage_outcome import StageOutcome
 from ae3lite.application.handlers.base import BaseStageHandler, _utc_naive_dt
@@ -39,6 +39,13 @@ from ae3lite.application.services.decision_window_reader import (
     DecisionWindowResult,
 )
 from ae3lite.application.services.sensor_mode_controller import SensorModeController
+from ae3lite.application.services.correction_pipeline import (
+    maybe_advance_pipeline,
+    pipeline_dose_flags,
+    recipe_ec_band_reached,
+    should_dilute,
+    step_targets_reached,
+)
 from ae3lite.domain.entities.planned_command import PlannedCommand
 from ae3lite.domain.entities.workflow_state import ALERT_BLOCK_SNAPSHOT_CMD_PREFIX, CorrectionState
 from ae3lite.domain.errors import ErrorCodes, PlannerConfigurationError, TaskExecutionError
@@ -55,6 +62,7 @@ from ae3lite.domain.services.metric_window_validator import (
     SENSOR_OUT_OF_BOUNDS_REASON,
     decision_window_bounds_reason,
 )
+from ae3lite.domain.services.telemetry_window_summary import validate_window_timing
 from ae3lite.domain.services.observation_analyzer import ObservationAnalyzer
 from ae3lite.domain.services.pid_output_event import build_pid_output_detail
 from ae3lite.infrastructure.log_context import log_context_scope
@@ -176,6 +184,7 @@ class CorrectionHandler(BaseStageHandler):
         sensor_mode_controller: Optional[SensorModeController] = None,
         alert_service: Optional[CorrectionAlertService] = None,
         live_reload_enabled: bool = False,
+        completion_clock: Optional[Callable[[], datetime]] = None,
     ) -> None:
         super().__init__(
             runtime_monitor=runtime_monitor,
@@ -188,6 +197,7 @@ class CorrectionHandler(BaseStageHandler):
             decision_window_reader or DecisionWindowReader(runtime_monitor=runtime_monitor)
         )
         self._transition_policy = transition_policy or CorrectionTransitionPolicy()
+        self._completion_clock = completion_clock or _utcnow
         # Wrap create_zone_event in a lambda that resolves the symbol lazily
         # from this module's globals. Existing handler tests monkeypatch
         # ``ae3lite.application.handlers.correction.create_zone_event`` to
@@ -203,6 +213,7 @@ class CorrectionHandler(BaseStageHandler):
         self._sensor_mode_controller = sensor_mode_controller or SensorModeController(
             command_gateway=command_gateway,
             event_logger=self._event_logger,
+            completion_clock=self._completion_clock,
         )
         # Отчёт кладётся в буфер тика. Наружу его отправляет исполнитель.
         self._alert_service = alert_service or CorrectionAlertService(
@@ -352,11 +363,15 @@ class CorrectionHandler(BaseStageHandler):
                 task=current_task, commands=sensor_cmds, now=now,
             )
             current_task = result.get("task") or current_task
+        _, _, stabilization_delay_sec = self._completion_anchored_window(
+            now=now,
+            wait_sec=corr.stabilization_sec,
+        )
         next_corr = replace(corr, corr_step="corr_wait_stable")
         return StageOutcome(
             kind="enter_correction",
             correction=next_corr,
-            due_delay_sec=corr.stabilization_sec,
+            due_delay_sec=stabilization_delay_sec,
             task_override=current_task if current_task is not task else None,
         )
 
@@ -639,6 +654,7 @@ class CorrectionHandler(BaseStageHandler):
         workflow_ready = measurement.workflow_ready
         current_stage = measurement.current_stage
 
+        dose_flags = pipeline_dose_flags(corr)
         correction_targets_reached = self._planner.is_within_tolerance(
             current_ph=current_ph, current_ec=current_ec,
             target_ph=target_ph, target_ec=target_ec,
@@ -647,13 +663,10 @@ class CorrectionHandler(BaseStageHandler):
             ph_max=target_ph_max,
             ec_min=target_ec_min,
             ec_max=target_ec_max,
-        )
-        from ae3lite.application.services.correction_pipeline import (
-            maybe_advance_pipeline,
-            pipeline_dose_flags,
-            recipe_ec_band_reached,
-            should_dilute,
-            step_targets_reached,
+            correction_config=correction_cfg,
+            pid_configs=getattr(runtime, "pid_configs", {}),
+            allow_ec=bool(dose_flags.get("allow_ec", True)),
+            allow_ph=bool(dose_flags.get("allow_ph", True)),
         )
 
         pipeline_step_reached = step_targets_reached(
@@ -664,6 +677,8 @@ class CorrectionHandler(BaseStageHandler):
             target_ec=target_ec,
             ph_tol_pct=ph_tol_pct,
             ec_tol_pct=ec_tol_pct,
+            correction_config=correction_cfg,
+            pid_configs=getattr(runtime, "pid_configs", {}),
             planner=self._planner,
         )
         if pipeline_step_reached and not recipe_ec_band_reached(
@@ -824,7 +839,6 @@ class CorrectionHandler(BaseStageHandler):
         # correction-specific TaskExecutionError so execute_task maps it to
         # a typed failure instead of an anonymous Ae3LiteError surface.
         actuators = self._resolve_actuators(runtime=runtime, task=task, plan=plan)
-        dose_flags = pipeline_dose_flags(corr)
         try:
             process_calibrations = {
                 str(phase_key): self._runtime_config.mapping_view(cfg)
@@ -1028,6 +1042,8 @@ class CorrectionHandler(BaseStageHandler):
                     "ph_slope": ph.slope,
                     "ph_window_min_samples": ph.window_min_samples,
                     "ph_telemetry_period_sec": ph.telemetry_period_sec,
+                    "ph_decision_window_sec": ph.decision_window_sec,
+                    "ph_window_span_sec": ph.window_span_sec,
                     "ph_latest_sample_ts": self._serialize_metric_ts(ph.latest_sample_ts),
                     "ph_since_ts": self._serialize_metric_ts(ph.since_ts),
                     "ec_reason": ec.reason,
@@ -1035,6 +1051,8 @@ class CorrectionHandler(BaseStageHandler):
                     "ec_slope": ec.slope,
                     "ec_window_min_samples": ec.window_min_samples,
                     "ec_telemetry_period_sec": ec.telemetry_period_sec,
+                    "ec_decision_window_sec": ec.decision_window_sec,
+                    "ec_window_span_sec": ec.window_span_sec,
                     "ec_latest_sample_ts": self._serialize_metric_ts(ec.latest_sample_ts),
                     "ec_since_ts": self._serialize_metric_ts(ec.since_ts),
                 },
@@ -1357,6 +1375,10 @@ class CorrectionHandler(BaseStageHandler):
                             ph_max=self._runtime_config.effective_ph_max(task=task, runtime=runtime),
                             ec_min=self._runtime_config.effective_ec_min(task=task, runtime=runtime),
                             ec_max=self._runtime_config.effective_ec_max(task=task, runtime=runtime),
+                            correction_config=self._correction_config(plan=plan, task=task),
+                            pid_configs=getattr(runtime, "pid_configs", {}),
+                            allow_ec=bool(pipeline_dose_flags(corr).get("allow_ec", True)),
+                            allow_ph=bool(pipeline_dose_flags(corr).get("allow_ph", True)),
                         ),
                         workflow_ready=workflow_ready,
                     ),
@@ -1947,8 +1969,10 @@ class CorrectionHandler(BaseStageHandler):
             process_cfg=process_cfg,
             pid_entry=_pid_entry_or_none(runtime.pid_state, "ec"),
         )
-        wait_until = now + timedelta(seconds=int(observe_cfg["hold_window_sec"]))
-        dose_completed_at = self._resolve_dose_completed_at()
+        dose_completed_at, wait_until, hold_delay_sec = self._completion_anchored_window(
+            now=now,
+            wait_sec=int(observe_cfg["hold_window_sec"]),
+        )
         await self._pid_state.persist(
             zone_id=task.zone_id,
             now=dose_completed_at,
@@ -1977,7 +2001,7 @@ class CorrectionHandler(BaseStageHandler):
             plan=plan,
             corr=next_corr,
             now=now,
-            due_delay_sec=int(observe_cfg["hold_window_sec"]),
+            due_delay_sec=hold_delay_sec,
             task_override=current_task if current_task is not task else None,
         )
 
@@ -2105,8 +2129,10 @@ class CorrectionHandler(BaseStageHandler):
             process_cfg=process_cfg,
             pid_entry=_pid_entry_or_none(runtime.pid_state, "ph"),
         )
-        wait_until = now + timedelta(seconds=int(observe_cfg["hold_window_sec"]))
-        dose_completed_at = self._resolve_dose_completed_at()
+        dose_completed_at, wait_until, hold_delay_sec = self._completion_anchored_window(
+            now=now,
+            wait_sec=int(observe_cfg["hold_window_sec"]),
+        )
         # Audit B5 fix: explicitly zero out the cross-coupling feedforward_bias
         # the previous EC dose may have left in this pH row. Without this
         # reset the bias would linger until the next EC observation clears
@@ -2131,7 +2157,7 @@ class CorrectionHandler(BaseStageHandler):
             plan=plan,
             corr=next_corr,
             now=now,
-            due_delay_sec=int(observe_cfg["hold_window_sec"]),
+            due_delay_sec=hold_delay_sec,
             task_override=current_task if current_task is not task else None,
         )
 
@@ -2222,13 +2248,17 @@ class CorrectionHandler(BaseStageHandler):
             getattr(getattr(runtime, "recirc", None), "dilute_pulse_sec", _DEFAULT_DILUTE_PULSE_SEC)
             or _DEFAULT_DILUTE_PULSE_SEC
         )
+        _, _, pulse_delay_sec = self._completion_anchored_window(
+            now=now,
+            wait_sec=max(1, pulse_sec),
+        )
         next_corr = replace(corr, corr_step="corr_dilute_settle")
         return self._enter_correction_after_delay_or_interrupt(
             task=task,
             plan=plan,
             corr=next_corr,
             now=now,
-            due_delay_sec=float(max(1, pulse_sec)),
+            due_delay_sec=pulse_delay_sec,
             task_override=current_task if current_task is not task else None,
         )
 
@@ -2259,6 +2289,10 @@ class CorrectionHandler(BaseStageHandler):
             getattr(getattr(runtime, "recirc", None), "dilute_settle_sec", _DEFAULT_DILUTE_SETTLE_SEC)
             or _DEFAULT_DILUTE_SETTLE_SEC
         )
+        _, _, settle_delay_sec = self._completion_anchored_window(
+            now=now,
+            wait_sec=max(0, settle_sec),
+        )
         next_corr = replace(corr, corr_step="corr_check")
         await self._log_correction_event(
             zone_id=task.zone_id,
@@ -2272,7 +2306,7 @@ class CorrectionHandler(BaseStageHandler):
             plan=plan,
             corr=next_corr,
             now=now,
-            due_delay_sec=float(max(0, settle_sec)),
+            due_delay_sec=settle_delay_sec,
             task_override=current_task if current_task is not task else None,
         )
 
@@ -2435,6 +2469,7 @@ class CorrectionHandler(BaseStageHandler):
         tolerance = self._runtime_config.prepare_tolerance_for_task(task=task, runtime=runtime)
         target_ph = self._runtime_config.effective_ph_target(task=task, runtime=runtime)
         target_ec = self._runtime_config.effective_ec_target(task=task, runtime=runtime)
+        dose_flags = pipeline_dose_flags(getattr(task, "correction", None))
         targets_in_tolerance = self._planner.is_within_tolerance(
             current_ph=current_ph,
             current_ec=current_ec,
@@ -2446,6 +2481,10 @@ class CorrectionHandler(BaseStageHandler):
             ph_max=self._runtime_config.effective_ph_max(task=task, runtime=runtime),
             ec_min=self._runtime_config.effective_ec_min(task=task, runtime=runtime),
             ec_max=self._runtime_config.effective_ec_max(task=task, runtime=runtime),
+            correction_config=correction_cfg,
+            pid_configs=getattr(runtime, "pid_configs", {}),
+            allow_ec=bool(dose_flags.get("allow_ec", True)),
+            allow_ph=bool(dose_flags.get("allow_ph", True)),
         )
         workflow_ready = self._workflow_ready_values_match(
             task=task,
@@ -2506,13 +2545,41 @@ class CorrectionHandler(BaseStageHandler):
             payload={"mismatches": payload_mismatches},
         )
 
-    @staticmethod
-    def _resolve_dose_completed_at() -> datetime:
+    def _resolve_dose_completed_at(self) -> datetime:
         """Anchor ``last_dose_at`` at terminal DONE time, not tick start."""
-        completed = _utcnow().replace(microsecond=0)
+        completed = self._completion_clock()
         if completed.tzinfo is not None:
             completed = completed.astimezone(timezone.utc).replace(tzinfo=None)
         return completed
+
+    def _completion_anchored_window(
+        self,
+        *,
+        now: datetime,
+        wait_sec: float,
+    ) -> tuple[datetime, datetime, float]:
+        """Return one safe wall-clock anchor for persistence and requeue.
+
+        ``WorkflowRouter`` computes ``due_at`` from the tick's original
+        ``now``.  Therefore the returned delay includes time spent waiting for
+        terminal ``DONE``; otherwise command latency silently shortens hold,
+        stabilization and dilute windows.
+        """
+        normalized_now = self._normalize_timestamp(now)
+        completed_at = self._resolve_dose_completed_at()
+        if normalized_now is None:
+            normalized_now = completed_at
+        # A wall-clock rollback must not move the safety window before the
+        # handler tick that issued the command.
+        anchor = max(normalized_now, completed_at)
+        wait_until_naive = anchor + timedelta(seconds=max(0.0, float(wait_sec)))
+        due_delay_sec = max(0.0, (wait_until_naive - normalized_now).total_seconds())
+        wait_until = (
+            wait_until_naive.replace(tzinfo=timezone.utc)
+            if now.tzinfo is not None
+            else wait_until_naive
+        )
+        return anchor, wait_until, due_delay_sec
 
     # ── Helpers ─────────────────────────────────────────────────────
 
@@ -3265,6 +3332,50 @@ class CorrectionHandler(BaseStageHandler):
                     "stability_max_slope": float(observe_cfg["stability_max_slope"]),
                 },
             )
+            return self._enter_correction_after_delay_or_interrupt(
+                task=task,
+                plan=plan,
+                corr=corr,
+                now=now,
+                due_delay_sec=int(observe_cfg["observe_poll_sec"]),
+            )
+
+        timing = validate_window_timing(
+            samples=window["samples"],
+            minimum_span_sec=float(observe_cfg["decision_window_sec"]),
+            not_after=now,
+            sample_period_sec=float(observe_cfg["telemetry_period_sec"]),
+        )
+        if not timing["ready"]:
+            reason = str(timing.get("reason") or "invalid_window_timing")
+            # A short window is the normal accumulation path after hold.  A
+            # future-dated/invalid timestamp is exceptional and remains
+            # visible as a zone event.
+            if reason != "insufficient_window_span":
+                await self._log_correction_event(
+                    zone_id=task.zone_id,
+                    event_type="CORRECTION_SKIPPED_WINDOW_NOT_READY",
+                    task=task,
+                    corr=corr,
+                    payload={
+                        "pid_type": pid_type,
+                        "sensor_type": sensor_type,
+                        "sensor_scope": "observe_window",
+                        "reason": reason,
+                        "retry_after_sec": int(observe_cfg["observe_poll_sec"]),
+                        "decision_window_sec": int(observe_cfg["decision_window_sec"]),
+                        "window_span_sec": timing.get("window_span_sec"),
+                    },
+                )
+            else:
+                _logger.debug(
+                    "zone %s: observe window span %.3fs is shorter than required %ss sensor=%s task_id=%s",
+                    task.zone_id,
+                    float(timing.get("window_span_sec") or 0.0),
+                    int(observe_cfg["decision_window_sec"]),
+                    sensor_type,
+                    getattr(task, "id", None),
+                )
             return self._enter_correction_after_delay_or_interrupt(
                 task=task,
                 plan=plan,

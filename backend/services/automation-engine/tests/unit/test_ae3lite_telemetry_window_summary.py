@@ -13,6 +13,7 @@ import pytest
 from ae3lite.domain.services.telemetry_window_summary import (
     decision_window_since_ts,
     summarize_window,
+    validate_window_timing,
 )
 
 
@@ -127,6 +128,54 @@ def test_summarize_rejects_non_iterable_samples() -> None:
     )
     assert result["ready"] is False
     assert result["reason"] == "insufficient_samples"
+
+
+def test_window_timing_rejects_clustered_samples() -> None:
+    now = datetime(2026, 3, 10, 12, 0, 0)
+    result = validate_window_timing(
+        samples=[
+            _sample(now - timedelta(seconds=2), 2.0),
+            _sample(now - timedelta(seconds=1), 2.01),
+            _sample(now, 2.02),
+        ],
+        minimum_span_sec=8,
+        not_after=now,
+        sample_period_sec=2,
+    )
+    assert result["ready"] is False
+    assert result["reason"] == "insufficient_window_span"
+    assert result["window_span_sec"] == 4.0
+
+
+def test_window_timing_rejects_materially_future_sample() -> None:
+    now = datetime(2026, 3, 10, 12, 0, 0)
+    result = validate_window_timing(
+        samples=[
+            _sample(now - timedelta(seconds=8), 2.0),
+            _sample(now, 2.01),
+            _sample(now + timedelta(seconds=30), 2.02),
+        ],
+        minimum_span_sec=8,
+        not_after=now,
+        sample_period_sec=2,
+    )
+    assert result["ready"] is False
+    assert result["reason"] == "sample_in_future"
+
+
+def test_window_timing_accepts_full_coverage() -> None:
+    now = datetime(2026, 3, 10, 12, 0, 0)
+    result = validate_window_timing(
+        samples=[
+            _sample(now - timedelta(seconds=8), 2.0),
+            _sample(now - timedelta(seconds=4), 2.01),
+            _sample(now, 2.02),
+        ],
+        minimum_span_sec=8,
+        not_after=now,
+        sample_period_sec=2,
+    )
+    assert result == {"ready": True, "window_span_sec": 10.0, "sample_span_sec": 8.0}
 
 
 # ── decision_window_since_ts ────────────────────────────────────────

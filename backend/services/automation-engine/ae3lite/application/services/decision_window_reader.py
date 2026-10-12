@@ -24,6 +24,7 @@ from ae3lite.domain.services.metric_window_validator import decision_window_boun
 from ae3lite.domain.services.telemetry_window_summary import (
     decision_window_since_ts,
     summarize_window,
+    validate_window_timing,
 )
 
 
@@ -49,6 +50,8 @@ class DecisionWindowResult:
     since_ts: Optional[datetime] = None
     window_min_samples: Optional[int] = None
     telemetry_period_sec: Optional[int] = None
+    decision_window_sec: Optional[int] = None
+    window_span_sec: Optional[float] = None
 
     def as_payload(self) -> dict[str, Any]:
         """Shape matching what the handler previously stuffed into event payloads."""
@@ -68,6 +71,8 @@ class DecisionWindowResult:
             "since_ts": self.since_ts,
             "window_min_samples": self.window_min_samples,
             "telemetry_period_sec": self.telemetry_period_sec,
+            "decision_window_sec": self.decision_window_sec,
+            "window_span_sec": self.window_span_sec,
         }
 
 
@@ -137,11 +142,33 @@ class DecisionWindowReader:
                 window_min_samples=window_min_samples,
                 telemetry_period_sec=telemetry_period_sec,
             )
+        decision_window_sec = int(config["decision_window_sec"])
+        timing = validate_window_timing(
+            samples=window["samples"],
+            minimum_span_sec=decision_window_sec,
+            not_after=now,
+            sample_period_sec=telemetry_period_sec,
+        )
+        if not timing["ready"]:
+            return DecisionWindowResult(
+                ready=False,
+                reason=str(timing.get("reason") or "invalid_window_timing"),
+                sample_count=int(summary["sample_count"]),
+                slope=float(summary["slope"]) if summary.get("slope") is not None else None,
+                latest_sample_ts=window.get("latest_sample_ts"),
+                since_ts=since_ts,
+                window_min_samples=window_min_samples,
+                telemetry_period_sec=telemetry_period_sec,
+                decision_window_sec=decision_window_sec,
+                window_span_sec=timing.get("window_span_sec"),
+            )
         return DecisionWindowResult(
             ready=True,
             value=float(summary["value"]),
             sample_count=int(summary["sample_count"]),
             slope=float(summary["slope"]) if summary.get("slope") is not None else None,
+            decision_window_sec=decision_window_sec,
+            window_span_sec=timing.get("window_span_sec"),
         )
 
     # ── Public helpers the handler still calls ─────────────────────
@@ -187,6 +214,13 @@ class DecisionWindowReader:
         starvation_delays = [delay for delay in starvation_delays if delay is not None]
         if starvation_delays:
             return min(retry_delay_sec, max(starvation_delays))
+        span_delays = [
+            DecisionWindowReader._missing_window_span_delay_sec(metric=metric)
+            for metric in (ph, ec)
+        ]
+        span_delays = [delay for delay in span_delays if delay is not None]
+        if span_delays:
+            return min(retry_delay_sec, max(span_delays))
         return retry_delay_sec
 
     # ── Private helpers ────────────────────────────────────────────
@@ -207,6 +241,14 @@ class DecisionWindowReader:
         )
         missing_samples = max(1, metric.window_min_samples - metric.sample_count)
         return max(1.0, telemetry_period_sec * missing_samples)
+
+    @staticmethod
+    def _missing_window_span_delay_sec(*, metric: DecisionWindowResult) -> Optional[float]:
+        if (metric.reason or "").strip().lower() != "insufficient_window_span":
+            return None
+        if metric.window_span_sec is None or metric.decision_window_sec is None:
+            return None
+        return max(1.0, float(metric.decision_window_sec) - float(metric.window_span_sec))
 
 
 def _correction_retry_delay_sec(

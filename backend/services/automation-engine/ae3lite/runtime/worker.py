@@ -1573,7 +1573,9 @@ class Ae3RuntimeWorker:
         max_attempts = 1 + self._intent_sync_max_retries
         for attempt in range(max_attempts):
             try:
-                await self._zone_intent_repository.mark_running(intent_id=intent_id, now=self._now_fn())
+                updated = await self._zone_intent_repository.mark_running(intent_id=intent_id, now=self._now_fn())
+                if updated is False:
+                    raise RuntimeError(f"intent mark_running CAS rejected: intent_id={intent_id}")
                 return True
             except asyncio.CancelledError:
                 raise
@@ -1619,13 +1621,15 @@ class Ae3RuntimeWorker:
         max_attempts = 1 + self._intent_sync_max_retries
         for attempt in range(max_attempts):
             try:
-                await self._zone_intent_repository.mark_terminal(
+                updated = await self._zone_intent_repository.mark_terminal(
                     intent_id=intent_id,
                     now=now,
                     success=success,
                     error_code=error_code,
                     error_message=error_message,
                 )
+                if updated is False:
+                    raise RuntimeError(f"intent mark_terminal CAS rejected: intent_id={intent_id}")
                 return True
             except asyncio.CancelledError:
                 raise

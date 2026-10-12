@@ -1,13 +1,14 @@
 """Unit tests for StartupHandler.
 
 Outcomes:
-1. IRR OK + clean tank full → solution_fill_start (skip clean fill)
-2. IRR OK + clean tank not full → clean_fill_start (cycle=1)
-3. IRR state unavailable/stale → safe fallback → clean_fill_start
-4. IRR mismatch (pump_main=True) → run safety stop → re-check → clean_fill_start
-5. IRR mismatch (pump_main=True) → safety stop fails → TaskExecutionError
-6. IRR mismatch (pump_main=True) + no safety plan → TaskExecutionError
-7. Level unavailable → TaskExecutionError
+1. Persisted workflow ready → complete_ready without restarting fill
+2. IRR OK + clean tank full → solution_fill_start (skip clean fill)
+3. IRR OK + clean tank not full → clean_fill_start (cycle=1)
+4. IRR state unavailable/stale → safe fallback → clean_fill_start
+5. IRR mismatch (pump_main=True) → run safety stop → re-check → clean_fill_start
+6. IRR mismatch (pump_main=True) → safety stop fails → TaskExecutionError
+7. IRR mismatch (pump_main=True) + no safety plan → TaskExecutionError
+8. Level unavailable → TaskExecutionError
 """
 from __future__ import annotations
 
@@ -134,6 +135,35 @@ def _handler(monitor: _Monitor | None = None, gateway: _Gateway | None = None) -
         runtime_monitor=monitor or _Monitor(),
         command_gateway=gateway or _Gateway(),
     )
+
+
+# ── 0. Already ready → idempotent completion ────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_ready_workflow_does_not_restart_fill_pipeline() -> None:
+    m = _Monitor(clean_max_triggered=True, clean_min_triggered=True)
+    runtime = make_runtime_plan(
+        clean_max_sensor_labels=["clean_max"],
+        clean_min_sensor_labels=["clean_min"],
+        level_switch_on_threshold=0.5,
+        telemetry_max_age_sec=300,
+        irr_state_max_age_sec=60,
+        irr_state_wait_timeout_sec=0.0,
+        irr_state_wait_poll_interval_sec=0.05,
+        level_poll_interval_sec=5,
+        zone_workflow_phase="ready",
+    )
+
+    outcome = await _handler(m).run(
+        task=_make_task(),
+        plan=_Plan(runtime=runtime),
+        stage_def=None,
+        now=NOW,
+    )
+
+    assert outcome.kind == "transition"
+    assert outcome.next_stage == "complete_ready"
+    assert m._level_call == 0
 
 
 # ── 1. IRR OK + clean tank full → skip to solution_fill ──────────────────────

@@ -754,8 +754,8 @@ class PgZoneIntentRepository:
             irrigation_requested_duration_sec=irrig_dur if is_irrigation else None,
         )
 
-    async def mark_running(self, *, intent_id: int, now: datetime) -> None:
-        await execute(
+    async def mark_running(self, *, intent_id: int, now: datetime) -> bool:
+        result = await execute(
             """
             UPDATE zone_automation_intents
             SET status = 'running',
@@ -766,6 +766,7 @@ class PgZoneIntentRepository:
             intent_id,
             now,
         )
+        return _affected_rows(result) > 0
 
     async def mark_terminal(
         self,
@@ -775,7 +776,7 @@ class PgZoneIntentRepository:
         success: bool,
         error_code: Optional[str],
         error_message: Optional[str],
-    ) -> None:
+    ) -> bool:
         if not success:
             normalized_code = str(error_code or "").strip().lower()
             if normalized_code in {str(code).strip().lower() for code in _TRANSIENT_RETRYABLE_ERROR_CODES}:
@@ -833,7 +834,7 @@ class PgZoneIntentRepository:
                                     normalized_code,
                                     retry_count + 1,
                                 )
-                                return
+                                return True
 
         status = "completed" if success else "failed"
         result = await execute(
@@ -855,6 +856,21 @@ class PgZoneIntentRepository:
         )
         if _affected_rows(result) > 0:
             INTENT_TERMINAL.labels(status=status).inc()
+            return True
+
+        # Idempotent replay of the same terminal result is a successful sync,
+        # but must not inflate the transition metric. A different terminal
+        # state (or a missing intent) remains a CAS conflict for the worker.
+        terminal_rows = await fetch(
+            """
+            SELECT status
+            FROM zone_automation_intents
+            WHERE id = $1
+            LIMIT 1
+            """,
+            intent_id,
+        )
+        return bool(terminal_rows and str(terminal_rows[0].get("status") or "").strip().lower() == status)
 
     async def list_orphan_active_intents_with_terminal_tasks(self, *, limit: int = 16) -> list[dict[str, Any]]:
         """Возвращает intents в claimed/running, у которых связанная ae_task уже terminal."""

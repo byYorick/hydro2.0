@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock
@@ -116,6 +116,7 @@ def _dilute_cmds(*, state: bool) -> tuple[PlannedCommand, ...]:
 def _make_dilute_handler(
     *,
     pid_repo: Any | None = None,
+    completion_clock: Any | None = None,
 ) -> tuple[CorrectionHandler, Any]:
     pid = pid_repo or SimpleNamespace(
         upsert_states=AsyncMock(),
@@ -127,6 +128,7 @@ def _make_dilute_handler(
         runtime_monitor=SimpleNamespace(),
         command_gateway=gateway,
         pid_state_repository=pid,
+        completion_clock=completion_clock or (lambda: NOW),
     )
     handler._log_correction_event = AsyncMock()  # type: ignore[method-assign]
     handler._pid_state.persist = AsyncMock()  # type: ignore[method-assign]
@@ -304,6 +306,39 @@ async def test_run_dilute_pulse_opens_valve_clean_supply() -> None:
     assert len(batch_cmds) == 1
     assert batch_cmds[0].channel == "valve_clean_supply"
     assert batch_cmds[0].payload["params"]["state"] is True
+
+
+@pytest.mark.asyncio
+async def test_run_dilute_pulse_counts_wait_from_command_completion() -> None:
+    handler, _gateway = _make_dilute_handler(
+        completion_clock=lambda: NOW + timedelta(seconds=7),
+    )
+    _wire_check_runtime(handler, t_step=1.0)
+    handler._read_level = AsyncMock(return_value={"is_triggered": False})  # type: ignore[method-assign]
+    corr = _corr(
+        pipeline_phase="recirc_ca",
+        active_component="calcium",
+        dilute_attempts=1,
+        corr_step="corr_dilute_pulse",
+    )
+    task = SimpleNamespace(
+        zone_id=120,
+        id=12,
+        current_stage="prepare_recirculation_check",
+        workflow=SimpleNamespace(workflow_phase="tank_recirc", stage_deadline_at=None, stage_retry_count=0),
+        correction=corr,
+        topology="two_tank",
+    )
+    plan = SimpleNamespace(
+        named_plans={
+            "recirc_dilute_start": _dilute_cmds(state=True),
+            "recirc_dilute_stop": _dilute_cmds(state=False),
+        }
+    )
+
+    outcome = await handler._run_dilute_pulse(task=task, plan=plan, corr=corr, now=NOW)
+
+    assert outcome.due_delay_sec == 11.0
 
 
 @pytest.mark.asyncio

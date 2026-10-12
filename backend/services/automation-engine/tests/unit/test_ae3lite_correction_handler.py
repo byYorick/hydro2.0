@@ -338,13 +338,13 @@ class _MockRuntimeMonitor:
         self._irr_is_stale = irr_is_stale
         self.irr_reads = 0
         self._ph_samples = list(ph_samples) if ph_samples is not None else [
-            {"ts": NOW - timedelta(seconds=4), "value": ph},
-            {"ts": NOW - timedelta(seconds=2), "value": ph},
+            {"ts": NOW - timedelta(seconds=6), "value": ph},
+            {"ts": NOW - timedelta(seconds=3), "value": ph},
             {"ts": NOW, "value": ph},
         ]
         self._ec_samples = list(ec_samples) if ec_samples is not None else [
-            {"ts": NOW - timedelta(seconds=4), "value": ec},
-            {"ts": NOW - timedelta(seconds=2), "value": ec},
+            {"ts": NOW - timedelta(seconds=6), "value": ec},
+            {"ts": NOW - timedelta(seconds=3), "value": ec},
             {"ts": NOW, "value": ec},
         ]
 
@@ -457,12 +457,13 @@ class _MockPidStateRepository:
         self.no_effect_resets.append(zone_id)
 
 
-def _make_handler(*, monitor=None, gateway=None, pid_repo=None, planner=None) -> CorrectionHandler:
+def _make_handler(*, monitor=None, gateway=None, pid_repo=None, planner=None, completion_clock=None) -> CorrectionHandler:
     return CorrectionHandler(
         runtime_monitor=monitor or _MockRuntimeMonitor(),
         command_gateway=gateway or _MockGateway(),
         planner=planner,
         pid_state_repository=pid_repo,
+        completion_clock=completion_clock or (lambda: NOW),
     )
 
 
@@ -478,6 +479,18 @@ async def test_corr_activate_issues_command_and_goes_wait_stable():
     assert outcome.kind == "enter_correction"
     assert outcome.correction.corr_step == "corr_wait_stable"
     assert outcome.due_delay_sec == 30  # stabilization_sec
+
+
+async def test_corr_activate_anchors_stabilization_after_terminal_done():
+    corr = _base_corr(corr_step="corr_activate", activated_here=True, stabilization_sec=30)
+    task = _make_task(corr=corr)
+    handler = _make_handler(completion_clock=lambda: NOW + timedelta(seconds=7))
+
+    outcome = await handler.run(task=task, plan=_MockPlan(), stage_def=None, now=NOW)
+
+    # WorkflowRouter adds this delay to the original tick time.  It must
+    # include the seven seconds spent awaiting terminal DONE.
+    assert outcome.due_delay_sec == 37
 
 
 async def test_corr_wait_stable_transitions_to_check():
@@ -1106,6 +1119,41 @@ async def test_corr_dose_ec_uses_persisted_snapshot_context_when_probe_belongs_t
     assert payload["snapshot_cmd_id"] == "probe-cmd-persisted"
     assert payload["snapshot_source_event_type"] == "IRR_STATE_SNAPSHOT"
     assert payload["caused_by_event_id"] == 888
+
+
+async def test_corr_dose_ec_anchors_hold_after_terminal_done(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(
+        "ae3lite.application.handlers.correction.create_zone_event",
+        AsyncMock(return_value=None),
+    )
+    pid_repo = _MockPidStateRepository()
+    corr = _base_corr(
+        corr_step="corr_dose_ec",
+        needs_ec=True,
+        ec_node_uid="ec-node",
+        ec_channel="ec_pump",
+        ec_amount_ml=2.0,
+        ec_duration_ms=2000,
+    )
+    handler = _make_handler(
+        gateway=_MockGateway(),
+        pid_repo=pid_repo,
+        completion_clock=lambda: NOW + timedelta(seconds=7.4),
+    )
+
+    outcome = await handler.run(
+        task=_make_task(corr=corr),
+        plan=_MockPlan(),
+        stage_def=None,
+        now=NOW,
+    )
+
+    assert outcome.due_delay_sec == 17.4
+    assert outcome.correction.wait_until == NOW + timedelta(seconds=17.4)
+    updates = {item["pid_type"]: item for item in pid_repo.upsert_calls[-1]["updates"]}
+    assert updates["ec"]["last_dose_at"] == (NOW + timedelta(seconds=7.4)).replace(tzinfo=None)
+    assert updates["ec"]["hold_until"] == NOW + timedelta(seconds=17.4)
+    assert updates["ph"]["hold_until"] == NOW + timedelta(seconds=17.4)
 
 
 async def test_corr_dose_ph_issues_volume_command_and_goes_wait_ph():
@@ -2083,6 +2131,51 @@ async def test_corr_wait_ec_insufficient_samples_retries_without_zone_event(
     assert outcome.kind == "enter_correction"
     assert outcome.correction.corr_step == "corr_wait_ec"
     assert outcome.due_delay_sec == 2
+    create_event.assert_not_awaited()
+
+
+async def test_corr_wait_ec_short_time_coverage_retries_without_pid_update(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    corr = _base_corr(
+        corr_step="corr_wait_ec",
+        ec_attempt=1,
+        needs_ec=True,
+        ec_amount_ml=2.0,
+        ec_node_uid="ec-node",
+        ec_channel="ec_pump",
+        ec_duration_ms=1000,
+        wait_until=NOW - timedelta(seconds=1),
+    )
+    runtime = dict(RUNTIME)
+    runtime["pid_state"] = {
+        "ec": {
+            "last_dose_at": NOW - timedelta(seconds=12),
+            "last_measured_value": 1.0,
+            "no_effect_count": 0,
+        }
+    }
+    pid_repo = _MockPidStateRepository()
+    monitor = _MockRuntimeMonitor(ec_samples=[
+        {"ts": NOW - timedelta(seconds=2), "value": 1.35},
+        {"ts": NOW - timedelta(seconds=1), "value": 1.40},
+        {"ts": NOW, "value": 1.45},
+    ])
+    create_event = AsyncMock(return_value=None)
+    monkeypatch.setattr("ae3lite.application.handlers.correction.create_zone_event", create_event)
+    handler = _make_handler(monitor=monitor, pid_repo=pid_repo)
+
+    outcome = await handler.run(
+        task=_make_task(corr=corr),
+        plan=_MockPlan(runtime=runtime),
+        stage_def=None,
+        now=NOW,
+    )
+
+    assert outcome.kind == "enter_correction"
+    assert outcome.correction.corr_step == "corr_wait_ec"
+    assert outcome.due_delay_sec == 2
+    assert pid_repo.upsert_calls == []
     create_event.assert_not_awaited()
 
 
@@ -3996,4 +4089,3 @@ async def test_corr_check_partial_multi_component_discard_emits_event(monkeypatc
     assert discarded, "partial discard must emit observability event"
     assert discarded[0].args[2]["reason"] == "multi_component_partial"
     assert discarded[0].args[2]["partial"] is True
-

@@ -166,7 +166,11 @@ class _Monitor:
         sample_count = len(values)
         return tuple(
             {
-                "ts": NOW - timedelta(seconds=(sample_count - index)),
+                # Default fixture represents a fully covered six-second
+                # decision window.  Closely clustered timestamps are tested
+                # explicitly by the telemetry-window unit tests and must not
+                # accidentally make every solution-fill fixture unready.
+                "ts": NOW - timedelta(seconds=(sample_count - index) * 3),
                 "value": value,
             }
             for index, value in enumerate(values, start=1)

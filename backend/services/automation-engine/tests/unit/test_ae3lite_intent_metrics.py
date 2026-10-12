@@ -211,7 +211,7 @@ async def test_mark_terminal_records_metric_only_on_updated_rows() -> None:
         mock_fetch.side_effect = [[], []]
         mock_execute.return_value = "UPDATE 1"
         repo = PgZoneIntentRepository()
-        await repo.mark_terminal(
+        updated = await repo.mark_terminal(
             intent_id=42,
             now=NOW,
             success=False,
@@ -219,17 +219,17 @@ async def test_mark_terminal_records_metric_only_on_updated_rows() -> None:
             error_message="terminal_timeout",
         )
 
+    assert updated is True
     assert INTENT_TERMINAL.labels(status="failed")._value.get() == before_failed + 1
-
     # No metric increment when 0 rows affected
     with (
         patch(f"{_MODULE}.fetch", new_callable=AsyncMock) as mock_fetch,
         patch(f"{_MODULE}.execute", new_callable=AsyncMock) as mock_execute,
     ):
-        mock_fetch.side_effect = [[], []]
+        mock_fetch.side_effect = [[], [], [{"status": "completed"}]]
         mock_execute.return_value = "UPDATE 0"
         repo = PgZoneIntentRepository()
-        await repo.mark_terminal(
+        updated = await repo.mark_terminal(
             intent_id=42,
             now=NOW,
             success=False,
@@ -237,7 +237,41 @@ async def test_mark_terminal_records_metric_only_on_updated_rows() -> None:
             error_message="terminal_timeout",
         )
 
+    assert updated is False
     assert INTENT_TERMINAL.labels(status="failed")._value.get() == before_failed + 1
+
+
+@pytest.mark.asyncio
+async def test_mark_running_reports_cas_outcome() -> None:
+    with patch(f"{_MODULE}.execute", new_callable=AsyncMock) as mock_execute:
+        mock_execute.side_effect = ["UPDATE 1", "UPDATE 0"]
+        repo = PgZoneIntentRepository()
+
+        assert await repo.mark_running(intent_id=42, now=NOW) is True
+        assert await repo.mark_running(intent_id=43, now=NOW) is False
+
+
+@pytest.mark.asyncio
+async def test_mark_terminal_accepts_idempotent_same_status_without_incrementing_metric() -> None:
+    before_completed = INTENT_TERMINAL.labels(status="completed")._value.get()
+
+    with (
+        patch(f"{_MODULE}.fetch", new_callable=AsyncMock) as mock_fetch,
+        patch(f"{_MODULE}.execute", new_callable=AsyncMock) as mock_execute,
+    ):
+        mock_fetch.return_value = [{"status": "completed"}]
+        mock_execute.return_value = "UPDATE 0"
+        repo = PgZoneIntentRepository()
+        updated = await repo.mark_terminal(
+            intent_id=42,
+            now=NOW,
+            success=True,
+            error_code=None,
+            error_message=None,
+        )
+
+    assert updated is True
+    assert INTENT_TERMINAL.labels(status="completed")._value.get() == before_completed
 
 
 @pytest.mark.asyncio

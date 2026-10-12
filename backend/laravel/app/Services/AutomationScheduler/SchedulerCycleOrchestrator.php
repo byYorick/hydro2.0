@@ -185,8 +185,6 @@ class SchedulerCycleOrchestrator
             $zoneLast = [];
             /** @var array<int, bool> $zonesWithPendingTimeDispatch */
             $zonesWithPendingTimeDispatch = [];
-            /** @var array<int, bool> $zonesWithSuccessfulTimeDispatch */
-            $zonesWithSuccessfulTimeDispatch = [];
 
             $manualScheduleIds = [];
             foreach ($schedules as $schedule) {
@@ -245,7 +243,6 @@ class SchedulerCycleOrchestrator
                 &$successfulDispatches,
                 &$dispatchMetrics,
                 &$zonesWithPendingTimeDispatch,
-                &$zonesWithSuccessfulTimeDispatch,
             ): void {
                 if ($batchDispatchJobs === []) {
                     return;
@@ -285,9 +282,6 @@ class SchedulerCycleOrchestrator
                         );
                         if ((bool) ($dispatchResult['dispatched'] ?? false)) {
                             $successfulDispatches++;
-                            if ((bool) ($chunkJob['holdCursorOnRetryable'] ?? false)) {
-                                $zonesWithSuccessfulTimeDispatch[$chunkJob['zoneId']] = true;
-                            }
                         } elseif (
                             (bool) ($dispatchResult['retryable'] ?? false)
                             && (bool) ($chunkJob['holdCursorOnRetryable'] ?? false)
@@ -455,7 +449,6 @@ class SchedulerCycleOrchestrator
                                 if ($this->activeTaskStore->findLatestTerminalByScheduleKeyForScheduledRunAt($scheduleKey, $runAtIso) !== null) {
                                     $this->manualScheduleService->markDispatched($manualRow, $now);
                                     $executedKeys[$scheduleKey] = true;
-                                    $zonesWithSuccessfulTimeDispatch[$zoneId] = true;
                                     $manualOnceConsumed = true;
                                 } elseif (
                                     ! $this->activeTaskPoller->isScheduleBusy(
@@ -500,7 +493,6 @@ class SchedulerCycleOrchestrator
                         if ($dispatchResult['dispatched']) {
                             $successfulDispatches++;
                             $executedKeys[$scheduleKey] = true;
-                            $zonesWithSuccessfulTimeDispatch[$zoneId] = true;
                             if ($schedule->manualScheduleId !== null) {
                                 $manualRow = $manualScheduleRowsById->get($schedule->manualScheduleId);
                                 if ($manualRow instanceof ZoneManualSchedule) {
@@ -522,10 +514,8 @@ class SchedulerCycleOrchestrator
                                     $this->manualScheduleService->markDispatched($manualRow, $now);
                                 }
                                 $executedKeys[$scheduleKey] = true;
-                                $zonesWithSuccessfulTimeDispatch[$zoneId] = true;
                             } elseif (! $isManualOnce) {
                                 $executedKeys[$scheduleKey] = true;
-                                $zonesWithSuccessfulTimeDispatch[$zoneId] = true;
                             }
                         }
                     }
@@ -546,7 +536,6 @@ class SchedulerCycleOrchestrator
                             $schedule->daysOfWeek,
                         ),
                     ));
-                    $hadDispatchSuccess = false;
                     $hadRetryableFailure = false;
                     $deferredByReplayBudget = false;
 
@@ -594,8 +583,6 @@ class SchedulerCycleOrchestrator
                         $this->incrementDispatchMetric($dispatchMetrics, $zoneId, $taskType, $dispatchResult);
                         if ($dispatchResult['dispatched']) {
                             $successfulDispatches++;
-                            $hadDispatchSuccess = true;
-                            $zonesWithSuccessfulTimeDispatch[$zoneId] = true;
                             break;
                         }
                         if ($dispatchResult['retryable']) {
@@ -603,7 +590,7 @@ class SchedulerCycleOrchestrator
                         }
                     }
 
-                    if ($plannedTriggers !== [] && ! $hadDispatchSuccess && ($hadRetryableFailure || $deferredByReplayBudget)) {
+                    if ($plannedTriggers !== [] && ($hadRetryableFailure || $deferredByReplayBudget)) {
                         $zonesWithPendingTimeDispatch[$zoneId] = true;
                     }
                     if ($plannedTriggers !== []) {
@@ -674,7 +661,11 @@ class SchedulerCycleOrchestrator
 
             $zonesPendingTimeRetry = 0;
             foreach ($zoneNow as $zoneId => $now) {
-                $cursorRetryPending = isset($zonesWithPendingTimeDispatch[$zoneId]) && ! isset($zonesWithSuccessfulTimeDispatch[$zoneId]);
+                // Cursor is zone-wide: one successful occurrence must not hide another
+                // retryable occurrence from the same zone in the same scheduler cycle.
+                // Replaying the successful occurrence is safe because its idempotency key
+                // is derived from the original trigger time.
+                $cursorRetryPending = isset($zonesWithPendingTimeDispatch[$zoneId]);
                 if ($cursorRetryPending) {
                     $zonesPendingTimeRetry++;
                 }

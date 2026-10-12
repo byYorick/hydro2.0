@@ -259,6 +259,11 @@ source /home/georgiy/esp/esp-idf/export.sh
 idf.py build
 ```
 
+Пассивная химическая динамика рассчитана на длительный dev-runtime с обычным
+30-минутным интервалом полива: при telemetry tick 2 с bias составляет примерно
+`pH +0.036/ч` и `EC -0.09/ч`. Это оставляет drift наблюдаемым, но позволяет
+bounded inline correction вернуть pH/EC к recipe target за штатное окно.
+
 ## Использование
 
 1. Загрузите прошивку на устройство

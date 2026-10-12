@@ -1101,6 +1101,7 @@ Payload-contract (`payload` JSONB, wake-up only):
 
 Lifecycle:
 - `pending` -> `claimed` -> `running` -> `completed|failed|cancelled`
+- Laravel scheduler владеет transport-retry только в `pending`; после `claimed` статусом intent владеет AE3, и потеря HTTP-ответа не может перевести `claimed|running` в `failed`;
 - повторный `idempotency_key` в рамках той же `zone_id` возвращает deduplicated wake-up без повторного исполнения;
 - одинаковый `idempotency_key` допускается в разных зонах;
 - `failed` intent может быть re-claimed только при `retry_count < max_retries`;

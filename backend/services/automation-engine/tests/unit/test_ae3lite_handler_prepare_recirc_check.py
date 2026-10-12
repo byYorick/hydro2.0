@@ -203,7 +203,7 @@ class _Monitor:
         sample_count = len(values)
         return tuple(
             {
-                "ts": NOW - timedelta(seconds=(sample_count - index)),
+                "ts": NOW - timedelta(seconds=2 * (sample_count - index)),
                 "value": value,
             }
             for index, value in enumerate(values, start=1)
@@ -364,12 +364,12 @@ async def test_targets_reached_transitions_to_stop_ready() -> None:
 
 
 @pytest.mark.asyncio
-async def test_targets_reached_within_tolerance() -> None:
-    """Prepare-phase explicit ready band remains authoritative for tank_recirc."""
+async def test_recipe_band_does_not_replace_target_deadband() -> None:
+    """Recipe band is safe/valid, but it is not correction success."""
     handler = _make_handler(monitor=_Monitor(ph=6.0, ec=1.4))
     outcome = await handler.run(task=_make_task(), plan=_MockPlan(), stage_def=_StageDef(), now=NOW)
-    assert outcome.kind == "transition"
-    assert outcome.next_stage == "prepare_recirculation_stop_to_ready"
+    assert outcome.kind == "enter_correction"
+    assert outcome.correction is not None
 
 
 @pytest.mark.asyncio
@@ -458,17 +458,24 @@ async def test_open_recirc_pipeline_still_stops_in_full_irrigation_band() -> Non
 
 
 @pytest.mark.asyncio
-async def test_targets_reached_uses_explicit_ready_band_when_present() -> None:
+async def test_explicit_ready_band_does_not_stop_before_controller_target() -> None:
     runtime = dict(RUNTIME)
     runtime["prepare_tolerance"] = {"ph_pct": 1, "ec_pct": 1}
-    runtime["target_ec_prepare_min"] = 1.9
-    runtime["target_ec_prepare_max"] = 2.1
-    handler = _make_handler(monitor=_Monitor(ph=5.8, ec=1.91))
+    runtime["target_ec_prepare_min"] = 1.2
+    runtime["target_ec_prepare_max"] = 1.6
+    runtime["correction"] = {
+        **runtime["correction"],
+        "controllers": {
+            "ph": {"deadband": 0.04},
+            "ec": {"deadband": 0.06},
+        },
+    }
+    handler = _make_handler(monitor=_Monitor(ph=5.8, ec=1.31))
 
     outcome = await handler.run(task=_make_task(), plan=_MockPlan(runtime=runtime), stage_def=_StageDef(), now=NOW)
 
-    assert outcome.kind == "transition"
-    assert outcome.next_stage == "prepare_recirculation_stop_to_ready"
+    assert outcome.kind == "enter_correction"
+    assert outcome.correction is not None
 
 
 @pytest.mark.asyncio

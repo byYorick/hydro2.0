@@ -64,7 +64,11 @@ def _make_controller(
         create_event_fn=sink,
         probe_snapshot_context_fn=lambda *, task: None,
     )
-    return SensorModeController(command_gateway=gw, event_logger=logger), gw, sink
+    return SensorModeController(
+        command_gateway=gw,
+        event_logger=logger,
+        completion_clock=lambda: NOW,
+    ), gw, sink
 
 
 def _plan(with_activate: bool = True) -> SimpleNamespace:

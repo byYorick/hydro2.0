@@ -72,6 +72,137 @@ class ManualScheduleOrchestratorTest extends TestCase
         $this->assertFalse($schedule->enabled);
     }
 
+    public function test_mixed_success_and_retryable_dispatch_keeps_zone_cursor_for_retry(): void
+    {
+        $cursorAt = CarbonImmutable::parse('2026-10-11 14:30:00', 'UTC');
+        CarbonImmutable::setTestNow(CarbonImmutable::parse('2026-10-11 15:00:00', 'UTC'));
+        [$zone] = $this->createZoneAndCycle();
+        $this->bindEmptyEffectiveTargetsMock();
+        $this->seedZoneCursor($zone->id, $cursorAt);
+
+        ZoneManualSchedule::query()->create([
+            'zone_id' => $zone->id,
+            'task_type' => 'irrigation',
+            'schedule_kind' => 'time',
+            'time_at' => '14:45:00',
+            'payload' => ['duration_sec' => 60],
+            'enabled' => true,
+        ]);
+        ZoneManualSchedule::query()->create([
+            'zone_id' => $zone->id,
+            'task_type' => 'lighting',
+            'schedule_kind' => 'time',
+            'time_at' => '14:45:00',
+            'payload' => ['desired_state' => 'on', 'brightness' => 70],
+            'enabled' => true,
+        ]);
+
+        Http::fake(function (Request $request) use ($zone) {
+            if (str_ends_with($request->url(), '/zones/'.$zone->id.'/start-irrigation')) {
+                return Http::response([
+                    'status' => 'ok',
+                    'data' => [
+                        'task_id' => '9101',
+                        'zone_id' => $zone->id,
+                        'accepted' => true,
+                    ],
+                ], 200);
+            }
+            if (str_ends_with($request->url(), '/zones/'.$zone->id.'/start-lighting-tick')) {
+                return Http::response([
+                    'detail' => [
+                        'error' => 'start_lighting_tick_zone_busy',
+                        'zone_id' => $zone->id,
+                        'active_task_id' => 9101,
+                        'active_task_status' => 'pending',
+                    ],
+                ], 409);
+            }
+
+            return Http::response(['status' => 'error'], 500);
+        });
+
+        $stats = $this->app->make(SchedulerCycleService::class)
+            ->runCycle($this->schedulerConfig(), [$zone->id]);
+
+        $this->assertSame(2, (int) ($stats['attempted_dispatches'] ?? 0));
+        $this->assertSame(1, (int) ($stats['successful_dispatches'] ?? 0));
+        $this->assertSame(1, (int) ($stats['zones_pending_time_retry'] ?? 0));
+
+        $cursor = DB::table('laravel_scheduler_zone_cursors')
+            ->where('zone_id', $zone->id)
+            ->first();
+        $this->assertNotNull($cursor);
+        $this->assertSame(
+            $cursorAt->format('Y-m-d H:i:s'),
+            CarbonImmutable::parse($cursor->cursor_at)->utc()->format('Y-m-d H:i:s'),
+        );
+        CarbonImmutable::setTestNow();
+    }
+
+    public function test_retryable_older_catchup_is_not_hidden_by_later_success(): void
+    {
+        $cursorAt = CarbonImmutable::parse('2026-10-09 14:30:00', 'UTC');
+        CarbonImmutable::setTestNow(CarbonImmutable::parse('2026-10-11 15:00:00', 'UTC'));
+        [$zone] = $this->createZoneAndCycle();
+        $this->bindEmptyEffectiveTargetsMock();
+        $this->seedZoneCursor($zone->id, $cursorAt);
+
+        ZoneManualSchedule::query()->create([
+            'zone_id' => $zone->id,
+            'task_type' => 'diagnostics',
+            'schedule_kind' => 'time',
+            'time_at' => '14:45:00',
+            'payload' => [],
+            'enabled' => true,
+        ]);
+
+        $attempt = 0;
+        Http::fake(function (Request $request) use ($zone, &$attempt) {
+            if (! str_ends_with($request->url(), '/zones/'.$zone->id.'/start-cycle')) {
+                return Http::response(['status' => 'error'], 500);
+            }
+
+            $attempt++;
+            if ($attempt === 1) {
+                return Http::response([
+                    'detail' => [
+                        'error' => 'start_cycle_zone_busy',
+                        'zone_id' => $zone->id,
+                        'active_task_id' => 9200,
+                        'active_task_status' => 'running',
+                    ],
+                ], 409);
+            }
+
+            return Http::response([
+                'status' => 'ok',
+                'data' => [
+                    'task_id' => '9201',
+                    'zone_id' => $zone->id,
+                    'accepted' => true,
+                ],
+            ], 200);
+        });
+
+        $stats = $this->app->make(SchedulerCycleService::class)
+            ->runCycle($this->schedulerConfig(), [$zone->id]);
+
+        $this->assertSame(2, $attempt);
+        $this->assertSame(1, (int) ($stats['successful_dispatches'] ?? 0));
+        $this->assertSame(1, (int) ($stats['zones_pending_time_retry'] ?? 0));
+
+        $cursor = DB::table('laravel_scheduler_zone_cursors')
+            ->where('zone_id', $zone->id)
+            ->first();
+        $this->assertNotNull($cursor);
+        $this->assertSame(
+            $cursorAt->format('Y-m-d H:i:s'),
+            CarbonImmutable::parse($cursor->cursor_at)->utc()->format('Y-m-d H:i:s'),
+        );
+        CarbonImmutable::setTestNow();
+    }
+
     public function test_manual_once_reschedule_dispatches_despite_old_terminal_task(): void
     {
         [$zone] = $this->createZoneAndCycle();

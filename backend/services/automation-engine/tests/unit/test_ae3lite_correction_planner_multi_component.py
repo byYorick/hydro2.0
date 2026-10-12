@@ -194,6 +194,7 @@ def test_multi_sequential_irrigating_skips_ec_when_npk_excluded_and_no_safe_comp
         pid_configs={},
         now=now,
         ec_actuators={},
+        allow_ec=False,
     )
 
     assert plan.needs_ec is False
@@ -228,6 +229,7 @@ def test_multi_sequential_irrigating_excluded_npk_skips_ec() -> None:
         pid_configs={},
         now=now,
         ec_actuators={},
+        allow_ec=False,
     )
 
     assert plan.needs_ec is False
@@ -278,6 +280,7 @@ def test_multi_sequential_irrigating_skips_ec_even_when_non_npk_pulses_would_be_
         pid_configs={},
         now=now,
         ec_actuators=ec_actuators,
+        allow_ec=False,
     )
 
     assert plan.needs_ec is False

@@ -78,8 +78,8 @@ async def test_read_ready_true_when_window_is_stable() -> None:
     now = datetime(2026, 3, 10, 12, 0, 0)
     samples = [
         _sample(now - timedelta(seconds=30), 2.00),
-        _sample(now - timedelta(seconds=20), 2.01),
-        _sample(now - timedelta(seconds=10), 2.02),
+        _sample(now - timedelta(seconds=15), 2.01),
+        _sample(now, 2.02),
     ]
     monitor = _FakeRuntimeMonitor(
         {
@@ -102,8 +102,8 @@ async def test_read_ready_true_when_window_is_stable() -> None:
     assert result.ready is True
     assert result.value == pytest.approx(2.01)  # median of [2.00, 2.01, 2.02]
     assert result.sample_count == 3
-    # Slope = (2.02 - 2.00) / 20s = 0.001 — well below stability_max_slope=0.05.
-    assert result.slope == pytest.approx(0.001, rel=1e-3)
+    # Slope = (2.02 - 2.00) / 30s — well below stability_max_slope=0.05.
+    assert result.slope == pytest.approx(0.02 / 30.0, rel=1e-3)
     # Since_ts lookback = decision_window_sec (30) + telemetry_period_sec (5) = 35s slack.
     assert monitor.calls[0]["since_ts"] == now - timedelta(seconds=35)
 
@@ -166,6 +166,62 @@ async def test_read_ready_false_when_samples_below_minimum() -> None:
     assert result.sample_count == 1
     assert result.window_min_samples == 3
     assert result.telemetry_period_sec == 5
+
+
+@pytest.mark.asyncio
+async def test_read_rejects_samples_that_do_not_cover_decision_window() -> None:
+    now = datetime(2026, 3, 10, 12, 0, 0)
+    samples = [
+        _sample(now - timedelta(seconds=2), 2.00),
+        _sample(now - timedelta(seconds=1), 2.01),
+        _sample(now, 2.02),
+    ]
+    reader = DecisionWindowReader(runtime_monitor=_FakeRuntimeMonitor({
+        "has_sensor": True,
+        "is_stale": False,
+        "samples": samples,
+        "latest_sample_ts": samples[-1]["ts"],
+    }))
+
+    result = await reader.read(
+        zone_id=447,
+        sensor_type="EC",
+        telemetry_max_age_sec=60,
+        config=_cfg(decision_window_sec=8),
+        now=now,
+    )
+
+    assert result.ready is False
+    assert result.reason == "insufficient_window_span"
+    assert result.window_span_sec == 7.0
+    assert result.decision_window_sec == 8
+
+
+@pytest.mark.asyncio
+async def test_read_rejects_future_dated_sample() -> None:
+    now = datetime(2026, 3, 10, 12, 0, 0)
+    samples = [
+        _sample(now - timedelta(seconds=30), 2.00),
+        _sample(now - timedelta(seconds=10), 2.01),
+        _sample(now + timedelta(seconds=30), 2.02),
+    ]
+    reader = DecisionWindowReader(runtime_monitor=_FakeRuntimeMonitor({
+        "has_sensor": True,
+        "is_stale": False,
+        "samples": samples,
+        "latest_sample_ts": samples[-1]["ts"],
+    }))
+
+    result = await reader.read(
+        zone_id=447,
+        sensor_type="EC",
+        telemetry_max_age_sec=60,
+        config=_cfg(),
+        now=now,
+    )
+
+    assert result.ready is False
+    assert result.reason == "sample_in_future"
 
 
 # ── Failure modes ───────────────────────────────────────────────────
@@ -277,6 +333,22 @@ def test_retry_delay_sec_falls_back_to_default_on_bad_config() -> None:
         ec=bad,
     )
     assert delay == 30.0  # module default
+
+
+def test_retry_delay_sec_uses_missing_window_span() -> None:
+    ph_ok = DecisionWindowResult(ready=True, value=6.0)
+    ec_short = DecisionWindowResult(
+        ready=False,
+        reason="insufficient_window_span",
+        window_span_sec=5.0,
+        decision_window_sec=8,
+    )
+    delay = DecisionWindowReader.retry_delay_sec(
+        correction_cfg={"decision_window_retry_sec": 30.0},
+        ph=ph_ok,
+        ec=ec_short,
+    )
+    assert delay == 3.0
 
 
 # ── DecisionWindowResult.as_payload ─────────────────────────────────

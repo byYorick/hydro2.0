@@ -67,6 +67,46 @@ class ZoneAutomationIntentServiceTest extends TestCase
         ]);
     }
 
+    public function test_record_scheduler_dispatch_failure_does_not_mutate_ae_owned_intent(): void
+    {
+        $zone = Zone::factory()->create();
+
+        foreach (['claimed', 'running'] as $status) {
+            $key = 'sch:z'.$zone->id.':diagnostics:'.$status;
+            DB::table('zone_automation_intents')->insert([
+                'zone_id' => $zone->id,
+                'intent_type' => 'DIAGNOSTICS_TICK',
+                'task_type' => 'cycle_start',
+                'intent_source' => 'laravel_scheduler',
+                'idempotency_key' => $key,
+                'status' => $status,
+                'not_before' => now(),
+                'retry_count' => 0,
+                'max_retries' => 3,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+            /** @var ZoneAutomationIntentService $service */
+            $service = $this->app->make(ZoneAutomationIntentService::class);
+            $result = $service->recordSchedulerDispatchFailure(
+                zoneId: $zone->id,
+                idempotencyKey: $key,
+                errorCode: 'scheduler_dispatch_connection_error',
+                errorMessage: 'response lost after AE claim',
+            );
+
+            $this->assertSame(['failed' => false, 'retry_count' => 0], $result);
+            $this->assertDatabaseHas('zone_automation_intents', [
+                'zone_id' => $zone->id,
+                'idempotency_key' => $key,
+                'status' => $status,
+                'retry_count' => 0,
+                'error_code' => null,
+            ]);
+        }
+    }
+
     public function test_sync_intent_failed_from_ae_task_marks_active_intent(): void
     {
         $zone = Zone::factory()->create();

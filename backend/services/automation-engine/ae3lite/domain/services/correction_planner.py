@@ -121,10 +121,42 @@ class CorrectionPlanner:
         ph_max: float | None = None,
         ec_min: float | None = None,
         ec_max: float | None = None,
+        correction_config: Mapping[str, Any] | None = None,
+        pid_configs: Mapping[str, Any] | None = None,
+        allow_ec: bool = True,
+        allow_ph: bool = True,
     ) -> bool:
-        # Correction success is defined by proximity to the canonical target.
-        # Explicit min/max windows are recipe bounds and observability metadata,
-        # not an early-success shortcut at the lower edge of the window.
+        # Runtime correction success must use the same deadband as dose planning.
+        # Otherwise a broad prepare tolerance can declare success while the
+        # planner would still issue a dose toward the canonical target.
+        if correction_config is not None:
+            pid_configs = pid_configs if isinstance(pid_configs, Mapping) else {}
+            ph_gap = abs(float(target_ph) - float(current_ph))
+            ec_gap = abs(float(target_ec) - float(current_ec))
+            ph_controller, _, _ = _resolve_pid_controller_cfg(
+                controller_cfg=_controller_cfg(correction_config, "ph"),
+                pid_configs=pid_configs,
+                pid_type="ph",
+                gap=ph_gap,
+            )
+            ec_controller, _, _ = _resolve_pid_controller_cfg(
+                controller_cfg=_controller_cfg(correction_config, "ec"),
+                pid_configs=pid_configs,
+                pid_type="ec",
+                gap=ec_gap,
+            )
+            ph_deadband = _non_negative_float(ph_controller.get("deadband"), 0.0)
+            ec_deadband = _non_negative_float(ec_controller.get("deadband"), 0.0)
+            ph_reached = (not allow_ph) or ph_gap <= ph_deadband
+            # Completion is symmetric around the EC setpoint. The actuator gap
+            # remains upward-only; an overshoot is handled by recipe bounds /
+            # recirculation dilution rather than a negative nutrient dose.
+            ec_reached = (not allow_ec) or ec_gap <= ec_deadband
+            return ph_reached and ec_reached
+
+        # Compatibility path for callers without controller configuration.
+        # Explicit min/max windows remain recipe bounds and observability
+        # metadata, not an early-success shortcut at the lower edge.
         ph_lo, ph_hi = _resolve_target_tolerance_bounds(
             target=target_ph,
             tolerance_pct=ph_tolerance_pct,
@@ -165,9 +197,6 @@ class CorrectionPlanner:
         freeze_ec_pid: bool = False,
     ) -> DosePlan:
         phase_key = normalize_phase_key(workflow_phase)
-        # Irrigation: chemistry owner is pH only (no EC nutrient correction).
-        if phase_key == "irrigation":
-            allow_ec = False
         process_cfg = _phase_mapping(process_calibrations).get(phase_key, {})
         process_cfg = process_cfg if isinstance(process_cfg, Mapping) else {}
         pid_state = pid_state if isinstance(pid_state, Mapping) else {}

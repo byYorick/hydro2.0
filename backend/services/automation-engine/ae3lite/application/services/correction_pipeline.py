@@ -115,29 +115,12 @@ def step_targets_reached(
     target_ec: float,
     ph_tol_pct: float,
     ec_tol_pct: float,
+    correction_config: Mapping[str, Any],
+    pid_configs: Mapping[str, Any] | None,
     planner: Any,
 ) -> bool:
-    """Whether the *active pipeline step* is within tolerance."""
+    """Whether the active pipeline step reached its controller deadband."""
     flags = pipeline_dose_flags(corr)
-    if flags["allow_ec"] and not flags["allow_ph"]:
-        # EC-only step: ignore pH
-        return planner.is_within_tolerance(
-            current_ph=target_ph,
-            current_ec=current_ec,
-            target_ph=target_ph,
-            target_ec=target_ec,
-            ph_tolerance_pct=ph_tol_pct,
-            ec_tolerance_pct=ec_tol_pct,
-        )
-    if flags["allow_ph"] and not flags["allow_ec"]:
-        return planner.is_within_tolerance(
-            current_ph=current_ph,
-            current_ec=target_ec,
-            target_ph=target_ph,
-            target_ec=target_ec,
-            ph_tolerance_pct=ph_tol_pct,
-            ec_tolerance_pct=ec_tol_pct,
-        )
     return planner.is_within_tolerance(
         current_ph=current_ph,
         current_ec=current_ec,
@@ -145,6 +128,10 @@ def step_targets_reached(
         target_ec=target_ec,
         ph_tolerance_pct=ph_tol_pct,
         ec_tolerance_pct=ec_tol_pct,
+        correction_config=correction_config,
+        pid_configs=pid_configs,
+        allow_ec=bool(flags["allow_ec"]),
+        allow_ph=bool(flags["allow_ph"]),
     )
 
 

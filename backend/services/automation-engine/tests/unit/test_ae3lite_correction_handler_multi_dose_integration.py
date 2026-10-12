@@ -180,6 +180,7 @@ def _make_integration_handler(
         command_gateway=gateway,
         pid_state_repository=pid_repo,
         event_logger=event_logger,
+        completion_clock=lambda: NOW,
     )
 
 

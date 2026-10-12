@@ -26,8 +26,8 @@ from __future__ import annotations
 
 import logging
 from dataclasses import replace
-from datetime import datetime
-from typing import Any, Mapping
+from datetime import datetime, timedelta, timezone
+from typing import Any, Callable, Mapping
 
 from ae3lite.application.dto.stage_outcome import StageOutcome
 from ae3lite.application.services.correction_event_logger import CorrectionEventLogger
@@ -35,6 +35,7 @@ from ae3lite.application.services.decision_window_reader import DecisionWindowRe
 from ae3lite.domain.entities.planned_command import PlannedCommand
 from ae3lite.domain.entities.workflow_state import CorrectionState
 from ae3lite.domain.errors import TaskExecutionError
+from common.utils.time import utcnow_naive
 
 _logger = logging.getLogger(__name__)
 
@@ -59,9 +60,11 @@ class SensorModeController:
         *,
         command_gateway: Any,
         event_logger: CorrectionEventLogger,
+        completion_clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._command_gateway = command_gateway
         self._event_logger = event_logger
+        self._completion_clock = completion_clock or utcnow_naive
 
     # ── Public API used by the handler ──────────────────────────────
 
@@ -195,12 +198,29 @@ class SensorModeController:
             corr.stabilization_sec,
         )
         next_corr = replace(corr, corr_step="corr_wait_stable")
+        stabilization_delay_sec = self._completion_anchored_delay(
+            now=now,
+            wait_sec=corr.stabilization_sec,
+        )
         return StageOutcome(
             kind="enter_correction",
             correction=next_corr,
-            due_delay_sec=corr.stabilization_sec,
+            due_delay_sec=stabilization_delay_sec,
             task_override=current_task if current_task is not task else None,
         )
+
+    def _completion_anchored_delay(self, *, now: datetime, wait_sec: float) -> float:
+        normalized_now = self._utc_naive(now)
+        completed_at = self._utc_naive(self._completion_clock())
+        anchor = max(normalized_now, completed_at)
+        wait_until = anchor + timedelta(seconds=max(0.0, float(wait_sec)))
+        return max(0.0, (wait_until - normalized_now).total_seconds())
+
+    @staticmethod
+    def _utc_naive(value: datetime) -> datetime:
+        if value.tzinfo is None:
+            return value
+        return value.astimezone(timezone.utc).replace(tzinfo=None)
 
     # ── Pure predicates (static; testable in isolation) ─────────────
 

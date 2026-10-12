@@ -63,8 +63,11 @@ static const char *CMD_TAG = "test_node_cmd";
 #define CLEAN_MAX_LATCH_LEVEL 0.92f
 #define SOLUTION_MAX_LATCH_LEVEL 0.92f
 #define IRR_STATE_MAX_AGE_SEC 30
-#define PH_DRIFT_BIAS_PER_TICK 0.0002f
-#define EC_DRIFT_BIAS_PER_TICK -0.0010f
+/* 2 s telemetry tick: keep long-running virtual chemistry correctable by the
+ * regular 30 min irrigation cadence. Previous values moved EC by -0.9 and pH
+ * by +0.18 between cycles, faster than bounded inline correction could recover. */
+#define PH_DRIFT_BIAS_PER_TICK 0.00002f
+#define EC_DRIFT_BIAS_PER_TICK -0.00005f
 #define PH_REACTION_BASE_DELTA 0.12f
 /* Per-pump EC base deltas (canonical: a=npk, b=calcium, c=magnesium, d=micro). */
 #define EC_REACTION_DELTA_PUMP_A 0.068f

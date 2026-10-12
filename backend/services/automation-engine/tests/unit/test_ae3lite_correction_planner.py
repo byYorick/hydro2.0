@@ -822,6 +822,59 @@ def test_is_within_tolerance_uses_target_tolerance_not_explicit_window_floor() -
     ) is True
 
 
+def test_is_within_tolerance_uses_controller_deadband_for_runtime_success() -> None:
+    planner = CorrectionPlanner()
+    correction_config = {
+        "controllers": {
+            "ph": {"deadband": 0.04},
+            "ec": {"deadband": 0.06},
+        },
+    }
+
+    # Both values are inside a broad recipe/tolerance band, but the EC value
+    # is still far enough below the setpoint that the planner must keep dosing.
+    assert planner.is_within_tolerance(
+        current_ph=5.8,
+        current_ec=1.299,
+        target_ph=5.8,
+        target_ec=1.4,
+        ph_tolerance_pct=5.0,
+        ec_tolerance_pct=10.0,
+        ec_min=1.2,
+        ec_max=1.6,
+        correction_config=correction_config,
+    ) is False
+
+    assert planner.is_within_tolerance(
+        current_ph=5.77,
+        current_ec=1.35,
+        target_ph=5.8,
+        target_ec=1.4,
+        ph_tolerance_pct=5.0,
+        ec_tolerance_pct=10.0,
+        correction_config=correction_config,
+    ) is True
+
+
+def test_is_within_tolerance_does_not_treat_ec_overshoot_as_target_reached() -> None:
+    planner = CorrectionPlanner()
+
+    assert planner.is_within_tolerance(
+        current_ph=5.8,
+        current_ec=1.47,
+        target_ph=5.8,
+        target_ec=1.4,
+        ph_tolerance_pct=5.0,
+        ec_tolerance_pct=10.0,
+        correction_config={
+            "controllers": {
+                "ph": {"deadband": 0.04},
+                "ec": {"deadband": 0.06},
+            },
+        },
+    ) is False
+
+
 def test_build_dose_plan_uses_explicit_target_window_for_ph_direction() -> None:
     planner = CorrectionPlanner()
 
@@ -1310,7 +1363,7 @@ def test_build_dose_plan_resets_pid_state_when_value_is_back_inside_window() -> 
 
 
 def test_build_dose_plan_uses_irrigation_process_calibration_for_irrigating_phase() -> None:
-    """Irrigation chemistry owner is pH only: EC nutrient correction is skipped."""
+    """Configured irrigation EC component targets the full recipe EC."""
     planner = CorrectionPlanner()
 
     dose_plan = planner.build_dose_plan(
@@ -1345,6 +1398,30 @@ def test_build_dose_plan_uses_irrigation_process_calibration_for_irrigating_phas
         },
         ph_up_actuator=None,
         ph_down_actuator=None,
+    )
+
+    assert dose_plan.needs_ec is True
+    assert dose_plan.ec_amount_ml > 0.0
+
+
+def test_build_dose_plan_keeps_irrigation_ec_off_when_pipeline_disallows_it() -> None:
+    planner = CorrectionPlanner()
+
+    dose_plan = planner.build_dose_plan(
+        current_ph=5.0,
+        current_ec=1.8,
+        target_ph=5.0,
+        target_ec=2.3,
+        ph_tolerance_pct=1.0,
+        ec_tolerance_pct=1.0,
+        correction_config=_correction_config(),
+        workflow_phase="irrigating",
+        process_calibrations={"irrigation": {"ec_gain_per_ml": 0.1}},
+        ec_actuators={},
+        ph_up_actuator=None,
+        ph_down_actuator=None,
+        allow_ec=False,
+        allow_ph=True,
     )
 
     assert dose_plan.needs_ec is False

@@ -1,8 +1,8 @@
 # AE3-Lite: Minimal Canonical Spec
 
 **Версия:** 3.12-canonical
-**Дата:** 2026-09-30
-**Статус:** CANONICAL MINIMAL SPEC (sync с runtime кодом 2026-09-30: `TopologyPack` и срезы `RuntimePlan`; `two_tank` и `two_tank_drip_substrate_trays` — два дескриптора одного графа; `single_tank` без `clean_fill_*`; `lighting_tick` зарегистрирован в `TopologyRegistry`. Ранее: lighting day/night ON/OFF — **implemented** 2026-08-17; **solution_change** — Laravel `task_type=solution_change` → `POST /start-solution-change`; **solution_topup** — sync 2026-08-11; irrigation_start default `pump_main/run_pump {duration_ms}`; 409 `*_zone_busy` не терминалит requested intent)
+**Дата:** 2026-10-11
+**Статус:** CANONICAL MINIMAL SPEC (sync с runtime кодом 2026-10-11: correction waits считаются от terminal `DONE`, decision windows требуют временного покрытия; ранее: `TopologyPack` и срезы `RuntimePlan`; `two_tank` и `two_tank_drip_substrate_trays` — два дескриптора одного графа; `single_tank` без `clean_fill_*`; `lighting_tick` зарегистрирован в `TopologyRegistry`; lighting day/night ON/OFF — **implemented** 2026-08-17; **solution_change** — Laravel `task_type=solution_change` → `POST /start-solution-change`; **solution_topup** — sync 2026-08-11; irrigation_start default `pump_main/run_pump {duration_ms}`; 409 `*_zone_busy` не терминалит requested intent)
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 
@@ -227,7 +227,8 @@ Correction state для `cycle_start` хранится в explicit columns `ae_t
    `irrigation_recovery_*` / phase `irrig_recirc` / config
    `retry.irrigation_recovery_correction_slack_sec` и
    `subsystems.irrigation.recovery.*` **не канон**. После полива →
-   `irrigation_stop_to_ready`. На поливе допускается только pH-correction.
+   `irrigation_stop_to_ready`. На поливе inline-correction выключаема конфигом;
+   при включении корректирует pH и опционально EC одним компонентом (`calcium|npk`).
 8. **Dilute-on-overshoot (recirc):** при
    `current_ec > T_step * (1 + recirc.ec_overshoot_dilute_pct/100)` —
    импульс через `valve_clean_supply` (`dilute_pulse_sec` /
@@ -257,13 +258,29 @@ Correction runtime invariants:
     `solution_fill_timeout_sec + solution_fill_correction_slack_sec` и останавливает коррекцию только по
     `no-effect` fail-closed или по stage timeout; текущая canonical fail-closed реализация для
     `no-effect` — переход в `solution_fill_timeout_stop` без повторного входа в correction.
-12. `workflow_ready` (`_workflow_ready_reached`) строже correction-success (`CorrectionPlanner.is_within_tolerance` / `_targets_reached`): correction success = active `T_step` / `target_ph` ± prepare_tolerance; workflow ready = explicit `target_*_min/max` band если заданы, иначе тот же tolerance. В `prepare_recirculation_check` выход из correction sub-FSM требует **оба** условия (prepare-tolerance **и** phase-ready / pipeline complete). Legacy short-circuit на `target_ec_prepare` / `npk_ec_share` — **removed** (канон: water-baseline + `T_*`, см. `EFFECTIVE_TARGETS_SPEC.md` §9). Stale/unavailable telemetry остаётся fail-closed.
+12. correction success (`CorrectionPlanner.is_within_tolerance` / `_targets_reached`) использует
+    controller deadband вокруг active `T_step` / `target_ph`, тот же, что dose planner. Проверка
+    достижения симметрична; управляющий EC gap остаётся upward-only, а перелёт обрабатывается
+    recipe bounds / dilute, не отрицательной дозой. Explicit `target_*_min/max` и `prepare_tolerance` остаются ready/safety bands и
+    не являются ранним success на нижней границе. В `prepare_recirculation_check` выход требует
+    target deadband и завершённый pipeline. Stale/unavailable telemetry остаётся fail-closed.
 13. partial EC batch failure MVP (`EC_BATCH_PARTIAL_FAILURE` + fail correction window + metric) — **implemented** для batch multi; prepare owner — sequential pipeline (не batch split полного gap). Auto-enqueue `irrigation_recovery` — **removed from canon**.
 14. при `task_type=solution_change` completion `solution_fill` (включая interrupt из correction) обязан
     идти в `solution_fill_stop_to_refill_confirm` (operator gate G2), а не в `*_stop_to_ready/prepare`.
 15. `expected_effect` для no-effect использует `effective_process_gain` (тот же auth⊕learned blend, что planner); adaptive observations не инфлейтятся без learning update (см. `PID_CONFIG_REFERENCE.md`).
 16. PID integral не накапливается за hold/observe dead time; при saturation дозы ΔI тика не персистится. Legacy `utils/adaptive_pid.py` / `services/pid_config_service.py` / `correction_cooldown.py` **удалены** (2026-07-20); канон — `CorrectionPlanner` + `pid_state` + `zone.pid` / `zone.correction` (см. `PID_CONFIG_REFERENCE.md` §0).
-17. Sequential nutrient PID: gap=`T_step`; reset I на смене компонента/dilute; freeze EC на pH-gate (`corr_ec_pid_frozen`); per-component `ec_component_gains`; fill_ca→recirc_ca без reset I; irrigation только pH (см. `PID_CONFIG_REFERENCE.md` §11).
+17. Sequential nutrient PID: gap=`T_step`; reset I на смене компонента/dilute; freeze EC на pH-gate (`corr_ec_pid_frozen`); per-component `ec_component_gains`; fill_ca→recirc_ca без reset I; irrigation — pH и, если настроено, один EC-компонент (`calcium|npk`) к полному recipe target (см. `PID_CONFIG_REFERENCE.md` §11).
+18. Все post-command интервалы (`sensor-mode stabilization`, EC/pH hold,
+    dilute pulse/settle) якорятся на wall-clock момент terminal `DONE`, а не на
+    начало handler tick. `corr.wait_until`, `pid_state.last_dose_at`,
+    `pid_state.hold_until` и task `due_at` обязаны описывать один и тот же
+    временной интервал; command polling latency не может его сокращать.
+19. Готовность PH/EC decision/observe window требует одновременно minimum
+    samples, стабильный slope и временное покрытие не меньше
+    `decision_window_sec`. Покрытие считается как span timestamp-ов плюс один
+    ожидаемый `telemetry_period_sec` (N периодических samples = N acquisition
+    intervals). Sample, опережающий runtime clock более чем на 2 секунды,
+    fail-closed оставляет окно неготовым.
 #### `PlannedCommand`
 
 Execution record внутри task:
@@ -335,9 +352,13 @@ Terminal:
 
 `zone_workflow_state` мутируется только каноническими AE3 task-ами:
 1. `cycle_start` управляет переходами `idle -> tank_filling -> tank_recirc -> ready`
-   (`solution_fill` = Ca-only после water-baseline; `tank_recirc` = sequential pipeline + dilute)
+   (`solution_fill` = Ca-only после water-baseline; `tank_recirc` = sequential pipeline + dilute).
+   Если persisted фаза уже `ready`, повторный diagnostics `cycle_start` после успешного
+   IRR probe идемпотентно переходит из `startup` в `complete_ready`, не открывая
+   fill-path. Замена готового раствора выполняется только через `solution_change`;
+   water-baseline другого task повторно не используется.
 2. `irrigation_start` управляет переходами `ready -> irrigating -> ready`
-   (только pH-correction inline; без `irrig_recirc` / `irrigation_recovery_*`)
+   (inline pH и опционально один EC-компонент; без `irrig_recirc` / `irrigation_recovery_*`)
 3. `solution_topup` — автодолив бака раствора в фазе `ready`; не мутирует `workflow_phase`
    (зона остаётся в `ready`); topology: `solution_topup_guard -> solution_topup_start -> solution_topup_check -> solution_topup_stop -> solution_topup_complete`;
    конфиг: `subsystems.startup.solution_topup_enabled` (default `true`),
@@ -536,7 +557,8 @@ Handler/planner:
 - active EC target = `T_step` текущего pipeline step (не NPK share);
 - `solution_fill`: только calcium (`pump_b`), без pH;
 - `prepare_recirculation`: `Ca → pH → Mg → pH → NPK → pH → Micro → final pH`;
-- `irrigation`: `needs_ec=false`, только pH;
+- `irrigation`: pH всегда; EC только при `correction_during_irrigation=true` и
+  `irrigation_ec_component=calcium|npk`, target — полный recipe EC;
 - PID invariants — `PID_CONFIG_REFERENCE.md` §11.
 
 Полная семантика — `../06_DOMAIN_ZONES_RECIPES/EFFECTIVE_TARGETS_SPEC.md` §9 и
@@ -1308,6 +1330,9 @@ UPDATE после очистки owner не применяется. Audit transi
 после commit; их сбой наблюдаем, но не изображает откат committed прогресса.
 Poll `await_ready` не меняет phase зоны на `ready`. Terminal intent остаётся под
 идемпотентным worker/reconcile, без HTTP или ожидания оборудования внутри транзакции.
+`mark_running` / `mark_terminal` обязаны подтвердить CAS хотя бы одной обновлённой строкой.
+Нулевой row count — это sync failure с retry/alert, а не успешный lifecycle-переход; тот же
+terminal status допускает идемпотентный повтор.
 
 Snapshot читается в `REPEATABLE READ READ ONLY`: несколько SELECT видят одну revision.
 Это не отменяет guards владения и дедлайна непосредственно перед публикацией.

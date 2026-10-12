@@ -397,7 +397,8 @@ class StageRuntimeConfig:
 
         solution_fill / tank_recirc → T_step из corr.component_targets (если есть),
         иначе deprecated pre-baseline calcium share (target_ec_prepare).
-        irrigation → EC off на уровне planner; accessor возвращает full target.
+        irrigation → full target; EC разрешается только выбранным
+        irrigation_ec_component через pipeline dose flags.
         """
         from ae3lite.domain.services.nutrient_pipeline import (
             ComponentTargets,
@@ -623,4 +624,3 @@ class StageRuntimeConfig:
             return float(value)
         except (TypeError, ValueError):
             return None
-

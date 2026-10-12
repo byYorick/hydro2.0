@@ -20,9 +20,11 @@ from ae3lite.domain.services.metric_window_validator import (
     decision_window_bounds_reason,
     sensor_value_in_bounds,
 )
+from ae3lite.domain.services.correction_planner import CorrectionPlanner
 from ae3lite.domain.services.telemetry_window_summary import (
     decision_window_since_ts as _telemetry_decision_window_since_ts,
     summarize_window as _telemetry_summarize_window,
+    validate_window_timing as _validate_telemetry_window_timing,
 )
 from ae3lite.infrastructure.metrics import (
     EMERGENCY_STOP_RECONCILE,
@@ -1526,18 +1528,26 @@ class BaseStageHandler:
         ec_target = self._runtime_config.effective_ec_target(task=task, runtime=runtime)
         current_ph = float(ph["value"])
         current_ec = float(ec["value"])
-        # Correction success stays aligned with the canonical target tolerance.
-        ph_tol = abs(ph_target) * (
-            self._runtime_config.required_prepare_tolerance_pct(tolerance=tolerance, key="ph_pct") / 100.0
+        execution = runtime.irrigation_execution
+        ec_component = str(
+            getattr(execution, "irrigation_ec_component", None) or "none"
+        ).strip().lower()
+        return CorrectionPlanner().is_within_tolerance(
+            current_ph=current_ph,
+            current_ec=current_ec,
+            target_ph=ph_target,
+            target_ec=ec_target,
+            ph_tolerance_pct=self._runtime_config.required_prepare_tolerance_pct(
+                tolerance=tolerance, key="ph_pct",
+            ),
+            ec_tolerance_pct=self._runtime_config.required_prepare_tolerance_pct(
+                tolerance=tolerance, key="ec_pct",
+            ),
+            correction_config=correction_cfg,
+            pid_configs=getattr(runtime, "pid_configs", {}),
+            allow_ec=ec_component in {"calcium", "npk"},
+            allow_ph=True,
         )
-        ec_tol = abs(ec_target) * (
-            self._runtime_config.required_prepare_tolerance_pct(tolerance=tolerance, key="ec_pct") / 100.0
-        )
-        ph_min = ph_target - ph_tol
-        ph_max = ph_target + ph_tol
-        ec_min = ec_target - ec_tol
-        ec_max = ec_target + ec_tol
-        return ph_min <= current_ph <= ph_max and ec_min <= current_ec <= ec_max
 
     async def _workflow_ready_reached(
         self, *, task: Any, plan: Any, now: datetime, runtime: Any = None,
@@ -1719,12 +1729,24 @@ class BaseStageHandler:
             return False
         current_ph = float(ph["value"])
         current_ec = float(ec["value"])
-        phase_ready = self._phase_ready_values_match(
-            task=task, runtime=runtime, current_ph=current_ph, current_ec=current_ec,
+        tolerance = self._runtime_config.prepare_tolerance_for_task(task=task, runtime=runtime)
+        target_reached = CorrectionPlanner().is_within_tolerance(
+            current_ph=current_ph,
+            current_ec=current_ec,
+            target_ph=self._runtime_config.effective_ph_target(task=task, runtime=runtime),
+            target_ec=self._runtime_config.effective_ec_target(task=task, runtime=runtime),
+            ph_tolerance_pct=self._runtime_config.required_prepare_tolerance_pct(
+                tolerance=tolerance, key="ph_pct",
+            ),
+            ec_tolerance_pct=self._runtime_config.required_prepare_tolerance_pct(
+                tolerance=tolerance, key="ec_pct",
+            ),
+            correction_config=correction_cfg,
+            pid_configs=getattr(runtime, "pid_configs", {}),
         )
         # Открытый recirc-pipeline нельзя закрыть кальциевой prepare-band:
         # pH в фазовом окне и EC ≈ T_ca иначе завершают рецепт до Mg/NPK/micro.
-        if phase_ready and not self._recirc_pipeline_open(task):
+        if target_reached and not self._recirc_pipeline_open(task):
             return True
         return self._irrigation_ready_short_circuit(
             task=task, runtime=runtime, current_ph=current_ph, current_ec=current_ec,
@@ -1797,11 +1819,24 @@ class BaseStageHandler:
                 zone_id,
             )
             return {"ready": False, "reason": bounds_reason}
+        timing = _validate_telemetry_window_timing(
+            samples=window["samples"],
+            minimum_span_sec=float(config["decision_window_sec"]),
+            not_after=now,
+            sample_period_sec=float(config["telemetry_period_sec"]),
+        )
+        if not timing["ready"]:
+            return {
+                "ready": False,
+                "reason": timing.get("reason"),
+                "window_span_sec": timing.get("window_span_sec"),
+            }
         return {
             "ready": True,
             "value": summary["value"],
             "sample_count": summary["sample_count"],
             "slope": summary["slope"],
+            "window_span_sec": timing.get("window_span_sec"),
         }
 
     @staticmethod
@@ -1905,4 +1940,3 @@ class BaseStageHandler:
                 "sensor_state_inconsistent",
                 f"Датчики бака противоречат друг другу: max=1 min=0 ({min_labels_key})",
             )
-

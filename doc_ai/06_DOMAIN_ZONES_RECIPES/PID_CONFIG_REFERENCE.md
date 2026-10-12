@@ -6,7 +6,7 @@
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 
-**Обновлено:** 2026-07-22 — sequential nutrient pipeline↔PID invariants (§11);
+**Обновлено:** 2026-10-11 — terminal-DONE timing anchors и temporal coverage decision windows; sequential nutrient pipeline↔PID invariants (§11);
 impulse model + PI assist; integral freeze на hold/observe; conditional-integration
 anti-windup; `expected_effect` на `effective_process_gain`; порог дозы из
 `pump_calibration.min_dose_ms`; legacy `AdaptivePid` / `pid_config_service` /
@@ -183,6 +183,11 @@ controller-level ограничение имеет приоритет при `> 
 Если `gap ≤ deadband`, коррекция не выполняется (нет дозы, нет обновления
 integral).
 
+Этот же deadband является критерием завершения correction: recipe min/max и
+`prepare_tolerance` — допустимые/защитные bands, но не сигнал успеха на нижней
+границе. Для признака достижения pH и EC используется `abs(target-current)`;
+управляющий EC gap остаётся `max(0, target-current)`, а перелёт идёт в dilute/guards.
+
 | | pH | EC |
 |--|----|----|
 | Типовое значение | 0.05 | 0.1 |
@@ -195,7 +200,9 @@ integral).
 
 Пишется **только после terminal `DONE`** дозирующей команды в correction handler
 (не на этапе планирования / не при TIMEOUT/ERROR). Это якорь для `min_interval_sec` cooldown
-и observe-window (`last_dose_at + transport_delay_sec`).
+и observe-window (`last_dose_at + transport_delay_sec`). `hold_until` и task
+`due_at` строятся от того же terminal-`DONE` wall-clock якоря: время ожидания
+ACK/polling не вычитается из configured hold.
 
 Проверяется через `_retry_after()` — если `now - last_dose_at < min_interval_sec`,
 planner возвращает `retry_after_sec` и доза не выдаётся.
@@ -399,6 +406,13 @@ retention / wave EMA инкрементируются только при вал
 - `stability_max_slope` — порог стабильности окна;
 - `no_effect_consecutive_limit` — сколько подряд no-effect доз допускается до alert/fail-closed.
 
+Окно считается готовым только когда одновременно выполнены minimum samples,
+slope stability и временное покрытие. Для периодического ряда покрытие равно
+`last_ts - first_ts + telemetry_period_sec`: три samples с периодом 2 секунды
+представляют 6-секундное acquisition window. Плотная пачка одинаковых timestamp
+не подменяет настоящее окно. Timestamp более чем на 2 секунды впереди runtime
+clock отклоняется fail-closed до синхронизации времени.
+
 ### Маппинг фаз
 
 | Workflow phase | Canonical key | Источник конфига |
@@ -581,7 +595,7 @@ Pipeline **не заменяет** PID — меняет target (`T_step`) и act
 | 6 | Per-component gain | `ec_component_gains.{component}` (auth); не общий EMA across components |
 | 7 | no-effect per component | счётчик сбрасывается при switch компонента |
 | 8 | fill_ca → recirc_ca | **не** reset I (тот же компонент calcium) |
-| 9 | irrigation | только pH PID; EC off |
+| 9 | irrigation | pH; EC только для выбранного `calcium|npk`, target = full recipe EC |
 | 10 | Overshoot | только dilute (`zone.correction.recirc.*`); EC вверх-only |
 
 Нарушение reset/freeze на switch/pH-gate → перелёты и ложный no-effect.
@@ -610,4 +624,5 @@ legacy unit-тесты. Канон — только AE3-Lite planner + `pid_stat
 `zone.correction` / `zone.pid` / `process_calibration`.
 
 Deprecated семантика prepare (2026-07-22): `npk_ec_share` / `target_ec_prepare`
-как owner prepare EC; post-irrigation EC recovery; EC dosing на irrigation.
+как owner prepare EC; post-irrigation EC recovery. Inline EC dosing на irrigation
+остаётся поддерживаемым для одного явно выбранного компонента.

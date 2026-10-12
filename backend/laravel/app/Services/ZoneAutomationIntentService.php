@@ -347,8 +347,9 @@ class ZoneAutomationIntentService
     }
 
     /**
-     * Учитывает retryable dispatch failure планировщика: инкремент retry_count и terminal fail
-     * после исчерпания max_retries.
+     * Учитывает retryable dispatch failure планировщика только до claim со стороны AE3.
+     * После claim жизненным циклом intent владеет Automation Engine: потеря HTTP-ответа
+     * не должна переводить claimed/running intent в failed.
      *
      * @return array{failed: bool, retry_count: int}
      */
@@ -364,14 +365,30 @@ class ZoneAutomationIntentService
             "
             UPDATE zone_automation_intents
             SET retry_count = retry_count + 1,
-                updated_at = ?
+                status = CASE
+                    WHEN retry_count + 1 >= GREATEST(COALESCE(max_retries, 3), 1) THEN 'failed'
+                    ELSE status
+                END,
+                completed_at = CASE
+                    WHEN retry_count + 1 >= GREATEST(COALESCE(max_retries, 3), 1) THEN ?
+                    ELSE completed_at
+                END,
+                updated_at = ?,
+                error_code = CASE
+                    WHEN retry_count + 1 >= GREATEST(COALESCE(max_retries, 3), 1) THEN ?
+                    ELSE error_code
+                END,
+                error_message = CASE
+                    WHEN retry_count + 1 >= GREATEST(COALESCE(max_retries, 3), 1) THEN ?
+                    ELSE error_message
+                END
             WHERE zone_id = ?
               AND idempotency_key = ?
               AND intent_source = 'laravel_scheduler'
-              AND status IN ('pending', 'claimed', 'running')
-            RETURNING retry_count, max_retries
+              AND status = 'pending'
+            RETURNING retry_count, max_retries, status
             ",
-            [$now, $zoneId, $idempotencyKey],
+            [$now, $now, $errorCode, $errorMessage, $zoneId, $idempotencyKey],
         );
 
         if ($row === null) {
@@ -379,20 +396,10 @@ class ZoneAutomationIntentService
         }
 
         $retryCount = (int) ($row->retry_count ?? 0);
-        $maxRetries = max(1, (int) ($row->max_retries ?? 3));
-
-        if ($retryCount >= $maxRetries) {
-            $this->markIntentFailed(
-                zoneId: $zoneId,
-                idempotencyKey: $idempotencyKey,
-                errorCode: $errorCode,
-                errorMessage: $errorMessage,
-            );
-
-            return ['failed' => true, 'retry_count' => $retryCount];
-        }
-
-        return ['failed' => false, 'retry_count' => $retryCount];
+        return [
+            'failed' => (string) ($row->status ?? '') === 'failed',
+            'retry_count' => $retryCount,
+        ];
     }
 
     /**

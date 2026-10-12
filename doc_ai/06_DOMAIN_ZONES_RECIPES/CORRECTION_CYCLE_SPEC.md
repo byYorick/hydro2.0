@@ -4,7 +4,7 @@
 Документ описывает state machine, режимы коррекции и логику управления измерением pH/EC с учетом необходимости наличия потока раствора.
 
 **Дата создания:** 2026-02-14
-**Дата обновления:** 2026-07-22 (sequential nutrient: water-baseline + Ca-fill + recirc pipeline + dilute; irrigation = pH-only)
+**Дата обновления:** 2026-10-11 (terminal-DONE timing anchors; temporal coverage decision windows; sequential nutrient pipeline)
 **Статус:** Рабочий документ (требует валидации)
 
 ---
@@ -182,7 +182,7 @@ Observability (UI/Grafana, 2026-07-09):
 | **TANK_FILLING** | ✅ Да | ✅ Да (EC) | ✅ Да | только Ca (`pump_b`); без pH |
 | **TANK_RECIRC** | ✅ Да | ✅ Да | ✅ Да | pipeline Ca/pH/Mg/pH/NPK/pH/Micro/pH (+ dilute) |
 | **READY** | ❌ Нет | ❌ Нет | ❌ Нет | - |
-| **IRRIGATING** | ✅ Да | ✅ Да (pH) | ✅ Да | только pH |
+| **IRRIGATING** | ✅ Да | ✅ Да (pH/EC) | конфиг | pH + один EC-компонент (`calcium|npk`) |
 | **IRRIG_RECIRC** | — | — | — | **removed** (legacy; не использовать) |
 
 ### 2.3. События (Triggers)
@@ -266,12 +266,15 @@ Observability (UI/Grafana, 2026-07-09):
 - `cycle.phase_overrides`, `cycle.manual_overrides` и `zone.logic_profile` не могут менять
   canonical `target_ph/target_ec` и их windows; runtime допускает из них только execution/config
   параметры, не chemical setpoints.
-- correction success (`CorrectionPlanner.is_within_tolerance`, `_targets_reached`) = canonical `target_ph/target_ec` ± `prepare_tolerance`;
+- correction success (`CorrectionPlanner.is_within_tolerance`, `_targets_reached`) = canonical
+  target в controller deadband (`zone.pid.*.dead_zone`, fallback `controllers.*.deadband`);
+  достижение pH/EC проверяется симметрично; EC control gap остаётся upward-only, а
+  перелёт обрабатывается dilute/safety guards;
 - `workflow_ready` (`_workflow_ready_reached`, переходы `*_stop_to_ready`) может быть **строже** correction-success:
   если runtime уже имеет явные `target_*_min/max`, именно они используются как explicit ready band;
 - fallback на `prepare_tolerance` для `workflow_ready` допустим только если explicit ready band отсутствует;
-- `target_*_min/max` не считаются ранним success сами по себе внутри correction sub-machine:
-  они используются только для финального решения о `workflow_ready`.
+- `target_*_min/max` и широкий `prepare_tolerance` не считаются ранним success:
+  нижняя граница recipe band не останавливает движение к setpoint.
 - события `CORRECTION_COMPLETE`, `CORRECTION_INTERRUPTED_STAGE_COMPLETE` и успешный
   `CORRECTION_SKIPPED_DEAD_ZONE` публикуют явные флаги `targets_in_tolerance` и `workflow_ready`
   (legacy alias `targets_reached` = `workflow_ready` для solution_fill routing).
@@ -445,6 +448,10 @@ Observability (UI/Grafana, 2026-07-09):
 - `controllers.{ec,ph}.max_dose_ml` — controller-level cap per dose в мл (применяется до перевода в ms).
 - `controllers.{ec,ph}.min_interval_sec` — минимальный интервал между дозами одного controller'а. Конфигурируемо per controller; типовые production-значения: pH 60–120 с, EC 60–120 с. Прежние комментарии «pH ≥ 20 с, EC ≥ 10 с» устарели — на них не опираться.
 - `last_dose_at` в `pid_state` пишется **только после terminal `DONE`** дозирующей команды в correction handler (не на этапе планирования). Timestamp якорится на момент подтверждённого DONE (`utcnow` после успешного `run_batch`), а не на старт tick handler'а. Это предотвращает фантомный cooldown при fail/TIMEOUT дозы и ранний старт `min_interval_sec`.
+- `hold_until`, persisted `corr_wait_until` и scheduler `due_at` вычисляются от
+  того же terminal-`DONE` якоря. Задержка публикации, ACK и terminal polling не
+  сокращает `transport_delay_sec + settle_sec`; правило также применяется к
+  sensor-mode stabilization и dilute pulse/settle.
 - Plan `integral` / `prev_*` коммитятся в `_finalize_dose_plan_routing` **после** подтверждения dose routing (не до control_mode gate, не при discard/cooldown). Observe finalize трогает только `last_measurement_at` (без ΔI) — эквивалент `accumulate_integral=False`.
 
 **Из `pid_configs.{ec,ph}`:**
@@ -454,6 +461,11 @@ Observability (UI/Grafana, 2026-07-09):
 - Единый валидатор: `ae3lite/domain/services/metric_window_validator.py` (используется в `DecisionWindowReader`, `BaseStageHandler._read_target_metric_window` и observe finalize в `CorrectionHandler._read_observation_window_or_interrupt`).
 - pH ∈ `[0, 14]`, EC ∈ `[0, 20]` mS/cm.
 - Выход за пределы (error code типа `-1` / `999`, NaN, inf) → reason `sensor_out_of_bounds`, окно не ready, PID-state не обновляется, доза не публикуется.
+- Count/slope недостаточно: window дополнительно обязан покрывать
+  `decision_window_sec`. Покрытие периодического ряда =
+  `last_ts - first_ts + telemetry_period_sec`; future sample с опережением
+  runtime clock более 2 секунд не участвует в решении. До готовности handler
+  делает bounded retry и не обновляет PID/no-effect state.
 
 **Alert-block retry cap:**
 - При `safety.block_on_active_no_effect_alert=true` и активном no-effect alert handler retry'ит `corr_check` с backoff 60 с, но не более `AE_CORRECTION_ALERT_BLOCK_MAX_RETRIES` (default `10`). По исчерпании — terminal fail с кодом `correction_blocked_by_no_effect_alert`.
@@ -478,7 +490,8 @@ legacy/compat knob. Для two-tank prepare **канон — sequential nutrient
 **`ec_excluded_components` (канон 2026-07-22):**
 - `solution_fill`: фактически один компонент `calcium` (planner `active_component=calcium`);
 - `tank_recirc` / `prepare_recirculation`: pipeline шагает по компонентам; batch exclude не owner;
-- `irrigation`: **все** EC components excluded / `needs_ec=false` — только pH.
+- `irrigation`: EC выключен при `irrigation_ec_component=none`; при `calcium|npk`
+  разрешён ровно выбранный компонент, Mg/Micro и batch запрещены.
 
 ### 3.7. Sequential nutrient pipeline (канон)
 
@@ -486,7 +499,7 @@ legacy/compat knob. Для two-tank prepare **канон — sequential nutrient
 water baseline → solution_fill(Ca only)
               → prepare_recirc: Ca → pH → Mg → pH → NPK → pH → Micro → final pH
               → ready
-irrigation: pH only → stop → ready   (нет irrig_recirc / irrigation_recovery chemistry)
+irrigation: pH + optional Ca/NPK → stop → ready   (нет post-irrigation recovery)
 ```
 
 #### 3.7.1. Water baseline и кумулятивные targets
@@ -510,7 +523,7 @@ irrigation: pH only → stop → ready   (нет irrig_recirc / irrigation_recov
 - Активный компонент: `calcium` → actuator `pump_b`.
 - pH-дозы на fill **запрещены**.
 - EC gap = `T_ca − current_ec` (не полный `target_ec`, не legacy `target_ec_prepare`/`npk_ec_share`).
-- После достижения `T_ca` (± prepare tolerance) → stop fill → `prepare_recirculation`.
+- После достижения `T_ca` в EC controller deadband → stop fill → `prepare_recirculation`.
 
 #### 3.7.3. `prepare_recirculation` — interleaved pipeline
 
@@ -546,15 +559,17 @@ fail-closed / alert `recirc_dilute_blocked_solution_max`.
 После dilute: reset EC integral + no_effect counters; продолжить **текущий** pipeline step.
 Events: `RECIRC_DILUTE_STARTED` / `RECIRC_DILUTE_COMPLETED`.
 
-#### 3.7.5. Irrigation — только pH
+#### 3.7.5. Irrigation — inline pH и опциональный EC
 
-- Planner: `needs_ec=false`; EC-дозы на поливе не планируются.
+- `correction_during_irrigation=false`: target-check/correction не запускаются.
+- При `true` pH проверяется всегда; `irrigation_ec_component=calcium|npk` разрешает
+  один соответствующий насос для движения к полному recipe `target_ec`.
+- `irrigation_ec_component=none` оставляет коррекцию pH-only.
 - Post-irrigation chemistry **удалена**: нет перехода в `irrig_recirc` /
   `irrigation_recovery_*` ради доведения EC/компонентов.
 - После полива → `irrigation_stop_to_ready` → `ready`/`idle`.
 - Config keys `retry.irrigation_recovery_correction_slack_sec`,
-  `diagnostics.execution.irrigation_recovery.*`,
-  `irrigation.execution.correction_during_irrigation` (EC) — **deprecated/removed**
+  `diagnostics.execution.irrigation_recovery.*` — **deprecated/removed**
   (см. `AUTOMATION_CONFIG_AUTHORITY.md`).
 
 #### 3.7.6. Actuator resolve (fail-closed)
@@ -1335,9 +1350,11 @@ AE3-Lite поддерживает вход в коррекцию **во врем
 - стадия `irrigation_check` помечена `has_correction=true` и возвращается обратно в `irrigation_check`;
 - `correction_during_irrigation=true` включает inline-коррекцию **pH + EC**;
 - `irrigation_ec_component`:
-  - `calcium` (default при включённой коррекции) — pH + Ca (`pump_b`), `pipeline_phase=irrigation_calcium`, target `T_ca` из latest `zone_prepare_baselines` (иначе fallback `target_ec`);
-  - `npk` — pH + NPK (`pump_a`), `pipeline_phase=irrigation_npk`, target `T_ca_mg_npk` (или `target_ec` без baseline);
-  - legacy `none` при `correction_during_irrigation=true` **coerce → calcium** (pH-only на поливе больше не канон);
+  - `calcium` — pH + Ca (`pump_b`), `pipeline_phase=irrigation_calcium`;
+  - `npk` — pH + NPK (`pump_a`), `pipeline_phase=irrigation_npk`;
+  - `none` — pH-only;
+- для `calcium|npk` target EC — полный effective recipe `target_ec`; компонент выбирает
+  reagent/actuator, а не нижний cumulative `T_*`;
 - Mg / Micro / multi-component batch на поливе **запрещены**;
 - dilute на поливе не используется (бак обычно у `solution_max`);
 - post-irrigation nutrient recovery (`irrig_recirc`, `irrigation_recovery_*`) — **удалён из канона**;

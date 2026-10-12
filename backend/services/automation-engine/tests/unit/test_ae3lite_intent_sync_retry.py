@@ -49,6 +49,23 @@ async def test_safe_mark_intent_running_retries_then_increments_metric() -> None
 
 
 @pytest.mark.asyncio
+async def test_safe_mark_intent_running_treats_zero_row_cas_as_sync_failure() -> None:
+    intent_repo = AsyncMock()
+    intent_repo.mark_running = AsyncMock(return_value=False)
+    worker = _build_worker(intent_repo=intent_repo)
+
+    before = INTENT_SYNC_FAILED.labels(operation="mark_running")._value.get()
+    with patch("ae3lite.runtime.worker.send_infra_alert", new_callable=AsyncMock) as alert_mock:
+        ok = await worker._safe_mark_intent_running(intent_id=42, task_id=7, zone_id=3)
+    after = INTENT_SYNC_FAILED.labels(operation="mark_running")._value.get()
+
+    assert ok is False
+    assert intent_repo.mark_running.await_count == 3
+    assert after == before + 1
+    alert_mock.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_execute_claimed_task_aborts_when_intent_sync_exhausted() -> None:
     intent_repo = AsyncMock()
     intent_repo.mark_running = AsyncMock(side_effect=RuntimeError("db"))
@@ -138,6 +155,32 @@ async def test_safe_mark_intent_terminal_exhausted_sends_alert_and_returns_false
     assert alert_mock.await_args.kwargs["code"] == "ae3_intent_sync_failed"
     assert alert_mock.await_args.kwargs["intent_id"] == 7
     assert alert_mock.await_args.kwargs["details"]["task_id"] == 11
+
+
+@pytest.mark.asyncio
+async def test_safe_mark_intent_terminal_treats_zero_row_cas_as_sync_failure() -> None:
+    intent_repo = AsyncMock()
+    intent_repo.mark_terminal = AsyncMock(return_value=False)
+    worker = _build_worker(intent_repo=intent_repo)
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+
+    before = INTENT_SYNC_FAILED.labels(operation="mark_terminal")._value.get()
+    with patch("ae3lite.runtime.worker.send_infra_alert", new_callable=AsyncMock) as alert_mock:
+        synced = await worker._safe_mark_intent_terminal_result(
+            intent_id=7,
+            now=now,
+            success=True,
+            error_code=None,
+            error_message=None,
+            task_id=11,
+            zone_id=3,
+        )
+    after = INTENT_SYNC_FAILED.labels(operation="mark_terminal")._value.get()
+
+    assert synced is False
+    assert intent_repo.mark_terminal.await_count == 3
+    assert after == before + 1
+    alert_mock.assert_awaited_once()
 
 
 @pytest.mark.asyncio

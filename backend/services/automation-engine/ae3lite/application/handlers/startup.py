@@ -53,6 +53,21 @@ class StartupHandler(BaseStageHandler):
         # SetControlModeUseCase). См. CONTROL_MODES_SPEC §6.3 / §9.7.
         await self._clear_manual_to_auto_reconcile_flag(task=task)
         runtime = self._require_runtime_plan(plan=plan)
+        if str(getattr(runtime, "zone_workflow_phase", "") or "").strip().lower() == "ready":
+            # A periodic diagnostics intent is routed through cycle_start for
+            # compatibility.  When the persisted zone workflow is already
+            # ready, restarting the fill pipeline would open the clean-water
+            # path against a prepared/full solution tank.  It would also have
+            # no valid water baseline scoped to the new task.  Treat the
+            # startup task as an idempotent readiness check; solution renewal
+            # belongs to the explicit solution_change workflow.
+            logger.info(
+                "startup: zone workflow already ready; completing idempotently "
+                "zone_id=%s task_id=%s",
+                task.zone_id,
+                getattr(task, "id", None),
+            )
+            return StageOutcome(kind="transition", next_stage="complete_ready")
         if not _topology_has_clean_fill(task):
             return StageOutcome(kind="transition", next_stage="solution_fill_start")
 

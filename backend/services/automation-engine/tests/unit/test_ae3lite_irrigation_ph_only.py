@@ -40,6 +40,7 @@ def test_irrigation_planner_needs_ec_false() -> None:
         ec_actuators={
             "calcium": {"node_uid": "ec-1", "channel": "pump_b", "calibration": {"ml_per_sec": 1.0}},
         },
+        allow_ec=False,
     )
     assert plan.needs_ec is False
     assert plan.needs_ph_up is True
