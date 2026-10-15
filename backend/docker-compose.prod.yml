@@ -183,13 +183,11 @@ services:
       - BROADCAST_CONNECTION=reverb
       - QUEUE_CONNECTION=redis
       # PHP-FPM performance settings
-      - PHP_FPM_PM=dynamic
-      - PHP_FPM_PM_MAX_CHILDREN=50
-      - PHP_FPM_PM_START_SERVERS=10
-      - PHP_FPM_PM_MIN_SPARE_SERVERS=5
-      - PHP_FPM_PM_MAX_SPARE_SERVERS=20
-      - PHP_FPM_PM_MAX_REQUESTS=500
-      - PHP_FPM_PM_PROCESS_IDLE_TIMEOUT=10s
+      - FPM_PM_MAX_CHILDREN=50
+      - FPM_PM_START_SERVERS=10
+      - FPM_PM_MIN_SPARE_SERVERS=5
+      - FPM_PM_MAX_SPARE_SERVERS=20
+      - FPM_MAX_REQUESTS=500
       # Nginx worker processes (auto-detected, but can be set)
       - NGINX_WORKER_PROCESSES=auto
       - NGINX_WORKER_CONNECTIONS=1024

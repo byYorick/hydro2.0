@@ -142,12 +142,12 @@ class CorrectionTransitionPolicy:
     ) -> Optional[StageOutcome]:
         """Decide what to do when the stage deadline fires inside correction.
 
-        ``targets_reached`` / ``recovery_enabled`` are accepted for call-site
-        compatibility but unused for irrigation: post-irrigation chemistry
-        recovery was removed, so deadline always goes to
-        ``irrigation_stop_to_ready``. Pass ``None`` for ``targets_reached``
-        when not applicable. For terminal correction steps we decline so the
-        FSM can finish its own deactivation.
+        Hydraulic stop is independent from chemistry success. Irrigation always
+        proceeds to ``irrigation_stop_to_ready`` and the caller persists the
+        supplied three-state result (reached / not reached / unknown) as terminal
+        diagnostics. ``None`` is reserved for unavailable/stale telemetry or for
+        stages where chemistry outcome is not terminal. For terminal correction
+        steps we decline so the FSM can finish its own deactivation.
         """
         if corr.corr_step in {"corr_deactivate", "corr_done"}:
             return None

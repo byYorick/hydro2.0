@@ -6,7 +6,8 @@
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 
-**Обновлено:** 2026-10-11 — terminal-DONE timing anchors и temporal coverage decision windows; sequential nutrient pipeline↔PID invariants (§11);
+**Обновлено:** 2026-10-12 — единый resolved deadband для dose/reset/success;
+terminal chemistry outcome; bounded irrigation component target; terminal-DONE timing anchors и temporal coverage decision windows; sequential nutrient pipeline↔PID invariants (§11);
 impulse model + PI assist; integral freeze на hold/observe; conditional-integration
 anti-windup; `expected_effect` на `effective_process_gain`; порог дозы из
 `pump_calibration.min_dose_ms`; legacy `AdaptivePid` / `pid_config_service` /
@@ -419,7 +420,7 @@ clock отклоняется fail-closed до синхронизации вре�
 |----------------|--------------|-----------------|
 | `solution_fill`, `tank_filling` | `solution_fill` | phases.solution_fill merged with base |
 | `tank_recirc`, `prepare_recirculation` | `tank_recirc` | phases.tank_recirc merged with base |
-| `irrigating`, `irrigation`, `irrig_recirc` | `irrigation` | phases.irrigation merged with base |
+| `irrigating`, `irrigation` | `irrigation` | phases.irrigation merged with base |
 | всё остальное | `generic` | base config |
 
 > Функция `normalize_phase_key` вынесена в
@@ -450,7 +451,7 @@ clock отклоняется fail-closed до синхронизации вре�
 
 ### 6.2. Сброс состояния при возврате в норму
 
-Когда текущие pH и EC попадают в допустимые границы, `correction_planner`
+Когда текущие pH и EC попадают в resolved controller deadband вокруг setpoint, `correction_planner`
 автоматически сбрасывает PID state в ноль, записывая в `pid_state_updates`:
 
 ```python
@@ -466,6 +467,11 @@ clock отклоняется fail-closed до синхронизации вре�
 > старым timestamp'ом. Без этого при следующем выходе за пределы нормы
 > `dt = now - stale_ts` мог быть несколько часов → integral мгновенно
 > прыгал до `max_integral` уже при первом тике (integral spike).
+
+Для reset используется ровно тот же zoned deadband (`zone.pid.*.dead_zone`, fallback
+`zone.correction.controllers.*.deadband`), что для `needs_*` и terminal
+`targets_achieved`. Recipe `min/max` и `prepare_tolerance` не сбрасывают интегратор
+раньше setpoint. Disabled/frozen contour не сбрасывается и не участвует в success.
 
 ### 6.3. Сохранение и восстановление
 
@@ -595,8 +601,13 @@ Pipeline **не заменяет** PID — меняет target (`T_step`) и act
 | 6 | Per-component gain | `ec_component_gains.{component}` (auth); не общий EMA across components |
 | 7 | no-effect per component | счётчик сбрасывается при switch компонента |
 | 8 | fill_ca → recirc_ca | **не** reset I (тот же компонент calcium) |
-| 9 | irrigation | pH; EC только для выбранного `calcium|npk`, target = full recipe EC |
+| 9 | irrigation | pH; EC только для `calcium|npk`; dose target ограничен `T_ca` / `T_ca_mg_npk`, full recipe EC остаётся terminal diagnostic goal |
 | 10 | Overshoot | только dilute (`zone.correction.recirc.*`); EC вверх-only |
+
+Для irrigation component target разрешён только из baseline, чей `T_full` совпадает
+с текущим recipe target в EC deadband. Missing/mismatched baseline или достигнутый
+component target прекращает EC top-up с event/alert; выбранный reagent не может
+закрывать весь full EC gap.
 
 Нарушение reset/freeze на switch/pH-gate → перелёты и ложный no-effect.
 

@@ -282,9 +282,12 @@ class ExecutionRunReadModel
                 ->all();
         }
 
-        return $rows->map(function ($row) use ($activeTaskRows): array {
+        $chemistryByTask = $this->loadChemistryOutcomes($rows, $executionIds);
+
+        return $rows->map(function ($row) use ($activeTaskRows, $chemistryByTask): array {
             $executionId = (string) ($row->id ?? '');
             $activeTask = $activeTaskRows[$executionId] ?? null;
+            $chemistry = $chemistryByTask[$executionId] ?? null;
 
             $taskType = $this->resolvePublicTaskType(
                 activeTaskType: is_object($activeTask) ? (string) ($activeTask->task_type ?? '') : '',
@@ -335,6 +338,10 @@ class ExecutionRunReadModel
                     $this->resolveString($row->error_code ?? null),
                     $this->resolveString($row->error_message ?? null),
                 )['message'],
+                'chemistry_outcome' => is_array($chemistry)
+                    ? $this->resolveString($chemistry['chemistry_outcome'] ?? null)
+                    : null,
+                'chemistry_diagnostics' => is_array($chemistry) ? $chemistry : null,
                 'is_active' => in_array((string) ($row->runtime_status ?? ''), ['pending', 'claimed', 'running', 'waiting_command'], true),
             ];
 
@@ -342,6 +349,87 @@ class ExecutionRunReadModel
 
             return $summary;
         })->values()->all();
+    }
+
+    /**
+     * @param  Collection<int, object>  $taskRows
+     * @param  list<string>  $executionIds
+     * @return array<string, array<string, mixed>>
+     */
+    private function loadChemistryOutcomes(Collection $taskRows, array $executionIds): array
+    {
+        if ($executionIds === [] || ! Schema::hasTable('zone_events')) {
+            return [];
+        }
+
+        $zoneIds = $taskRows
+            ->map(static fn ($row): int => (int) ($row->zone_id ?? 0))
+            ->filter(static fn (int $value): bool => $value > 0)
+            ->unique()
+            ->values()
+            ->all();
+        if ($zoneIds === []) {
+            return [];
+        }
+
+        $hasPayloadJson = Schema::hasColumn('zone_events', 'payload_json');
+        $hasDetails = Schema::hasColumn('zone_events', 'details');
+        if (! $hasPayloadJson && ! $hasDetails) {
+            return [];
+        }
+        $payloadExpression = match (true) {
+            $hasPayloadJson && $hasDetails => 'COALESCE(payload_json, details)',
+            $hasPayloadJson => 'payload_json',
+            default => 'details',
+        };
+        $rows = DB::table('zone_events')
+            ->whereIn('zone_id', $zoneIds)
+            ->whereIn('type', [
+                'AE_TASK_COMPLETED',
+                'CORRECTION_COMPLETE',
+                'CORRECTION_TARGETS_NOT_ACHIEVED',
+                'CORRECTION_TARGET_OUTCOME_UNKNOWN',
+            ])
+            ->orderByDesc('created_at')
+            ->orderByDesc('id')
+            ->limit(max(64, count($executionIds) * 8))
+            ->get([
+                'type',
+                DB::raw("{$payloadExpression} as payload"),
+            ]);
+
+        $wanted = array_fill_keys($executionIds, true);
+        $result = [];
+        foreach ($rows as $row) {
+            $payload = $this->normalizeJson($row->payload ?? null);
+            $taskId = (string) ($payload['task_id'] ?? '');
+            if ($taskId === '' || ! isset($wanted[$taskId]) || isset($result[$taskId])) {
+                continue;
+            }
+
+            if (
+                (string) ($row->type ?? '') === 'AE_TASK_COMPLETED'
+                && $this->resolveString($payload['chemistry_outcome'] ?? null) === null
+                && ! is_array($payload['chemistry_diagnostics'] ?? null)
+            ) {
+                continue;
+            }
+
+            $diagnostics = is_array($payload['chemistry_diagnostics'] ?? null)
+                ? $payload['chemistry_diagnostics']
+                : $payload;
+            $fallback = match ((string) ($row->type ?? '')) {
+                'CORRECTION_COMPLETE' => 'targets_achieved',
+                'CORRECTION_TARGETS_NOT_ACHIEVED' => 'targets_not_achieved',
+                default => 'unknown',
+            };
+            $diagnostics['chemistry_outcome'] = $this->resolveString(
+                $payload['chemistry_outcome'] ?? $diagnostics['chemistry_outcome'] ?? null,
+            ) ?? $fallback;
+            $result[$taskId] = $diagnostics;
+        }
+
+        return $result;
     }
 
     /**

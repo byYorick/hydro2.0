@@ -634,13 +634,10 @@ static void ui_logf(const char *node_uid, const char *fmt, ...) {
     const char *origin = (node_uid && node_uid[0] != '\0') ? node_uid : "SYS";
     va_list args;
     bool locked = false;
+    bool is_telemetry_line = false;
     int written;
 
     if (!fmt || fmt[0] == '\0') {
-        return;
-    }
-
-    if (esp_get_free_heap_size() < 26000 && strncmp(fmt, "tel ", 4) == 0) {
         return;
     }
 
@@ -663,10 +660,11 @@ static void ui_logf(const char *node_uid, const char *fmt, ...) {
         ESP_LOGW(CMD_TAG, "ui_logf truncated (%d bytes, max %u)", written, (unsigned)sizeof(line));
     }
 
-    if (should_emit_uart_log(line)) {
+    is_telemetry_line = strncmp(line, "tel ", 4) == 0;
+    if (should_emit_uart_log(line) && (!is_telemetry_line || esp_get_free_heap_size() >= 26000)) {
         ESP_LOGI(CMD_TAG, "[%s] %s", origin, line);
     }
-    if (strncmp(line, "tel ", 4) == 0) {
+    if (is_telemetry_line) {
         test_node_ui_update_telemetry_line(node_uid, line);
         return;
     }

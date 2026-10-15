@@ -3,7 +3,7 @@
 
 Документ описывает REST API endpoints history-logger сервиса — **единственной точки публикации команд в MQTT** в архитектуре hydro2.0.
 
-**Дата обновления:** 2026-08-24 (`GET /nodes/{node_uid}/live-status` MQTT probe).
+**Дата обновления:** 2026-10-15 (единый лимит `cmd_id` до 128 символов во всём status pipeline).
 
 **Связанные документы:**
 - `PYTHON_SERVICES_ARCH.md` — общая архитектура Python-сервисов
@@ -107,7 +107,8 @@ Content-Type: application/json
 - `cmd` (string, required) — device-level команда; HL проверяет наличие `cmd` и отвергает legacy `type`, **не** валидирует enum-каталог §3
 - `params` (object, required) — параметры команды
 - `source` (string, optional) — источник команды (`automation-engine`, `laravel`, `api`, …)
-- `cmd_id` (string, optional) — внешний command id, который будет сохранён в `commands.cmd_id`
+- `cmd_id` (string, optional, max 128 символов) — внешний command id, который будет сохранён в
+  `commands.cmd_id`; тот же лимит обязателен для Laravel status ingress и retry/DLQ-очередей
 
 **AE3 lease gate:** если у `zone_id` есть активная запись в `ae_zone_leases` (`leased_until > now()`), HL отклоняет mutating ON-команды от источников, отличных от `automation-engine`, ответом `409` `ae3_zone_lease_held`. Разрешены:
 - `source=automation-engine` (держатель lease);

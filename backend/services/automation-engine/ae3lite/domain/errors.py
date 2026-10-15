@@ -117,6 +117,7 @@ class ErrorCodes:
     AE3_COMPLETE_TRANSITION_FAILED = "ae3_complete_transition_failed"
     AE3_TASK_RUNNING_TRANSITION_FAILED = "ae3_task_running_transition_failed"
     AE3_COMMAND_POLL_DEADLINE_EXCEEDED = "ae3_command_poll_deadline_exceeded"
+    AE3_COMMAND_STAGE_BUDGET_INSUFFICIENT = "ae3_command_stage_budget_insufficient"
     AE3_INVALID_PLANNED_COMMAND = "ae3_invalid_planned_command"
     COMMAND_SEND_FAILED = "command_send_failed"
     COMMAND_PROTOCOL_VIOLATION = "command_protocol_violation"

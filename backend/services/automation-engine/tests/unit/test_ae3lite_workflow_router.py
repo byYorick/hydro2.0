@@ -963,7 +963,7 @@ async def test_router_transition_to_irrigation_check_uses_requested_duration_for
 
 
 async def test_router_transition_to_irrigation_check_timed_run_pump_uses_requested_duration_anchor():
-    """run_pump + correction: дедлайн = старт полива + requested, не +slack."""
+    """run_pump stops at requested duration; correction gets bounded post-stop slack."""
     outcome = StageOutcome(kind="transition", next_stage="irrigation_check")
     task = _make_task(
         stage="irrigation_start",
@@ -998,7 +998,7 @@ async def test_router_transition_to_irrigation_check_timed_run_pump_uses_request
 
     wf = tr.update_stage_calls[0]["workflow"]
     assert wf.current_stage == "irrigation_check"
-    assert wf.stage_deadline_at == NOW
+    assert wf.stage_deadline_at == NOW + timedelta(seconds=900)
 
 
 async def test_router_transition_to_irrigation_check_uses_runtime_duration_fallback():
@@ -1029,8 +1029,8 @@ async def test_router_transition_to_irrigation_check_uses_runtime_duration_fallb
     assert wf.stage_deadline_at == NOW + timedelta(seconds=120)
 
 
-async def test_router_irrigation_check_deadline_ignores_correction_slack_when_requested_duration_set():
-    """Бюджет полива = requested_duration от оператора, коррекция укладывается внутрь."""
+async def test_router_irrigation_check_adds_correction_slack_to_requested_duration():
+    """Requested duration caps the pump, while correction slack caps the FSM."""
     outcome = StageOutcome(kind="transition", next_stage="irrigation_check")
     task = _make_task(
         stage="irrigation_start",
@@ -1049,10 +1049,10 @@ async def test_router_irrigation_check_deadline_ignores_correction_slack_when_re
 
     wf = tr.update_stage_calls[0]["workflow"]
     assert wf.current_stage == "irrigation_check"
-    assert wf.stage_deadline_at == NOW + timedelta(seconds=8)
+    assert wf.stage_deadline_at == NOW + timedelta(seconds=8 + 900)
 
 
-async def test_router_irrigation_check_deadline_prefers_requested_duration_over_stage_timeout():
+async def test_router_irrigation_check_stage_timeout_is_hard_ceiling():
     outcome = StageOutcome(kind="transition", next_stage="irrigation_check")
     task = _make_task(
         stage="irrigation_start",
@@ -1069,7 +1069,8 @@ async def test_router_irrigation_check_deadline_prefers_requested_duration_over_
             runtime={
                 "irrigation_execution": {
                     "duration_sec": 60,
-                    "stage_timeout_sec": 2400,
+                    "correction_slack_sec": 900,
+                    "stage_timeout_sec": 300,
                 },
             },
         ),
@@ -1077,7 +1078,7 @@ async def test_router_irrigation_check_deadline_prefers_requested_duration_over_
     )
 
     wf = tr.update_stage_calls[0]["workflow"]
-    assert wf.stage_deadline_at == NOW + timedelta(seconds=8)
+    assert wf.stage_deadline_at == NOW + timedelta(seconds=300)
 
 
 async def test_router_irrigation_check_raises_when_deadline_unconfigured():

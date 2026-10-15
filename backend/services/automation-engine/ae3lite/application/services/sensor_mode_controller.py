@@ -109,12 +109,15 @@ class SensorModeController:
         failed_channel: str | None,
         retry_cmd: str,
     ) -> Any:
-        """Re-activate sensor mode right before issuing a dose.
+        """Re-activate sensor mode before dosing only in non-persistent stages.
 
         Returns the (possibly updated) task. No-op and returns the original
-        task if the plan has no activation template. Logs
+        task when the parent stage owns persistent sensor mode or the plan has
+        no activation template. Logs
         ``CORRECTION_SENSOR_MODE_REACTIVATED`` with ``reason=pre_dose_reactivation``.
         """
+        if self.stage_keeps_active(task=task):
+            return task
         sensor_cmds = self.build_commands(
             plan=plan,
             cmd="activate_sensor_mode",

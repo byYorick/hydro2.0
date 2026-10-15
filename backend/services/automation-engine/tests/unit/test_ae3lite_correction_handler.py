@@ -1049,25 +1049,15 @@ async def test_corr_dose_ec_issues_command_and_goes_wait_ec():
     assert outcome.correction.ec_attempt == 1
     assert outcome.due_delay_sec == 10
     assert outcome.correction.wait_until == NOW + timedelta(seconds=10)
-    assert len(gateway.calls) == 3
-    reactivate_commands = gateway.calls[1]["commands"]
-    assert len(reactivate_commands) == 1
-    assert reactivate_commands[0].payload["cmd"] == "activate_sensor_mode"
-    dose_commands = gateway.calls[2]["commands"]
+    assert len(gateway.calls) == 2
+    dose_commands = gateway.calls[1]["commands"]
     assert len(dose_commands) == 1
     assert dose_commands[0].payload == {
         "cmd": "dose",
         "params": {"ml": 2.0, "duration_ms": 2000},
     }
-    assert create_event.await_count == 2
-    reactivate_call = create_event.await_args_list[0]
-    assert reactivate_call.args[1] == "CORRECTION_SENSOR_MODE_REACTIVATED"
-    reactivate_payload = reactivate_call.args[2]
-    assert reactivate_payload["reason"] == "pre_dose_reactivation"
-    assert reactivate_payload["failed_node_uid"] == "ec-node"
-    assert reactivate_payload["failed_channel"] == "ec_pump"
-    assert reactivate_payload["retry_cmd"] == "dose"
-    dose_call = create_event.await_args_list[1]
+    assert create_event.await_count == 1
+    dose_call = create_event.await_args_list[0]
     assert dose_call.args[1] == "EC_DOSING"
     payload = dose_call.args[2]
     assert payload["task_id"] == 6
@@ -1182,25 +1172,15 @@ async def test_corr_dose_ph_issues_volume_command_and_goes_wait_ph():
     assert outcome.correction.ph_attempt == 1
     assert outcome.due_delay_sec == 10
     assert outcome.correction.wait_until == NOW + timedelta(seconds=10)
-    assert len(gateway.calls) == 3
-    reactivate_commands = gateway.calls[1]["commands"]
-    assert len(reactivate_commands) == 1
-    assert reactivate_commands[0].payload["cmd"] == "activate_sensor_mode"
-    dose_commands = gateway.calls[2]["commands"]
+    assert len(gateway.calls) == 2
+    dose_commands = gateway.calls[1]["commands"]
     assert len(dose_commands) == 1
     assert dose_commands[0].payload == {
         "cmd": "dose",
         "params": {"ml": 1.5, "duration_ms": 1500},
     }
-    assert create_event.await_count == 2
-    reactivate_call = create_event.await_args_list[0]
-    assert reactivate_call.args[1] == "CORRECTION_SENSOR_MODE_REACTIVATED"
-    reactivate_payload = reactivate_call.args[2]
-    assert reactivate_payload["reason"] == "pre_dose_reactivation"
-    assert reactivate_payload["failed_node_uid"] == "ph-node"
-    assert reactivate_payload["failed_channel"] == "ph_up_pump"
-    assert reactivate_payload["retry_cmd"] == "dose"
-    dose_call = create_event.await_args_list[1]
+    assert create_event.await_count == 1
+    dose_call = create_event.await_args_list[0]
     assert dose_call.args[1] == "PH_CORRECTED"
     payload = dose_call.args[2]
     assert payload["task_id"] == 6
@@ -2309,7 +2289,9 @@ async def test_corr_solution_fill_deadline_preempts_active_correction_window():
     assert outcome.next_stage == "solution_fill_timeout_stop"
 
 
-async def test_corr_irrigation_deadline_preempts_to_ready_when_targets_reached():
+async def test_corr_irrigation_deadline_preempts_to_ready_when_targets_reached(monkeypatch):
+    create_event = AsyncMock(return_value=None)
+    monkeypatch.setattr("ae3lite.application.handlers.base.create_zone_event", create_event)
     corr = _base_corr(corr_step="corr_wait_ph", attempt=4, ec_attempt=3, ph_attempt=3)
     task = _make_task(
         corr=corr,
@@ -2323,9 +2305,14 @@ async def test_corr_irrigation_deadline_preempts_to_ready_when_targets_reached()
 
     assert outcome.kind == "transition"
     assert outcome.next_stage == "irrigation_stop_to_ready"
+    assert create_event.await_args.args[1] == "CORRECTION_COMPLETE"
+    assert create_event.await_args.args[2]["chemistry_outcome"] == "targets_achieved"
+    assert create_event.await_args.args[2]["ph_deadband"] == pytest.approx(0.04)
 
 
-async def test_corr_irrigation_deadline_preempts_to_ready_when_targets_not_reached():
+async def test_corr_irrigation_deadline_preempts_to_ready_when_targets_not_reached(monkeypatch):
+    create_event = AsyncMock(return_value=None)
+    monkeypatch.setattr("ae3lite.application.handlers.base.create_zone_event", create_event)
     corr = _base_corr(corr_step="corr_wait_ec", attempt=4, ec_attempt=3, ph_attempt=3)
     task = _make_task(
         corr=corr,
@@ -2339,12 +2326,36 @@ async def test_corr_irrigation_deadline_preempts_to_ready_when_targets_not_reach
 
     assert outcome.kind == "transition"
     assert outcome.next_stage == "irrigation_stop_to_ready"
+    assert create_event.await_args.args[1] == "CORRECTION_TARGETS_NOT_ACHIEVED"
+    assert create_event.await_args.args[2]["chemistry_outcome"] == "targets_not_achieved"
+    assert create_event.await_args.args[2]["current_ph"] == pytest.approx(6.4)
 
 
-async def test_corr_irrigation_stage_bound_poll_deadline_during_dose_goes_to_ready(
+async def test_corr_irrigation_deadline_with_stale_telemetry_records_unknown(monkeypatch):
+    create_event = AsyncMock(return_value=None)
+    monkeypatch.setattr("ae3lite.application.handlers.base.create_zone_event", create_event)
+    corr = _base_corr(corr_step="corr_wait_ph", attempt=1, ec_attempt=0, ph_attempt=1)
+    task = _make_task(
+        corr=corr,
+        current_stage="irrigation_check",
+        workflow_phase="irrigating",
+        stage_deadline_at=NOW - timedelta(seconds=1),
+    )
+    handler = _make_handler(monitor=_MockRuntimeMonitor(ph=6.0, ec=2.0, ph_stale=True))
+
+    outcome = await handler.run(task=task, plan=_MockPlan(), stage_def=None, now=NOW)
+
+    assert outcome.kind == "transition"
+    assert outcome.next_stage == "irrigation_stop_to_ready"
+    assert create_event.await_args.args[1] == "CORRECTION_TARGET_OUTCOME_UNKNOWN"
+    assert create_event.await_args.args[2]["chemistry_outcome"] == "unknown"
+    assert create_event.await_args.args[2]["reason"] == "two_tank_prepare_targets_stale"
+
+
+async def test_corr_irrigation_insufficient_dose_budget_goes_to_ready_before_publish(
     monkeypatch: pytest.MonkeyPatch,
 ):
-    """Budget полива истёк mid-command → graceful interrupt, не ae3 task fail."""
+    """Admission отказал до publish → обычное завершение correction window."""
     monkeypatch.setattr("ae3lite.application.handlers.correction.create_zone_event", AsyncMock(return_value=None))
     corr = _base_corr(
         corr_step="corr_dose_ec",
@@ -2356,8 +2367,7 @@ async def test_corr_irrigation_stage_bound_poll_deadline_during_dose_goes_to_rea
         # Avoid pre-dose sensor reactivation path (named_plans empty → no sensor cmds).
         activated_here=True,
     )
-    # Deadline still in the future at tick start, so we enter corr_dose_ec;
-    # gateway reports stage-bound poll timeout (as SequentialCommandGateway does).
+    # Deadline still in the future at tick start, but dose + margins do not fit.
     task = _make_task(
         corr=corr,
         current_stage="irrigation_check",
@@ -2366,9 +2376,9 @@ async def test_corr_irrigation_stage_bound_poll_deadline_during_dose_goes_to_rea
     )
     gateway = _MockGateway(
         success=False,
-        error_code="ae3_command_poll_deadline_exceeded",
-        error_message="Опрос команды превысил дедлайн",
-        deadline_kind="stage",
+        error_code="ae3_command_stage_budget_insufficient",
+        error_message="Недостаточно stage budget для dose",
+        deadline_kind="stage_admission",
     )
     handler = _make_handler(monitor=_MockRuntimeMonitor(ph=6.4, ec=1.2), gateway=gateway)
 
@@ -2379,11 +2389,10 @@ async def test_corr_irrigation_stage_bound_poll_deadline_during_dose_goes_to_rea
     assert gateway.calls  # dose was attempted
 
 
-async def test_corr_irrigation_poll_deadline_without_deadline_kind_uses_wall_clock(
+async def test_corr_irrigation_poll_deadline_after_publish_is_fail_closed_even_after_stage_deadline(
     monkeypatch: pytest.MonkeyPatch,
 ):
-    """Regression: run_batch historically dropped deadline_kind; wall-clock stage
-    deadline must still trigger graceful interrupt (not terminal fail)."""
+    """После publish command poll timeout нельзя маскировать как graceful success."""
     monkeypatch.setattr("ae3lite.application.handlers.correction.create_zone_event", AsyncMock(return_value=None))
     # Frozen tick ``now`` is still before deadline; wall clock (close to tick) is past it.
     tick_now = NOW
@@ -2422,10 +2431,10 @@ async def test_corr_irrigation_poll_deadline_without_deadline_kind_uses_wall_clo
     )
     handler = _make_handler(monitor=_MockRuntimeMonitor(ph=6.4, ec=1.2), gateway=gateway)
 
-    outcome = await handler.run(task=task, plan=_MockPlan(), stage_def=None, now=tick_now)
+    with pytest.raises(TaskExecutionError) as exc_info:
+        await handler.run(task=task, plan=_MockPlan(), stage_def=None, now=tick_now)
 
-    assert outcome.kind == "transition"
-    assert outcome.next_stage == "irrigation_stop_to_ready"
+    assert exc_info.value.code == "ae3_command_poll_deadline_exceeded"
 
 
 async def test_corr_dose_ec_poll_deadline_without_stage_binding_still_fails(

@@ -100,6 +100,14 @@ class IrrigationCheckHandler(BaseStageHandler):
             )
 
         if pending_manual_step == "irrigation_stop":
+            target_snapshot = await self._target_outcome_on_deadline(
+                task=task, plan=plan, now=now, runtime=runtime,
+            )
+            await self._record_deadline_target_outcome(
+                task=task,
+                snapshot=target_snapshot,
+                reason="manual_irrigation_stop",
+            )
             _observe_duration("manual")
             return StageOutcome(kind="transition", next_stage="irrigation_stop_to_ready")
 
@@ -114,7 +122,16 @@ class IrrigationCheckHandler(BaseStageHandler):
             return duration_cap_outcome
 
         if self._deadline_reached(now=now, deadline=deadline):
-            # Post-irrigation chemistry removed: always stop → ready (pH-only during irrig).
+            target_snapshot = await self._target_outcome_on_deadline(
+                task=task,
+                plan=plan,
+                now=now,
+                runtime=runtime,
+            )
+            await self._record_deadline_target_outcome(
+                task=task,
+                snapshot=target_snapshot,
+            )
             _observe_duration("ready")
             return StageOutcome(kind="transition", next_stage="irrigation_stop_to_ready")
 
@@ -176,6 +193,15 @@ class IrrigationCheckHandler(BaseStageHandler):
                 ),
             )
             if probe_outcome is not None:
+                if probe_outcome.next_stage == "irrigation_stop_to_ready":
+                    target_snapshot = await self._target_outcome_on_deadline(
+                        task=task, plan=plan, now=now, runtime=runtime,
+                    )
+                    await self._record_deadline_target_outcome(
+                        task=task,
+                        snapshot=target_snapshot,
+                        reason="irrigation_probe_exhausted",
+                    )
                 return probe_outcome
 
         flow_hold = await self._handle_control_mode_flow_path_interrupt(

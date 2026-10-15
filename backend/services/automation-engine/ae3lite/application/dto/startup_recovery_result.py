@@ -30,3 +30,5 @@ class StartupRecoveryResult:
     terminal_outcomes: tuple[StartupRecoveryTerminalOutcome, ...] = field(default_factory=tuple)
     skipped_due_to_lock: bool = False
     pending_correction_safety_checks: tuple[Any, ...] = field(default_factory=tuple)
+    reconciled_terminal_commands: int = 0
+    unresolved_terminal_commands: int = 0

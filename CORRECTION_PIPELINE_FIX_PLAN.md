@@ -1,10 +1,10 @@
 ---
 name: Correction Pipeline Fix Plan
 description: План исправления дедлайнов, target outcome, sensor mode, PID deadband и эксплуатационных рисков AE3-Lite correction pipeline.
-version: 1.0.0
+version: 1.1.0
 last_updated: 2026-10-12
 maintained_by: Hydro 2.0 Automation Team
-status: planned
+status: implemented_pending_realhw
 ---
 
 # План исправления pipeline корректировок pH/EC
@@ -303,18 +303,32 @@ Laravel-тесты добавляются только если меняются
 
 ## 9. Definition of Done
 
-- [ ] Все P0/P1 regression tests зелёные.
-- [ ] Полный automation-engine suite зелёный.
-- [ ] Новые terminal tasks не оставляют дозирующие `accepted/NULL` команды.
-- [ ] `last_dose_at` соответствует последней физически завершённой дозе.
-- [ ] pH/EC success определяется PID deadband вокруг setpoint.
-- [ ] Target miss имеет event, alert и terminal diagnostics.
-- [ ] Hydraulic target miss не вызывает автоматический повторный полив.
-- [ ] Persistent stages не выполняют pre-dose sensor reactivation.
-- [ ] Fail-closed guards и one-action-per-tick сохранены.
-- [ ] Команды продолжают идти исключительно через History Logger.
-- [ ] Canonical `doc_ai` и test-node README не противоречат runtime.
+- [x] Все P0/P1 regression tests зелёные.
+- [x] Полный automation-engine suite зелёный.
+- [x] Новые terminal tasks не оставляют дозирующие `accepted/NULL` команды.
+- [x] `last_dose_at` соответствует последней физически завершённой дозе.
+- [x] pH/EC success определяется PID deadband вокруг setpoint.
+- [x] Target miss имеет event, alert и terminal diagnostics.
+- [x] Hydraulic target miss не вызывает автоматический повторный полив.
+- [x] Persistent stages не выполняют pre-dose sensor reactivation.
+- [x] Fail-closed guards и one-action-per-tick сохранены.
+- [x] Команды продолжают идти исключительно через History Logger.
+- [x] Canonical `doc_ai` и test-node README не противоречат runtime.
 - [ ] Realhw-прогон зоны 3 подтверждает отсутствие зависаний и неучтённых доз.
+
+### 9.1. Результат реализации 2026-10-12
+
+- Automation Engine: `1751 passed` (`pytest -q tests/unit`).
+- Узкий correction/deadline/recovery набор: `343 passed`.
+- Realhw YAML contracts без железа: `83 passed`, `13 subtests passed`;
+  одно существующее collection warning для `runner.suite.TestSuite`.
+- Laravel: профильный feature-тест `1 passed (12 assertions)`, Pint — green.
+- Frontend: `vue-tsc --noEmit` — green; Scheduler Cockpit Vitest — `9 passed`.
+- Dev runtime после restart: `/health/ready` = ready; read-only аудит PostgreSQL —
+  `0` terminal-task строк `ae_commands` со статусом `accepted/NULL`.
+- Реальная ESP32 не запускалась: в среде нет `/dev/ttyACM0` и `/dev/ttyUSB0`.
+  После подключения `test_node` нужен узкий realhw regex на correction/irrigation,
+  MQTT `1884`, без node-sim; полный `--set=full` не требуется.
 
 ## 10. Связанные документы
 

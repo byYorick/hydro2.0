@@ -84,10 +84,10 @@ ESP32-прошивка, которая эмулирует несколько о�
     - `level_clean_min` может оставаться `0` в начале наполнения (как на production-ноде);
       AE3 **не** применяет clean_fill min-guard / не ждёт `clean_fill_source_empty`
       (поле `clean_fill_min_check_delay_ms` deprecated); пустой источник — AE3 timeout/retry;
-    - `level_clean_max=1` через 30 секунд и фиксируется → `clean_fill_completed`;
+    - `level_clean_max=1` через 12 секунд и фиксируется → `clean_fill_completed`;
   - при `solution_fill`:
     - `level_solution_min=1` **сразу** при активном пути (насос + `valve_clean_supply` + `valve_solution_fill`);
-    - `level_solution_max=1` через 180 секунд и фиксируется;
+    - `level_solution_max=1` через 45 секунд и фиксируется;
     - после delay непрерывно мониторятся `level_clean_min` / `level_solution_min`
       (как production continuous guards).
   - для каждого подтверждённого изменения `level_clean_min`, `level_clean_max`,
@@ -107,8 +107,9 @@ ESP32-прошивка, которая эмулирует несколько о�
   - пассивный drift смещён так, чтобы отклонения возникали стабильно, но при активной коррекции
     контур сходился к target в рамках startup/recirculation окна;
   - фактический drift на telemetry tick:
-    - `pH += drift + 0.0002`
-    - `EC += drift*2 - 0.0010`
+    - вне correction/hold: `pH += wave + 0.00002` за telemetry tick;
+    - вне correction/hold: `EC += wave*2 - 0.00005` за telemetry tick;
+    - `wave = ((tick % 11) - 5) * 0.0009`; среднее волны за полный цикл равно нулю;
   - реакция correction больше не мгновенная:
     - после дозы эффект появляется с задержкой `~4 сек` (`2` telemetry tick при периоде `2 сек`);
     - первый observed sample даёт пик реакции;
@@ -118,7 +119,7 @@ ESP32-прошивка, которая эмулирует несколько о�
     - это имитирует in-flow correction в смесителе, где значение меняется волной, а затем постепенно падает;
     - чтобы реальный `ae3` observe-window не терял residual раньше времени, пассивный drift-bias
       дополнительно подавляется после correction:
-      - `~120 сек` для flow-path (`solution_fill` / `tank_recirc` / `irrigation`);
+      - `~30 сек` для flow-path (`solution_fill` / `tank_recirc` / `irrigation`);
       - `~24 сек` вне flow-path;
   - базовая амплитуда correction:
     - `pump_acid/pump_base`: `delta_pH = 0.12 * scale * phase_factor`
@@ -228,6 +229,10 @@ ESP32-прошивка, которая эмулирует несколько о�
 - Это нужно не для послабления target, а чтобы сценарий после полного рестарта стенда
   стабильно проверял порядок pipeline (`Ca → pH → Mg → …`), delayed/decaying response и финальное попадание в strict target window,
   а не выносливость correction loop от cold-start точки `6.9/0.6`.
+- Для generic inline EC-сценариев используйте `irrigation_ec_component=npk` (`pump_a`).
+  `calcium` (`pump_b`) оставляйте только для явно синтетического component-budget теста:
+  runtime ограничивает его cumulative target `T_ca`, поэтому calcium не закрывает весь
+  full recipe EC gap.
 
 ## Локальный UI (ESP32-S3)
 

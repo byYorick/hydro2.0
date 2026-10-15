@@ -179,6 +179,8 @@ export interface ExecutionRun {
   error_code?: string | null
   error_message?: string | null
   human_error_message?: string | null
+  chemistry_outcome?: 'targets_achieved' | 'targets_not_achieved' | 'unknown' | 'failed' | null
+  chemistry_diagnostics?: Record<string, unknown> | null
   is_active?: boolean
   lifecycle?: ExecutionLifecycleItem[]
   timeline?: ExecutionTimelineItem[]

@@ -135,6 +135,63 @@ def step_targets_reached(
     )
 
 
+def irrigation_component_budget_guard(
+    *,
+    corr: CorrectionState,
+    current_ec: float,
+    full_target_ec: float,
+    ec_deadband: float,
+) -> Mapping[str, Any]:
+    """Resolve a safe irrigation EC target from the prepared-solution budget."""
+    phase = str(getattr(corr, "pipeline_phase", None) or "").strip().lower()
+    if phase not in {"irrigation_calcium", "irrigation_npk"}:
+        return {"allowed": True, "reason": "not_component_irrigation"}
+    try:
+        targets = load_targets(corr)
+    except (TypeError, ValueError, KeyError):
+        targets = None
+    if targets is None:
+        return {
+            "allowed": False,
+            "reason": "component_budget_unavailable",
+            "component": "calcium" if phase == "irrigation_calcium" else "npk",
+            "component_target_ec": None,
+        }
+    component = "calcium" if phase == "irrigation_calcium" else "npk"
+    component_target = targets.T_ca if component == "calcium" else targets.T_ca_mg_npk
+    deadband = max(0.0, float(ec_deadband))
+    if abs(float(targets.T_full) - float(full_target_ec)) > deadband:
+        return {
+            "allowed": False,
+            "reason": "component_budget_stale_target",
+            "component": component,
+            "component_target_ec": float(component_target),
+            "baseline_full_target_ec": float(targets.T_full),
+            "full_target_ec": float(full_target_ec),
+        }
+    floor = float(component_target) - deadband
+    ceiling = float(component_target) + deadband
+    if float(current_ec) < floor:
+        return {
+            "allowed": True,
+            "reason": "within_component_budget",
+            "component": component,
+            "component_target_ec": float(component_target),
+            "effective_target_ec": float(component_target),
+            "component_floor_ec": floor,
+            "component_ceiling_ec": ceiling,
+        }
+    return {
+        "allowed": False,
+        "reason": "component_budget_exhausted",
+        "component": component,
+        "component_target_ec": float(component_target),
+        "effective_target_ec": float(component_target),
+        "component_floor_ec": floor,
+        "component_ceiling_ec": ceiling,
+    }
+
+
 def maybe_advance_pipeline(
     *,
     corr: CorrectionState,

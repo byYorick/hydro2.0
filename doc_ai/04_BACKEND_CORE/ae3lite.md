@@ -1,8 +1,8 @@
 # AE3-Lite: Minimal Canonical Spec
 
 **Версия:** 3.12-canonical
-**Дата:** 2026-10-11
-**Статус:** CANONICAL MINIMAL SPEC (sync с runtime кодом 2026-10-11: correction waits считаются от terminal `DONE`, decision windows требуют временного покрытия; ранее: `TopologyPack` и срезы `RuntimePlan`; `two_tank` и `two_tank_drip_substrate_trays` — два дескриптора одного графа; `single_tank` без `clean_fill_*`; `lighting_tick` зарегистрирован в `TopologyRegistry`; lighting day/night ON/OFF — **implemented** 2026-08-17; **solution_change** — Laravel `task_type=solution_change` → `POST /start-solution-change`; **solution_topup** — sync 2026-08-11; irrigation_start default `pump_main/run_pump {duration_ms}`; 409 `*_zone_busy` не терминалит requested intent)
+**Дата:** 2026-10-12
+**Статус:** CANONICAL MINIMAL SPEC (sync с runtime кодом 2026-10-12: command admission и terminal-task reconciliation; отдельный terminal chemistry outcome; PID deadband parity; bounded irrigation component target; correction waits считаются от terminal `DONE`, decision windows требуют временного покрытия; ранее: `TopologyPack` и срезы `RuntimePlan`; `two_tank` и `two_tank_drip_substrate_trays` — два дескриптора одного графа; `single_tank` без `clean_fill_*`; `lighting_tick` зарегистрирован в `TopologyRegistry`; lighting day/night ON/OFF — **implemented** 2026-08-17; **solution_change** — Laravel `task_type=solution_change` → `POST /start-solution-change`; **solution_topup** — sync 2026-08-11; irrigation_start default `pump_main/run_pump {duration_ms}`; 409 `*_zone_busy` не терминалит requested intent)
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 
@@ -281,6 +281,21 @@ Correction runtime invariants:
     ожидаемый `telemetry_period_sec` (N периодических samples = N acquisition
     intervals). Sample, опережающий runtime clock более чем на 2 секунды,
     fail-closed оставляет окно неготовым.
+20. Перед публикацией `dose` остаток stage budget обязан покрывать declared
+    `duration_ms + AE_COMMAND_POLL_MARGIN_SEC + AE_COMMAND_STAGE_STOP_RESERVE_SEC`.
+    Недостаток бюджета даёт `ae3_command_stage_budget_insufficient` до side effect.
+21. После accepted publish terminal wait ограничен собственным command poll deadline,
+    а не stage deadline. `ae3_command_poll_deadline_exceeded` после publish всегда
+    fail-closed и проходит общий fail-safe stop.
+22. Dose/reset/success используют один resolved PID deadband вокруг setpoint.
+    Recipe range — ready/agronomic context, sensor hard bounds — validity/safety;
+    ни один из них не заменяет PID deadband.
+23. На terminal irrigation stop chemistry фиксируется независимо от hydraulic outcome:
+    `targets_achieved|targets_not_achieved|unknown`. Только achieved создаёт
+    `CORRECTION_COMPLETE`; miss/unknown создают отдельный event и business alert.
+24. Irrigation EC для `calcium|npk` ограничивается baseline-derived cumulative target
+    `T_ca|T_ca_mg_npk`. Baseline без совпадающего current `T_full` и исчерпанный
+    component budget блокируют EC fail-closed; pH-only ветка может продолжиться.
 #### `PlannedCommand`
 
 Execution record внутри task:
@@ -558,7 +573,8 @@ Handler/planner:
 - `solution_fill`: только calcium (`pump_b`), без pH;
 - `prepare_recirculation`: `Ca → pH → Mg → pH → NPK → pH → Micro → final pH`;
 - `irrigation`: pH всегда; EC только при `correction_during_irrigation=true` и
-  `irrigation_ec_component=calcium|npk`, target — полный recipe EC;
+  `irrigation_ec_component=calcium|npk`; dose target — `T_ca|T_ca_mg_npk`,
+  полный recipe EC остаётся terminal diagnostic goal;
 - PID invariants — `PID_CONFIG_REFERENCE.md` §11.
 
 Полная семантика — `../06_DOMAIN_ZONES_RECIPES/EFFECTIVE_TARGETS_SPEC.md` §9 и
@@ -740,6 +756,11 @@ runtime = plan.runtime
 8. при `mode=force` bypass-ит decision-controller, но не bypass-ит canonical task/runtime path
 9. при active task или active lease возвращает controlled error (`409 start_irrigation_zone_busy` / `start_cycle_zone_busy`) **без** терминации requested intent — Laravel трактует 409 busy как retryable backpressure с тем же `idempotency_key`.
 10. default plan `irrigation_start`: `valve_solution_supply`/`valve_irrigation` latched `set_relay true`, `pump_main/run_pump {duration_ms}` (не latched насос). Duration из `requested_duration_sec` / `irrigation_execution` (fallback 120 с).
+11. `duration_sec` ограничивает только подачу воды; `correction_slack_sec` даёт
+    дополнительный bounded stage budget без продления `run_pump`; `stage_timeout_sec`
+    задаёт hard ceiling. Deadline `irrigation_check` =
+    `min(duration_sec + correction_slack_sec, stage_timeout_sec, 86400)` от входа
+    в irrigation path. При выключенной correction slack равен нулю.
 
 `smart_soil_target_missing` и `smart_soil_telemetry_missing_or_stale` — успешный `skip` (`completed_skip`), не `error_code` задачи и не `fail`. Biz-алерт на эти reason не создаётся: причина лежит в `ae_tasks.irrigation_decision_outcome` и `irrigation_decision_reason_code`.
 
@@ -944,6 +965,11 @@ Canonical status endpoint для зон на `ae3`.
 8. не создавать retry storm
 9. **graceful shutdown (фаза 4):** при `SIGTERM`/остановке lifespan worker перестаёт claim'ить новые задачи, ждёт in-flight до `AE_SHUTDOWN_GRACE_SEC` (default 30 с); `claimed|running` без `ae_commands` откатывается в `pending` с release zone lease
 10. **multi-instance (фаза 6):** `StartupRecoveryUseCase.run()` берёт PostgreSQL session advisory lock (`ae3_startup_recovery`); второй экземпляр AE пропускает проход recovery без сканирования задач. Алерты recovery-fail дедуплицируются ключом `biz_ae3_task_failed:{zone_id}:{task_id}:{recovery_source}`. В production рекомендуется **один активный writer** на зону (lease + partial unique index); при нескольких репликах AE координированный recovery обязателен.
+11. После active-task recovery тем же startup-проходом выбираются строки
+    `ae_commands.publish_status='accepted' AND terminal_status IS NULL`, принадлежащие
+    terminal task. Они сверяются с canonical `commands` без republish. Поздний `DONE`
+    идемпотентно чинит `ae_commands` и не откатывает более новый `pid_state.last_dose_at`;
+    unresolved/error получает event/alert, но не синтетический terminal status.
 
 ### 9.2 Crash windows
 
@@ -1028,6 +1054,10 @@ Prometheus runtime минимум для lifecycle intents:
 5. wake-up по node runtime event обязан инкрементировать `ae3_node_runtime_event_kick_total` и писать service-log `AE3 worker.kick by node runtime event`
 6. `IRRIGATION_CORRECTION_STARTED`, `CORRECTION_DECISION_MADE`, `EC_DOSING`, `PH_CORRECTED` обязаны нести `current_stage`; при наличии probe-context обязаны также нести `snapshot_event_id` и `caused_by_event_id`
 7. Для irrigation inline correction `snapshot_event_id` обязан ссылаться на `zone_events.id` события `IRR_STATE_SNAPSHOT`, по которому подтверждён активный irrigation path. Firmware `is_irrigation_active` = оба клапана (`valve_solution_supply` ∧ `valve_irrigation`); насос **не** обязателен (после `run_pump` DONE сифон/клапаны остаются OPEN до `irrigation_stop` / stage-guard).
+8. Terminal chemistry events: `CORRECTION_COMPLETE`,
+   `CORRECTION_TARGETS_NOT_ACHIEVED`, `CORRECTION_TARGET_OUTCOME_UNKNOWN`.
+   `AE_TASK_COMPLETED` включает `chemistry_outcome` и `chemistry_diagnostics`; Laravel
+   Scheduler Cockpit показывает miss/unknown как chemistry warning, не как hydraulic fail.
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0
 

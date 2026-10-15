@@ -281,6 +281,27 @@ class ScheduleWorkspaceControllerTest extends TestCase
                 ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
                 'created_at' => now()->subMinute(),
             ],
+            [
+                'zone_id' => $zone->id,
+                'type' => 'AE_TASK_COMPLETED',
+                $payloadColumn => json_encode([
+                    'event_type' => 'AE_TASK_COMPLETED',
+                    'task_id' => (string) $executionId,
+                    'chemistry_outcome' => 'targets_not_achieved',
+                    'chemistry_diagnostics' => [
+                        'chemistry_outcome' => 'targets_not_achieved',
+                        'current_ph' => 6.7265,
+                        'target_ph' => 5.8,
+                        'ph_deadband' => 0.04,
+                        'current_ec' => 0.532,
+                        'target_ec' => 1.4,
+                        'ec_deadband' => 0.06,
+                        'allow_ph' => true,
+                        'allow_ec' => true,
+                    ],
+                ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                'created_at' => now(),
+            ],
         ]);
 
         $response = $this->actingAs($user)
@@ -292,6 +313,9 @@ class ScheduleWorkspaceControllerTest extends TestCase
             ->assertJsonPath('data.execution_id', (string) $executionId)
             ->assertJsonPath('data.task_type', 'irrigation')
             ->assertJsonPath('data.status', 'completed')
+            ->assertJsonPath('data.chemistry_outcome', 'targets_not_achieved')
+            ->assertJsonPath('data.chemistry_diagnostics.current_ph', 6.7265)
+            ->assertJsonPath('data.chemistry_diagnostics.ec_deadband', 0.06)
             ->assertJsonPath('data.timeline.0.event_type', 'AE_TASK_STARTED')
             ->assertJsonPath('data.timeline.0.stage', 'prepare_recirculation_check')
             ->assertJsonPath('data.timeline.1.event_type', 'TASK_FINISHED')

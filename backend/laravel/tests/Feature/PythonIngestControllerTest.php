@@ -284,6 +284,41 @@ class PythonIngestControllerTest extends TestCase
             ->assertJsonPath('message', 'Команда не найдена — событие проигнорировано.');
     }
 
+    public function test_command_ack_endpoint_accepts_contract_maximum_cmd_id_length(): void
+    {
+        Config::set('services.python_bridge.ingest_token', 'test-token');
+
+        $cmdId = str_repeat('c', 128);
+        $command = Command::create([
+            'cmd_id' => $cmdId,
+            'status' => Command::STATUS_SENT,
+            'cmd' => 'test_command',
+        ]);
+
+        $this->withHeader('Authorization', 'Bearer test-token')
+            ->postJson('/api/python/commands/ack', [
+                'cmd_id' => $cmdId,
+                'status' => 'DONE',
+            ])
+            ->assertOk()
+            ->assertJson(['status' => 'ok']);
+
+        $this->assertSame(Command::STATUS_DONE, $command->fresh()->status);
+    }
+
+    public function test_command_ack_endpoint_rejects_cmd_id_over_contract_limit(): void
+    {
+        Config::set('services.python_bridge.ingest_token', 'test-token');
+
+        $this->withHeader('Authorization', 'Bearer test-token')
+            ->postJson('/api/python/commands/ack', [
+                'cmd_id' => str_repeat('c', 129),
+                'status' => 'DONE',
+            ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('cmd_id');
+    }
+
     public function test_command_ack_endpoint_accepts_timeout_as_terminal_status(): void
     {
         Config::set('services.python_bridge.ingest_token', 'test-token');

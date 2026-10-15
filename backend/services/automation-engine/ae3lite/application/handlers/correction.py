@@ -40,6 +40,7 @@ from ae3lite.application.services.decision_window_reader import (
 )
 from ae3lite.application.services.sensor_mode_controller import SensorModeController
 from ae3lite.application.services.correction_pipeline import (
+    irrigation_component_budget_guard,
     maybe_advance_pipeline,
     pipeline_dose_flags,
     recipe_ec_band_reached,
@@ -333,7 +334,7 @@ class CorrectionHandler(BaseStageHandler):
             if step == "corr_done":
                 return self._run_done(corr=corr)
         except TaskExecutionError as exc:
-            deadline_outcome = await self._interrupt_after_command_poll_deadline(
+            deadline_outcome = await self._interrupt_after_command_admission_failure(
                 task=task,
                 plan=plan,
                 corr=corr,
@@ -655,6 +656,72 @@ class CorrectionHandler(BaseStageHandler):
         current_stage = measurement.current_stage
 
         dose_flags = pipeline_dose_flags(corr)
+        pipeline_phase = str(getattr(corr, "pipeline_phase", None) or "").strip().lower()
+        if pipeline_phase in {"irrigation_calcium", "irrigation_npk"}:
+            full_target_ec = float(target_ec)
+            resolved_deadbands = self._planner.resolve_deadbands(
+                current_ph=current_ph,
+                current_ec=current_ec,
+                target_ph=target_ph,
+                target_ec=target_ec,
+                correction_config=correction_cfg,
+                pid_configs=getattr(runtime, "pid_configs", {}),
+            )
+            component_budget = irrigation_component_budget_guard(
+                corr=corr,
+                current_ec=current_ec,
+                full_target_ec=full_target_ec,
+                ec_deadband=float(resolved_deadbands["ec"]),
+            )
+        else:
+            resolved_deadbands = {}
+            component_budget = {"allowed": True}
+        if not bool(component_budget.get("allowed", True)):
+            await self._log_correction_event(
+                zone_id=task.zone_id,
+                event_type="IRRIGATION_EC_COMPONENT_BUDGET_EXHAUSTED",
+                task=task,
+                corr=corr,
+                payload={
+                    **dict(component_budget),
+                    "current_ec": current_ec,
+                    "full_target_ec": full_target_ec,
+                    "ec_deadband": float(resolved_deadbands["ec"]),
+                },
+            )
+            await note_upward_report(
+                code="biz_ae3_irrigation_ec_component_budget_exhausted",
+                message="EC top-up остановлен пределом выбранного nutrient component",
+                severity="warning",
+                zone_id=int(task.zone_id),
+                alert_type="automation",
+                dedupe_key=f"ae3:component-budget:{int(task.id)}:{component_budget.get('component')}",
+                details={
+                    "task_id": int(task.id),
+                    "stage": current_stage,
+                    **dict(component_budget),
+                    "current_ec": current_ec,
+                    "ec_deadband": float(resolved_deadbands["ec"]),
+                },
+                scope_parts=(str(int(task.id)), str(component_budget.get("component") or "unknown")),
+            )
+            ph_only_corr = replace(
+                corr,
+                pipeline_phase="irrigation_ph",
+                active_component="ph",
+                ec_pid_frozen=True,
+                corr_step="corr_check",
+                needs_ec=False,
+                ec_duration_ms=None,
+                wait_until=None,
+            )
+            return StageOutcome(
+                kind="enter_correction",
+                correction=ph_only_corr,
+                due_delay_sec=0,
+            )
+        if pipeline_phase in {"irrigation_calcium", "irrigation_npk"}:
+            target_ec = float(component_budget["effective_target_ec"])
         correction_targets_reached = self._planner.is_within_tolerance(
             current_ph=current_ph, current_ec=current_ec,
             target_ph=target_ph, target_ec=target_ec,
@@ -2862,7 +2929,7 @@ class CorrectionHandler(BaseStageHandler):
             now=now,
         )
 
-    async def _interrupt_after_command_poll_deadline(
+    async def _interrupt_after_command_admission_failure(
         self,
         *,
         task: Any,
@@ -2871,51 +2938,37 @@ class CorrectionHandler(BaseStageHandler):
         now: datetime,
         exc: TaskExecutionError,
     ) -> StageOutcome | None:
-        """Convert stage-bound command poll timeout into graceful stage interrupt.
+        """Convert a pre-publish dose admission refusal into stage outcome.
 
-        SequentialCommandGateway uses ``min(stage_deadline, poll_deadline)``.
-        When the stage budget expires mid-correction command (dose / sensor mode),
-        fail-closed task failure is wrong: policy already defines irrigation →
-        recovery/ready and fill/recirc → timeout/exhausted transitions.
+        A real command poll timeout is always fail-closed: publication already
+        happened and the physical outcome is unknown. Only the admission guard,
+        which runs before any History Logger side effect, may end the correction
+        window through the ordinary stage-deadline policy.
         """
-        if str(getattr(exc, "code", "") or "").strip().lower() != "ae3_command_poll_deadline_exceeded":
+        if (
+            str(getattr(exc, "code", "") or "").strip().lower()
+            != ErrorCodes.AE3_COMMAND_STAGE_BUDGET_INSUFFICIENT
+        ):
             return None
         if corr.corr_step in {"corr_deactivate", "corr_done"}:
-            return None
-        deadline_kind = str(getattr(exc, "deadline_kind", "") or "").strip().lower()
-        stage_deadline = getattr(task.workflow, "stage_deadline_at", None)
-        tick_now = _utc_naive_dt(now)
-        # Prefer wall-clock when the tick ``now`` is still fresh: gateway poll can
-        # run past stage_deadline while CorrectionHandler keeps the claim-time
-        # ``now``. Skip wall clock when tests freeze ``now`` far in the past.
-        wall_now = datetime.now(timezone.utc).replace(tzinfo=None)
-        if abs((wall_now - tick_now).total_seconds()) <= 3600:
-            check_now = wall_now if wall_now > tick_now else tick_now
-        else:
-            check_now = tick_now
-        stage_bound = deadline_kind == "stage" or self._deadline_reached(
-            now=check_now,
-            deadline=stage_deadline,
-        )
-        if not stage_bound:
             return None
         outcome = await self._stage_deadline_transition_outcome(
             task=task,
             plan=plan,
             corr=corr,
-            now=check_now,
+            now=now,
+            completion_reason="stage_budget_exhausted",
         )
         if outcome is None:
             return None
         _logger.info(
-            "AE3 correction: stage deadline during command poll → graceful interrupt "
-            "zone_id=%s task_id=%s stage=%s corr_step=%s next_stage=%s deadline_kind=%s",
+            "AE3 correction: dose rejected by stage admission → graceful interrupt "
+            "zone_id=%s task_id=%s stage=%s corr_step=%s next_stage=%s",
             getattr(task, "zone_id", None),
             getattr(task, "id", None),
             getattr(task, "current_stage", None),
             corr.corr_step,
             outcome.next_stage,
-            deadline_kind or "reached",
         )
         return outcome
 
@@ -2926,14 +2979,33 @@ class CorrectionHandler(BaseStageHandler):
         plan: Any,
         corr: CorrectionState,
         now: datetime,
+        completion_reason: str = "stage_deadline",
     ) -> StageOutcome | None:
         current_stage = str(task.current_stage).strip().lower()
+        targets_reached: bool | None = None
+        if current_stage == "irrigation_check":
+            target_snapshot = await self._target_outcome_on_deadline(
+                task=task,
+                plan=plan,
+                now=now,
+            )
+            await self._record_deadline_target_outcome(
+                task=task,
+                snapshot=target_snapshot,
+                reason=completion_reason,
+            )
+            raw_targets_reached = target_snapshot.get("targets_reached")
+            targets_reached = (
+                bool(raw_targets_reached)
+                if raw_targets_reached is not None
+                else None
+            )
         return self._transition_policy.decide_stage_deadline_transition(
             corr=corr,
             current_stage=current_stage,
             stage_retry_count=task.workflow.stage_retry_count,
             deadline_reached=True,
-            targets_reached=None,
+            targets_reached=targets_reached,
         )
 
     def _interrupt_for_imminent_flow_probe_deadline(

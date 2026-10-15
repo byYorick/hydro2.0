@@ -55,8 +55,14 @@
         <span class="truncate text-[11px] text-[color:var(--text-dim)]">
           {{ laneLabel(run.schedule_task_type ?? run.task_type) }}
         </span>
-        <span class="truncate text-[11px] font-medium">
-          {{ decisionLabel(run) }}
+        <span class="min-w-0 text-[11px] font-medium">
+          <span class="block truncate">{{ decisionLabel(run) }}</span>
+          <span
+            v-if="chemistryLabel(run)"
+            class="mt-0.5 block truncate text-[10px]"
+            :class="chemistryClass(run)"
+            :data-testid="`scheduler-runs-chemistry-${run.execution_id}`"
+          >{{ chemistryLabel(run) }}</span>
         </span>
         <span class="truncate font-mono text-[10px] text-[color:var(--text-muted)]">
           {{ chainSummary(run) }}
@@ -109,9 +115,24 @@ function railColor(run: ExecutionRun): string {
   const status = String(run.status ?? '').toLowerCase()
   if (run.is_active || status === 'running') return 'var(--accent-cyan)'
   if (status === 'failed' || status === 'fail' || status === 'error') return 'var(--accent-red)'
+  if (run.chemistry_outcome === 'targets_not_achieved' || run.chemistry_outcome === 'unknown') return 'var(--accent-amber)'
   if (status === 'completed' || status === 'complete' || status === 'done') return 'var(--accent-green)'
   if (status === 'skipped' || status === 'skip') return 'var(--text-dim)'
   return 'var(--border-muted)'
+}
+
+function chemistryLabel(run: ExecutionRun): string {
+  if (run.chemistry_outcome === 'targets_achieved') return 'Химия: цели достигнуты'
+  if (run.chemistry_outcome === 'targets_not_achieved') return 'Химия: цели не достигнуты'
+  if (run.chemistry_outcome === 'unknown') return 'Химия: результат не подтверждён'
+  if (run.chemistry_outcome === 'failed') return 'Химия: ошибка коррекции'
+  return ''
+}
+
+function chemistryClass(run: ExecutionRun): string {
+  return run.chemistry_outcome === 'targets_achieved'
+    ? 'text-[color:var(--accent-green)]'
+    : 'text-[color:var(--accent-amber)]'
 }
 
 function chainSummary(run: ExecutionRun): string {

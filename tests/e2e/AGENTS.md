@@ -39,7 +39,7 @@ HIL lab (`infra/hil/…`, 8080/1883/9405) — **не** этот launcher.
 - Fill: EC seed **~0.45**, `solution_max=false`, calcium **`pump_b`**. Не сидить T_full при max ON.
 - `ec_overshoot_dilute_pct` канон **15** (не 100), кроме теста самого dilute (E120).
 - E103 first-run retry-limit — ожидаемый ERROR.
-- Sequential: Ca `pump_b`, Mg `pump_c`, NPK `pump_a`, micro `pump_d`. Irrigation inline — только pH.
+- Sequential: Ca `pump_b`, Mg `pump_c`, NPK `pump_a`, micro `pump_d`. Irrigation inline по умолчанию pH-only; optional `calcium|npk` — только в cumulative component budget.
 - Helper fill: `include_sequence: two_tank_fill_ca`.
 
 ---

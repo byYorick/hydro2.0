@@ -230,7 +230,7 @@ class PythonIngestController extends Controller
         }
 
         $data = $request->validate([
-            'cmd_id' => ['required', 'string', 'max:64'],
+            'cmd_id' => ['required', 'string', 'max:128'],
             'status' => ['required', 'string', 'in:SENT,ACK,DONE,NO_EFFECT,ERROR,INVALID,BUSY,TIMEOUT,SEND_FAILED'],
             'details' => ['nullable', 'array'],
         ]);

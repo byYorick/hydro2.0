@@ -67,6 +67,7 @@ class Ae3RuntimeConfig:
     correction_interrupt_replay_irrigation: bool
     task_overall_deadline_sec: int = 604800
     process_run_id: str = ""
+    command_stage_stop_reserve_sec: float = 5.0
 
     @classmethod
     def from_env(cls) -> "Ae3RuntimeConfig":
@@ -199,6 +200,10 @@ class Ae3RuntimeConfig:
             shutdown_grace_sec=max(0.0, float(os.getenv("AE_SHUTDOWN_GRACE_SEC", "30"))),
             command_poll_default_sec=max(1.0, float(os.getenv("AE_COMMAND_POLL_DEFAULT_SEC", "120"))),
             command_poll_margin_sec=max(0.0, float(os.getenv("AE_COMMAND_POLL_MARGIN_SEC", "30"))),
+            command_stage_stop_reserve_sec=max(
+                0.0,
+                float(os.getenv("AE_COMMAND_STAGE_STOP_RESERVE_SEC", "5")),
+            ),
             lease_heartbeat_max_failures=max(1, int(os.getenv("AE_LEASE_HEARTBEAT_MAX_FAILURES", "3"))),
             lease_heartbeat_transient_retries=max(0, int(os.getenv("AE_LEASE_HEARTBEAT_TRANSIENT_RETRIES", "1"))),
             intent_sync_max_retries=max(0, int(os.getenv("AE_INTENT_SYNC_MAX_RETRIES", "2"))),
@@ -350,6 +355,11 @@ class Ae3RuntimeConfig:
         if float(self.command_poll_margin_sec) < 0.0:
             raise ValueError(
                 "command_poll_margin_sec must be >= 0. Set AE_COMMAND_POLL_MARGIN_SEC to a non-negative number."
+            )
+        if float(self.command_stage_stop_reserve_sec) < 0.0:
+            raise ValueError(
+                "command_stage_stop_reserve_sec must be >= 0. "
+                "Set AE_COMMAND_STAGE_STOP_RESERVE_SEC to a non-negative number."
             )
 
 

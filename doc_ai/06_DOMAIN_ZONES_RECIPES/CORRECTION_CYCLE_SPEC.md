@@ -4,8 +4,8 @@
 Документ описывает state machine, режимы коррекции и логику управления измерением pH/EC с учетом необходимости наличия потока раствора.
 
 **Дата создания:** 2026-02-14
-**Дата обновления:** 2026-10-11 (terminal-DONE timing anchors; temporal coverage decision windows; sequential nutrient pipeline)
-**Статус:** Рабочий документ (требует валидации)
+**Дата обновления:** 2026-10-12 (command admission/reconciliation; terminal chemistry outcome; PID-deadband parity; bounded irrigation component budget)
+**Статус:** Канонический контракт AE3-Lite correction pipeline
 
 ---
 
@@ -162,7 +162,7 @@ Observability (UI/Grafana, 2026-07-09):
        ▼
 ┌──────────────┐
 │ IRRIGATING   │  ◄─── Полив зоны
-│              │       Только pH-коррекция (EC запрещена)
+│              │       pH + optional EC (`calcium|npk`) в component budget
 └──────┬───────┘
        │ irrigation_complete
        │
@@ -183,7 +183,6 @@ Observability (UI/Grafana, 2026-07-09):
 | **TANK_RECIRC** | ✅ Да | ✅ Да | ✅ Да | pipeline Ca/pH/Mg/pH/NPK/pH/Micro/pH (+ dilute) |
 | **READY** | ❌ Нет | ❌ Нет | ❌ Нет | - |
 | **IRRIGATING** | ✅ Да | ✅ Да (pH/EC) | конфиг | pH + один EC-компонент (`calcium|npk`) |
-| **IRRIG_RECIRC** | — | — | — | **removed** (legacy; не использовать) |
 
 ### 2.3. События (Triggers)
 
@@ -217,7 +216,7 @@ Observability (UI/Grafana, 2026-07-09):
 - runtime phase нормализуется к canonical process-calibration key:
   `tank_filling -> solution_fill`,
   `prepare_recirculation -> tank_recirc`,
-  `irrigating|irrig_recirc -> irrigation`;
+  `irrigating -> irrigation`;
 - если process calibration отсутствует, новый in-flow correction path идёт fail-closed;
 - `zone.correction.payload.resolved_config` считается полным runtime-контрактом:
   если обязательный correction/runtime/tolerance/controller parameter отсутствует,
@@ -282,58 +281,62 @@ Observability (UI/Grafana, 2026-07-09):
   а не только по tail-median; это нужно для проточных систем, где отклик может быть волнообразным.
 - learned runtime metrics (`gain_ema`, `retention_ema`, `wave_score_ema`, learned timing) сохраняются
   в `pid_state.stats` и переживают рестарт automation-engine.
+- recipe `target_*_min/max` — агрономический/ready диапазон, controller deadband —
+  единственная граница dose decision, PID reset и chemistry success; hard sensor/safety
+  bounds остаются отдельными fail-closed ограничениями;
+- persistent stages `solution_fill_check`, `prepare_recirculation_check`,
+  `irrigation_check` активируют sensor mode при входе и не публикуют повторный
+  `activate_sensor_mode` перед каждой дозой. Реактивация допустима только после
+  подтверждённой потери active/telemetry state;
+- до публикации `dose` gateway требует остаток stage budget не меньше
+  `duration_ms + command_poll_margin + stop_reserve`. После публикации stage deadline
+  больше не обрывает reconcile: команда ждёт свой terminal poll deadline;
+- command poll timeout после publish — fail-closed и запускает fail-safe stop. Только
+  pre-publish admission refusal может завершить correction window как исчерпанный budget;
+- startup recovery сверяет `accepted/terminal_status IS NULL` у terminal task с таблицей
+  `commands`. Поздний `DONE` идемпотентно обновляет `ae_commands` и `pid_state.last_dose_at`;
+  неизвестный результат не синтезируется вручную.
 
 ### 3.1. Режим 1: TANK_FILLING (Набор бака)
 
-**Цель:** Набрать бак с раствором; пока бак не полон, выполнять in-flow коррекцию NPK + pH.
-Если к моменту заполнения бака targets не достигнуты, переводить зону в `TANK_RECIRC`.
+**Цель:** снять water baseline и во время набора довести EC только calcium-компонентом
+до cumulative target `T_ca`. pH на этом этапе не корректируется.
 
 **Последовательность:**
 ```
-1. Automation-engine → MQTT: activate ph_node, ec_node
+1. Automation-engine через History Logger активирует EC sensor mode
 2. Automation-engine → MQTT: start pump_in (набор бака)
 3. Ожидание стабилизации (60-120 сек, настраиваемо)
-4. pH/EC ноды → MQTT: telemetry с flow_active: true, stable: false
+4. EC-нода публикует telemetry при активном потоке
 5. После стабилизации: stable: true
-6. Пока `solution_max` ещё не сработал, Automation-engine:
-   - читает observation window для EC/pH;
-   - в рамках одного correction-window может одновременно держать план и по `EC`, и по `pH`;
-   - исполняет дозы последовательно: сначала ближайший шаг correction sub-machine, затем `observe`, затем следующий химический шаг;
-   - parent-stage не создаёт новое correction-window на каждом таком шаге: весь fill-stage работает в одном окне коррекции.
+6. Пока `solution_max` ещё не сработал, AE3 выполняет
+   `calcium dose → hold → EC observe → decide` к `T_ca`.
 7. Возврат correction в `solution_fill_check` не открывает новый timeout-window:
    - wall-clock deadline = `solution_fill_timeout_sec + solution_fill_correction_slack_sec`
-     (аналогично `prepare_recirculation_*` и `irrigation_recovery.timeout_sec + irrigation_recovery_correction_slack_sec`)
-     (оба поля из zone correction config; slack default `900`);
+     (аналогично `prepare_recirculation_*`; оба поля из zone correction config,
+     slack default `900`);
     - attempt-based exhaustion внутри `solution_fill` не должна останавливать коррекцию раньше времени:
       stage остаётся в одном correction window до этого deadline либо до fail-closed по `no-effect`;
     - fail-closed по `no-effect` в `solution_fill` реализуется как переход в `solution_fill_timeout_stop`,
       а не как silent poll без новой correction window.
-8. Когда `solution_max` сработал:
-   - если targets достигнуты → `READY`, stop fill, deactivate sensors;
-   - если targets НЕ достигнуты → stop fill и переход в `TANK_RECIRC`.
+8. Когда `solution_max` сработал, fill останавливается и workflow переходит в
+   `prepare_recirculation`, где продолжается полный sequential pipeline.
 ```
 
-**Коррекция:**
-- NPK (EC): in-flow дозирование на этапе набора раствора через `dose -> hold -> observe -> decide`
-- pH: pH+ или pH- через тот же observation-driven цикл
-- После достижения `solution_max` дополнительная коррекция в `TANK_FILLING` не продолжается:
-  дальнейшее доведение до targets происходит только в `TANK_RECIRC`
+**Коррекция:** calcium (`pump_b`) к `T_ca`; pH, Mg, NPK и Micro на fill запрещены.
 
 ### 3.2. Режим 2: TANK_RECIRC (Рециркуляция бака)
 
-**Цель:** Циркулировать раствор до достижения целевых NPK + pH.
+**Цель:** завершить interleaved pipeline
+`Ca → pH → Mg → pH → NPK → pH → Micro → final pH`.
 
 **Последовательность:**
 ```
 1. pH/EC ноды уже активны (из TANK_FILLING)
 2. Automation-engine → MQTT: start circulation_pump (рециркуляция)
 3. Ожидание стабилизации (30 сек, короче чем при filling)
-4. Повторение шагов 6-7 из TANK_FILLING
-   - внутри одного `prepare_recirculation` correction-window planner так же может одновременно держать потребность
-     и в `EC`, и в `pH`;
-   - runtime не разводит их по разным recirculation windows: химические шаги идут последовательно
-     (`EC -> observe -> pH` или `pH -> observe -> EC`) в рамках того же окна, пока не сработает
-     success / no-effect fail-closed / deadline текущего recirculation window
+4. Выполнение одного активного component/pH-gate шага за раз к cumulative `T_*`;
+   между дозами обязательны hold и observe.
 5. Если targets достигнуты после N timeout-window:
    - → Состояние READY
    - Automation-engine → MQTT: stop circulation_pump
@@ -364,52 +367,29 @@ Observability (UI/Grafana, 2026-07-09):
 
 ### 3.3. Режим 3: IRRIGATING (Полив)
 
-**Цель:** Поливать зону и корректировать Ca/Mg/микро + pH по необходимости.
+**Цель:** выдержать hydraulic duration и, если разрешено, выполнить bounded inline
+коррекцию без продления подачи воды ради химии.
 
-**Последовательность:**
-```
-1. Automation-engine → MQTT: activate ph_node, ec_node
-2. Automation-engine → MQTT: start pump_in (полив)
-3. Ожидание стабилизации (30 сек, быстрая)
-4. pH/EC ноды → MQTT: telemetry с flow_active: true
-5. Automation-engine: проверка pH во время полива
-   - Если pH вне диапазона: дозирование pH+/pH-
-   - Минимальный интервал между дозами: 5 мин
-6. Automation-engine: проверка Ca/Mg/микро (optional)
-   - Если EC ниже нормы: дозирование Ca/Mg
-7. Полив продолжается до завершения (по volume_ml или duration_sec)
-8. После завершения полива:
-   - Если pH/EC в норме:
-     - → Состояние IDLE
-     - Automation-engine → MQTT: deactivate ph_node, ec_node
-   - Если pH/EC вне нормы:
-     - → Состояние IRRIG_RECIRC
-```
+1. На входе в stage sensor mode активируется один раз.
+2. `pump_main/run_pump` ограничен `duration_sec`; клапаны закрываются штатным stop-path.
+3. pH корректируется к recipe setpoint. EC выключен при
+   `irrigation_ec_component=none`; иначе разрешён ровно `calcium` или `npk`.
+4. EC target для выбранного компонента ограничивается cumulative target из последнего
+   совместимого water baseline. Missing/stale baseline или исчерпанный component budget
+   блокирует EC, создаёт `IRRIGATION_EC_COMPONENT_BUDGET_EXHAUSTED` и alert; pH может продолжиться.
+5. Stage deadline равен `min(duration_sec + correction_slack_sec,
+   stage_timeout_sec, 86400)`, с якорем на фактический старт полива. Pump при этом
+   не работает дольше `duration_sec`.
+6. После hydraulic stop task не запускает новый полив и не переходит в post-irrigation
+   recovery. Итог химии фиксируется отдельно как `targets_achieved`,
+   `targets_not_achieved` или `unknown`.
 
-**Коррекция:**
-- Ca/Mg/микро: При необходимости (опционально)
-- pH: При отклонении во время полива (приоритет)
+### 3.4. Удалённый post-irrigation recovery
 
-### 3.4. Режим 4: IRRIG_RECIRC (Рециркуляция при поливе)
-
-**Цель:** Быстро скорректировать pH и Ca/Mg после полива.
-
-**Последовательность:**
-```
-1. pH/EC ноды уже активны (из IRRIGATING)
-2. Automation-engine → MQTT: stop pump_in
-3. Automation-engine → MQTT: start circulation_pump
-4. Ожидание стабилизации (30 сек)
-5. Коррекция pH (приоритет) и Ca/Mg если нужно
-6. Максимум 2 попытки
-7. После достижения targets или timeout:
-   - → Состояние IDLE
-   - Automation-engine → MQTT: stop circulation_pump
-   - Automation-engine → MQTT: deactivate ph_node, ec_node
-```
-
-**Макс попытки:** 2
-**Интервал:** 1 мин
+Отдельной фазы рециркуляции после полива нет. После `irrigation_check` выполняется
+`irrigation_stop_to_ready`. Исторические `irrigation_recovery_*` stages и их timing
+параметры не входят в runtime-контракт и не должны возвращаться как способ скрыть
+недостижение pH/EC.
 
 ---
 
@@ -563,7 +543,11 @@ Events: `RECIRC_DILUTE_STARTED` / `RECIRC_DILUTE_COMPLETED`.
 
 - `correction_during_irrigation=false`: target-check/correction не запускаются.
 - При `true` pH проверяется всегда; `irrigation_ec_component=calcium|npk` разрешает
-  один соответствующий насос для движения к полному recipe `target_ec`.
+  один соответствующий насос, но не разрешает этим reagent закрывать весь full EC gap.
+- Для `calcium` effective EC target ограничен `T_ca`, для `npk` — `T_ca_mg_npk`
+  из последнего baseline, у которого `T_full` совпадает с текущим recipe target в EC
+  deadband. Missing/stale/mismatched baseline и достигнутый component target блокируют
+  дальнейшую EC-дозу fail-closed и создают event/alert component-budget exhausted.
 - `irrigation_ec_component=none` оставляет коррекцию pH-only.
 - Post-irrigation chemistry **удалена**: нет перехода в `irrig_recirc` /
   `irrigation_recovery_*` ради доведения EC/компонентов.
@@ -774,7 +758,11 @@ Resolve обязан заполнять `ec_actuators["calcium"]=…` из `pump
 | TANK_FILLING → TANK_RECIRC | Нода остается ACTIVE (30s) |
 | READY → IDLE | `deactivate_sensor_mode` |
 | READY → IRRIGATING | `activate_sensor_mode` (30s) |
-| IRRIG_RECIRC → IDLE | `deactivate_sensor_mode` |
+| IRRIGATING → READY | `deactivate_sensor_mode` после stop-path |
+
+На persistent check-stages активное состояние сохраняется через все
+`dose → hold → observe` итерации. `ensure_active_for_dosing()` там выполняет no-op;
+повторная активация — только recovery после подтверждённого inactive/empty state.
 
 ---
 
@@ -788,7 +776,6 @@ interface CorrectionTimings {
   tank_fill_stabilization_sec: number;     // По умолчанию: 90
   tank_recirc_stabilization_sec: number;   // По умолчанию: 30
   irrigation_stabilization_sec: number;    // По умолчанию: 30
-  irrig_recirc_stabilization_sec: number;  // По умолчанию: 30
 
   // Время ожидания после дозирования
   npk_mix_time_sec: number;                // По умолчанию: 120
@@ -800,7 +787,6 @@ interface CorrectionTimings {
 
   // Макс попытки
   max_tank_recirc_attempts: number;        // По умолчанию: 5
-  max_irrig_recirc_attempts: number;       // По умолчанию: 2
 
   // Timeout режимов
   tank_fill_timeout_sec: number;           // По умолчанию: 1800 (30 мин)
@@ -828,8 +814,7 @@ interface CorrectionTimings {
       "npk_mix_time_sec": 120,
       "ph_mix_time_sec": 60,
       "min_correction_interval_sec": 300,
-      "max_tank_recirc_attempts": 5,
-      "max_irrig_recirc_attempts": 2
+      "max_tank_recirc_attempts": 5
     }
   }
 }
@@ -839,158 +824,21 @@ interface CorrectionTimings {
 
 ## 6. Логика automation-engine
 
-### 6.1. Новый компонент: CorrectionStateMachine
+### 6.1. Реализация correction sub-machine
 
-```python
-class CorrectionStateMachine:
-    """
-    State machine для управления циклами коррекции зоны.
-    """
+Отдельного `CorrectionStateMachine` класса и автономного workflow нет. Каноническая
+реализация расширяет существующий AE3-Lite path:
 
-    def __init__(self, zone_id: int):
-        self.zone_id = zone_id
-        self.state: CorrectionState = CorrectionState.IDLE
-        self.attempt_count = 0
-        self.last_correction_ts = None
-        self.ph_ec_nodes_active = False
+- orchestration: `ae3lite/application/handlers/correction.py`;
+- parent stages: `solution_fill_check`, `prepare_recirculation_check`, `irrigation_check`;
+- dose math/deadbands: `ae3lite/domain/services/correction_planner.py`;
+- sequential nutrient FSM/component budget: `application/services/correction_pipeline.py`;
+- sensor lifecycle: `application/services/sensor_mode_controller.py`;
+- publish/reconcile: `infrastructure/gateways/sequential_command_gateway.py`.
 
-    async def transition(self, event: CorrectionEvent):
-        """Обработка события и переход в новое состояние."""
-        new_state = self._get_next_state(self.state, event)
-        await self._on_exit_state(self.state)
-        self.state = new_state
-        await self._on_enter_state(new_state)
-
-    async def _on_enter_state(self, state: CorrectionState):
-        """Действия при входе в состояние."""
-        if state == CorrectionState.TANK_FILLING:
-            await self._activate_ph_ec_nodes()
-            await self._start_pump("pump_in")
-            await self._wait_stabilization("tank_fill")
-
-        elif state == CorrectionState.TANK_RECIRC:
-            await self._start_pump("circulation_pump")
-            await self._wait_stabilization("tank_recirc")
-            self.attempt_count = 0
-
-        elif state == CorrectionState.READY:
-            await self._deactivate_ph_ec_nodes()
-            await self._stop_all_pumps()
-
-        elif state == CorrectionState.IRRIGATING:
-            await self._activate_ph_ec_nodes()
-            await self._start_pump("pump_in")
-            await self._wait_stabilization("irrigation")
-
-        elif state == CorrectionState.IRRIG_RECIRC:
-            await self._stop_pump("pump_in")
-            await self._start_pump("circulation_pump")
-            await self._wait_stabilization("irrig_recirc")
-            self.attempt_count = 0
-
-        elif state == CorrectionState.IDLE:
-            await self._deactivate_ph_ec_nodes()
-            await self._stop_all_pumps()
-
-    async def _activate_ph_ec_nodes(self):
-        """Активация pH и EC нод."""
-        timings = await self._get_correction_timings()
-
-        # Активировать pH ноду
-        await send_command(
-            node_uid="nd-ph-1",
-            topic_suffix="system/command",
-            cmd="activate_sensor_mode",
-            params={
-                "stabilization_time_sec": timings.get("tank_fill_stabilization_sec", 90)
-            }
-        )
-
-        # Активировать EC ноду
-        await send_command(
-            node_uid="nd-ec-1",
-            topic_suffix="system/command",
-            cmd="activate_sensor_mode",
-            params={
-                "stabilization_time_sec": timings.get("tank_fill_stabilization_sec", 90)
-            }
-        )
-
-        self.ph_ec_nodes_active = True
-
-    async def _deactivate_ph_ec_nodes(self):
-        """Деактивация pH и EC нод."""
-        await send_command(
-            node_uid="nd-ph-1",
-            topic_suffix="system/command",
-            cmd="deactivate_sensor_mode"
-        )
-
-        await send_command(
-            node_uid="nd-ec-1",
-            topic_suffix="system/command",
-            cmd="deactivate_sensor_mode"
-        )
-
-        self.ph_ec_nodes_active = False
-
-    async def check_and_correct(self):
-        """Проверка и коррекция pH/EC в текущем состоянии."""
-        if self.state == CorrectionState.TANK_FILLING:
-            await self._correct_npk_and_ph()
-
-        elif self.state == CorrectionState.TANK_RECIRC:
-            success = await self._correct_npk_and_ph()
-            self.attempt_count += 1
-
-            if success:
-                await self.transition(CorrectionEvent.TARGETS_ACHIEVED)
-            elif self.attempt_count >= self._get_max_attempts("tank_recirc"):
-                await self.transition(CorrectionEvent.TIMEOUT)
-
-        elif self.state == CorrectionState.IRRIGATING:
-            await self._correct_ph()  # Только pH во время полива
-            # Ca/Mg опционально
-
-        elif self.state == CorrectionState.IRRIG_RECIRC:
-            success = await self._correct_ph()
-            self.attempt_count += 1
-
-            if success or self.attempt_count >= self._get_max_attempts("irrig_recirc"):
-                await self.transition(CorrectionEvent.IRRIGATION_COMPLETE)
-
-    async def _correct_npk_and_ph(self) -> bool:
-        """Коррекция NPK (EC) и pH."""
-        # Получить текущую телеметрию
-        telemetry = await get_stable_telemetry(self.zone_id)
-        if not telemetry or not telemetry.stable:
-            return False
-
-        targets = await get_effective_targets(self.zone_id)
-        success = True
-
-        # Коррекция EC (NPK)
-        if telemetry.ec < targets.ec.min:
-            dose_a, dose_b = calculate_npk_dose(telemetry.ec, targets.ec.target)
-            await dose_npk(self.zone_id, dose_a, dose_b)
-            await asyncio.sleep(targets.timings.npk_mix_time_sec)
-            success = False  # Нужна повторная проверка
-
-        # Коррекция pH
-        if telemetry.ph < targets.ph.min:
-            dose = calculate_ph_dose(telemetry.ph, targets.ph.target)
-            await dose_ph_up(self.zone_id, dose)
-            await asyncio.sleep(targets.timings.ph_mix_time_sec)
-            success = False
-
-        elif telemetry.ph > targets.ph.max:
-            dose = calculate_ph_dose(telemetry.ph, targets.ph.target)
-            await dose_ph_down(self.zone_id, dose)
-            await asyncio.sleep(targets.timings.ph_mix_time_sec)
-            success = False
-
-        return success
-```
+Каждый tick выполняет не более одного chemical action. Переходы correction state,
+attempt counters, `wait_until`, pipeline phase и PID state сохраняются в PostgreSQL,
+поэтому requeue/restart не создаёт второй runtime и не повторяет подтверждённую дозу.
 
 ### 6.2. Политика partial EC batch failure (обновление 2026-07-09)
 
@@ -1353,8 +1201,8 @@ AE3-Lite поддерживает вход в коррекцию **во врем
   - `calcium` — pH + Ca (`pump_b`), `pipeline_phase=irrigation_calcium`;
   - `npk` — pH + NPK (`pump_a`), `pipeline_phase=irrigation_npk`;
   - `none` — pH-only;
-- для `calcium|npk` target EC — полный effective recipe `target_ec`; компонент выбирает
-  reagent/actuator, а не нижний cumulative `T_*`;
+- для `calcium|npk` full recipe target остаётся итоговой diagnostic целью, а dose target
+  ограничен cumulative `T_ca` / `T_ca_mg_npk`; так один reagent не закрывает весь full gap;
 - Mg / Micro / multi-component batch на поливе **запрещены**;
 - dilute на поливе не используется (бак обычно у `solution_max`);
 - post-irrigation nutrient recovery (`irrig_recirc`, `irrigation_recovery_*`) — **удалён из канона**;
@@ -1362,6 +1210,20 @@ AE3-Lite поддерживает вход в коррекцию **во врем
 
 Полная компонентная сборка EC — только в prepare (`solution_fill` Ca + `prepare_recirculation` pipeline, §3.7).
 Inline Ca/NPK на поливе — **поддерживающий** top-up, не замена prepare.
+
+### 9.7. Независимый terminal chemistry outcome
+
+Успешный hydraulic stop не означает достижения setpoint. На manual stop, stage deadline
+или исчерпании flow-probe AE3 читает свежие fail-closed decision windows и пишет:
+
+- `CORRECTION_COMPLETE` только когда все разрешённые контуры находятся в PID deadband;
+- `CORRECTION_TARGETS_NOT_ACHIEVED`, если свежие значения вне deadband;
+- `CORRECTION_TARGET_OUTCOME_UNKNOWN`, если telemetry unavailable/stale или окно не готово.
+
+Payload содержит `current_ph/current_ec`, `target_ph/target_ec`, resolved deadbands,
+`allow_ph/allow_ec`, `task_id` и completion reason. `AE_TASK_COMPLETED` переносит
+`chemistry_outcome` и `chemistry_diagnostics` в terminal read-model. Miss/unknown создаёт
+business alert, но сам по себе не повторяет гидравлический полив.
 
 ---
 
@@ -1385,7 +1247,7 @@ Inline Ca/NPK на поливе — **поддерживающий** top-up, н�
 |---------|----------------------------|
 | `zone_workflow_state.workflow_phase = 'ready'` | `solution_change_zone_not_ready` |
 | Нет active `ae_tasks` / active lease на зоне | `start_solution_change_zone_busy` |
-| Нет активного полива (`irrigating` / `irrig_recirc`) | `solution_change_active_irrigation` |
+| Нет активного полива (`irrigating`) | `solution_change_active_irrigation` |
 | Two-tank topology (`tanks_count >= 2`, IRR-нода online) | `solution_change_topology_unsupported` |
 | `subsystems.solution_change.enabled = true` в effective targets / zone bundle | `solution_change_disabled` |
 

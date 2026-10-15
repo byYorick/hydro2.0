@@ -108,6 +108,43 @@ class DosePlan:
 class CorrectionPlanner:
     """Доменный planner импульсов дозирования EC/pH."""
 
+    def resolve_deadbands(
+        self,
+        *,
+        current_ph: float,
+        current_ec: float,
+        target_ph: float,
+        target_ec: float,
+        correction_config: Mapping[str, Any],
+        pid_configs: Mapping[str, Any] | None = None,
+        allow_ec: bool = True,
+        allow_ph: bool = True,
+    ) -> Mapping[str, float]:
+        """Resolve the effective PID deadbands used by dose and success checks."""
+        pid_configs = pid_configs if isinstance(pid_configs, Mapping) else {}
+        ph_deadband = 0.0
+        ec_deadband = 0.0
+        if allow_ph:
+            ph_controller, _, _ = _resolve_pid_controller_cfg(
+                controller_cfg=_controller_cfg(correction_config, "ph"),
+                pid_configs=pid_configs,
+                pid_type="ph",
+                gap=abs(float(target_ph) - float(current_ph)),
+            )
+            ph_deadband = _non_negative_float(ph_controller.get("deadband"), 0.0)
+        if allow_ec:
+            ec_controller, _, _ = _resolve_pid_controller_cfg(
+                controller_cfg=_controller_cfg(correction_config, "ec"),
+                pid_configs=pid_configs,
+                pid_type="ec",
+                gap=abs(float(target_ec) - float(current_ec)),
+            )
+            ec_deadband = _non_negative_float(ec_controller.get("deadband"), 0.0)
+        return {
+            "ph": ph_deadband,
+            "ec": ec_deadband,
+        }
+
     def is_within_tolerance(
         self,
         *,
@@ -130,23 +167,20 @@ class CorrectionPlanner:
         # Otherwise a broad prepare tolerance can declare success while the
         # planner would still issue a dose toward the canonical target.
         if correction_config is not None:
-            pid_configs = pid_configs if isinstance(pid_configs, Mapping) else {}
             ph_gap = abs(float(target_ph) - float(current_ph))
             ec_gap = abs(float(target_ec) - float(current_ec))
-            ph_controller, _, _ = _resolve_pid_controller_cfg(
-                controller_cfg=_controller_cfg(correction_config, "ph"),
+            deadbands = self.resolve_deadbands(
+                current_ph=current_ph,
+                current_ec=current_ec,
+                target_ph=target_ph,
+                target_ec=target_ec,
+                correction_config=correction_config,
                 pid_configs=pid_configs,
-                pid_type="ph",
-                gap=ph_gap,
+                allow_ec=allow_ec,
+                allow_ph=allow_ph,
             )
-            ec_controller, _, _ = _resolve_pid_controller_cfg(
-                controller_cfg=_controller_cfg(correction_config, "ec"),
-                pid_configs=pid_configs,
-                pid_type="ec",
-                gap=ec_gap,
-            )
-            ph_deadband = _non_negative_float(ph_controller.get("deadband"), 0.0)
-            ec_deadband = _non_negative_float(ec_controller.get("deadband"), 0.0)
+            ph_deadband = deadbands["ph"]
+            ec_deadband = deadbands["ec"]
             ph_reached = (not allow_ph) or ph_gap <= ph_deadband
             # Completion is symmetric around the EC setpoint. The actuator gap
             # remains upward-only; an overshoot is handled by recipe bounds /
@@ -215,56 +249,11 @@ class CorrectionPlanner:
         ph_has_explicit_window = ph_min is not None and ph_max is not None
         ec_has_explicit_window = ec_min is not None and ec_max is not None
 
-        pid_updates = _reset_pid_state_if_inside_bounds(
-            current_ph=current_ph,
-            current_ec=current_ec,
-            ph_lo=ph_lo,
-            ph_hi=ph_hi,
-            ec_lo=ec_lo,
-            ec_hi=ec_hi,
-            pid_state=pid_state,
-            now=now,
-            skip_ec=freeze_ec_pid or not allow_ec,
-        )
-
         predicted_ph = _apply_feedforward_bias(
             current_value=current_ph,
             pid_entry=_pid_entry(pid_state, "ph"),
             now=now,
         )
-
-        # Audit B4 fix: a single pH controller serves both ph_up and ph_down
-        # directions via ``max(0, target-current)`` / ``max(0, current-target)``
-        # gaps. Without an explicit reset on direction switch, integral
-        # accumulated while chasing ph_up would linger and distort the first
-        # ph_down dose after an overshoot (and vice versa). We detect the
-        # direction switch by comparing the last measured pH against the
-        # current one across the target setpoint and reset the integrator.
-        # If ``_reset_pid_state_if_inside_bounds`` already scheduled a ph
-        # reset (inside tolerance window), its keys are kept — both resets
-        # converge on the same zeroed state.
-        #
-        # Crucially we ALSO patch the local ``pid_state`` view so the
-        # downstream ``_next_pid_state`` call consumed by ``_compute_amount_ml``
-        # starts from the zeroed integral; otherwise the reset would only
-        # land in the persisted update dict but the current tick's dose
-        # computation would still see the stale integrator value.
-        if "ph" not in pid_updates:
-            ph_switch_updates = _reset_pid_state_if_ph_direction_switched(
-                predicted_ph=predicted_ph,
-                target_ph=target_ph,
-                pid_state=pid_state,
-                now=now,
-            )
-            if ph_switch_updates:
-                pid_updates.update(ph_switch_updates)
-                pid_state = {
-                    **pid_state,
-                    "ph": {
-                        **(pid_state.get("ph") if isinstance(pid_state.get("ph"), Mapping) else {}),
-                        **ph_switch_updates["ph"],
-                    },
-                }
 
         controller_ec = _controller_cfg(correction_config, "ec")
         controller_ph = _controller_cfg(correction_config, "ph")
@@ -289,6 +278,52 @@ class CorrectionPlanner:
 
         ec_deadband = _non_negative_float(ec_controller_cfg.get("deadband"), 0.0)
         ph_deadband = _non_negative_float(ph_controller_cfg.get("deadband"), 0.0)
+
+        pid_updates = _reset_pid_state_if_inside_bounds(
+            current_ph=current_ph,
+            current_ec=current_ec,
+            ph_lo=target_ph - ph_deadband,
+            ph_hi=target_ph + ph_deadband,
+            ec_lo=target_ec - ec_deadband,
+            ec_hi=target_ec + ec_deadband,
+            pid_state=pid_state,
+            now=now,
+            skip_ph=not allow_ph,
+            skip_ec=freeze_ec_pid or not allow_ec,
+        )
+
+        # Audit B4 fix: a single pH controller serves both ph_up and ph_down
+        # directions via ``max(0, target-current)`` / ``max(0, current-target)``
+        # gaps. Without an explicit reset on direction switch, integral
+        # accumulated while chasing ph_up would linger and distort the first
+        # ph_down dose after an overshoot (and vice versa). We detect the
+        # direction switch by comparing the last measured pH against the
+        # current one across the target setpoint and reset the integrator.
+        # If ``_reset_pid_state_if_inside_bounds`` already scheduled a ph
+        # reset (inside tolerance window), its keys are kept — both resets
+        # converge on the same zeroed state.
+        #
+        # Crucially we ALSO patch the local ``pid_state`` view so the
+        # downstream ``_next_pid_state`` call consumed by ``_compute_amount_ml``
+        # starts from the zeroed integral; otherwise the reset would only
+        # land in the persisted update dict but the current tick's dose
+        # computation would still see the stale integrator value.
+        if allow_ph and "ph" not in pid_updates:
+            ph_switch_updates = _reset_pid_state_if_ph_direction_switched(
+                predicted_ph=predicted_ph,
+                target_ph=target_ph,
+                pid_state=pid_state,
+                now=now,
+            )
+            if ph_switch_updates:
+                pid_updates.update(ph_switch_updates)
+                pid_state = {
+                    **pid_state,
+                    "ph": {
+                        **(pid_state.get("ph") if isinstance(pid_state.get("ph"), Mapping) else {}),
+                        **ph_switch_updates["ph"],
+                    },
+                }
 
         ec_needs = ec_gap > ec_deadband
         ph_needs_up = ph_up_gap > ph_deadband
@@ -1404,10 +1439,11 @@ def _reset_pid_state_if_inside_bounds(
     ec_hi: float,
     pid_state: Mapping[str, Any],
     now: datetime,
+    skip_ph: bool = False,
     skip_ec: bool = False,
 ) -> dict[str, Any]:
     updates: dict[str, Any] = {}
-    if ph_lo <= current_ph <= ph_hi and "ph" in pid_state:
+    if (not skip_ph) and ph_lo <= current_ph <= ph_hi and "ph" in pid_state:
         updates["ph"] = {
             "integral": 0.0,
             "prev_error": 0.0,

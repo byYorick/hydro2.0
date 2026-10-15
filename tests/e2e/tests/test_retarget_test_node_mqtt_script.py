@@ -46,9 +46,9 @@ class TestRetargetTestNodeMqttScript(unittest.TestCase):
     def test_payload_is_mqtt_host_port_without_channels(self) -> None:
         self.assertIn('{"mqtt":{"host":"%s","port":%s}}', self.script)
         self.assertIn("nd-test-irrig-1/config", self.script)
-        self.assertIn("${GH:-gh-test-1}", self.script)
-        self.assertIn("${ZONE:-zn-test-1}", self.script)
-        self.assertIn('NODE_UID="${NODE_UID:-nd-test-irrig-1}"', self.script)
+        self.assertIn('GH="${TEST_NODE_GH_UID:-gh-test-1}"', self.script)
+        self.assertIn('ZONE="${TEST_NODE_ZONE_UID:-zn-test-1}"', self.script)
+        self.assertIn('NODE_UID="${TEST_NODE_UID:-nd-test-irrig-1}"', self.script)
         self.assertNotIn('"channels"', self.script)
         self.assertNotIn("'channels'", self.script)
         payload_line = next(

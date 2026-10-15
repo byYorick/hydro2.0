@@ -43,7 +43,7 @@
 Если CPU все еще высокий:
 1. Увеличить интервал polling до 2000ms
 2. Отключить Vite в dev режиме и использовать production build
-3. Уменьшить PHP_FPM_PM_MAX_CHILDREN до 3
+3. Уменьшить FPM_PM_MAX_CHILDREN до 3
 4. Использовать Redis для кеширования вместо file
 
 ## Мониторинг
@@ -55,4 +55,3 @@ docker stats backend-laravel-1 --no-stream
 # Проверка процессов
 docker exec backend-laravel-1 sh -c "top -bn1 | head -20"
 ```
-

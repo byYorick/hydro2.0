@@ -2371,7 +2371,7 @@ ALTER SEQUENCE public.pending_alerts_id_seq OWNED BY public.pending_alerts.id;
 
 CREATE TABLE public.pending_status_updates (
     id bigint NOT NULL,
-    cmd_id character varying(64) NOT NULL,
+    cmd_id character varying(128) NOT NULL,
     status character varying(16) NOT NULL,
     details jsonb,
     retry_count integer DEFAULT 0 NOT NULL,
@@ -2391,7 +2391,7 @@ CREATE TABLE public.pending_status_updates (
 
 CREATE TABLE public.pending_status_updates_dlq (
     id bigint NOT NULL,
-    cmd_id character varying(64) NOT NULL,
+    cmd_id character varying(128) NOT NULL,
     status character varying(16) NOT NULL,
     details jsonb,
     retry_count integer NOT NULL,
@@ -10524,4 +10524,3 @@ ALTER TABLE ONLY public.zones
 --
 
 \unrestrict 7Bu3CzYpaCjGLHzw5Arb3bcdEENof5MygKAPH3QYNIfqmSNkRayNgBsFC12ZZKN
-

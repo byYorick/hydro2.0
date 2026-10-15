@@ -66,4 +66,20 @@ describe('RecentRunsTable.vue', () => {
     })
     expect(wrapper.text()).toContain('CUSTOM · label')
   })
+
+  it('показывает chemistry warning для completed run с недостигнутыми целями', () => {
+    const wrapper = mount(RecentRunsTable, {
+      props: {
+        runs: [run({
+          execution_id: 'ex-chem-1',
+          status: 'completed',
+          is_active: false,
+          chemistry_outcome: 'targets_not_achieved',
+        })],
+      },
+    })
+
+    expect(wrapper.get('[data-testid="scheduler-runs-chemistry-ex-chem-1"]').text())
+      .toContain('цели не достигнуты')
+  })
 })

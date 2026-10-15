@@ -180,7 +180,7 @@ def test_build_commands_handles_missing_named_plans_attribute() -> None:
 @pytest.mark.asyncio
 async def test_ensure_active_for_dosing_dispatches_and_logs() -> None:
     ctrl, gateway, sink = _make_controller()
-    task = _task()
+    task = _task(current_stage="clean_fill_check")
     result_task = await ctrl.ensure_active_for_dosing(
         task=task,
         plan=_plan(),
@@ -207,6 +207,30 @@ async def test_ensure_active_for_dosing_dispatches_and_logs() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "stage",
+    ["irrigation_check", "solution_fill_check", "prepare_recirculation_check"],
+)
+async def test_ensure_active_for_dosing_noop_for_persistent_stage(stage: str) -> None:
+    ctrl, gateway, sink = _make_controller()
+    task = _task(current_stage=stage)
+
+    result_task = await ctrl.ensure_active_for_dosing(
+        task=task,
+        plan=_plan(),
+        corr=_corr(),
+        now=NOW,
+        failed_node_uid="ph-node",
+        failed_channel="ph_down_pump",
+        retry_cmd="dose",
+    )
+
+    assert result_task is task
+    assert gateway.calls == []
+    assert sink.calls == []
+
+
+@pytest.mark.asyncio
 async def test_ensure_active_for_dosing_noop_without_templates() -> None:
     ctrl, gateway, sink = _make_controller()
     task = _task()
@@ -229,7 +253,7 @@ async def test_ensure_active_for_dosing_raises_on_gateway_failure() -> None:
     ctrl, _, _ = _make_controller(gateway=_FakeGateway(success=False))
     with pytest.raises(TaskExecutionError) as excinfo:
         await ctrl.ensure_active_for_dosing(
-            task=_task(),
+            task=_task(current_stage="clean_fill_check"),
             plan=_plan(),
             corr=_corr(),
             now=NOW,

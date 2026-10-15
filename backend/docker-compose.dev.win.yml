@@ -132,12 +132,11 @@ services:
       - PHP_OPCACHE_VALIDATE_TIMESTAMPS=1
       - PHP_OPCACHE_REVALIDATE_FREQ=0
       # PHP-FPM оптимизация для снижения нагрузки на CPU
-      - PHP_FPM_PM=dynamic
-      - PHP_FPM_PM_MAX_CHILDREN=5
-      - PHP_FPM_PM_START_SERVERS=2
-      - PHP_FPM_PM_MIN_SPARE_SERVERS=1
-      - PHP_FPM_PM_MAX_SPARE_SERVERS=3
-      - PHP_FPM_PM_MAX_REQUESTS=500
+      - FPM_PM_MAX_CHILDREN=5
+      - FPM_PM_START_SERVERS=2
+      - FPM_PM_MIN_SPARE_SERVERS=1
+      - FPM_PM_MAX_SPARE_SERVERS=3
+      - FPM_MAX_REQUESTS=500
     volumes:
       # На Windows используйте относительные пути - Docker Desktop автоматически конвертирует их
       # Если возникают проблемы с правами доступа, добавьте :cached или :delegated

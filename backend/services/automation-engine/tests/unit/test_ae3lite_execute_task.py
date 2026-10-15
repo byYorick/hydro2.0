@@ -551,6 +551,105 @@ class _WorkflowRepoRecorder:
 # ── Tests ─────────────────────────────────────────────────────────────────────
 
 @pytest.mark.asyncio
+async def test_task_completed_event_includes_separate_chemistry_outcome(monkeypatch) -> None:
+    chemistry = {
+        "task_id": 99,
+        "chemistry_outcome": "targets_not_achieved",
+        "current_ph": 6.7265,
+        "target_ph": 5.8,
+        "ph_deadband": 0.04,
+    }
+    fetch_mock = AsyncMock(return_value=[{
+        "type": "CORRECTION_TARGETS_NOT_ACHIEVED",
+        "payload": chemistry,
+    }])
+    create_event = AsyncMock(return_value=None)
+    monkeypatch.setattr("ae3lite.application.use_cases.execute_task.fetch", fetch_mock)
+    monkeypatch.setattr("ae3lite.application.use_cases.execute_task.create_zone_event", create_event)
+    use_case = ExecuteTaskUseCase(
+        task_repository=object(),
+        zone_snapshot_read_model=object(),
+        planner=object(),
+        command_gateway=object(),
+        workflow_router=object(),
+        finalize_task_use_case=object(),
+    )
+    task = replace(_make_task(stage="completed_run"), status="completed", completed_at=NOW)
+
+    await use_case._emit_task_completed_event(task=task)
+
+    payload = create_event.await_args.args[2]
+    assert payload["chemistry_outcome"] == "targets_not_achieved"
+    assert payload["chemistry_diagnostics"]["current_ph"] == pytest.approx(6.7265)
+
+
+@pytest.mark.asyncio
+async def test_task_completed_event_omits_chemistry_for_non_irrigation_task_without_outcome(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "ae3lite.application.use_cases.execute_task.fetch",
+        AsyncMock(return_value=[]),
+    )
+    create_event = AsyncMock(return_value=None)
+    monkeypatch.setattr(
+        "ae3lite.application.use_cases.execute_task.create_zone_event",
+        create_event,
+    )
+    use_case = ExecuteTaskUseCase(
+        task_repository=object(),
+        zone_snapshot_read_model=object(),
+        planner=object(),
+        command_gateway=object(),
+        workflow_router=object(),
+        finalize_task_use_case=object(),
+    )
+    task = replace(_make_task(stage="completed_run"), status="completed", completed_at=NOW)
+
+    await use_case._emit_task_completed_event(task=task)
+
+    payload = create_event.await_args.args[2]
+    assert "chemistry_outcome" not in payload
+    assert "chemistry_diagnostics" not in payload
+
+
+@pytest.mark.asyncio
+async def test_task_completed_event_marks_run_irrigation_unknown_when_outcome_is_missing(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "ae3lite.application.use_cases.execute_task.fetch",
+        AsyncMock(return_value=[]),
+    )
+    create_event = AsyncMock(return_value=None)
+    monkeypatch.setattr(
+        "ae3lite.application.use_cases.execute_task.create_zone_event",
+        create_event,
+    )
+    use_case = ExecuteTaskUseCase(
+        task_repository=object(),
+        zone_snapshot_read_model=object(),
+        planner=object(),
+        command_gateway=object(),
+        workflow_router=object(),
+        finalize_task_use_case=object(),
+    )
+    task = replace(
+        _make_task(stage="completed_run"),
+        status="completed",
+        completed_at=NOW,
+        task_type="irrigation_start",
+        irrigation_decision_outcome="run",
+    )
+
+    await use_case._emit_task_completed_event(task=task)
+
+    payload = create_event.await_args.args[2]
+    assert payload["chemistry_outcome"] == "unknown"
+    assert payload["chemistry_diagnostics"]["reason"] == "terminal_chemistry_diagnostics_missing"
+
+
+@pytest.mark.asyncio
 async def test_execute_task_uses_passed_now_for_fail_closed() -> None:
     """SnapshotBuildError → fail_closed called with the exact now passed to run()."""
     finalize = _FinalizeTaskUseCase()

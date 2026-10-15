@@ -66,6 +66,9 @@ class StartupRecoveryUseCase:
         worker_owner: str | None = None,
         foreign_lease_skip_escalate_sec: int = 300,
         correction_interrupt_verify_grace_sec: int = DEFAULT_VERIFY_GRACE_SEC,
+        command_repository: Any | None = None,
+        pid_state_repository: Any | None = None,
+        terminal_command_reconcile_limit: int = 100,
     ) -> None:
         self._task_repository = task_repository
         self._lease_repository = lease_repository
@@ -80,6 +83,12 @@ class StartupRecoveryUseCase:
         self._correction_interrupt_verify_grace_sec = max(
             15,
             int(correction_interrupt_verify_grace_sec or DEFAULT_VERIFY_GRACE_SEC),
+        )
+        self._command_repository = command_repository
+        self._pid_state_repository = pid_state_repository
+        self._terminal_command_reconcile_limit = max(
+            1,
+            min(1000, int(terminal_command_reconcile_limit)),
         )
         self._pending_correction_safety_checks: list[CorrectionInterruptPendingCheck] = []
 
@@ -221,6 +230,10 @@ class StartupRecoveryUseCase:
         failed_tasks += rec_failed
         terminal_outcomes.extend(rec_outcomes)
 
+        reconciled_terminal_commands, unresolved_terminal_commands = (
+            await self._reconcile_terminal_task_commands(now=now)
+        )
+
         await self._merge_persisted_pending_correction_checks(now=now)
 
         return StartupRecoveryResult(
@@ -232,7 +245,210 @@ class StartupRecoveryUseCase:
             recovered_waiting_command_tasks=recovered_waiting_command_tasks,
             pending_correction_safety_checks=tuple(self._pending_correction_safety_checks),
             terminal_outcomes=tuple(terminal_outcomes),
+            reconciled_terminal_commands=reconciled_terminal_commands,
+            unresolved_terminal_commands=unresolved_terminal_commands,
         )
+
+    async def _reconcile_terminal_task_commands(self, *, now: datetime) -> tuple[int, int]:
+        """Repair accepted/NULL commands owned by terminal tasks from legacy SoT."""
+        list_rows = getattr(
+            self._command_repository,
+            "list_unreconciled_for_terminal_tasks",
+            None,
+        )
+        reconcile = getattr(self._command_gateway, "reconcile_terminal_task_command", None)
+        if not callable(list_rows) or not callable(reconcile):
+            return 0, 0
+
+        try:
+            rows = await list_rows(limit=self._terminal_command_reconcile_limit)
+        except Exception:
+            logger.warning("Startup recovery: terminal-command scan failed", exc_info=True)
+            return 0, 0
+
+        reconciled = 0
+        unresolved = 0
+        for ae_command in rows:
+            task_id = int(ae_command.get("task_id") or 0)
+            task = await self._task_repository.get_by_id(task_id=task_id)
+            if task is None:
+                unresolved += 1
+                continue
+            try:
+                result = await reconcile(task=task, ae_command=ae_command, now=now)
+            except Exception:
+                unresolved += 1
+                logger.warning(
+                    "Startup recovery: terminal-command reconcile failed task_id=%s ae_command_id=%s",
+                    task_id,
+                    ae_command.get("id"),
+                    exc_info=True,
+                )
+                await self._emit_terminal_command_alert(
+                    task=task,
+                    ae_command=ae_command,
+                    state="unknown",
+                    result=None,
+                    now=now,
+                )
+                continue
+
+            state = str(result.get("state") or "waiting_command").strip().lower()
+            if state == "waiting_command":
+                unresolved += 1
+                await self._emit_terminal_command_alert(
+                    task=task,
+                    ae_command=ae_command,
+                    state="unknown",
+                    result=result,
+                    now=now,
+                )
+                continue
+
+            reconciled += 1
+            if state == "done":
+                await self._reconcile_terminal_dose_pid_state(
+                    task=task,
+                    ae_command=ae_command,
+                    result=result,
+                    now=now,
+                )
+            await self._record_terminal_command_reconciled_event(
+                task=task,
+                ae_command=ae_command,
+                result=result,
+            )
+            await self._emit_terminal_command_alert(
+                task=task,
+                ae_command=ae_command,
+                state=state,
+                result=result,
+                now=now,
+            )
+        return reconciled, unresolved
+
+    @staticmethod
+    def _terminal_dose_pid_type(ae_command: Mapping[str, Any]) -> tuple[str, str] | None:
+        payload = ae_command.get("payload")
+        if not isinstance(payload, Mapping):
+            return None
+        if str(payload.get("cmd") or "").strip().lower() != "dose":
+            return None
+        planner_step = str(ae_command.get("planner_step") or "").strip().lower()
+        channel = str(ae_command.get("channel") or "").strip().lower()
+        if "corr_dose_ec" in planner_step or any(token in channel for token in ("ec", "npk", "calcium")):
+            return "ec", "ec"
+        if "corr_dose_ph_up" in planner_step or "ph_up" in channel or "alkali" in channel:
+            return "ph", "ph_up"
+        if "corr_dose_ph" in planner_step or "ph_down" in channel or "acid" in channel:
+            return "ph", "ph_down"
+        return None
+
+    async def _reconcile_terminal_dose_pid_state(
+        self,
+        *,
+        task: Any,
+        ae_command: Mapping[str, Any],
+        result: Mapping[str, Any],
+        now: datetime,
+    ) -> None:
+        reconcile_pid = getattr(self._pid_state_repository, "reconcile_completed_dose", None)
+        dose_kind = self._terminal_dose_pid_type(ae_command)
+        terminal_at = result.get("terminal_at")
+        if not callable(reconcile_pid) or dose_kind is None or not isinstance(terminal_at, datetime):
+            return
+        payload = ae_command.get("payload") if isinstance(ae_command.get("payload"), Mapping) else {}
+        params = payload.get("params") if isinstance(payload.get("params"), Mapping) else {}
+        details = result.get("response_details") if isinstance(result.get("response_details"), Mapping) else {}
+        raw_duration = details.get("duration_ms", params.get("duration_ms", 0))
+        try:
+            duration_ms = max(0, int(raw_duration or 0))
+        except (TypeError, ValueError):
+            duration_ms = 0
+        pid_type, correction_kind = dose_kind
+        await reconcile_pid(
+            zone_id=int(task.zone_id),
+            pid_type=pid_type,
+            last_output_ms=duration_ms,
+            last_dose_at=terminal_at,
+            last_correction_kind=correction_kind,
+            ae_command_id=int(ae_command["id"]),
+            now=now,
+        )
+
+    async def _record_terminal_command_reconciled_event(
+        self,
+        *,
+        task: Any,
+        ae_command: Mapping[str, Any],
+        result: Mapping[str, Any],
+    ) -> None:
+        try:
+            await create_zone_event(
+                int(task.zone_id),
+                "AE_TERMINAL_TASK_COMMAND_RECONCILED",
+                {
+                    "task_id": int(task.id),
+                    "ae_command_id": int(ae_command["id"]),
+                    "cmd_id": result.get("cmd_id"),
+                    "terminal_status": result.get("legacy_status"),
+                    "stage": str(ae_command.get("stage_name") or ""),
+                },
+            )
+        except Exception:
+            logger.warning(
+                "Startup recovery: failed to emit terminal-command event task_id=%s ae_command_id=%s",
+                task.id,
+                ae_command.get("id"),
+                exc_info=True,
+            )
+
+    async def _emit_terminal_command_alert(
+        self,
+        *,
+        task: Any,
+        ae_command: Mapping[str, Any],
+        state: str,
+        result: Mapping[str, Any] | None,
+        now: datetime,
+    ) -> None:
+        raise_active = getattr(self._alert_repository, "raise_active", None)
+        if not callable(raise_active):
+            return
+        normalized_state = str(state or "unknown").strip().lower()
+        if normalized_state == "done":
+            code = "biz_ae3_terminal_task_command_reconciled"
+            severity = "warning"
+        elif normalized_state == "failed":
+            code = "biz_ae3_terminal_task_command_failed"
+            severity = "error"
+        else:
+            code = "biz_ae3_terminal_task_command_unknown"
+            severity = "error"
+        try:
+            await raise_active(
+                zone_id=int(task.zone_id),
+                code=code,
+                details={
+                    "task_id": int(task.id),
+                    "task_status": str(getattr(task, "status", "") or ""),
+                    "ae_command_id": int(ae_command["id"]),
+                    "cmd_id": (result or {}).get("cmd_id"),
+                    "terminal_status": (result or {}).get("legacy_status"),
+                    "reconciliation_state": normalized_state,
+                    "dedupe_key": f"{code}:{int(task.zone_id)}:{int(ae_command['id'])}",
+                },
+                now=now,
+                category="operations",
+                severity=severity,
+            )
+        except Exception:
+            logger.warning(
+                "Startup recovery: failed to emit terminal-command alert task_id=%s ae_command_id=%s",
+                task.id,
+                ae_command.get("id"),
+                exc_info=True,
+            )
 
     async def _merge_persisted_pending_correction_checks(self, *, now: datetime) -> None:
         """Подмешивает незакрытые PENDING_VERIFY из zone_events (после рестарта AE)."""

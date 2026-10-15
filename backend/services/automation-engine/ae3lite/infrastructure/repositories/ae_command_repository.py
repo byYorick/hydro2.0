@@ -580,6 +580,38 @@ class PgAeCommandRepository:
                 )
         return dict(row) if row is not None else None
 
+    async def list_unreconciled_for_terminal_tasks(
+        self,
+        *,
+        limit: int = 100,
+    ) -> list[Mapping[str, Any]]:
+        """Return accepted commands whose owning task is already terminal.
+
+        These rows are repaired from the canonical legacy ``commands`` table;
+        callers must never synthesize a terminal status or mutate the database
+        manually.
+        """
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT ac.*
+                FROM ae_commands ac
+                JOIN ae_tasks t ON t.id = ac.task_id
+                WHERE t.status IN ('completed', 'failed', 'cancelled')
+                  AND ac.publish_status = 'accepted'
+                  AND ac.terminal_status IS NULL
+                  AND NOT (
+                    COALESCE(ac.payload, '{}'::jsonb)
+                    @> '{"_ae3_fail_safe": true}'::jsonb
+                  )
+                ORDER BY ac.created_at ASC, ac.id ASC
+                LIMIT $1
+                """,
+                max(1, min(1000, int(limit))),
+            )
+        return [dict(row) for row in rows]
+
     async def has_recovery_batch_resume(
         self,
         *,

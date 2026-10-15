@@ -76,6 +76,34 @@ describe('CausalChainPanel.vue', () => {
     expect(wrapper.find('[data-testid="scheduler-chain-retry"]').exists()).toBe(false)
   })
 
+  it('не маскирует chemistry miss у completed run', () => {
+    const wrapper = mount(CausalChainPanel, {
+      props: {
+        run: buildRun({
+          status: 'completed',
+          is_active: false,
+          chemistry_outcome: 'targets_not_achieved',
+          chemistry_diagnostics: {
+            current_ph: 6.7265,
+            target_ph: 5.8,
+            ph_deadband: 0.04,
+            current_ec: 0.532,
+            target_ec: 1.4,
+            ec_deadband: 0.06,
+            allow_ph: true,
+            allow_ec: true,
+          },
+        }),
+      },
+    })
+
+    const warning = wrapper.get('[data-testid="scheduler-chain-chemistry-warning"]')
+    expect(warning.text()).toContain('целевые pH/EC не достигнуты')
+    expect(warning.text()).toContain('pH 6.7265 → 5.8 ±0.04')
+    expect(warning.text()).toContain('EC 0.532 → 1.4 ±0.06')
+    expect(wrapper.text()).toContain('DONE · CHEM WARN')
+  })
+
   it('эмитит события close/retry/open-events', async () => {
     const run = buildRun({
       status: 'failed',

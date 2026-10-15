@@ -3,7 +3,7 @@
 
 Документ описывает формальную спецификацию **effective-targets** — структурированных целевых значений и параметров управления для зон выращивания.
 
-Актуализация authority / AE3 (2026-08-24):
+Актуализация authority / AE3 (2026-10-12):
 - **два непересекающихся канона** — см. §0. Агрохимия (pH/EC/`solution_temp`) ≠ автоматика (PID/correction/plans). Это не два канона на одни и те же числа;
 - AE3 runtime **не** ходит в HTTP `/api/internal/effective-targets/*`; химию читает SQL `grow_cycle_phases` по `grow_cycles.current_phase_id`;
 - `EffectiveTargetsService` — read-model UI/diagnostics/scheduler, **не** движок AE3 и **не** SoT химии отдельно от колонок фазы;
@@ -32,12 +32,24 @@
 - `controllers.kp/ki/kd` при наличии `zone.pid` — fallback only (LiveEdit скрывает);
 - см. `PID_CONFIG_REFERENCE.md` §0.
 
+Три разных границы нельзя смешивать:
+
+- recipe `min/max` — агрономический диапазон и context для ready/safety decisions;
+- resolved PID deadband вокруг `target` — dose decision, PID reset и подтверждение
+  `targets_achieved`;
+- физические/sensor hard bounds — fail-closed валидность входных данных и actuator safety.
+
+Попадание только в широкий recipe range не означает достижения setpoint. Отключённый
+контур не участвует в chemistry success и не требует своего controller config для
+проверки оставшегося контура.
+
 Актуализация per-phase EC и day/night (2026-04-13; **переписано 2026-07-22**):
 - prepare owner больше **не** `target_ec_prepare` / `npk_ec_share` — канон: water-baseline +
   кумулятивные `T_*` + sequential pipeline (см. §9);
 - AE3 выбирает active EC target по pipeline step (`T_ca` / `T_ca_mg` / … / `T_full`), не по
   «NPK share vs full»;
-- irrigation: только pH; post-irrigation chemistry (`irrig_recirc`) удалена;
+- irrigation: pH + optional один EC-компонент (`calcium|npk`) в bounded
+  component budget; post-irrigation chemistry удалена;
 - при `day_night_enabled=true` night `target_ec` пересчитывает `nutrient_budget` и `T_*`
   от `(target_ec_night − water_ec)` — см. §10;
 - compiled bundle обязан пересчитываться при `advancePhase`/`setPhase`/`changeRecipeRevision` (см. `RECIPE_ENGINE_FULL.md` §3.3).
@@ -688,16 +700,12 @@ interface DosingTarget {
 
 **ВАЖНО:** pH/EC измерения валидны только при потоке через сенсор. Эти параметры управляют жизненным циклом активации/деактивации сенсорных нод и частотой коррекций.
 
-> **Legacy:** `irrig_recirc_stabilization_sec` / `max_irrig_recirc_attempts` относятся к снятому post-irrigation `IRRIG_RECIRC` path (AE3 canon — без отдельной фазы `irrig_recirc`). Поля могут оставаться в JSON/UI для совместимости, runtime AE3 их не требует.
-
 ```typescript
 interface CorrectionTimingsTarget {
   // Время стабилизации после активации (для разных состояний)
   tank_fill_stabilization_sec: number;     // По умолчанию: 90
   tank_recirc_stabilization_sec: number;   // По умолчанию: 30
   irrigation_stabilization_sec: number;    // По умолчанию: 30
-  /** @deprecated legacy IRRIG_RECIRC — не канон AE3 */
-  irrig_recirc_stabilization_sec?: number;
 
   // Время ожидания после дозирования (mixing time)
   npk_mix_time_sec: number;                // По умолчанию: 120
@@ -709,8 +717,6 @@ interface CorrectionTimingsTarget {
 
   // Максимальные попытки рециркуляции
   max_tank_recirc_attempts: number;        // По умолчанию: 5
-  /** @deprecated legacy IRRIG_RECIRC — не канон AE3 */
-  max_irrig_recirc_attempts?: number;
 
   // Timeout режимов (макс. время выполнения)
   tank_fill_timeout_sec: number;           // По умолчанию: 1800 (30 мин)
@@ -726,13 +732,11 @@ interface CorrectionTimingsTarget {
     "tank_fill_stabilization_sec": 90,
     "tank_recirc_stabilization_sec": 30,
     "irrigation_stabilization_sec": 30,
-    "irrig_recirc_stabilization_sec": 30,
     "npk_mix_time_sec": 120,
     "ph_mix_time_sec": 60,
     "ca_mg_mix_time_sec": 90,
     "min_correction_interval_sec": 300,
     "max_tank_recirc_attempts": 5,
-    "max_irrig_recirc_attempts": 2,
     "tank_fill_timeout_sec": 1800,
     "tank_recirc_timeout_sec": 3600,
     "irrigation_timeout_sec": 600
@@ -747,13 +751,11 @@ interface CorrectionTimingsTarget {
     "tank_fill_stabilization_sec": 120,
     "tank_recirc_stabilization_sec": 45,
     "irrigation_stabilization_sec": 60,
-    "irrig_recirc_stabilization_sec": 45,
     "npk_mix_time_sec": 180,
     "ph_mix_time_sec": 90,
     "ca_mg_mix_time_sec": 120,
     "min_correction_interval_sec": 600,
     "max_tank_recirc_attempts": 10,
-    "max_irrig_recirc_attempts": 3,
     "tank_fill_timeout_sec": 2400,
     "tank_recirc_timeout_sec": 5400,
     "irrigation_timeout_sec": 900
@@ -767,7 +769,6 @@ interface CorrectionTimingsTarget {
 - `tank_fill_stabilization_sec` — время стабилизации при активации в TANK_FILLING (обычно больше, т.к. идет заливка)
 - `tank_recirc_stabilization_sec` — время стабилизации в TANK_RECIRC (меньше, т.к. раствор уже смешан)
 - `irrigation_stabilization_sec` — время стабилизации при активации для IRRIGATING
-- `irrig_recirc_stabilization_sec` — **legacy**, не используется каноном AE3 (снятый IRRIG_RECIRC)
 
 **Mixing time (время перемешивания):**
 - `npk_mix_time_sec` — время ожидания после дозирования NPK для перемешивания
@@ -777,7 +778,6 @@ interface CorrectionTimingsTarget {
 **Интервалы и ограничения:**
 - `min_correction_interval_sec` — минимальный интервал между коррекциями (предотвращает передозировку)
 - `max_tank_recirc_attempts` — максимальное количество попыток достичь целей в TANK_RECIRC
-- `max_irrig_recirc_attempts` — **legacy**, не канон AE3
 
 **Timeouts:**
 - `tank_fill_timeout_sec` — максимальное время режима TANK_FILLING
@@ -792,8 +792,7 @@ interface CorrectionTimingsTarget {
 | **TANK_FILLING** / `solution_fill` | `tank_fill_stabilization_sec` (90s) | Calcium only (`pump_b`), без pH; EC target = water-baseline `T_ca` (см. §9) |
 | **TANK_RECIRC** / `prepare` | `tank_recirc_stabilization_sec` (30s) | interleaved Ca→pH→Mg→pH→NPK→pH→Micro→final pH; cumulative `T_*` (+ dilute-on-overshoot) |
 | **READY** | — | Нет коррекций |
-| **IRRIGATING** | `irrigation_stabilization_sec` (30s) | только pH; EC excluded (`needs_ec=false`) |
-| **IRRIG_RECIRC** | — | **removed** (legacy; post-irrigation chemistry нет) |
+| **IRRIGATING** | `irrigation_stabilization_sec` (30s) | pH + optional один EC-компонент (`calcium|npk`) в cumulative component target |
 
 **Логика применения:**
 - После **активации** ноды ждут `*_stabilization_sec` перед разрешением коррекций
@@ -801,19 +800,30 @@ interface CorrectionTimingsTarget {
 - Между **коррекциями** выдерживается `min_correction_interval_sec`
 - При превышении `max_*_recirc_attempts` или `*_timeout_sec` происходит принудительный переход
 
+**Каноническая timing-семантика `targets.irrigation`:**
+
+| Поле | Смысл |
+|------|-------|
+| `duration_sec` | Максимальная длительность подачи воды растениям; `pump_main/run_pump` не продлевается ради chemistry |
+| `correction_slack_sec` | Дополнительный bounded budget stage для inline `dose/hold/observe` после запуска полива; `0..7200` |
+| `stage_timeout_sec` | Опциональный hard safety ceiling для всей `irrigation_check` stage |
+
+Stage deadline: `min(duration_sec + correction_slack_sec, stage_timeout_sec, 86400)`,
+якорь — terminal вход в irrigation path. Если correction выключена, slack равен нулю.
+Перед новой дозой дополнительно проверяется, что в остаток помещаются pulse duration,
+command-poll margin и stop reserve.
+
 **Default значения:**
 ```json
 {
   "tank_fill_stabilization_sec": 90,
   "tank_recirc_stabilization_sec": 30,
   "irrigation_stabilization_sec": 30,
-  "irrig_recirc_stabilization_sec": 30,
   "npk_mix_time_sec": 120,
   "ph_mix_time_sec": 60,
   "ca_mg_mix_time_sec": 90,
   "min_correction_interval_sec": 300,
   "max_tank_recirc_attempts": 5,
-  "max_irrig_recirc_attempts": 2,
   "tank_fill_timeout_sec": 1800,
   "tank_recirc_timeout_sec": 3600,
   "irrigation_timeout_sec": 600
@@ -1072,13 +1082,11 @@ function computeEffectiveTargets(Zone $zone): array
     "tank_fill_stabilization_sec": 90,
     "tank_recirc_stabilization_sec": 30,
     "irrigation_stabilization_sec": 30,
-    "irrig_recirc_stabilization_sec": 30,
     "npk_mix_time_sec": 120,
     "ph_mix_time_sec": 60,
     "ca_mg_mix_time_sec": 90,
     "min_correction_interval_sec": 300,
     "max_tank_recirc_attempts": 5,
-    "max_irrig_recirc_attempts": 2,
     "tank_fill_timeout_sec": 1800,
     "tank_recirc_timeout_sec": 3600,
     "irrigation_timeout_sec": 600
@@ -1099,14 +1107,15 @@ Legacy `target_ec_prepare` / `npk_ec_share` / «prepare = только NPK» —
 ### 9.1. Проблема (историческая) и новый контракт
 
 Старая модель дозировала в prepare только NPK-долю полного EC (`target_ec * npk_ec_share`),
-а Ca/Mg/Micro оставляла на irrigation/`irrig_recirc`. Это давало передозировку NPK и
+а остальные компоненты откладывала на более поздние стадии. Это давало передозировку NPK и
 ломало компонентную сборку при уже достигнутом full EC.
 
 **Новый канон:**
 - `solution_fill` — только **calcium** после water-baseline;
 - `prepare_recirculation` — последовательный pipeline
   `Ca → pH → Mg → pH → NPK → pH → Micro → финальный pH`;
-- `irrigation` — **только pH**; EC / post-irrigation nutrient recovery **запрещены**.
+- `irrigation` — pH + optional один EC-компонент (`calcium|npk`) с fail-closed
+  cumulative component cap; post-irrigation nutrient recovery запрещена.
 
 ### 9.2. Модель таргетов (water baseline)
 
@@ -1148,13 +1157,17 @@ Persist: таблица `zone_prepare_baselines` + колонки `ae_tasks.corr
 | recirc step NPK | `T_ca_mg_npk` | — |
 | recirc step Micro | `T_full` | — |
 | recirc pH-gate / final pH | EC PID frozen | `target_ph` |
-| `irrigation` | EC off (`needs_ec=false`) | `target_ph` |
+| irrigation, component `none` | EC off (`needs_ec=false`) | `target_ph` |
+| irrigation, `calcium` | dose target `T_ca`; full target остаётся terminal diagnostic goal | `target_ph` |
+| irrigation, `npk` | dose target `T_ca_mg_npk`; full target остаётся terminal diagnostic goal | `target_ph` |
 
 `build_dose_plan` / `is_within_tolerance` / `_targets_reached` используют
 **active pipeline step target** (`T_step`), не legacy `target_ec_prepare`.
 
-Legacy accessors `_effective_ec_target` с веткой `npk_ec_share` подлежат замене/
-удалению в runtime PR (этот документ — канон семантики).
+Для irrigation baseline обязателен и должен иметь `T_full`, совпадающий с текущим
+effective recipe target в пределах resolved EC deadband. Missing/mismatched baseline
+или достижение component target даёт component-budget event/alert и прекращает EC dose;
+pH-only часть может продолжиться.
 
 ### 9.4. Day/night и baseline
 
@@ -1177,7 +1190,7 @@ T_* = water_ec + budget * cumulative_ratios
 | `target_ec_prepare`, `target_ec_prepare_min/max` | deprecated — не owner prepare EC |
 | `npk_ec_share` | deprecated — не owner prepare EC |
 | `_compute_prepare_ec_share` / `_day_night_override_scaled` (NPK share) | удалить/заменить на baseline math |
-| irrigation `ec_excluded_components=["npk"]` + Ca/Mg/Micro dosing | removed — irrigation = pH-only |
+| irrigation `ec_excluded_components=["npk"]` + Ca/Mg/Micro batch | removed — разрешён ровно `none|calcium|npk` с component cap |
 
 ---
 

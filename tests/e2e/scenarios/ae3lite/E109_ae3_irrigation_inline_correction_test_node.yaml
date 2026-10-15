@@ -10,7 +10,10 @@ description: |
     - pump_main включен;
     - runtime выбирает pH dose (не EC);
     - нет перехода в post-irrigation recovery chemistry;
-    - pH dosing происходит при активной основной помпе.
+    - pH dosing происходит при активной основной помпе;
+    - первый цикл завершается с targets_achieved и CORRECTION_COMPLETE;
+    - второй цикл завершается с targets_not_achieved, business alert и без
+      ложного CORRECTION_COMPLETE или dangling accepted/NULL команд.
 
 actions:
   - step: set_test_context
@@ -21,6 +24,7 @@ actions:
     test_ec_node_uid: ${TEST_EC_NODE_UID}
     recipe_name: ae3-irrig-inline-corr-${TIMESTAMP_MS}
     idem_inline: e109-inline-${TIMESTAMP_MS}
+    idem_inline_missed: e109-inline-missed-${TIMESTAMP_MS}
 
   - step: load_zone_context
     type: database_query
@@ -784,9 +788,9 @@ actions:
         10,
         '{
           "targets": {
-            "irrigation": {
-              "correction_during_irrigation": true,
-              "correction_slack_sec": 300
+              "irrigation": {
+                "correction_during_irrigation": true,
+                "correction_slack_sec": 25
             }
           }
         }'::jsonb,
@@ -839,6 +843,17 @@ actions:
     endpoint: /api/automation-configs/grow_cycle/${grow_cycle_id}/cycle.phase_overrides
     payload:
       payload: {}
+
+  - step: apply_cycle_irrigation_correction_slack
+    type: api_put
+    endpoint: /api/automation-configs/grow_cycle/${grow_cycle_id}/cycle.manual_overrides
+    payload:
+      payload:
+        - parameter: irrigation.correction_slack_sec
+          value_type: integer
+          value: 25
+          is_active: true
+          reason: e109-terminal-outcome-window
 
   - step: wait_grow_cycle_bundle_ready
     type: db.wait
@@ -1031,7 +1046,7 @@ actions:
     endpoint: /api/zones/${zone_id}/start-irrigation
     payload:
       mode: normal
-      requested_duration_sec: 90
+      requested_duration_sec: 30
       idempotency_key: ${idem_inline}
     save: irrigation_response
 
@@ -1168,6 +1183,294 @@ actions:
     expected_rows: 1
     save: pump_main_snapshot_row
 
+  - step: wait_first_ph_dose_terminal_done
+    type: db.wait
+    query: |
+      SELECT id, channel, terminal_status, updated_at
+      FROM ae_commands
+      WHERE task_id = CAST(:task_id AS bigint)
+        AND publish_status = 'accepted'
+        AND channel IN ('pump_acid', 'pump_base')
+        AND payload->>'cmd' = 'dose'
+        AND terminal_status = 'DONE'
+      ORDER BY id ASC
+      LIMIT 1
+    params:
+      task_id: ${task_id}
+    timeout: 30.0
+    expected_rows: 1
+    save: first_ph_dose_terminal_row
+
+  - step: force_first_cycle_targets_achieved
+    type: hardware_set_fault_mode
+    zone_id: ${zone_id}
+    node_uid: ${test_node_uid}
+    channel: storage_state
+    params:
+      ph_value: 5.80
+      ec_value: 1.40
+    save: first_targets_response
+
+  - step: wait_first_targets_command_done
+    type: db.wait
+    query: |
+      SELECT id, cmd_id, status
+      FROM commands
+      WHERE cmd_id = :cmd_id
+        AND status = 'DONE'
+      ORDER BY created_at DESC
+      LIMIT 1
+    params:
+      cmd_id: ${first_targets_response.data.cmd_id}
+    timeout: 20.0
+    expected_rows: 1
+
+  - step: wait_first_cycle_completed_with_targets_achieved
+    type: db.wait
+    query: |
+      SELECT
+        t.id,
+        t.status,
+        t.current_stage,
+        COALESCE(e.details, e.payload_json)->>'chemistry_outcome' AS chemistry_outcome,
+        COALESCE(e.details, e.payload_json)->>'current_ph' AS current_ph,
+        COALESCE(e.details, e.payload_json)->>'ph_deadband' AS ph_deadband,
+        e.created_at AS terminal_event_at
+      FROM ae_tasks t
+      JOIN zone_events e
+        ON e.zone_id = t.zone_id
+       AND e.type = 'CORRECTION_COMPLETE'
+       AND COALESCE(e.details, e.payload_json)->>'task_id' = CAST(t.id AS text)
+      WHERE t.id = CAST(:task_id AS bigint)
+        AND t.status = 'completed'
+        AND t.current_stage = 'completed_run'
+        AND COALESCE(e.details, e.payload_json)->>'chemistry_outcome' = 'targets_achieved'
+      ORDER BY e.created_at DESC
+      LIMIT 1
+    params:
+      task_id: ${task_id}
+    timeout: 90.0
+    expected_rows: 1
+    save: first_cycle_terminal_row
+
+  - step: wait_first_cycle_terminal_diagnostics
+    type: db.wait
+    query: |
+      SELECT
+        id,
+        COALESCE(details, payload_json)->>'chemistry_outcome' AS chemistry_outcome,
+        COALESCE(details, payload_json)->'chemistry_diagnostics'->>'reason' AS chemistry_reason
+      FROM zone_events
+      WHERE zone_id = :zone_id
+        AND type = 'AE_TASK_COMPLETED'
+        AND COALESCE(details, payload_json)->>'task_id' = CAST(:task_id AS text)
+        AND COALESCE(details, payload_json)->>'chemistry_outcome' = 'targets_achieved'
+      ORDER BY created_at DESC
+      LIMIT 1
+    params:
+      zone_id: ${zone_id}
+      task_id: ${task_id}
+    timeout: 30.0
+    expected_rows: 1
+    save: first_cycle_diagnostics_row
+
+  - step: wait_ready_after_first_cycle
+    type: db.wait
+    query: |
+      SELECT zone_id, workflow_phase
+      FROM zone_workflow_state
+      WHERE zone_id = :zone_id
+        AND workflow_phase = 'ready'
+      LIMIT 1
+    params:
+      zone_id: ${zone_id}
+    timeout: 30.0
+    expected_rows: 1
+
+  - step: verify_first_cycle_no_dangling_commands
+    type: database_query
+    query: |
+      SELECT COUNT(*)::int AS dangling_cnt
+      FROM ae_commands
+      WHERE task_id = CAST(:task_id AS bigint)
+        AND publish_status = 'accepted'
+        AND terminal_status IS NULL
+    params:
+      task_id: ${task_id}
+    expected_rows: 1
+    save: first_cycle_dangling_row
+
+  - step: seed_second_cycle_initial_targets
+    type: hardware_set_fault_mode
+    zone_id: ${zone_id}
+    node_uid: ${test_node_uid}
+    channel: storage_state
+    params:
+      ph_value: 5.80
+      ec_value: 1.40
+      level_solution_min_override: true
+      level_solution_max_override: true
+    save: second_initial_targets_response
+
+  - step: wait_second_initial_targets_done
+    type: db.wait
+    query: |
+      SELECT id, cmd_id, status
+      FROM commands
+      WHERE cmd_id = :cmd_id
+        AND status = 'DONE'
+      ORDER BY created_at DESC
+      LIMIT 1
+    params:
+      cmd_id: ${second_initial_targets_response.data.cmd_id}
+    timeout: 20.0
+    expected_rows: 1
+
+  - step: start_second_irrigation_for_target_miss
+    type: api_post
+    endpoint: /api/zones/${zone_id}/start-irrigation
+    payload:
+      mode: normal
+      requested_duration_sec: 10
+      idempotency_key: ${idem_inline_missed}
+    save: second_irrigation_response
+
+  - step: set_second_task_id
+    type: set
+    second_task_id: ${second_irrigation_response.data.task_id}
+
+  - step: wait_second_cycle_near_deadline
+    type: db.wait
+    query: |
+      SELECT id, stage_deadline_at
+      FROM ae_tasks
+      WHERE id = CAST(:task_id AS bigint)
+        AND status IN ('pending', 'claimed', 'running', 'waiting_command')
+        AND current_stage = 'irrigation_check'
+        AND stage_deadline_at IS NOT NULL
+        AND stage_deadline_at <= NOW() + INTERVAL '6 seconds'
+        AND stage_deadline_at > NOW()
+      LIMIT 1
+    params:
+      task_id: ${second_task_id}
+    timeout: 60.0
+    expected_rows: 1
+    save: second_near_deadline_row
+
+  - step: force_second_cycle_target_miss
+    type: hardware_set_fault_mode
+    zone_id: ${zone_id}
+    node_uid: ${test_node_uid}
+    channel: storage_state
+    params:
+      ph_value: 7.20
+      ec_value: 1.40
+    save: second_miss_response
+
+  - step: wait_second_miss_command_done
+    type: db.wait
+    query: |
+      SELECT id, cmd_id, status
+      FROM commands
+      WHERE cmd_id = :cmd_id
+        AND status = 'DONE'
+      ORDER BY created_at DESC
+      LIMIT 1
+    params:
+      cmd_id: ${second_miss_response.data.cmd_id}
+    timeout: 20.0
+    expected_rows: 1
+
+  - step: wait_second_cycle_completed_with_target_miss
+    type: db.wait
+    query: |
+      SELECT
+        t.id,
+        t.status,
+        t.current_stage,
+        COALESCE(e.details, e.payload_json)->>'chemistry_outcome' AS chemistry_outcome,
+        COALESCE(e.details, e.payload_json)->>'current_ph' AS current_ph,
+        COALESCE(e.details, e.payload_json)->>'target_ph' AS target_ph,
+        COALESCE(e.details, e.payload_json)->>'ph_deadband' AS ph_deadband,
+        e.created_at AS terminal_event_at
+      FROM ae_tasks t
+      JOIN zone_events e
+        ON e.zone_id = t.zone_id
+       AND e.type = 'CORRECTION_TARGETS_NOT_ACHIEVED'
+       AND COALESCE(e.details, e.payload_json)->>'task_id' = CAST(t.id AS text)
+      WHERE t.id = CAST(:task_id AS bigint)
+        AND t.status = 'completed'
+        AND t.current_stage = 'completed_run'
+        AND COALESCE(e.details, e.payload_json)->>'chemistry_outcome' = 'targets_not_achieved'
+      ORDER BY e.created_at DESC
+      LIMIT 1
+    params:
+      task_id: ${second_task_id}
+    timeout: 90.0
+    expected_rows: 1
+    save: second_cycle_terminal_row
+
+  - step: wait_second_cycle_terminal_diagnostics
+    type: db.wait
+    query: |
+      SELECT
+        id,
+        COALESCE(details, payload_json)->>'chemistry_outcome' AS chemistry_outcome,
+        COALESCE(details, payload_json)->'chemistry_diagnostics'->>'current_ph' AS current_ph
+      FROM zone_events
+      WHERE zone_id = :zone_id
+        AND type = 'AE_TASK_COMPLETED'
+        AND COALESCE(details, payload_json)->>'task_id' = CAST(:task_id AS text)
+        AND COALESCE(details, payload_json)->>'chemistry_outcome' = 'targets_not_achieved'
+      ORDER BY created_at DESC
+      LIMIT 1
+    params:
+      zone_id: ${zone_id}
+      task_id: ${second_task_id}
+    timeout: 30.0
+    expected_rows: 1
+    save: second_cycle_diagnostics_row
+
+  - step: wait_second_cycle_business_alert
+    type: db.wait
+    query: |
+      SELECT id, code, severity, status, details->>'current_ph' AS current_ph
+      FROM alerts
+      WHERE zone_id = :zone_id
+        AND code = 'biz_ae3_correction_targets_not_achieved'
+        AND details->>'task_id' = CAST(:task_id AS text)
+      ORDER BY created_at DESC
+      LIMIT 1
+    params:
+      zone_id: ${zone_id}
+      task_id: ${second_task_id}
+    timeout: 30.0
+    expected_rows: 1
+    save: second_cycle_alert_row
+
+  - step: verify_second_cycle_no_false_success_or_dangling_commands
+    type: database_query
+    query: |
+      SELECT
+        COUNT(*) FILTER (
+          WHERE e.type = 'CORRECTION_COMPLETE'
+        )::int AS false_success_cnt,
+        (
+          SELECT COUNT(*)::int
+          FROM ae_commands c
+          WHERE c.task_id = CAST(:task_id AS bigint)
+            AND c.publish_status = 'accepted'
+            AND c.terminal_status IS NULL
+        ) AS dangling_cnt
+      FROM zone_events e
+      WHERE e.zone_id = :zone_id
+        AND COALESCE(e.details, e.payload_json)->>'task_id' = CAST(:task_id AS text)
+    params:
+      zone_id: ${zone_id}
+      task_id: ${second_task_id}
+    expected_rows: 1
+    save: second_cycle_safety_row
+
 assertions:
   - name: inline_correction_decision_is_ph_only
     type: custom_assert
@@ -1185,6 +1488,24 @@ assertions:
     type: custom_assert
     condition: "len(context.get('pump_main_snapshot_row', [])) == 1"
 
+  - name: first_cycle_reports_targets_achieved
+    type: custom_assert
+    condition: >
+      len(context.get('first_cycle_terminal_row', [])) == 1
+      and context.get('first_cycle_terminal_row', [{}])[0].get('chemistry_outcome') == 'targets_achieved'
+      and len(context.get('first_cycle_diagnostics_row', [])) == 1
+      and int(context.get('first_cycle_dangling_row', [{}])[0].get('dangling_cnt', 1)) == 0
+
+  - name: second_cycle_reports_target_miss_without_false_success
+    type: custom_assert
+    condition: >
+      len(context.get('second_cycle_terminal_row', [])) == 1
+      and context.get('second_cycle_terminal_row', [{}])[0].get('chemistry_outcome') == 'targets_not_achieved'
+      and len(context.get('second_cycle_diagnostics_row', [])) == 1
+      and len(context.get('second_cycle_alert_row', [])) == 1
+      and int(context.get('second_cycle_safety_row', [{}])[0].get('false_success_cnt', 1)) == 0
+      and int(context.get('second_cycle_safety_row', [{}])[0].get('dangling_cnt', 1)) == 0
+
 cleanup:
   - step: cleanup_runtime_ae_commands
     type: database_execute
@@ -1195,6 +1516,16 @@ cleanup:
     params:
       task_id: ${task_id}
 
+  - step: cleanup_second_runtime_ae_commands
+    type: database_execute
+    optional: true
+    condition: ${second_task_id}
+    query: |
+      DELETE FROM ae_commands
+      WHERE task_id = CAST(:second_task_id AS bigint)
+    params:
+      second_task_id: ${second_task_id}
+
   - step: cleanup_runtime_ae_task
     type: database_execute
     optional: true
@@ -1203,6 +1534,38 @@ cleanup:
       WHERE id = CAST(:task_id AS bigint)
     params:
       task_id: ${task_id}
+
+  - step: cleanup_second_runtime_ae_task
+    type: database_execute
+    optional: true
+    condition: ${second_task_id}
+    query: |
+      DELETE FROM ae_tasks
+      WHERE id = CAST(:second_task_id AS bigint)
+    params:
+      second_task_id: ${second_task_id}
+
+  - step: resolve_expected_target_miss_alert
+    type: database_execute
+    optional: true
+    condition: ${second_task_id}
+    query: |
+      UPDATE alerts
+      SET status = 'RESOLVED',
+          resolved_at = NOW()
+      WHERE zone_id = :zone_id
+        AND code = 'biz_ae3_correction_targets_not_achieved'
+        AND details->>'task_id' = CAST(:task_id AS text)
+    params:
+      zone_id: ${zone_id}
+      task_id: ${second_task_id}
+
+  - step: reset_cycle_manual_overrides
+    type: api_put
+    optional: true
+    endpoint: /api/automation-configs/grow_cycle/${grow_cycle_id}/cycle.manual_overrides
+    payload:
+      payload: []
 
   - step: cleanup_zone_intents
     type: database_execute

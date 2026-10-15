@@ -678,6 +678,10 @@ class TestAe3LiteFailClosedRealHwScenarioContract(unittest.TestCase):
 
 
 class TestAe3LiteInlineCorrectionNodeSimScenarioContract(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.scenario = load_scenario_file(INLINE_CORRECTION_SCENARIO_PATH)
+
     def test_inline_irrigation_scenario_provisions_active_grow_cycle_bundle(self) -> None:
         text = INLINE_CORRECTION_SCENARIO_PATH.read_text(encoding="utf-8")
 
@@ -723,6 +727,32 @@ class TestAe3LiteInlineCorrectionNodeSimScenarioContract(unittest.TestCase):
         self.assertIn("inline_correction_has_no_ec_dose", text)
         self.assertNotIn("ec_first_in_window", text)
         self.assertNotIn("wait_ec_dose_command_during_irrigation", text)
+
+    def test_inline_irrigation_scenario_covers_both_terminal_chemistry_outcomes(self) -> None:
+        action_names = {item.get("step") for item in self.scenario.get("actions") or []}
+        assertion_names = {item.get("name") for item in self.scenario.get("assertions") or []}
+        text = INLINE_CORRECTION_SCENARIO_PATH.read_text(encoding="utf-8")
+
+        for action_name in (
+            "wait_first_ph_dose_terminal_done",
+            "wait_first_cycle_completed_with_targets_achieved",
+            "wait_first_cycle_terminal_diagnostics",
+            "wait_second_cycle_completed_with_target_miss",
+            "wait_second_cycle_terminal_diagnostics",
+            "wait_second_cycle_business_alert",
+            "verify_second_cycle_no_false_success_or_dangling_commands",
+        ):
+            self.assertIn(action_name, action_names)
+
+        self.assertIn("first_cycle_reports_targets_achieved", assertion_names)
+        self.assertIn("second_cycle_reports_target_miss_without_false_success", assertion_names)
+        self.assertIn("CORRECTION_COMPLETE", text)
+        self.assertIn("CORRECTION_TARGETS_NOT_ACHIEVED", text)
+        self.assertIn("biz_ae3_correction_targets_not_achieved", text)
+        self.assertIn("terminal_status IS NULL", text)
+        self.assertIn("cycle.manual_overrides", text)
+        self.assertIn("parameter: irrigation.correction_slack_sec", text)
+        self.assertIn("reset_cycle_manual_overrides", text)
 
 
 class TestAe3LiteStartIrrigationRuntimeScenarioContract(unittest.TestCase):

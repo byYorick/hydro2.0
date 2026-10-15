@@ -2389,12 +2389,12 @@ void test_node_ui_log_event(const char *node_uid, const char *message) {
 }
 
 void test_node_ui_update_telemetry_line(const char *node_uid, const char *message) {
-    if (esp_get_free_heap_size() < 28000) {
-        return;
-    }
     if (!message || message[0] == '\0' || strncmp(message, "tel ", 4) != 0) {
         return;
     }
+    /* Обе UI-очереди выделены при init, а node-view использует статические
+     * буферы. Поэтому low-heap gate здесь не экономил память, а скрывал
+     * telemetry при штатном steady-state heap ESP32-S3 (~21-28 KiB). */
     ui_enqueue_event(UI_EVENT_NODE_TELEMETRY, node_uid, message, NULL, false);
 }
 

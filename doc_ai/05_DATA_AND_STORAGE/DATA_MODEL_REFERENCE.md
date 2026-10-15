@@ -848,15 +848,37 @@ archived_at TIMESTAMP NOT NULL DEFAULT NOW()
 Transport queue для inbound status updates от нод, когда core mid-tier недоступен. Используется history-logger для resilient ingest.
 
 ```
-id BIGSERIAL PK
-payload JSONB NOT NULL          -- raw event/status payload
-target_type VARCHAR             -- 'command_status'|'node_status'|...
-retry_count INT NOT NULL DEFAULT 0
-last_error TEXT NULL
-created_at, updated_at
+pending_status_updates:
+  id BIGSERIAL PK
+  cmd_id VARCHAR(128) NOT NULL   -- тот же лимит, что у commands.cmd_id и MQTT command contract
+  status VARCHAR(16) NOT NULL
+  details JSONB NULL
+  retry_count INT NOT NULL DEFAULT 0
+  max_attempts INT NOT NULL DEFAULT 10
+  next_retry_at TIMESTAMPTZ NULL
+  last_error TEXT NULL
+  moved_to_dlq_at TIMESTAMPTZ NULL
+  created_at, updated_at TIMESTAMPTZ
+  UNIQUE (cmd_id, status)
+
+pending_status_updates_dlq:
+  id BIGSERIAL PK
+  cmd_id VARCHAR(128) NOT NULL
+  status VARCHAR(16) NOT NULL
+  details JSONB NULL
+  retry_count INT NOT NULL
+  max_attempts INT NULL
+  last_error TEXT NULL
+  failed_at, moved_to_dlq_at TIMESTAMPTZ
+  original_id BIGINT NULL
+  created_at TIMESTAMPTZ
 ```
 
-`pending_status_updates_dlq` — dead letter queue (структура такая же + `dlq_reason TEXT`). REST API DLQ описан в `HISTORY_LOGGER_API.md`.
+Обе очереди принимают `cmd_id` длиной до 128 символов. Это обязательно для согласованности с
+`commands.cmd_id`, Python-моделями команды и Laravel ingress `POST /api/python/commands/ack`.
+REST API DLQ описан в `HISTORY_LOGGER_API.md`.
+
+Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0
 
 ## 6.2. command_tracking
 

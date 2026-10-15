@@ -18,7 +18,7 @@ from ae3lite.application.use_cases.finalize_task import FinalizeTaskUseCase
 from ae3lite.application.runtime_event_contract import with_runtime_event_contract
 from ae3lite.infrastructure.metrics import FLOW_STOP_FAILED, TASK_RUNNING_TRANSITION_MISSED, inc_observability_write_failed
 from ae3lite.hydraulics.failure_report import publish_upward_reports
-from common.db import create_zone_event
+from common.db import create_zone_event, fetch
 from common.infra_alerts import send_infra_alert
 from common.biz_alerts import send_biz_alert
 from common.service_logs import send_service_log
@@ -179,34 +179,10 @@ class ExecuteTaskUseCase:
                 if final_task is not None and not bool(getattr(final_task, "is_active", False)):
                     await self._apply_terminal_task_side_effects(task=final_task, now=now)
                     if str(getattr(final_task, "status", "")).strip().lower() == "completed":
-                        try:
-                            await create_zone_event(final_task.zone_id, "AE_TASK_COMPLETED", {
-                                "task_id": final_task.id,
-                                "topology": str(getattr(final_task, "topology", "") or ""),
-                                "stage": str(getattr(final_task, "current_stage", "") or ""),
-                            })
-                        except Exception:
-                            logger.warning(
-                                "AE3 не смог записать событие AE_TASK_COMPLETED zone_id=%s task_id=%s",
-                                final_task.zone_id,
-                                final_task.id,
-                                exc_info=True,
-                            )
+                        await self._emit_task_completed_event(task=final_task)
                     return final_task
                 if str(getattr(final_task, "status", "")).strip().lower() == "completed":
-                    try:
-                        await create_zone_event(final_task.zone_id, "AE_TASK_COMPLETED", {
-                            "task_id": final_task.id,
-                            "topology": str(getattr(final_task, "topology", "") or ""),
-                            "stage": str(getattr(final_task, "current_stage", "") or ""),
-                        })
-                    except Exception:
-                        logger.warning(
-                            "AE3 не смог записать событие AE_TASK_COMPLETED zone_id=%s task_id=%s",
-                            final_task.zone_id,
-                            final_task.id,
-                            exc_info=True,
-                        )
+                    await self._emit_task_completed_event(task=final_task)
                 return final_task
 
             # Fallback для не-two_tank topology: generic single-batch
@@ -464,6 +440,89 @@ class ExecuteTaskUseCase:
                 error_code="ae3_task_execution_unhandled_exception",
                 error_message=message,
             )
+
+    async def _emit_task_completed_event(self, *, task: Any) -> None:
+        chemistry = await self._latest_chemistry_diagnostics(task=task)
+        payload = {
+            "task_id": task.id,
+            "topology": str(getattr(task, "topology", "") or ""),
+            "stage": str(getattr(task, "current_stage", "") or ""),
+        }
+        if isinstance(chemistry, Mapping):
+            payload.update({
+                "chemistry_outcome": str(chemistry.get("chemistry_outcome") or "unknown"),
+                "chemistry_diagnostics": chemistry,
+            })
+        try:
+            await create_zone_event(task.zone_id, "AE_TASK_COMPLETED", payload)
+        except Exception:
+            logger.warning(
+                "AE3 не смог записать событие AE_TASK_COMPLETED zone_id=%s task_id=%s",
+                task.zone_id,
+                task.id,
+                exc_info=True,
+            )
+
+    async def _latest_chemistry_diagnostics(self, *, task: Any) -> Mapping[str, Any] | None:
+        """Load the last persisted target outcome for terminal diagnostics."""
+        event_types = (
+            "CORRECTION_COMPLETE",
+            "CORRECTION_TARGETS_NOT_ACHIEVED",
+            "CORRECTION_TARGET_OUTCOME_UNKNOWN",
+        )
+        try:
+            rows = await fetch(
+                """
+                SELECT type, COALESCE(details, payload_json) AS payload
+                FROM zone_events
+                WHERE zone_id = $1
+                  AND type = ANY($2::text[])
+                ORDER BY created_at DESC, id DESC
+                LIMIT 64
+                """,
+                int(task.zone_id),
+                list(event_types),
+            )
+            for row in rows:
+                payload = row.get("payload") if isinstance(row, Mapping) else None
+                if not isinstance(payload, Mapping):
+                    continue
+                try:
+                    event_task_id = int(payload.get("task_id") or 0)
+                except (TypeError, ValueError):
+                    continue
+                if event_task_id != int(task.id):
+                    continue
+                event_type = str(row.get("type") or "")
+                fallback_outcome = {
+                    "CORRECTION_COMPLETE": "targets_achieved",
+                    "CORRECTION_TARGETS_NOT_ACHIEVED": "targets_not_achieved",
+                    "CORRECTION_TARGET_OUTCOME_UNKNOWN": "unknown",
+                }.get(event_type, "unknown")
+                return {
+                    **dict(payload),
+                    "chemistry_outcome": str(
+                        payload.get("chemistry_outcome") or fallback_outcome
+                    ),
+                }
+        except Exception:
+            logger.warning(
+                "AE3 could not load terminal chemistry diagnostics zone_id=%s task_id=%s",
+                int(getattr(task, "zone_id", 0) or 0),
+                int(getattr(task, "id", 0) or 0),
+                exc_info=True,
+            )
+        task_type = str(getattr(task, "task_type", "") or "").strip().lower()
+        decision_outcome = str(
+            getattr(task, "irrigation_decision_outcome", "") or ""
+        ).strip().lower()
+        if task_type == "irrigation_start" and decision_outcome != "skip":
+            return {
+                "chemistry_outcome": "unknown",
+                "reason": "terminal_chemistry_diagnostics_missing",
+                "task_id": int(getattr(task, "id", 0) or 0),
+            }
+        return None
 
     async def _retry_transient_command_send_failure(
         self,

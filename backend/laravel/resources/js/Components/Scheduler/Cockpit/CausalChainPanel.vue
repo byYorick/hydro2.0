@@ -59,6 +59,22 @@
       </div>
     </div>
 
+    <div
+      v-if="hasChemistryWarning"
+      class="mt-3 rounded-xl border border-[color:var(--accent-amber)]/45 bg-[color:var(--accent-amber)]/10 px-3 py-2.5"
+      data-testid="scheduler-chain-chemistry-warning"
+    >
+      <div class="text-[11px] font-semibold text-[color:var(--text-primary)]">
+        {{ chemistryWarningTitle }}
+      </div>
+      <div
+        v-if="chemistryValues"
+        class="mt-1 font-mono text-[10px] text-[color:var(--text-dim)]"
+      >
+        {{ chemistryValues }}
+      </div>
+    </div>
+
     <div class="mt-3 text-[10px] font-bold tracking-[0.12em] text-[color:var(--text-muted)]">
       ЦЕПОЧКА РЕШЕНИЙ
     </div>
@@ -199,6 +215,41 @@ const isFailed = computed(() => {
 
 const isCancelled = computed(() => String(props.run.status ?? '').toLowerCase() === 'cancelled')
 
+const hasChemistryWarning = computed(() => (
+  props.run.chemistry_outcome === 'targets_not_achieved'
+  || props.run.chemistry_outcome === 'unknown'
+  || props.run.chemistry_outcome === 'failed'
+))
+
+const chemistryWarningTitle = computed(() => {
+  if (props.run.chemistry_outcome === 'targets_not_achieved') {
+    return 'Полив завершён, но целевые pH/EC не достигнуты'
+  }
+  if (props.run.chemistry_outcome === 'failed') return 'Химическая коррекция завершилась ошибкой'
+  return 'Полив завершён, итоговые pH/EC не подтверждены'
+})
+
+const chemistryValues = computed(() => {
+  const details = props.run.chemistry_diagnostics
+  if (!details) return ''
+  const parts: string[] = []
+  const format = (value: unknown): string | null => {
+    const numeric = Number(value)
+    return Number.isFinite(numeric) ? numeric.toFixed(4).replace(/0+$/, '').replace(/\.$/, '') : null
+  }
+  const append = (label: string, currentKey: string, targetKey: string, deadbandKey: string, allowKey: string): void => {
+    if (details[allowKey] === false) return
+    const current = format(details[currentKey])
+    const target = format(details[targetKey])
+    const deadband = format(details[deadbandKey])
+    if (current === null || target === null) return
+    parts.push(`${label} ${current} → ${target}${deadband !== null ? ` ±${deadband}` : ''}`)
+  }
+  append('pH', 'current_ph', 'target_ph', 'ph_deadband', 'allow_ph')
+  append('EC', 'current_ec', 'target_ec', 'ec_deadband', 'allow_ec')
+  return parts.join(' · ')
+})
+
 const canRetry = computed(() => {
   if (!isFailed.value && !isCancelled.value) return false
   const taskType = String(props.run.schedule_task_type ?? props.run.task_type ?? '').toLowerCase()
@@ -211,12 +262,14 @@ const headerBadgeLabel = computed<string>(() => {
   const outcome = String(props.run.decision_outcome ?? '').toLowerCase()
   if (outcome === 'skip') return 'SKIP'
   if (props.run.is_active) return 'RUN'
+  if (hasChemistryWarning.value) return 'DONE · CHEM WARN'
   return String(props.run.status ?? '').toUpperCase() || '—'
 })
 
-const headerBadgeVariant = computed<'info' | 'success' | 'danger' | 'secondary'>(() => {
+const headerBadgeVariant = computed<'info' | 'success' | 'warning' | 'danger' | 'secondary'>(() => {
   if (isFailed.value || isCancelled.value) return 'danger'
   if (props.run.is_active) return 'info'
+  if (hasChemistryWarning.value) return 'warning'
   const outcome = String(props.run.decision_outcome ?? '').toLowerCase()
   if (outcome === 'skip') return 'secondary'
   return 'success'

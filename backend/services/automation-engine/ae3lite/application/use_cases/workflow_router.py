@@ -787,10 +787,16 @@ class WorkflowRouter:
                 requested_duration_sec = irrigation_runtime.duration_sec
             if requested_duration_sec is not None:
                 try:
-                    total_sec = min(
-                        max(1, int(requested_duration_sec)),
-                        _MAX_STAGE_TOTAL_SEC,
+                    hydraulic_duration_sec = max(1, int(requested_duration_sec))
+                    correction_slack_sec = (
+                        max(0, int(irrigation_runtime.correction_slack_sec))
+                        if bool(irrigation_runtime.correction_during_irrigation)
+                        else 0
                     )
+                    total_sec = hydraulic_duration_sec + correction_slack_sec
+                    if irrigation_runtime.stage_timeout_sec is not None:
+                        total_sec = min(total_sec, max(1, int(irrigation_runtime.stage_timeout_sec)))
+                    total_sec = min(total_sec, _MAX_STAGE_TOTAL_SEC)
                 except (TypeError, ValueError):
                     total_sec = None
                 else:

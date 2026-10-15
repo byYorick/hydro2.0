@@ -875,6 +875,95 @@ def test_is_within_tolerance_does_not_treat_ec_overshoot_as_target_reached() -> 
     ) is False
 
 
+def test_is_within_tolerance_ph_only_does_not_require_ec_controller() -> None:
+    planner = CorrectionPlanner()
+    config = _correction_config(ph_overrides={"deadband": 0.04})
+    del config["controllers"]["ec"]
+
+    assert planner.is_within_tolerance(
+        current_ph=5.82,
+        current_ec=0.5,
+        target_ph=5.8,
+        target_ec=1.4,
+        ph_tolerance_pct=10.0,
+        ec_tolerance_pct=10.0,
+        correction_config=config,
+        allow_ec=False,
+        allow_ph=True,
+    ) is True
+
+
+def test_build_dose_plan_does_not_reset_ec_inside_recipe_band_but_outside_deadband() -> None:
+    planner = CorrectionPlanner()
+    now = datetime(2026, 10, 12, 12, 0, 0, tzinfo=UTC)
+
+    dose_plan = planner.build_dose_plan(
+        current_ph=5.8,
+        current_ec=1.30,
+        target_ph=5.8,
+        target_ec=1.4,
+        ph_tolerance_pct=10.0,
+        ec_tolerance_pct=10.0,
+        correction_config=_correction_config(
+            ph_overrides={"deadband": 0.04},
+            ec_overrides={"deadband": 0.06, "min_interval_sec": 0},
+        ),
+        workflow_phase="irrigating",
+        process_calibrations={"irrigation": {"ec_gain_per_ml": 0.1}},
+        pid_state={
+            "ec": {
+                "integral": 3.0,
+                "prev_error": 0.2,
+                "prev_derivative": 0.0,
+                "last_measurement_at": now - timedelta(seconds=10),
+            },
+        },
+        now=now,
+        ec_actuators={
+            "ec_npk": {
+                "node_uid": "ec-node",
+                "channel": "pump_a",
+                "calibration": {"ml_per_sec": 8.0},
+            },
+        },
+        active_component="npk",
+        ph_up_actuator=None,
+        ph_down_actuator=None,
+    )
+
+    assert dose_plan.needs_ec is True
+    assert dose_plan.pid_state_updates["ec"]["prev_error"] == pytest.approx(0.1)
+    assert dose_plan.pid_state_updates["ec"].get("current_zone") != "dead"
+
+
+def test_build_dose_plan_disabled_ec_does_not_reset_ec_pid_state() -> None:
+    planner = CorrectionPlanner()
+
+    dose_plan = planner.build_dose_plan(
+        current_ph=5.8,
+        current_ec=1.4,
+        target_ph=5.8,
+        target_ec=1.4,
+        ph_tolerance_pct=10.0,
+        ec_tolerance_pct=10.0,
+        correction_config=_correction_config(
+            ph_overrides={"deadband": 0.04},
+            ec_overrides={"deadband": 0.06},
+        ),
+        workflow_phase="irrigating",
+        process_calibrations={},
+        pid_state={"ec": {"integral": 3.0, "prev_error": 0.2}},
+        allow_ec=False,
+        allow_ph=True,
+        ec_actuators={},
+        ph_up_actuator=None,
+        ph_down_actuator=None,
+    )
+
+    assert dose_plan.needs_ec is False
+    assert "ec" not in dose_plan.pid_state_updates
+
+
 def test_build_dose_plan_uses_explicit_target_window_for_ph_direction() -> None:
     planner = CorrectionPlanner()
 

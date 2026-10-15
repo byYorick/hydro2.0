@@ -63,6 +63,15 @@ def _planned(*, channel="pump_main", step_no=1):
     )
 
 
+def _dose(*, channel="pump_acid", duration_ms=2000, step_no=1):
+    return PlannedCommand(
+        node_uid="nd-1",
+        channel=channel,
+        payload={"cmd": "dose", "params": {"ml": 2.0, "duration_ms": duration_ms}},
+        step_no=step_no,
+    )
+
+
 class _FakeCommandRepo:
     async def assert_publish_authority(self, **kwargs):
         return None
@@ -174,8 +183,9 @@ class _FakeCommandRepo:
             {"ae_command_id": ae_command_id, "last_error": last_error, "now": now}
         )
 
-    async def update_from_legacy(self, **_kw):
-        pass
+    async def update_from_legacy(self, **kwargs):
+        self.updated.append(dict(kwargs))
+        return dict(kwargs)
 
     async def get_legacy_command_by_id(self, *, external_id):
         return self._legacy_row
@@ -294,7 +304,16 @@ def _make_task(zone_id=1, task_id=1, **kwargs):
     return m
 
 
-def _make_gw(*, command_repo=None, task_repo=None, history_logger=None, poll_interval=0.01, command_poll_default_sec=3600.0, command_poll_margin_sec=30.0):
+def _make_gw(
+    *,
+    command_repo=None,
+    task_repo=None,
+    history_logger=None,
+    poll_interval=0.01,
+    command_poll_default_sec=3600.0,
+    command_poll_margin_sec=30.0,
+    command_stage_stop_reserve_sec=5.0,
+):
     return SequentialCommandGateway(
         task_repository=task_repo or _FakeTaskRepo(),
         command_repository=command_repo or _FakeCommandRepo(),
@@ -302,6 +321,7 @@ def _make_gw(*, command_repo=None, task_repo=None, history_logger=None, poll_int
         poll_interval_sec=poll_interval,
         command_poll_default_sec=command_poll_default_sec,
         command_poll_margin_sec=command_poll_margin_sec,
+        command_stage_stop_reserve_sec=command_stage_stop_reserve_sec,
     )
 
 
@@ -1209,6 +1229,30 @@ async def test_run_batch_reconciles_terminal_status_before_stage_deadline_failur
 
 
 @pytest.mark.asyncio
+async def test_run_batch_rejects_dose_before_publish_when_stage_budget_is_insufficient():
+    command_repo = _FakeCommandRepo()
+    history_logger = _FakeHistoryLogger()
+    task = _make_task()
+    task.workflow.stage_deadline_at = NOW + timedelta(seconds=7)
+    gw = _make_gw(
+        command_repo=command_repo,
+        history_logger=history_logger,
+        command_poll_margin_sec=3.0,
+        command_stage_stop_reserve_sec=3.0,
+    )
+
+    result = await gw.run_batch(task=task, commands=[_dose(duration_ms=2000)], now=NOW)
+
+    assert result["success"] is False
+    assert result["error_code"] == ErrorCodes.AE3_COMMAND_STAGE_BUDGET_INSUFFICIENT
+    assert result["deadline_kind"] == "stage_admission"
+    assert result["remaining_stage_sec"] == pytest.approx(7.0)
+    assert result["required_stage_budget_sec"] == pytest.approx(8.0)
+    assert command_repo.created_ids == []
+    assert history_logger.calls == []
+
+
+@pytest.mark.asyncio
 async def test_run_batch_fails_closed_when_poll_timeout_without_stage_deadline(
     monkeypatch: pytest.MonkeyPatch,
 ):
@@ -1244,7 +1288,7 @@ async def test_run_batch_fails_closed_when_poll_timeout_without_stage_deadline(
 
 
 @pytest.mark.asyncio
-async def test_run_batch_fails_closed_when_waiting_command_exceeds_stage_deadline(
+async def test_run_batch_keeps_polling_inflight_command_after_stage_deadline(
     monkeypatch: pytest.MonkeyPatch,
 ):
     async def fake_sleep(_delay: float) -> None:
@@ -1288,19 +1332,9 @@ async def test_run_batch_fails_closed_when_waiting_command_exceeds_stage_deadlin
 
     result = await gw.run_batch(task=task, commands=[_planned(channel="pump_acid")], now=NOW)
 
-    assert result["success"] is False
-    assert result["error_code"] == "ae3_command_poll_deadline_exceeded"
-    assert result.get("deadline_kind") == "stage"
-    assert len(captured_events) == 1
-    assert captured_events[0]["zone_id"] == 1
-    assert captured_events[0]["event_type"] == "AE_COMMAND_POLL_DEADLINE_EXCEEDED"
-    details = captured_events[0]["details"]
-    assert details["stage"] == "prepare_recirculation_check"
-    assert details["workflow_phase"] == "tank_recirc"
-    assert details["corr_step"] == "corr_dose_ph"
-    assert details["channel"] == "pump_acid"
-    assert details["deadline_kind"] == "stage"
-    assert details["stage_deadline_at"] == task.workflow.stage_deadline_at.isoformat()
+    assert result["success"] is True
+    assert result["command_statuses"][0]["terminal_status"] == "DONE"
+    assert captured_events == []
 
 
 @pytest.mark.asyncio
@@ -1314,6 +1348,35 @@ async def test_recover_waiting_command_done_resume_cas_miss_raises() -> None:
     with pytest.raises(TaskExecutionError) as exc_info:
         await gw.recover_waiting_command(task=_make_task(), now=NOW)
     assert exc_info.value.code == "ae3_waiting_command_transition_failed"
+
+
+@pytest.mark.asyncio
+async def test_reconcile_terminal_task_command_persists_done_without_resuming_task() -> None:
+    command_repo = _FakeCommandRepo(legacy_row={**_DONE_ROW, "duration_ms": 1750})
+    terminal_task = _make_task(status="completed")
+    task_repo = _FakeTaskRepo(current_task=terminal_task)
+    gateway = _make_gw(command_repo=command_repo, task_repo=task_repo)
+    ae_command = {
+        "id": 77,
+        "task_id": terminal_task.id,
+        "external_id": "1001",
+        "payload": {
+            "cmd_id": "ae3-t1-z1-s77",
+            "cmd": "dose",
+            "params": {"ml": 2.0, "duration_ms": 2000},
+        },
+    }
+
+    result = await gateway.reconcile_terminal_task_command(
+        task=terminal_task,
+        ae_command=ae_command,
+        now=NOW,
+    )
+
+    assert result["state"] == "done"
+    assert result["legacy_status"] == "DONE"
+    assert result["response_details"]["duration_ms"] == 1750
+    assert len(command_repo.updated) == 1
 
 
 @pytest.mark.asyncio

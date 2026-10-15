@@ -167,6 +167,57 @@ class PgPidStateRepository:
                 for params in all_params:
                     await conn.execute(_SQL_UPSERT, *params)
 
+    async def reconcile_completed_dose(
+        self,
+        *,
+        zone_id: int,
+        pid_type: str,
+        last_output_ms: int,
+        last_dose_at: datetime,
+        last_correction_kind: str,
+        ae_command_id: int,
+        now: datetime,
+    ) -> bool:
+        """Idempotently account for a historical dose confirmed after task end.
+
+        A repaired older command must not move PID state backwards when a newer
+        physical dose is already recorded.
+        """
+        normalized_dose_at = self._normalize_timestamp(last_dose_at)
+        normalized_now = self._normalize_timestamp(now)
+        stats = {"reconciled_terminal_ae_command_id": int(ae_command_id)}
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                INSERT INTO pid_state (
+                    zone_id, pid_type, integral, prev_derivative,
+                    last_output_ms, last_dose_at, feedforward_bias,
+                    no_effect_count, last_correction_kind, stats,
+                    created_at, updated_at
+                )
+                VALUES ($1, $2, 0.0, 0.0, $3, $4, 0.0, 0, $5, $6::jsonb, $7, $7)
+                ON CONFLICT (zone_id, pid_type)
+                DO UPDATE SET
+                    last_output_ms = EXCLUDED.last_output_ms,
+                    last_dose_at = EXCLUDED.last_dose_at,
+                    last_correction_kind = EXCLUDED.last_correction_kind,
+                    stats = COALESCE(pid_state.stats, '{}'::jsonb) || EXCLUDED.stats,
+                    updated_at = EXCLUDED.updated_at
+                WHERE pid_state.last_dose_at IS NULL
+                   OR pid_state.last_dose_at <= EXCLUDED.last_dose_at
+                RETURNING zone_id
+                """,
+                int(zone_id),
+                str(pid_type or "").strip().lower(),
+                max(0, int(last_output_ms)),
+                normalized_dose_at,
+                str(last_correction_kind or "").strip().lower(),
+                stats,
+                normalized_now,
+            )
+        return row is not None
+
     async def clear_feedforward_bias(self, *, zone_id: int) -> None:
         pool = await get_pool()
         async with pool.acquire() as conn:

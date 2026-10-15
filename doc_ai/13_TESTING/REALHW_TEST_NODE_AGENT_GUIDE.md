@@ -1,6 +1,6 @@
 # Realhw test_node — инструкция для ИИ-агента
 
-**Дата обновления:** 2026-08-18  
+**Дата обновления:** 2026-10-12
 **Статус:** Канон запуска YAML E2E на физической `firmware/test_node`  
 **Локальные правила:** `tests/e2e/AGENTS.md`
 
@@ -175,7 +175,7 @@ cd tests/e2e
 | `ec_overshoot_dilute_pct=100` «чтобы dilute всегда сработал» | Schema max 100, но канон **15**. Pct=100 только если цель теста — сам dilute (E120). |
 | E103 first-run `prepare_recirculation_attempt_limit_reached` | **Ожидаемый** ERROR; чинить «чтобы first-run стал ready» нельзя. |
 | E106 ждать `ae_tasks.status=completed` после mid-pipeline seed T_full | DoD — live-band телеметрии; pipeline может висеть на Mg. |
-| Sequential pumps | Ca `pump_b`, Mg `pump_c`, NPK `pump_a`, micro `pump_d`. Fill — только Ca, без pH. Irrigation inline — **только pH**. |
+| Sequential pumps | Ca `pump_b`, Mg `pump_c`, NPK `pump_a`, micro `pump_d`. Fill — только Ca, без pH. Irrigation inline по умолчанию pH-only; optional `calcium|npk` разрешён только в cumulative component budget. |
 | `set_fault_mode` на прод-узле / без `nd-test-*` | HL: lease bypass **только** `nd-test-*` или `nodes.type` ∈ {`test`,`test_node`}. Иначе 409 `ae3_zone_lease_held`. |
 | Публиковать команды в MQTT из AE/Laravel/агента | Запрещено. Только history-logger `POST /commands`. Diagnostic seed в YAML идёт через HL. |
 | Lightweight MQTT retarget на `ph_node`/`pump_node` | Запрещено. Только `test_node`. |

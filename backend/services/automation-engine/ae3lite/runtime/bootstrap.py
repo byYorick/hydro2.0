@@ -77,6 +77,7 @@ def build_ae3_runtime_bundle(
     zone_lease_repository = PgZoneLeaseRepository()
     zone_alert_repository = PgZoneAlertRepository()
     command_repository = PgAeCommandRepository()
+    pid_state_repository = PgPidStateRepository()
     task_status_read_model = PgTaskStatusReadModel()
     zone_intent_repository = PgZoneIntentRepository()
     http_client = httpx.AsyncClient(
@@ -111,6 +112,7 @@ def build_ae3_runtime_bundle(
         poll_interval_sec=config.reconcile_poll_interval_sec,
         command_poll_default_sec=config.command_poll_default_sec,
         command_poll_margin_sec=config.command_poll_margin_sec,
+        command_stage_stop_reserve_sec=config.command_stage_stop_reserve_sec,
     )
     workflow_repository = PgZoneWorkflowRepository()
     alert_repository = BizAlertPublisher()
@@ -125,6 +127,8 @@ def build_ae3_runtime_bundle(
         worker_owner=config.worker_owner,
         foreign_lease_skip_escalate_sec=config.foreign_lease_skip_escalate_sec,
         correction_interrupt_verify_grace_sec=config.correction_interrupt_verify_grace_sec,
+        command_repository=command_repository,
+        pid_state_repository=pid_state_repository,
     )
     waiting_command_reconcile_use_case = WaitingCommandReconcileUseCase(
         task_repository=task_repository,
@@ -150,7 +154,6 @@ def build_ae3_runtime_bundle(
         zone_intent_repository=zone_intent_repository,
         batch_limit=config.orphan_intent_reconcile_batch_limit,
     )
-    pid_state_repository = PgPidStateRepository()
     correction_authority_repository = PgZoneCorrectionAuthorityRepository()
     runtime_monitor = PgZoneRuntimeMonitor()
     irrigation_decision_controller = IrrigationDecisionController()

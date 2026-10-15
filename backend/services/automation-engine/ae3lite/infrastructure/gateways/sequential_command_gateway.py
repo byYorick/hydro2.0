@@ -62,6 +62,7 @@ class SequentialCommandGateway:
         poll_max_interval_sec: float = 5.0,
         command_poll_default_sec: float = 120.0,
         command_poll_margin_sec: float = 30.0,
+        command_stage_stop_reserve_sec: float = 5.0,
     ) -> None:
         self._task_repository = task_repository
         self._command_repository = command_repository
@@ -75,6 +76,7 @@ class SequentialCommandGateway:
         self._poll_max_interval_sec = max(self._poll_interval_sec, float(poll_max_interval_sec))
         self._command_poll_default_sec = max(1.0, float(command_poll_default_sec))
         self._command_poll_margin_sec = max(0.0, float(command_poll_margin_sec))
+        self._command_stage_stop_reserve_sec = max(0.0, float(command_stage_stop_reserve_sec))
 
     def _cleanup_race_batch_result(self, *, task: Any, message: str) -> dict[str, Any]:
         return {
@@ -178,6 +180,20 @@ class SequentialCommandGateway:
                 }
 
         for seq_index, command in enumerate(commands):
+            admission_failure = self._dose_stage_admission_failure(
+                task=current_task,
+                command=command,
+                now=now,
+            )
+            if admission_failure is not None:
+                return {
+                    "success": False,
+                    "task": current_task,
+                    "commands_total": len(combined_statuses),
+                    "commands_failed": 1,
+                    "command_statuses": combined_statuses,
+                    **admission_failure,
+                }
             planner_step = planner_step_for_command(
                 task=current_task,
                 command=command,
@@ -213,8 +229,7 @@ class SequentialCommandGateway:
                     "error_code": result["error_code"],
                     "error_message": result["error_message"],
                 }
-                # Preserve stage vs poll binding so CorrectionHandler can
-                # graceful-interrupt instead of terminal-fail mid-dose.
+                # Preserve admission vs poll binding for handler policy.
                 if result.get("deadline_kind") is not None:
                     failed["deadline_kind"] = result["deadline_kind"]
                 return failed
@@ -225,6 +240,63 @@ class SequentialCommandGateway:
             "commands_total": len(combined_statuses),
             "commands_failed": 0,
             "command_statuses": combined_statuses,
+        }
+
+    def _dose_stage_admission_failure(
+        self,
+        *,
+        task: Any,
+        command: PlannedCommand,
+        now: datetime,
+    ) -> dict[str, Any] | None:
+        """Reject a new dose that cannot finish while preserving stop budget.
+
+        This check deliberately runs before ``CommandPublishPipeline.publish`` so
+        an insufficient stage budget cannot create a physical side effect. Once
+        a dose is published, its terminal wait is governed only by the command
+        poll timeout and is never cut short by the stage deadline.
+        """
+        payload = command.payload if isinstance(command.payload, Mapping) else {}
+        if bool(payload.get(_AE3_FAIL_SAFE_KEY)):
+            return None
+        if str(payload.get("cmd") or "").strip().lower() != "dose":
+            return None
+        params = payload.get("params")
+        if not isinstance(params, Mapping):
+            return None
+        try:
+            duration_sec = max(0.0, float(params.get("duration_ms")) / 1000.0)
+        except (TypeError, ValueError):
+            return None
+        workflow = getattr(task, "workflow", None)
+        stage_deadline = getattr(workflow, "stage_deadline_at", None)
+        if not isinstance(stage_deadline, datetime):
+            return None
+
+        normalized_now = now.replace(tzinfo=None) if now.tzinfo is not None else now
+        normalized_deadline = (
+            stage_deadline.replace(tzinfo=None)
+            if stage_deadline.tzinfo is not None
+            else stage_deadline
+        )
+        remaining_sec = max(0.0, (normalized_deadline - normalized_now).total_seconds())
+        required_sec = (
+            duration_sec
+            + self._command_poll_margin_sec
+            + self._command_stage_stop_reserve_sec
+        )
+        if remaining_sec >= required_sec:
+            return None
+        return {
+            "error_code": ErrorCodes.AE3_COMMAND_STAGE_BUDGET_INSUFFICIENT,
+            "error_message": (
+                "Недостаточно stage budget для безопасной публикации dose: "
+                f"remaining={remaining_sec:.3f}s required={required_sec:.3f}s "
+                f"stage={getattr(task, 'current_stage', None)}"
+            ),
+            "deadline_kind": "stage_admission",
+            "remaining_stage_sec": remaining_sec,
+            "required_stage_budget_sec": required_sec,
         }
 
     async def run_publish_only_batch(
@@ -434,15 +506,7 @@ class SequentialCommandGateway:
         if not isinstance(waiting_since, datetime):
             return False
         poll_deadline = waiting_since + timedelta(seconds=poll_timeout_sec)
-        stage_deadline = (
-            task.workflow.stage_deadline_at
-            if hasattr(task, "workflow") and task.workflow.stage_deadline_at is not None
-            else None
-        )
-        effective_deadline = (
-            min(stage_deadline, poll_deadline) if stage_deadline is not None else poll_deadline
-        )
-        return now > effective_deadline
+        return now > poll_deadline
 
     async def recover_waiting_command(self, *, task: Any, now: datetime) -> Mapping[str, Any]:
         ae_command = await self._command_repository.get_latest_for_task(task_id=task.id)
@@ -471,6 +535,58 @@ class SequentialCommandGateway:
                     "cmd_id": cmd_id,
                 }
         return await self._apply_legacy_outcome(task=task, ae_command=ae_command, legacy_row=legacy_row, now=now)
+
+    async def reconcile_terminal_task_command(
+        self,
+        *,
+        task: Any,
+        ae_command: Mapping[str, Any],
+        now: datetime,
+    ) -> Mapping[str, Any]:
+        """Refresh one dangling command without changing an already terminal task."""
+        legacy_row, external_id, cmd_id = await self._resolve_legacy_command(
+            task=task,
+            ae_command=ae_command,
+        )
+        if legacy_row is None:
+            return {
+                "state": "waiting_command",
+                "task": task,
+                "legacy_status": None,
+                "external_id": external_id,
+                "cmd_id": cmd_id,
+                "response_details": {},
+                "terminal_at": None,
+            }
+        outcome = await self._persist_command_outcome(
+            ae_command=ae_command,
+            legacy_row=legacy_row,
+            now=now,
+        )
+        response_details = (
+            _response_details_from_legacy_row(legacy_row)
+            if outcome.terminal_status is not None
+            else {}
+        )
+        return {
+            "state": (
+                "waiting_command"
+                if outcome.terminal_status is None
+                else "done" if outcome.terminal_status == "DONE" else "failed"
+            ),
+            "task": task,
+            "legacy_status": outcome.status,
+            "external_id": str(legacy_row.get("id") or external_id or "") or None,
+            "cmd_id": str(legacy_row.get("cmd_id") or cmd_id or "") or None,
+            "response_details": response_details,
+            "terminal_at": outcome.terminal_at,
+            "error_code": (
+                None
+                if outcome.terminal_status in {None, "DONE"}
+                else f"command_{outcome.terminal_status.lower()}"
+            ),
+            "error_message": outcome.last_error,
+        }
 
     async def _run_command(
         self,
@@ -614,14 +730,7 @@ class SequentialCommandGateway:
             )
             poll_started_at = _utcnow().replace(microsecond=0)
             poll_deadline = poll_started_at + timedelta(seconds=poll_timeout_sec)
-            stage_deadline = (
-                task.workflow.stage_deadline_at
-                if hasattr(task, "workflow") and task.workflow.stage_deadline_at is not None
-                else None
-            )
-            effective_deadline = (
-                min(stage_deadline, poll_deadline) if stage_deadline is not None else poll_deadline
-            )
+            effective_deadline = poll_deadline
 
             roundtrip_started_at = time.monotonic()
             poll_interval_sec = self._poll_interval_sec
@@ -633,11 +742,7 @@ class SequentialCommandGateway:
                 poll_iterations += 1
                 if result["state"] == "waiting_command":
                     if reconcile_now > effective_deadline:
-                        deadline_kind = (
-                            "stage"
-                            if stage_deadline is not None and stage_deadline <= poll_deadline
-                            else "poll"
-                        )
+                        deadline_kind = "poll"
                         await self._emit_poll_deadline_exceeded_event(
                             task=task,
                             command=planned,

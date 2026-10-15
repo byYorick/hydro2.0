@@ -234,7 +234,7 @@ async def test_integration_multi_sequential_happy_path_via_handler_run(monkeypat
     assert len(_dose_commands(gateway)) == 3
 
     reactivate_events = [c for c in sink.calls if c[1] == "CORRECTION_SENSOR_MODE_REACTIVATED"]
-    assert len(reactivate_events) == 3
+    assert reactivate_events == []
 
     ec_dosing_events = [c for c in sink.calls if c[1] == "EC_DOSING"]
     assert len(ec_dosing_events) == 1
@@ -417,8 +417,8 @@ async def test_integration_multi_parallel_partial_failure_with_command_statuses(
     assert out.next_stage == "irrigation_check"
     assert out.next_stage != "irrigation_recovery_start"
 
-    # sensor activate + one parallel dose batch
-    assert len(gateway.calls) >= 2
+    # irrigation_check keeps sensor mode active; only the dose batch is sent.
+    assert len(gateway.calls) == 1
     dose_batches = [c for c in gateway.calls if _DoseGateway._is_dose_batch(c["commands"])]
     assert len(dose_batches) == 1
     assert len(dose_batches[0]["commands"]) == 3
