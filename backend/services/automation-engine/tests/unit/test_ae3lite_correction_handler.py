@@ -170,6 +170,10 @@ def _make_task(
         "corr_ec_dose_sequence_json": corr.ec_dose_sequence_json,
         "corr_ec_current_seq_index": corr.ec_current_seq_index,
         "corr_ph_amount_ml": corr.ph_amount_ml,
+        "corr_pipeline_phase": corr.pipeline_phase,
+        "corr_active_component": corr.active_component,
+        "corr_ec_pid_frozen": corr.ec_pid_frozen,
+        "corr_component_targets_json": corr.component_targets_json,
         "corr_snapshot_event_id": corr.snapshot_event_id,
         "corr_snapshot_created_at": corr.snapshot_created_at,
         "corr_snapshot_cmd_id": corr.snapshot_cmd_id,
@@ -654,6 +658,34 @@ async def test_corr_check_prepare_recirc_solution_low_goes_to_setup(monkeypatch:
     )
 
 
+async def test_corr_check_solution_fill_low_stops_fill(monkeypatch: pytest.MonkeyPatch):
+    """Утечка во время коррекции набора останавливает fill, а не крутит retry."""
+    create_event = AsyncMock(return_value=None)
+    monkeypatch.setattr("ae3lite.application.handlers.correction.create_zone_event", create_event)
+    corr = _base_corr(corr_step="corr_check", attempt=1, max_attempts=5)
+    task = _make_task(
+        corr=corr,
+        current_stage="solution_fill_check",
+        workflow_phase="tank_filling",
+    )
+    task = replace(
+        task,
+        workflow=replace(task.workflow, stage_entered_at=NOW - timedelta(seconds=120)),
+    )
+    monitor = _MockRuntimeMonitor(
+        ph=5.8,
+        ec=1.0,
+        solution_min_triggered=False,
+        solution_max_triggered=False,
+    )
+    handler = _make_handler(monitor=monitor, pid_repo=_MockPidStateRepository())
+
+    outcome = await handler.run(task=task, plan=_MockPlan(runtime=dict(RUNTIME)), stage_def=None, now=NOW)
+
+    assert outcome.kind == "transition"
+    assert outcome.next_stage == "solution_fill_leak_stop"
+
+
 async def test_corr_check_inside_explicit_window_below_target_keeps_dosing(monkeypatch: pytest.MonkeyPatch):
     corr = _base_corr(corr_step="corr_check", attempt=1, max_attempts=5)
     task = _make_task(corr=corr)
@@ -1055,6 +1087,7 @@ async def test_corr_dose_ec_issues_command_and_goes_wait_ec():
     assert dose_commands[0].payload == {
         "cmd": "dose",
         "params": {"ml": 2.0, "duration_ms": 2000},
+        "_ae3_dose_context": {"pid_type": "ec", "last_correction_kind": "ec", "hold_sec": 10},
     }
     assert create_event.await_count == 1
     dose_call = create_event.await_args_list[0]
@@ -1178,6 +1211,7 @@ async def test_corr_dose_ph_issues_volume_command_and_goes_wait_ph():
     assert dose_commands[0].payload == {
         "cmd": "dose",
         "params": {"ml": 1.5, "duration_ms": 1500},
+        "_ae3_dose_context": {"pid_type": "ph", "last_correction_kind": "ph_up", "hold_sec": 10},
     }
     assert create_event.await_count == 1
     dose_call = create_event.await_args_list[0]
@@ -1215,6 +1249,10 @@ async def test_corr_dose_ec_reduces_effective_ml_on_duration_limited_feedback():
         "ph_up": {"node_uid": "ph-node", "channel": "ph_up_pump"},
         "ph_down": None,
     }
+    runtime["process_calibrations"] = deepcopy(runtime["process_calibrations"])
+    runtime["process_calibrations"]["solution_fill"] = dict(runtime["process_calibrations"]["solution_fill"])
+    runtime["process_calibrations"]["solution_fill"]["ec_gain_per_ml"] = 0.2
+    runtime["process_calibrations"]["solution_fill"]["ph_per_ec_ml"] = 0.1
     gateway = _MockGateway(command_statuses=[{
         "terminal_status": "DONE",
         "response_details": {
@@ -1230,19 +1268,53 @@ async def test_corr_dose_ec_reduces_effective_ml_on_duration_limited_feedback():
 
     try:
         outcome = await handler.run(task=task, plan=_MockPlan(runtime=runtime), stage_def=None, now=NOW)
+        assert outcome.kind == "enter_correction"
+        dose_call = create_event.await_args_list[-1]
+        assert dose_call.args[1] == "EC_DOSING"
+        payload = dose_call.args[2]
+        assert payload["effective_ml"] == pytest.approx(2.5)
+        assert payload["amount_ml"] == pytest.approx(2.5)
+        assert payload["duration_ms"] == 2500
+        assert payload["planned_duration_ms"] == 5000
+        assert outcome.correction.ec_amount_ml == pytest.approx(2.5)
+        ec_update = next(u for u in pid_repo.upsert_calls[-1]["updates"] if u["pid_type"] == "ec")
+        assert ec_update["last_output_ms"] == 2500
+        ph_update = next(u for u in pid_repo.upsert_calls[-1]["updates"] if u["pid_type"] == "ph")
+        assert ph_update["feedforward_bias"] == pytest.approx(0.25)
+
+        observe_corr = replace(outcome.correction, wait_until=NOW - timedelta(seconds=1))
+        observe_runtime = deepcopy(runtime)
+        observe_runtime["pid_state"] = {
+            "ec": {
+                "last_dose_at": NOW - timedelta(seconds=12),
+                "last_measured_value": 1.0,
+                "no_effect_count": 0,
+            }
+        }
+        observe_monitor = _MockRuntimeMonitor(ec_samples=[
+            {"ts": NOW - timedelta(seconds=4), "value": 1.35},
+            {"ts": NOW - timedelta(seconds=2), "value": 1.4},
+            {"ts": NOW, "value": 1.45},
+        ])
+        observe_handler = _make_handler(monitor=observe_monitor, gateway=gateway, pid_repo=pid_repo)
+        observe = await observe_handler.run(
+            task=_make_task(corr=observe_corr),
+            plan=_MockPlan(runtime=observe_runtime),
+            stage_def=None,
+            now=NOW,
+        )
+        assert observe.kind == "enter_correction"
+        observation = next(
+            call for call in create_event.await_args_list
+            if call.args[1] == "CORRECTION_OBSERVATION_EVALUATED"
+        )
+        observation_payload = observation.args[2]
+        assert observation_payload["dose_amount_ml"] == pytest.approx(2.5)
+        assert observation_payload["expected_effect"] == pytest.approx(0.5)
+        learned = pid_repo.upsert_calls[-1]["updates"][0]["stats"]["adaptive"]["gains"]["ec_gain_per_ml"]["ema"]
+        assert learned == pytest.approx(observation_payload["learning_effect"] / 2.5)
     finally:
         monkeypatch.undo()
-
-    assert outcome.kind == "enter_correction"
-    dose_call = create_event.await_args_list[-1]
-    assert dose_call.args[1] == "EC_DOSING"
-    payload = dose_call.args[2]
-    assert payload["effective_ml"] == pytest.approx(2.5)
-    assert payload["amount_ml"] == pytest.approx(2.5)
-    assert payload["duration_ms"] == 2500
-    assert payload["planned_duration_ms"] == 5000
-    ec_update = next(u for u in pid_repo.upsert_calls[-1]["updates"] if u["pid_type"] == "ec")
-    assert ec_update["last_output_ms"] == 2500
 
 
 async def test_corr_dose_ec_without_response_details_keeps_planned_effective_ml():
@@ -1292,6 +1364,9 @@ async def test_corr_dose_ph_reduces_effective_ml_on_duration_limited_feedback():
         },
         "ph_down": None,
     }
+    runtime["process_calibrations"] = deepcopy(runtime["process_calibrations"])
+    runtime["process_calibrations"]["solution_fill"] = dict(runtime["process_calibrations"]["solution_fill"])
+    runtime["process_calibrations"]["solution_fill"]["ph_up_gain_per_ml"] = 0.2
     gateway = _MockGateway(command_statuses=[{
         "terminal_status": "DONE",
         "response_details": {
@@ -1306,15 +1381,128 @@ async def test_corr_dose_ph_reduces_effective_ml_on_duration_limited_feedback():
     handler = _make_handler(gateway=gateway, pid_repo=pid_repo)
 
     try:
-        await handler.run(task=task, plan=_MockPlan(runtime=runtime), stage_def=None, now=NOW)
+        outcome = await handler.run(task=task, plan=_MockPlan(runtime=runtime), stage_def=None, now=NOW)
+        assert outcome.correction.ph_amount_ml == pytest.approx(3.0)
+        observe_corr = replace(outcome.correction, wait_until=NOW - timedelta(seconds=1))
+        observe_runtime = deepcopy(runtime)
+        observe_runtime["pid_state"] = {
+            "ph": {
+                "last_dose_at": NOW - timedelta(seconds=12),
+                "last_measured_value": 5.4,
+                "no_effect_count": 0,
+            }
+        }
+        observe_monitor = _MockRuntimeMonitor(ph_samples=[
+            {"ts": NOW - timedelta(seconds=4), "value": 5.7},
+            {"ts": NOW - timedelta(seconds=2), "value": 5.85},
+            {"ts": NOW, "value": 6.0},
+        ])
+        observe_handler = _make_handler(monitor=observe_monitor, gateway=gateway, pid_repo=pid_repo)
+        await observe_handler.run(
+            task=_make_task(corr=observe_corr),
+            plan=_MockPlan(runtime=observe_runtime),
+            stage_def=None,
+            now=NOW,
+        )
     finally:
         monkeypatch.undo()
 
-    payload = create_event.await_args_list[-1].args[2]
+    payload = next(
+        call.args[2] for call in create_event.await_args_list if call.args[1] == "PH_CORRECTED"
+    )
     assert payload["effective_ml"] == pytest.approx(3.0)
     assert payload["duration_ms"] == 1500
-    ph_update = next(u for u in pid_repo.upsert_calls[-1]["updates"] if u["pid_type"] == "ph")
+    ph_update = next(u for u in pid_repo.upsert_calls[0]["updates"] if u["pid_type"] == "ph")
     assert ph_update["last_output_ms"] == 1500
+    observation = next(
+        call.args[2]
+        for call in create_event.await_args_list
+        if call.args[1] == "CORRECTION_OBSERVATION_EVALUATED"
+    )
+    assert observation["dose_amount_ml"] == pytest.approx(3.0)
+    assert observation["expected_effect"] == pytest.approx(0.6)
+    learned = pid_repo.upsert_calls[-1]["updates"][0]["stats"]["adaptive"]["gains"]["ph_up_gain_per_ml"]["ema"]
+    assert learned == pytest.approx(observation["learning_effect"] / 3.0)
+
+
+class _DoseAccountRepository:
+    def __init__(self) -> None:
+        self.marked: list[int] = []
+
+    async def mark_dose_accounted(self, *, ae_command_id: int, now: datetime) -> bool:
+        self.marked.append(int(ae_command_id))
+        return True
+
+
+async def test_corr_dose_ec_marks_accounted_after_pid_persist():
+    corr = _base_corr(
+        corr_step="corr_dose_ec",
+        needs_ec=True,
+        ec_node_uid="ec-node",
+        ec_channel="ec_pump",
+        ec_amount_ml=2.0,
+        ec_duration_ms=2000,
+    )
+    account_repo = _DoseAccountRepository()
+    gateway = _MockGateway(command_statuses=[{
+        "ae_command_id": 77,
+        "cmd": "dose",
+        "terminal_status": "DONE",
+    }])
+    gateway._command_repository = account_repo
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(
+        "ae3lite.application.handlers.correction.create_zone_event",
+        AsyncMock(return_value=None),
+    )
+    try:
+        outcome = await _make_handler(
+            gateway=gateway,
+            pid_repo=_MockPidStateRepository(),
+        ).run(task=_make_task(corr=corr), plan=_MockPlan(), stage_def=None, now=NOW)
+    finally:
+        monkeypatch.undo()
+    assert outcome.correction.corr_step == "corr_wait_ec"
+    assert account_repo.marked == [77]
+
+
+async def test_corr_dose_ec_pid_failure_does_not_mark_accounted():
+    class _BoomPid(_MockPidStateRepository):
+        async def upsert_states(self, **kwargs):
+            raise RuntimeError("pid down")
+
+    corr = _base_corr(
+        corr_step="corr_dose_ec",
+        needs_ec=True,
+        ec_node_uid="ec-node",
+        ec_channel="ec_pump",
+        ec_amount_ml=2.0,
+        ec_duration_ms=2000,
+    )
+    account_repo = _DoseAccountRepository()
+    gateway = _MockGateway(command_statuses=[{
+        "ae_command_id": 78,
+        "cmd": "dose",
+        "terminal_status": "DONE",
+    }])
+    gateway._command_repository = account_repo
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(
+        "ae3lite.application.handlers.correction.create_zone_event",
+        AsyncMock(return_value=None),
+    )
+    try:
+        with pytest.raises(TaskExecutionError) as raised:
+            await _make_handler(gateway=gateway, pid_repo=_BoomPid()).run(
+                task=_make_task(corr=corr),
+                plan=_MockPlan(),
+                stage_def=None,
+                now=NOW,
+            )
+        assert raised.value.code == "corr_pid_state_persist_failed"
+    finally:
+        monkeypatch.undo()
+    assert account_repo.marked == []
 
 
 async def test_corr_wait_ec_observes_response_and_returns_to_check():
@@ -1353,7 +1541,7 @@ async def test_corr_wait_ec_observes_response_and_returns_to_check():
     assert outcome.correction.attempt == 0   # reaction detected → counters reset
     assert outcome.correction.ec_attempt == 0
     assert outcome.correction.needs_ec is False
-    assert pid_repo.feedforward_cleared == [60]
+    assert pid_repo.feedforward_cleared == []
 
 
 async def test_corr_wait_ec_preserves_pending_ph_for_next_corr_check():
@@ -1548,6 +1736,26 @@ async def test_interrupt_for_solution_fill_completion_raises_when_level_stale(mo
     assert exc_info.value.code == "two_tank_solution_level_stale"
 
 
+async def test_interrupt_for_solution_fill_completion_raises_when_stale_untriggered(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    patch_fetch_zone_nodes_diagnostics(monkeypatch)
+    corr = _base_corr(corr_step="corr_wait_ec", attempt=2)
+    task = _make_task(corr=corr, current_stage="solution_fill_check", workflow_phase="tank_filling")
+    monitor = _MockRuntimeMonitor(solution_max_triggered=False, level_stale=True)
+    handler = _make_handler(monitor=monitor, pid_repo=_MockPidStateRepository())
+
+    with pytest.raises(TaskExecutionError) as exc_info:
+        await handler._interrupt_for_solution_fill_completion(
+            task=task,
+            plan=_MockPlan(runtime=RUNTIME),
+            corr=corr,
+            now=NOW,
+        )
+
+    assert exc_info.value.code == "two_tank_solution_level_stale"
+
+
 async def test_interrupt_for_solution_fill_completion_raises_when_min_level_unavailable(monkeypatch: pytest.MonkeyPatch):
     patch_fetch_zone_nodes_diagnostics(monkeypatch)
     corr = _base_corr(corr_step="corr_wait_ec", attempt=2)
@@ -1692,6 +1900,55 @@ async def test_corr_check_window_not_ready_logs_event(monkeypatch: pytest.Monkey
     assert payload["ec_since_ts"] is None
     assert payload["ec_latest_sample_ts"] is None
     assert payload["retry_after_sec"] == 2.0
+
+
+async def test_corr_check_window_not_ready_does_not_accumulate_integral(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    create_event = AsyncMock(return_value=None)
+    monkeypatch.setattr("ae3lite.application.handlers.correction.create_zone_event", create_event)
+    corr = _base_corr(corr_step="corr_check", attempt=1)
+    task = _make_task(corr=corr)
+    runtime = deepcopy(RUNTIME)
+    stale_at = NOW - timedelta(minutes=10)
+    runtime["pid_state"] = {
+        "ec": {
+            "integral": 1.25,
+            "prev_error": 0.4,
+            "prev_derivative": 0.0,
+            "last_measurement_at": stale_at,
+            "last_measured_value": 1.0,
+        },
+        "ph": {
+            "integral": 0.5,
+            "prev_error": 0.2,
+            "prev_derivative": 0.0,
+            "last_measurement_at": stale_at,
+            "last_measured_value": 6.2,
+        },
+    }
+    pid_repo = _MockPidStateRepository()
+    monitor = _MockRuntimeMonitor(
+        ph_samples=[
+            {"ts": NOW - timedelta(seconds=2), "value": 6.0},
+            {"ts": NOW, "value": 6.0},
+        ],
+        ec_samples=[
+            {"ts": NOW - timedelta(seconds=4), "value": 1.8},
+            {"ts": NOW - timedelta(seconds=2), "value": 1.85},
+            {"ts": NOW, "value": 1.9},
+        ],
+    )
+    handler = _make_handler(monitor=monitor, pid_repo=pid_repo)
+
+    outcome = await handler.run(task=task, plan=_MockPlan(runtime=runtime), stage_def=None, now=NOW)
+
+    assert outcome.kind == "enter_correction"
+    assert pid_repo.upsert_calls
+    by_type = {item["pid_type"]: item for item in pid_repo.upsert_calls[-1]["updates"]}
+    assert by_type["ec"]["integral"] == 1.25
+    assert by_type["ph"]["integral"] == 0.5
+    assert by_type["ec"]["last_measurement_at"] == NOW.replace(tzinfo=None)
 
 
 async def test_corr_check_zero_sample_window_does_not_reactivate_solution_fill_stage() -> None:
@@ -2350,6 +2607,137 @@ async def test_corr_irrigation_deadline_with_stale_telemetry_records_unknown(mon
     assert create_event.await_args.args[1] == "CORRECTION_TARGET_OUTCOME_UNKNOWN"
     assert create_event.await_args.args[2]["chemistry_outcome"] == "unknown"
     assert create_event.await_args.args[2]["reason"] == "two_tank_prepare_targets_stale"
+
+
+def _component_targets_json(*, t_ca: float, t_full: float) -> str:
+    return (
+        '{"water_ec":0.2,"water_ph":7.0,"target_ec":1.8,"nutrient_budget":1.6,'
+        '"ratios":{},"T_ca":%s,"T_ca_mg":0.8,"T_ca_mg_npk":1.2,"T_full":%s}'
+        % (t_ca, t_full)
+    )
+
+
+async def _irrigation_deadline_details(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    corr: CorrectionState,
+    component: str,
+    ec: float,
+) -> dict:
+    create_event = AsyncMock(return_value=None)
+    monkeypatch.setattr("ae3lite.application.handlers.base.create_zone_event", create_event)
+    runtime = deepcopy(RUNTIME)
+    runtime["target_ph"] = 6.0
+    runtime["target_ec"] = 1.8
+    runtime["irrigation_execution"] = {
+        "duration_sec": None,
+        "interval_sec": None,
+        "correction_during_irrigation": True,
+        "irrigation_ec_component": component,
+        "correction_slack_sec": 900,
+        "stage_timeout_sec": None,
+    }
+    task = _make_task(
+        corr=corr,
+        current_stage="irrigation_check",
+        workflow_phase="irrigating",
+        stage_deadline_at=NOW - timedelta(seconds=1),
+    )
+    handler = _make_handler(monitor=_MockRuntimeMonitor(ph=6.0, ec=ec))
+    outcome = await handler.run(task=task, plan=_MockPlan(runtime=runtime), stage_def=None, now=NOW)
+    assert outcome.kind == "transition"
+    assert outcome.next_stage == "irrigation_stop_to_ready"
+    assert create_event.await_args.args[1] in {
+        "CORRECTION_COMPLETE",
+        "CORRECTION_TARGETS_NOT_ACHIEVED",
+        "CORRECTION_TARGET_OUTCOME_UNKNOWN",
+    }
+    return create_event.await_args.args[2]
+
+
+async def test_corr_irrigation_deadline_after_ec_budget_exhaustion_is_not_achieved(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    corr = _base_corr(
+        corr_step="corr_wait_ph",
+        pipeline_phase="irrigation_ph",
+        active_component="ph",
+        ec_pid_frozen=True,
+        component_targets_json=_component_targets_json(t_ca=0.4, t_full=1.8),
+    )
+    details = await _irrigation_deadline_details(
+        monkeypatch, corr=corr, component="calcium", ec=0.5,
+    )
+    assert details["chemistry_outcome"] == "targets_not_achieved"
+    assert details["current_ec"] == pytest.approx(0.5)
+    assert details["targets_reached"] is False
+    assert "component_budget_exhausted" in details["reason"]
+    assert details["ec_dosing_block_reason"] == "component_budget_exhausted"
+
+
+async def test_corr_irrigation_deadline_after_missing_baseline_keeps_ec(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    corr = _base_corr(
+        corr_step="corr_wait_ph",
+        pipeline_phase="irrigation_ph",
+        active_component="ph",
+        ec_pid_frozen=True,
+    )
+    details = await _irrigation_deadline_details(
+        monkeypatch, corr=corr, component="calcium", ec=0.5,
+    )
+    assert details["chemistry_outcome"] == "targets_not_achieved"
+    assert details["current_ec"] == pytest.approx(0.5)
+    assert "component_budget_unavailable" in details["reason"]
+
+
+async def test_corr_irrigation_deadline_after_stale_baseline_keeps_ec(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    corr = _base_corr(
+        corr_step="corr_wait_ph",
+        pipeline_phase="irrigation_ph",
+        active_component="ph",
+        ec_pid_frozen=True,
+        component_targets_json=_component_targets_json(t_ca=0.4, t_full=1.0),
+    )
+    details = await _irrigation_deadline_details(
+        monkeypatch, corr=corr, component="npk", ec=0.5,
+    )
+    assert details["chemistry_outcome"] == "targets_not_achieved"
+    assert details["current_ec"] == pytest.approx(0.5)
+    assert "component_budget_stale_target" in details["reason"]
+
+
+async def test_corr_irrigation_deadline_ec_component_none_stays_ph_only_success(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    corr = _base_corr(
+        corr_step="corr_wait_ph",
+        pipeline_phase="irrigation_ph",
+        active_component="ph",
+        ec_pid_frozen=True,
+    )
+    details = await _irrigation_deadline_details(
+        monkeypatch, corr=corr, component="none", ec=0.5,
+    )
+    assert details["chemistry_outcome"] == "targets_achieved"
+    assert details["current_ec"] is None
+    assert details["allow_ec"] is False
+    assert "ec_dosing_block_reason" not in details
+
+
+async def test_frozen_ec_with_measured_full_target_is_achieved(monkeypatch: pytest.MonkeyPatch):
+    corr = _base_corr(
+        corr_step="corr_wait_ph", pipeline_phase="irrigation_ph", active_component="ph",
+        ec_pid_frozen=True, component_targets_json=_component_targets_json(t_ca=0.4, t_full=1.8),
+    )
+    details = await _irrigation_deadline_details(monkeypatch, corr=corr, component="calcium", ec=1.8)
+    assert details["chemistry_outcome"] == "targets_achieved"
+    assert details["current_ec"] == pytest.approx(1.8)
+    assert details["allow_ec"] is True
+    assert details["ec_dosing_blocked"] is True
 
 
 async def test_corr_irrigation_insufficient_dose_budget_goes_to_ready_before_publish(

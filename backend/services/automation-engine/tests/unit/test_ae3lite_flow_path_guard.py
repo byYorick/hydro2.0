@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
+from dataclasses import replace
 from typing import Any
 from unittest.mock import AsyncMock
 
@@ -324,9 +325,39 @@ def _make_task(*, control_mode: str = "manual", pending_manual_step: str | None 
     )
 
 
+
+def _manual_hold_handler():
+    handler = ManualHoldHandler(runtime_monitor=SimpleNamespace(), command_gateway=SimpleNamespace())
+    async def read_level(**kwargs):
+        labels = kwargs["labels"]
+        return {"is_triggered": any("min" in str(label) for label in labels)}
+    handler._read_level = AsyncMock(side_effect=read_level)
+    handler._record_deadline_target_outcome = AsyncMock()
+    return handler
+
+
+@pytest.mark.asyncio
+async def test_auto_resume_cannot_reset_expired_deadline():
+    handler = _manual_hold_handler()
+    task = _make_task(control_mode="auto", pending_manual_step="__mh_return:solution_fill_check")
+    task = replace(task, workflow=replace(task.workflow, stage_deadline_at=NOW - timedelta(seconds=1)))
+    outcome = await handler.run(task=task, plan=SimpleNamespace(runtime=make_runtime_plan()), stage_def=None, now=NOW)
+    assert outcome.kind == "fail"
+    assert outcome.error_code == "ae3_manual_hold_deadline_exceeded"
+    handler._read_level.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_auto_resume_rejects_already_full_solution_tank():
+    handler = _manual_hold_handler()
+    handler._read_level = AsyncMock(return_value={"is_triggered": True})
+    task = _make_task(control_mode="auto", pending_manual_step="__mh_return:solution_fill_check")
+    with pytest.raises(TaskExecutionError, match="solution_max"):
+        await handler.run(task=task, plan=SimpleNamespace(runtime=make_runtime_plan()), stage_def=None, now=NOW)
+
 @pytest.mark.asyncio
 async def test_manual_hold_returns_to_saved_stage_when_auto() -> None:
-    handler = ManualHoldHandler(runtime_monitor=SimpleNamespace(), command_gateway=SimpleNamespace())
+    handler = _manual_hold_handler()
     outcome = await handler.run(
         task=_make_task(
             control_mode="auto",
@@ -337,12 +368,12 @@ async def test_manual_hold_returns_to_saved_stage_when_auto() -> None:
         now=NOW,
     )
     assert outcome.kind == "transition"
-    assert outcome.next_stage == "solution_fill_check"
+    assert outcome.next_stage == "solution_fill_start"
 
 
 @pytest.mark.asyncio
 async def test_manual_hold_returns_to_saved_stage_on_operator_step() -> None:
-    handler = ManualHoldHandler(runtime_monitor=SimpleNamespace(), command_gateway=SimpleNamespace())
+    handler = _manual_hold_handler()
     outcome = await handler.run(
         task=_make_task(
             control_mode="manual",
@@ -357,8 +388,71 @@ async def test_manual_hold_returns_to_saved_stage_on_operator_step() -> None:
 
 
 @pytest.mark.asyncio
+async def test_manual_hold_auto_resumes_flow_checks_via_start() -> None:
+    from ae3lite.application.services.workflow_topology import TWO_TANK
+
+    handler = _manual_hold_handler()
+    plan = SimpleNamespace(runtime=make_runtime_plan(level_poll_interval_sec=10))
+    expected = {
+        "solution_fill_check": "solution_fill_start",
+        "prepare_recirculation_check": "prepare_recirculation_start",
+        "clean_fill_check": "clean_fill_start",
+        "solution_topup_check": "solution_topup_start",
+        "solution_drain_check": "solution_drain_start",
+    }
+    for saved, start in expected.items():
+        assert saved in TWO_TANK
+        assert start in TWO_TANK
+        outcome = await handler.run(
+            task=_make_task(control_mode="auto", pending_manual_step=f"__mh_return:{saved}"),
+            plan=plan,
+            stage_def=None,
+            now=NOW,
+        )
+        assert outcome.kind == "transition"
+        assert outcome.next_stage == start
+
+
+@pytest.mark.asyncio
+async def test_manual_hold_auto_irrigation_run_pump_finishes_without_restarting() -> None:
+    """Interrupt закрыл и насос, и клапаны: полив не повторяем."""
+    handler = _manual_hold_handler()
+    pump = SimpleNamespace(channel="pump_main", payload={"cmd": "run_pump", "duration_ms": 15000})
+    plan = SimpleNamespace(
+        runtime=make_runtime_plan(level_poll_interval_sec=10),
+        named_plans={"irrigation_start": (pump,)},
+    )
+    outcome = await handler.run(
+        task=_make_task(control_mode="auto", pending_manual_step="__mh_return:irrigation_check"),
+        plan=plan,
+        stage_def=None,
+        now=NOW,
+    )
+    assert outcome.next_stage == "irrigation_stop_to_ready"
+    handler._record_deadline_target_outcome.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_manual_hold_auto_irrigation_set_relay_finishes_without_restarting() -> None:
+    handler = _manual_hold_handler()
+    pump = SimpleNamespace(channel="pump_main", payload={"cmd": "set_relay", "state": True})
+    plan = SimpleNamespace(
+        runtime=make_runtime_plan(level_poll_interval_sec=10),
+        named_plans={"irrigation_start": (pump,)},
+    )
+    outcome = await handler.run(
+        task=_make_task(control_mode="auto", pending_manual_step="__mh_return:irrigation_check"),
+        plan=plan,
+        stage_def=None,
+        now=NOW,
+    )
+    assert outcome.next_stage == "irrigation_stop_to_ready"
+    handler._record_deadline_target_outcome.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_manual_hold_polls_while_manual() -> None:
-    handler = ManualHoldHandler(runtime_monitor=SimpleNamespace(), command_gateway=SimpleNamespace())
+    handler = _manual_hold_handler()
     outcome = await handler.run(
         task=_make_task(
             control_mode="manual",

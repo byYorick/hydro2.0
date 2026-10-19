@@ -6,9 +6,10 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from _test_support_runtime_plan import make_runtime_plan
+from _test_support_runtime_plan import make_runtime_plan, make_runtime_plan_dict
 from ae3lite.application.dto.stage_outcome import StageOutcome
 from ae3lite.application.handlers.solution_topup import SolutionTopupCheckHandler, SolutionTopupGuardHandler
+from ae3lite.config.loader import load_runtime_plan
 from ae3lite.config.schema import RuntimePlan
 
 
@@ -153,3 +154,82 @@ async def test_check_interrupts_on_manual_control_mode() -> None:
     handler._handle_control_mode_flow_path_interrupt.assert_awaited_once()
     assert outcome.kind == "transition"
     assert outcome.next_stage == "manual_hold"
+
+
+def _runtime_with_topup_cooldown(cooldown_sec: int | None) -> RuntimePlan:
+    payload = make_runtime_plan_dict()
+    if cooldown_sec is None:
+        payload.pop("solution_topup_cooldown_sec")
+    else:
+        payload["solution_topup_cooldown_sec"] = cooldown_sec
+    return load_runtime_plan(payload)
+
+
+async def _guard_after_recent_topup(
+    *,
+    runtime: RuntimePlan,
+    now: datetime,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    handler = SolutionTopupGuardHandler(
+        runtime_monitor=AsyncMock(),
+        command_gateway=AsyncMock(),
+    )
+    handler._read_level = AsyncMock(side_effect=[
+        {"is_triggered": True},
+        {"is_triggered": False},
+    ])
+
+    async def _fetch(_sql: str, *_args):
+        return [{"created_at": now - timedelta(seconds=30)}]
+
+    monkeypatch.setattr("common.db.fetch", _fetch)
+    return await handler.run(
+        task=_task(stage="solution_topup_guard"),
+        plan=_plan(runtime),
+        stage_def=SimpleNamespace(),
+        now=now,
+    )
+
+
+@pytest.mark.asyncio
+async def test_guard_zero_cooldown_ignores_recent_solution_topup_done(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    runtime = _runtime_with_topup_cooldown(0)
+    assert runtime.solution_topup_cooldown_sec == 0
+
+    outcome = await _guard_after_recent_topup(runtime=runtime, now=now, monkeypatch=monkeypatch)
+
+    assert outcome.kind == "transition"
+    assert outcome.next_stage == "solution_topup_start"
+    assert outcome.error_code != "start_solution_topup_cooldown_active"
+
+
+@pytest.mark.asyncio
+async def test_guard_positive_cooldown_blocks_recent_solution_topup_done(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    runtime = _runtime_with_topup_cooldown(120)
+    assert runtime.solution_topup_cooldown_sec == 120
+
+    outcome = await _guard_after_recent_topup(runtime=runtime, now=now, monkeypatch=monkeypatch)
+
+    assert outcome.kind == "fail"
+    assert outcome.error_code == "start_solution_topup_cooldown_active"
+
+
+@pytest.mark.asyncio
+async def test_guard_omitted_cooldown_uses_schema_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    runtime = _runtime_with_topup_cooldown(None)
+    assert runtime.solution_topup_cooldown_sec == 300
+
+    outcome = await _guard_after_recent_topup(runtime=runtime, now=now, monkeypatch=monkeypatch)
+
+    assert outcome.kind == "fail"
+    assert outcome.error_code == "start_solution_topup_cooldown_active"

@@ -249,6 +249,10 @@ make i18n-catalog-check   # включает audit_phase4_i18n_coverage.py
 | `ae3_flow_stop_unconfirmed` | Stop-команда flow-path завершилась без подтверждённого OFF (probe mismatch / timeout). |
 | `ae3_manual_hold_deadline_exceeded` | `manual_hold` превысил сохранённый stage deadline. |
 | `ae3_manual_hold_return_stage_missing` | `manual_hold` без `__mh_return:*` в `pending_manual_step`. |
+| `ae3_manual_resume_level_unavailable` | Нет подтверждённого уровня для повторного запуска flow-path после паузы. |
+| `ae3_manual_resume_level_stale` | Уровень перед повторным запуском flow-path устарел. |
+| `ae3_manual_resume_level_guard` | Уровень запрещает повторный запуск: полный принимающий бак или пустой источник. |
+| `ae3_pipeline_resume_persist_failed` | Прогресс рециркуляции не сохранён; транзакция перехода стадии откатывается. |
 
 ## Таблица кодов irrigation / two-tank stage terminal
 

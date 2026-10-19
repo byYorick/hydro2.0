@@ -13,6 +13,7 @@ from typing import Any, Mapping, Optional, Sequence
 from ae3lite.application.dto.stage_outcome import StageOutcome
 from ae3lite.application.runtime_event_contract import with_runtime_event_contract
 from ae3lite.config.schema import RuntimePlan
+from ae3lite.application.services.correction_pipeline import irrigation_component_budget_guard
 from ae3lite.application.services.stage_runtime_config import StageRuntimeConfig, _MISSING_CONFIG
 from ae3lite.domain.errors import ErrorCodes, TaskExecutionError
 from ae3lite.application.level_monitor import level_snapshot_aliases
@@ -1626,10 +1627,10 @@ class BaseStageHandler:
             getattr(execution, "irrigation_ec_component", None) or "none"
         ).strip().lower()
         corr = getattr(task, "correction", None)
-        allow_ec = (
-            ec_component in {"calcium", "npk"}
-            and not bool(getattr(corr, "ec_pid_frozen", False))
-        )
+        # none — операторский pH-only. calcium/npk остаётся целью даже если
+        # доза заморожена: frozen не вычёркивает измерение из outcome.
+        ec_enabled = ec_component in {"calcium", "npk"}
+        allow_ec = ec_enabled
         allow_ph = True
         ec: Mapping[str, Any] = {"ready": True, "value": ec_target, "reason": "contour_disabled"}
         if allow_ec:
@@ -1642,23 +1643,38 @@ class BaseStageHandler:
                 stale_error="two_tank_prepare_targets_stale",
                 now=now,
             )
+        block_reason = None
+        if ec_enabled and bool(getattr(corr, "ec_pid_frozen", False)):
+            measured_ec = ec.get("value") if bool(ec.get("ready")) else None
+            block_reason = self._irrigation_ec_dosing_block_reason(
+                corr=corr,
+                ec_component=ec_component,
+                current_ec=float(measured_ec) if measured_ec is not None else None,
+                full_target_ec=float(ec_target),
+                correction_cfg=correction_cfg,
+                pid_configs=getattr(runtime, "pid_configs", {}),
+            )
         if not ph["ready"] or not ec["ready"]:
             reasons = [
                 str(metric.get("reason") or "window_not_ready")
                 for metric in (ph, ec)
                 if not bool(metric.get("ready"))
             ]
-            return {
-                "chemistry_outcome": "unknown",
-                "targets_reached": None,
-                "reason": ",".join(reasons) or "target_window_not_ready",
-                "current_ph": ph.get("value"),
-                "current_ec": ec.get("value") if allow_ec else None,
-                "target_ph": ph_target,
-                "target_ec": ec_target,
-                "allow_ph": allow_ph,
-                "allow_ec": allow_ec,
-            }
+            return self._apply_ec_dosing_block(
+                {
+                    "chemistry_outcome": "unknown",
+                    "targets_reached": None,
+                    "reason": ",".join(reasons) or "target_window_not_ready",
+                    "current_ph": ph.get("value"),
+                    "current_ec": ec.get("value") if allow_ec else None,
+                    "target_ph": ph_target,
+                    "target_ec": ec_target,
+                    "allow_ph": allow_ph,
+                    "allow_ec": allow_ec,
+                    "irrigation_ec_component": ec_component,
+                },
+                block_reason,
+            )
         current_ph = float(ph["value"])
         current_ec = float(ec["value"])
         planner = CorrectionPlanner()
@@ -1688,22 +1704,88 @@ class BaseStageHandler:
             allow_ec=allow_ec,
             allow_ph=allow_ph,
         )
-        return {
-            "chemistry_outcome": (
-                "targets_achieved" if targets_reached else "targets_not_achieved"
-            ),
-            "targets_reached": targets_reached,
-            "reason": "within_pid_deadband" if targets_reached else "outside_pid_deadband",
-            "current_ph": current_ph,
-            "current_ec": current_ec if allow_ec else None,
-            "target_ph": ph_target,
-            "target_ec": ec_target,
-            "ph_deadband": float(deadbands["ph"]),
-            "ec_deadband": float(deadbands["ec"]) if allow_ec else None,
-            "allow_ph": allow_ph,
-            "allow_ec": allow_ec,
-            "irrigation_ec_component": ec_component,
-        }
+        return self._apply_ec_dosing_block(
+            {
+                "chemistry_outcome": (
+                    "targets_achieved" if targets_reached else "targets_not_achieved"
+                ),
+                "targets_reached": targets_reached,
+                "reason": "within_pid_deadband" if targets_reached else "outside_pid_deadband",
+                "current_ph": current_ph,
+                "current_ec": current_ec if allow_ec else None,
+                "target_ph": ph_target,
+                "target_ec": ec_target,
+                "ph_deadband": float(deadbands["ph"]),
+                "ec_deadband": float(deadbands["ec"]) if allow_ec else None,
+                "allow_ph": allow_ph,
+                "allow_ec": allow_ec,
+                "irrigation_ec_component": ec_component,
+            },
+            block_reason,
+        )
+
+    def _irrigation_ec_dosing_block_reason(
+        self,
+        *,
+        corr: Any,
+        ec_component: str,
+        current_ec: float | None,
+        full_target_ec: float,
+        correction_cfg: Mapping[str, Any],
+        pid_configs: Mapping[str, Any],
+    ) -> str | None:
+        """Диагностическая причина запрета дозирования включённого EC.
+
+        ``irrigation_ec_component=none`` сюда не попадает. Заморозка сама по
+        себе не причина: её подтверждает budget guard (нет baseline, baseline
+        устарел или бюджет компонента исчерпан).
+        """
+        if corr is None:
+            return "component_budget_unavailable"
+        probe_ec = (
+            float(current_ec)
+            if current_ec is not None
+            else float(full_target_ec) - 1_000_000.0
+        )
+        deadbands = CorrectionPlanner().resolve_deadbands(
+            current_ph=0.0,
+            current_ec=probe_ec,
+            target_ph=0.0,
+            target_ec=float(full_target_ec),
+            correction_config=correction_cfg,
+            pid_configs=pid_configs,
+            allow_ec=True,
+            allow_ph=False,
+        )
+        guard = irrigation_component_budget_guard(
+            corr=replace(corr, pipeline_phase=f"irrigation_{ec_component}"),
+            current_ec=probe_ec,
+            full_target_ec=float(full_target_ec),
+            ec_deadband=float(deadbands["ec"]),
+        )
+        if bool(guard.get("allowed", True)):
+            return None
+        reason = str(guard.get("reason") or "").strip()
+        return reason or "ec_dosing_blocked"
+
+    @staticmethod
+    def _apply_ec_dosing_block(
+        snapshot: Mapping[str, Any],
+        block_reason: str | None,
+    ) -> dict[str, Any]:
+        """Не превращать запрет дозы включённого EC в targets_achieved."""
+        updated = dict(snapshot)
+        if not block_reason:
+            return updated
+        updated["ec_dosing_blocked"] = True
+        updated["ec_dosing_block_reason"] = block_reason
+        outcome = str(updated.get("chemistry_outcome") or "")
+        prior = str(updated.get("reason") or "").strip()
+        if outcome != "targets_achieved":
+            updated["reason"] = block_reason if not prior else f"{block_reason},{prior}"
+        # Dosing permission cannot override fresh measurements in either
+        # direction: a frozen loop may already be within the full deadband.
+        return updated
 
     async def _workflow_ready_reached(
         self, *, task: Any, plan: Any, now: datetime, runtime: Any = None,

@@ -43,6 +43,14 @@
 контур не участвует в chemistry success и не требует своего controller config для
 проверки оставшегося контура.
 
+Уточнение после аудита 2026-10-19: `ec_pid_frozen` означает блокировку дозы,
+а не отключение EC-цели. Для `irrigation_ec_component=calcium|npk` итог всегда
+проверяет свежий EC по полному target/deadband, включая исчерпание component budget.
+Если измерения уже попали в deadband, блокировка дозы не отменяет достигнутый результат.
+`ec_component_gains` проходит из process calibration через compiled bundle и snapshot
+в последовательный planner и observation analyzer; generic gain применяется только
+при отсутствии положительного gain выбранного компонента.
+
 Актуализация per-phase EC и day/night (2026-04-13; **переписано 2026-07-22**):
 - prepare owner больше **не** `target_ec_prepare` / `npk_ec_share` — канон: water-baseline +
   кумулятивные `T_*` + sequential pipeline (см. §9);

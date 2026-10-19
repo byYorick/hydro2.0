@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
@@ -591,3 +592,78 @@ def test_bundle_correction_config_row_uses_bundle_meta_version() -> None:
     assert result is not None
     assert result["version"] == 4
     assert result["phase_overrides"]["solution_fill"]["timing"]["stabilization_sec"] == 12
+
+
+_COMPONENT_GAINS = {
+    "calcium": {"ec_gain_per_ml": 0.2},
+    "magnesium": {"ec_gain_per_ml": 0.5},
+    "npk": {"ec_gain_per_ml": 0.25},
+    "micro": {"ec_gain_per_ml": 0.4},
+}
+
+
+def test_bundle_process_calibration_keeps_ec_component_gains() -> None:
+    read_model = PgZoneSnapshotReadModel()
+    rows = read_model._bundle_process_calibration_rows(
+        {
+            "process_calibration": {
+                "tank_recirc": {
+                    "ec_gain_per_ml": 0.1,
+                    "ec_component_gains": _COMPONENT_GAINS,
+                    "is_active": True,
+                },
+                "irrigation": {
+                    "ec_gain_per_ml": 0.1,
+                    "is_active": True,
+                    "meta": {"note": "legacy", "ec_component_gains": _COMPONENT_GAINS},
+                },
+            }
+        }
+    )
+    built = read_model._build_process_calibrations(rows)
+
+    assert rows[0]["ec_component_gains"]["magnesium"]["ec_gain_per_ml"] == 0.5
+    assert built["tank_recirc"]["ec_gain_per_ml"] == 0.1
+    assert built["tank_recirc"]["ec_component_gains"] == _COMPONENT_GAINS
+    assert built["irrigation"]["ec_component_gains"]["calcium"]["ec_gain_per_ml"] == 0.2
+    assert built["irrigation"]["meta"]["note"] == "legacy"
+
+
+def test_build_process_calibrations_lifts_ec_component_gains_from_meta_json() -> None:
+    """Строка без колонки gains: поле живёт в JSON ``meta`` и не теряется."""
+    read_model = PgZoneSnapshotReadModel()
+    meta = {"batch": "sql-json", "ec_component_gains": _COMPONENT_GAINS}
+
+    built = read_model._build_process_calibrations(
+        [
+            {
+                "mode": "solution_fill",
+                "ec_gain_per_ml": 0.1,
+                "is_active": True,
+                "meta": json.dumps(meta),
+            }
+        ]
+    )
+
+    assert built["solution_fill"]["ec_gain_per_ml"] == 0.1
+    assert built["solution_fill"]["ec_component_gains"]["magnesium"]["ec_gain_per_ml"] == 0.5
+    assert built["solution_fill"]["ec_component_gains"]["npk"]["ec_gain_per_ml"] == 0.25
+    assert built["solution_fill"]["ec_component_gains"]["micro"]["ec_gain_per_ml"] == 0.4
+    assert built["solution_fill"]["meta"]["batch"] == "sql-json"
+
+
+def test_build_process_calibrations_prefers_top_level_ec_component_gains_over_meta() -> None:
+    read_model = PgZoneSnapshotReadModel()
+    built = read_model._build_process_calibrations(
+        [
+            {
+                "mode": "irrigation",
+                "ec_gain_per_ml": 0.1,
+                "is_active": True,
+                "ec_component_gains": {"magnesium": {"ec_gain_per_ml": 0.5}},
+                "meta": {"ec_component_gains": {"magnesium": {"ec_gain_per_ml": 9.0}}},
+            }
+        ]
+    )
+
+    assert built["irrigation"]["ec_component_gains"]["magnesium"]["ec_gain_per_ml"] == 0.5

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 from datetime import datetime, timezone
 from typing import Any, Mapping, Optional
@@ -59,10 +58,9 @@ class PgPrepareBaselineRepository:
             return None
 
         ts = captured_at or datetime.now(timezone.utc).replace(tzinfo=None)
-        ratios_json = json.dumps(dict(ratios), separators=(",", ":"), sort_keys=True, default=str)
-        targets_json = json.dumps(
-            dict(component_targets), separators=(",", ":"), sort_keys=True, default=str
-        )
+        # common.db already encodes JSONB. Passing JSON text double-encodes it.
+        ratios_json = dict(ratios)
+        targets_json = dict(component_targets)
         # captured_at is timestamptz; created_at/updated_at are timestamp (Laravel).
         # Use distinct params so asyncpg does not hit AmbiguousParameterError.
         query = """
@@ -126,7 +124,7 @@ class PgPrepareBaselineRepository:
                        ratios_json, component_targets_json, ae_task_id
                 FROM zone_prepare_baselines
                 WHERE zone_id = $1 AND ae_task_id = $2
-                ORDER BY captured_at DESC
+                ORDER BY captured_at DESC, id DESC
                 LIMIT 1
             """
             args: tuple[Any, ...] = (int(zone_id), int(ae_task_id))
@@ -136,7 +134,7 @@ class PgPrepareBaselineRepository:
                        ratios_json, component_targets_json, ae_task_id
                 FROM zone_prepare_baselines
                 WHERE zone_id = $1
-                ORDER BY captured_at DESC
+                ORDER BY captured_at DESC, id DESC
                 LIMIT 1
             """
             args = (int(zone_id),)
@@ -157,3 +155,65 @@ class PgPrepareBaselineRepository:
         if row is None:
             return None
         return dict(row)
+
+    async def merge_pipeline_resume(
+        self,
+        *,
+        zone_id: int,
+        ae_task_id: int,
+        pipeline_phase: str,
+        dilute_attempts: int,
+        conn: asyncpg.Connection | None = None,
+    ) -> bool:
+        """Дописать шаг pipeline в JSON baseline той же партии.
+
+        Ключ ``pipeline_resume`` лежит рядом с T_* в ``component_targets_json``.
+        ``ComponentTargets.from_mapping`` его не читает, новая колонка не нужна.
+        Новый INSERT baseline (новая партия) этот ключ не содержит.
+        """
+        if not await self.table_exists(conn=conn):
+            return False
+        phase = str(pipeline_phase or "").strip().lower()
+        if not phase:
+            return False
+        try:
+            attempts = max(0, int(dilute_attempts))
+        except (TypeError, ValueError):
+            attempts = 0
+        resume_json = {"pipeline_resume": {"pipeline_phase": phase, "dilute_attempts": attempts}}
+        updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+        query = """
+            UPDATE zone_prepare_baselines AS b
+            SET component_targets_json =
+                    (CASE WHEN jsonb_typeof(b.component_targets_json) = 'string'
+                          THEN (b.component_targets_json #>> '{}')::jsonb
+                          ELSE COALESCE(b.component_targets_json, '{}'::jsonb)
+                     END) || $3::jsonb,
+                updated_at = $4::timestamp
+            WHERE b.id = (
+                SELECT id
+                FROM zone_prepare_baselines
+                WHERE zone_id = $1 AND ae_task_id = $2
+                ORDER BY captured_at DESC, id DESC
+                LIMIT 1
+            )
+            RETURNING id
+        """
+        args = (int(zone_id), int(ae_task_id), resume_json, updated_at)
+        try:
+            if conn is not None:
+                row = await conn.fetchrow(query, *args)
+            else:
+                pool = await get_pool()
+                async with pool.acquire() as acquired:
+                    row = await acquired.fetchrow(query, *args)
+        except Exception:
+            logger.warning(
+                "Не удалось сохранить pipeline resume zone_id=%s ae_task_id=%s phase=%s",
+                zone_id,
+                ae_task_id,
+                phase,
+                exc_info=True,
+            )
+            return False
+        return bool(row and row.get("id") is not None)

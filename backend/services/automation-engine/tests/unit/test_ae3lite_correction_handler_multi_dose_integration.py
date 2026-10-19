@@ -185,6 +185,30 @@ def _make_integration_handler(
 
 
 @pytest.mark.asyncio
+async def test_parallel_duration_limited_feedback_reaches_observation_state(monkeypatch):
+    from unittest.mock import AsyncMock
+
+    monkeypatch.setattr("ae3lite.application.handlers.correction.create_zone_event", AsyncMock())
+    seq = _three_component_seq()
+    gateway = _DoseGateway(dose_outcomes=[{
+        "success": True,
+        "command_statuses": [{
+            "terminal_status": "DONE", "success": True,
+            "response_details": {"duration_limited": True, "duration_ms": item["duration_ms"] // 2},
+        } for item in seq],
+    }])
+    sink = _FakeEventSink()
+    handler = _make_integration_handler(gateway=gateway, event_sink=sink)
+    monkeypatch.setattr(handler, "_ml_per_sec_for_ec_item", lambda **kwargs: 10.0)
+    out = await handler.run(task=_irrigation_task(_parallel_corr(seq=seq)),
+                            plan=_runtime_plan(), stage_def=None, now=NOW)
+    assert out.correction.corr_step == "corr_wait_ec"
+    assert out.correction.ec_amount_ml == pytest.approx(3.0)
+    event = next(payload for _, kind, payload in sink.calls if kind == "EC_DOSING")
+    assert event["amount_ml"] == pytest.approx(3.0)
+
+
+@pytest.mark.asyncio
 async def test_integration_multi_sequential_happy_path_via_handler_run(monkeypatch) -> None:
     """Ca→Mg→Micro through handler.run() with event logger + command_statuses."""
     zone_events: list[tuple[int, str, dict]] = []

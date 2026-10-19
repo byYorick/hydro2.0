@@ -84,10 +84,12 @@ class SolutionTopupGuardHandler(BaseStageHandler):
             if isinstance(payload, Mapping):
                 mode = str(payload.get("mode") or "normal").strip().lower()
         if mode != "force":
-            cooldown_sec = int(
-                getattr(runtime, "solution_topup_cooldown_sec", _DEFAULT_TOPUP_COOLDOWN_SEC)
-                or _DEFAULT_TOPUP_COOLDOWN_SEC
-            )
+            # Явный 0 отключает cooldown. Оператор `or` подменял бы его дефолтом 300.
+            raw_cooldown = getattr(runtime, "solution_topup_cooldown_sec", None)
+            if raw_cooldown is None:
+                cooldown_sec = _DEFAULT_TOPUP_COOLDOWN_SEC
+            else:
+                cooldown_sec = int(raw_cooldown)
             if await self._cooldown_active(task=task, now=now, cooldown_sec=max(0, cooldown_sec)):
                 return StageOutcome(
                     kind="fail",

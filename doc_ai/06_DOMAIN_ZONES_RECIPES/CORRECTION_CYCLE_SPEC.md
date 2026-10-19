@@ -293,9 +293,23 @@ Observability (UI/Grafana, 2026-07-09):
   больше не обрывает reconcile: команда ждёт свой terminal poll deadline;
 - command poll timeout после publish — fail-closed и запускает fail-safe stop. Только
   pre-publish admission refusal может завершить correction window как исчерпанный budget;
-- startup recovery сверяет `accepted/terminal_status IS NULL` у terminal task с таблицей
-  `commands`. Поздний `DONE` идемпотентно обновляет `ae_commands` и `pid_state.last_dose_at`;
-  неизвестный результат не синтезируется вручную.
+- startup и периодический terminal-command recovery сверяют `accepted` и
+  `published_unconfirmed` без terminal status, а также `DONE` dose без маркера
+  учёта. Источник результата — `commands`; неизвестный результат не синтезируется.
+  Перед отправкой dose в локальном `ae_commands.payload._ae3_dose_context`
+  сохраняются PID-контур, направление и рассчитанная длительность hold. Контекст
+  не передаётся в MQTT/HL params. Repair восстанавливает `last_dose_at` и hold
+  от времени DONE, для EC — также hold pH, не сокращая более новую выдержку.
+  `_ae3_dose_accounted=true` записывается только после PID persistence. Для старых
+  команд без контекста repair использует доступную `correction.stabilization_sec`;
+  историческая точная выдержка по утраченному config не реконструируется.
+- rollover рециркуляции сохраняет фазу компонентов и dilute attempts в baseline
+  той же task атомарно с очисткой correction и переходом стадии, после проверки
+  claim generation. Пауза рециркуляции сохраняет этот же прогресс.
+- observe/no-effect и EC→pH feedforward используют подтверждённый объём дозы.
+  Компонентный gain применяется одинаково при расчёте дозы и ожидаемого эффекта.
+- `ec_pid_frozen` запрещает дозирование, но не исключает включённый EC из
+  chemistry outcome. Только явный `irrigation_ec_component=none` задаёт pH-only.
 
 ### 3.1. Режим 1: TANK_FILLING (Набор бака)
 

@@ -1347,3 +1347,122 @@ async def test_router_manual_hold_exit_with_operator_step_sets_plain_pending() -
     wf = tr.update_stage_calls[0]["workflow"]
     assert wf.current_stage == "solution_fill_check"
     assert wf.pending_manual_step == "solution_fill_stop"
+
+
+def _npk_correction() -> CorrectionState:
+    return CorrectionState(
+        corr_step="corr_check",
+        attempt=1,
+        max_attempts=5,
+        ec_attempt=1,
+        ec_max_attempts=5,
+        ph_attempt=0,
+        ph_max_attempts=5,
+        activated_here=False,
+        stabilization_sec=60,
+        return_stage_success="prepare_recirculation_stop_to_ready",
+        return_stage_fail="prepare_recirculation_window_exhausted",
+        outcome_success=None,
+        needs_ec=False,
+        ec_node_uid=None,
+        ec_channel=None,
+        ec_duration_ms=None,
+        needs_ph_up=False,
+        needs_ph_down=False,
+        ph_node_uid=None,
+        ph_channel=None,
+        ph_duration_ms=None,
+        wait_until=None,
+        pipeline_phase="recirc_npk",
+        active_component="npk",
+        dilute_attempts=2,
+    )
+
+
+async def test_window_exhausted_persists_pipeline_step_and_clears_correction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Rollover очищает correction и пишет шаг той же партии в baseline JSON."""
+    saved: dict[str, Any] = {}
+
+    async def _merge(self, **kwargs):  # noqa: ANN001
+        saved.update(kwargs)
+        return True
+
+    monkeypatch.setattr(
+        "ae3lite.infrastructure.repositories.prepare_baseline_repository"
+        ".PgPrepareBaselineRepository.merge_pipeline_resume",
+        _merge,
+    )
+    corr = _npk_correction()
+    task = replace(
+        _make_task(
+            stage="prepare_recirculation_check",
+            phase="tank_recirc",
+            correction=corr,
+        ),
+        correction=corr,
+    )
+    outcome = StageOutcome(
+        kind="transition",
+        next_stage="prepare_recirculation_window_exhausted",
+    )
+    router, tr, _wr = _make_router(correction_outcome=outcome, return_task=task)
+
+    await router.run(task=task, plan=_MockPlan(runtime=RUNTIME), now=NOW)
+
+    assert saved["pipeline_phase"] == "recirc_npk"
+    assert saved["dilute_attempts"] == 2
+    assert saved["ae_task_id"] == task.id
+    assert saved["zone_id"] == task.zone_id
+    call = tr.update_stage_calls[0]
+    assert call["correction"] is None
+    assert call["workflow"].current_stage == "prepare_recirculation_window_exhausted"
+
+
+async def test_window_exhausted_without_pipeline_does_not_write_resume(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    called = {"n": 0}
+
+    async def _merge(self, **kwargs):  # noqa: ANN001
+        called["n"] += 1
+        return True
+
+    monkeypatch.setattr(
+        "ae3lite.infrastructure.repositories.prepare_baseline_repository"
+        ".PgPrepareBaselineRepository.merge_pipeline_resume",
+        _merge,
+    )
+    task = _make_task(stage="prepare_recirculation_check", phase="tank_recirc")
+    outcome = StageOutcome(
+        kind="transition",
+        next_stage="prepare_recirculation_window_exhausted",
+    )
+    router, tr, _wr = _make_router(return_task=task)
+    router._handlers["prepare_recirc"] = _StubHandler(outcome)
+
+    await router.run(task=task, plan=_MockPlan(runtime=RUNTIME), now=NOW)
+
+    assert called["n"] == 0
+    assert tr.update_stage_calls[0]["correction"] is None
+    assert tr.update_stage_calls[0]["workflow"].current_stage == "prepare_recirculation_window_exhausted"
+
+
+@pytest.mark.parametrize("stage,next_stage,pending", [
+    ("manual_hold", "solution_fill_start", "__mh_return:solution_fill_check"),
+    ("solution_fill_start", "solution_fill_check", "__mh_return:solution_fill_check"),
+])
+async def test_manual_resume_preserves_original_deadline(stage, next_stage, pending):
+    deadline = NOW + timedelta(seconds=17)
+    entered = NOW - timedelta(seconds=200)
+    task = _make_task(stage=stage, phase="tank_filling", pending_manual_step=pending,
+                      stage_deadline_at=deadline, stage_entered_at=entered, stage_retry_count=2)
+    router, tr, _ = _make_router(return_task=task)
+    await router._apply_transition(task=task, plan=_MockPlan(runtime=RUNTIME),
+                                   outcome=StageOutcome(kind="transition", next_stage=next_stage), now=NOW)
+    workflow = tr.update_stage_calls[0]["workflow"]
+    assert workflow.stage_deadline_at.replace(tzinfo=None) == deadline.replace(tzinfo=None)
+    assert workflow.stage_entered_at.replace(tzinfo=None) == entered.replace(tzinfo=None)
+    assert workflow.stage_retry_count == 2
+    assert workflow.pending_manual_step == (pending if stage == "manual_hold" else None)

@@ -25,6 +25,8 @@ def _corr(
     ph_amount_ml: float | None = None,
     needs_ph_up: bool = False,
     needs_ph_down: bool = False,
+    active_component: str | None = None,
+    ec_component: str | None = None,
 ) -> CorrectionState:
     """Minimal CorrectionState fixture — only the fields the analyzer touches."""
     return CorrectionState(
@@ -52,6 +54,8 @@ def _corr(
         wait_until=None,
         ec_amount_ml=ec_amount_ml,
         ph_amount_ml=ph_amount_ml,
+        active_component=active_component,
+        ec_component=ec_component,
     )
 
 
@@ -60,6 +64,73 @@ def _sample(ts: datetime, value: float) -> dict:
 
 
 # ── expected_effect ─────────────────────────────────────────────────
+
+
+def test_expected_effect_ec_component_uses_component_gain_not_generic() -> None:
+    analyzer = ObservationAnalyzer()
+    process_cfg = {
+        "ec_gain_per_ml": 0.1,
+        "ec_component_gains": {
+            "calcium": {"ec_gain_per_ml": 0.2},
+            "magnesium": {"ec_gain_per_ml": 0.5},
+            "npk": {"ec_gain_per_ml": 0.25},
+            "micro": {"ec_gain_per_ml": 0.4},
+        },
+    }
+    pid_entry = {
+        "stats": {
+            "adaptive": {
+                "gains": {"ec_gain_per_ml": {"ema": 0.9, "observations": 6}},
+                "retention_ema": 1.0,
+                "wave_score_ema": 0.0,
+            }
+        }
+    }
+
+    effect = analyzer.expected_effect(
+        pid_type="ec",
+        corr=_corr(ec_amount_ml=0.8, active_component="magnesium", ec_component="magnesium"),
+        process_cfg=process_cfg,
+        pid_entry=pid_entry,
+        phase_key="tank_recirc",
+    )
+
+    assert effect == pytest.approx(0.4)
+
+
+def test_expected_effect_ec_component_from_ec_component_field() -> None:
+    analyzer = ObservationAnalyzer()
+    effect = analyzer.expected_effect(
+        pid_type="ec",
+        corr=_corr(ec_amount_ml=0.8, ec_component="magnesium"),
+        process_cfg={
+            "ec_gain_per_ml": 0.1,
+            "ec_component_gains": {"magnesium": 0.5},
+        },
+    )
+
+    assert effect == pytest.approx(0.4)
+
+
+def test_expected_effect_ec_without_component_gain_keeps_generic_blend() -> None:
+    analyzer = ObservationAnalyzer()
+    effect = analyzer.expected_effect(
+        pid_type="ec",
+        corr=_corr(ec_amount_ml=1.0, active_component="magnesium"),
+        process_cfg={"ec_gain_per_ml": 0.1, "ec_component_gains": {"calcium": {"ec_gain_per_ml": 0.2}}},
+        pid_entry={
+            "stats": {
+                "adaptive": {
+                    "gains": {"ec_gain_per_ml": {"ema": 0.4, "observations": 6}},
+                    "retention_ema": 1.0,
+                    "wave_score_ema": 0.0,
+                }
+            }
+        },
+        phase_key="irrigation",
+    )
+
+    assert effect == pytest.approx(0.4)
 
 
 def test_expected_effect_ec_uses_ec_gain_per_ml() -> None:

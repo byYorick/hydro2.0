@@ -17,6 +17,72 @@ _logger = logging.getLogger(__name__)
 _PID_RESET_ATTEMPTS = 2
 
 
+def _recirc_resume_from_correction(corr: Any) -> tuple[str | None, int]:
+    """Шаг и dilute текущей correction, если это валидная фаза recirc pipeline."""
+    from ae3lite.domain.services.nutrient_pipeline import recirc_step_index
+
+    phase = str(getattr(corr, "pipeline_phase", "") or "").strip().lower()
+    if recirc_step_index(phase) < 0:
+        return None, 0
+    try:
+        attempts = int(getattr(corr, "dilute_attempts", 0) or 0)
+    except (TypeError, ValueError):
+        attempts = 0
+    return phase, max(0, attempts)
+
+
+def _recirc_resume_from_targets(raw: Any) -> tuple[str | None, int]:
+    """Шаг из ``component_targets_json.pipeline_resume`` той же партии."""
+    from ae3lite.domain.services.nutrient_pipeline import recirc_step_index
+
+    if not isinstance(raw, dict):
+        return None, 0
+    resume = raw.get("pipeline_resume")
+    if not isinstance(resume, dict):
+        return None, 0
+    phase = str(resume.get("pipeline_phase") or "").strip().lower()
+    if recirc_step_index(phase) < 0:
+        return None, 0
+    try:
+        attempts = int(resume.get("dilute_attempts") or 0)
+    except (TypeError, ValueError):
+        attempts = 0
+    return phase, max(0, attempts)
+
+
+async def snapshot_recirc_pipeline_resume(task: Any, *, conn: Any) -> None:
+    """Сохранить шаг pipeline в baseline до очистки correction на window_exhausted.
+
+    На стадии ``prepare_recirculation_window_exhausted`` correction обязан быть
+    ``None``: иначе router отдаст тик CorrectionHandler. Шаг живёт в JSON
+    baseline текущей task и читается следующим окном.
+    """
+    from ae3lite.infrastructure.repositories.prepare_baseline_repository import (
+        PgPrepareBaselineRepository,
+    )
+
+    phase, attempts = _recirc_resume_from_correction(getattr(task, "correction", None))
+    if phase is None:
+        return
+    zone_id = int(getattr(task, "zone_id", 0) or 0)
+    task_id = int(getattr(task, "id", 0) or 0)
+    if zone_id <= 0 or task_id <= 0:
+        return
+    saved = await PgPrepareBaselineRepository().merge_pipeline_resume(
+        zone_id=zone_id,
+        ae_task_id=task_id,
+        pipeline_phase=phase,
+        dilute_attempts=attempts,
+        conn=conn,
+    )
+    if not saved:
+        raise TaskExecutionError(
+            "ae3_pipeline_resume_persist_failed",
+            "Не удалось сохранить шаг рециркуляции "
+            f"{phase} для zone_id={zone_id} task_id={task_id}",
+        )
+
+
 class PrepareRecircCheckHandler(BaseStageHandler):
     """Обрабатывает ``prepare_recirculation_check``: probe, target'ы и коррекцию.
 
@@ -119,6 +185,14 @@ class PrepareRecircCheckHandler(BaseStageHandler):
                     source="sensor",
                 )
 
+        # Stop до ON probe: flow interrupt уже выключил насос, stop не требует ON.
+        if pending_manual_step == "prepare_recirculation_stop":
+            _logger.info("prepare_recirculation_check: запрошена ручная остановка zone_id=%s", task.zone_id)
+            return StageOutcome(
+                kind="transition",
+                next_stage="prepare_recirculation_stop_to_ready",
+            )
+
         try:
             probe_outcome = await self._probe_irr_state_with_backoff(
                 task=task, plan=plan, now=now,
@@ -156,12 +230,6 @@ class PrepareRecircCheckHandler(BaseStageHandler):
         if probe_outcome is not None:
             return probe_outcome
 
-        if pending_manual_step == "prepare_recirculation_stop":
-            _logger.info("prepare_recirculation_check: запрошена ручная остановка zone_id=%s", task.zone_id)
-            return StageOutcome(
-                kind="transition",
-                next_stage="prepare_recirculation_stop_to_ready",
-            )
         flow_hold = await self._handle_control_mode_flow_path_interrupt(
             task=task,
             plan=plan,
@@ -325,12 +393,13 @@ class PrepareRecircCheckHandler(BaseStageHandler):
         return_stage_success: str,
         return_stage_fail: str,
     ) -> CorrectionState:
-        """Open prepare pipeline at recirc_ca with baseline targets from DB or fail-closed."""
+        """Open prepare pipeline from the same-batch step, or recirc_ca for a new baseline."""
         import json
 
         from ae3lite.domain.errors import ErrorCodes, TaskExecutionError
         from ae3lite.domain.services.nutrient_pipeline import (
             ComponentTargets,
+            component_for_phase,
             compute_component_targets,
             pipeline_phase_for_index,
         )
@@ -344,6 +413,11 @@ class PrepareRecircCheckHandler(BaseStageHandler):
             sensors_already_active=True,
             return_stage_success=return_stage_success,
             return_stage_fail=return_stage_fail,
+        )
+        # Шаг той же correction (re-enter) переживает повторный вход.
+        # После window_exhausted correction=None, шаг читается из baseline JSON.
+        resume_phase, resume_dilute = _recirc_resume_from_correction(
+            getattr(task, "correction", None)
         )
         targets: ComponentTargets | None = None
         baseline_id = None
@@ -378,6 +452,11 @@ class PrepareRecircCheckHandler(BaseStageHandler):
                     raw_targets = row.get("component_targets_json")
                     if isinstance(raw_targets, str):
                         raw_targets = json.loads(raw_targets)
+                    if resume_phase is None:
+                        row_phase, row_dilute = _recirc_resume_from_targets(raw_targets)
+                        if row_phase is not None:
+                            resume_phase = row_phase
+                            resume_dilute = row_dilute
                     if isinstance(raw_targets, dict) and "T_ca" in raw_targets:
                         targets = ComponentTargets.from_mapping(raw_targets)
                     else:
@@ -403,16 +482,16 @@ class PrepareRecircCheckHandler(BaseStageHandler):
                 "Для prepare_recirculation отсутствует water baseline текущего task "
                 "(zone_prepare_baselines / corr_*). Запрещён reuse baseline чужого цикла.",
             )
-        phase0 = pipeline_phase_for_index(0)
+        phase = resume_phase or pipeline_phase_for_index(0)
         return replace(
             corr,
-            pipeline_phase=phase0,
-            active_component="calcium",
+            pipeline_phase=phase,
+            active_component=component_for_phase(phase),
             water_ec=targets.water_ec,
             water_ph=targets.water_ph,
             nutrient_budget=targets.nutrient_budget,
             component_targets_json=targets.to_json(),
             baseline_id=baseline_id,
             ec_pid_frozen=False,
-            dilute_attempts=0,
+            dilute_attempts=resume_dilute if resume_phase else 0,
         )

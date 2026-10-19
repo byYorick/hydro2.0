@@ -10,6 +10,11 @@ import asyncpg
 from common.db import get_pool
 from ae3lite.domain.errors import CommandPublishError
 
+# Ставится в payload только после успешной записи last_dose_at/hold.
+# Не колонка: повторный startup видит DONE без этого флага и учитывает дозу ещё раз.
+AE3_DOSE_ACCOUNTED_KEY = "_ae3_dose_accounted"
+_AE3_FAIL_SAFE_KEY = "_ae3_fail_safe"
+
 
 class PgAeCommandRepository:
     """Сохраняет шаги команд AE3-Lite и разрешает legacy-связки с history-logger."""
@@ -580,16 +585,48 @@ class PgAeCommandRepository:
                 )
         return dict(row) if row is not None else None
 
+    async def mark_dose_accounted(self, *, ae_command_id: int, now: datetime) -> bool:
+        """Пометить dose учтённой в PID. Fail-safe и не-dose строки не трогает.
+
+        Флаг пишется только вызывающим кодом после успешного last_dose_at/hold.
+        """
+        pool = await get_pool()
+        normalized_now = self._normalize_timestamp(now)
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                UPDATE ae_commands
+                SET payload = jsonb_set(
+                        COALESCE(payload, '{}'::jsonb),
+                        $3::text[],
+                        'true'::jsonb,
+                        true
+                    ),
+                    updated_at = $2
+                WHERE id = $1
+                  AND terminal_status = 'DONE'
+                  AND lower(COALESCE(payload->>'cmd', '')) = 'dose'
+                  AND NOT (COALESCE(payload, '{}'::jsonb) @> $4::jsonb)
+                RETURNING id
+                """,
+                int(ae_command_id),
+                normalized_now,
+                [AE3_DOSE_ACCOUNTED_KEY],
+                {_AE3_FAIL_SAFE_KEY: True},
+            )
+        return row is not None
+
     async def list_unreconciled_for_terminal_tasks(
         self,
         *,
         limit: int = 100,
     ) -> list[Mapping[str, Any]]:
-        """Return accepted commands whose owning task is already terminal.
+        """Команды terminal-задач, которые ещё нужно сверить или учесть.
 
-        These rows are repaired from the canonical legacy ``commands`` table;
-        callers must never synthesize a terminal status or mutate the database
-        manually.
+        В выборке три независимых хвоста, без синтеза terminal status:
+        accepted/NULL, published_unconfirmed/NULL и DONE dose без маркера
+        ``_ae3_dose_accounted``. Fail-safe строки исключены. Маркер не
+        выводится из terminal_status: его ставит учёт PID.
         """
         pool = await get_pool()
         async with pool.acquire() as conn:
@@ -599,16 +636,28 @@ class PgAeCommandRepository:
                 FROM ae_commands ac
                 JOIN ae_tasks t ON t.id = ac.task_id
                 WHERE t.status IN ('completed', 'failed', 'cancelled')
-                  AND ac.publish_status = 'accepted'
-                  AND ac.terminal_status IS NULL
-                  AND NOT (
-                    COALESCE(ac.payload, '{}'::jsonb)
-                    @> '{"_ae3_fail_safe": true}'::jsonb
+                  AND NOT (COALESCE(ac.payload, '{}'::jsonb) @> $2::jsonb)
+                  AND (
+                    (
+                      ac.publish_status = 'accepted'
+                      AND ac.terminal_status IS NULL
+                    )
+                    OR (
+                      ac.publish_status = 'published_unconfirmed'
+                      AND ac.terminal_status IS NULL
+                    )
+                    OR (
+                      ac.terminal_status = 'DONE'
+                      AND lower(COALESCE(ac.payload->>'cmd', '')) = 'dose'
+                      AND NOT (COALESCE(ac.payload, '{}'::jsonb) @> $3::jsonb)
+                    )
                   )
                 ORDER BY ac.created_at ASC, ac.id ASC
                 LIMIT $1
                 """,
                 max(1, min(1000, int(limit))),
+                {_AE3_FAIL_SAFE_KEY: True},
+                {AE3_DOSE_ACCOUNTED_KEY: True},
             )
         return [dict(row) for row in rows]
 

@@ -430,7 +430,6 @@ class CorrectionHandler(BaseStageHandler):
             unavailable_error="two_tank_solution_level_unavailable",
             stale_error="two_tank_solution_level_stale",
             prefer_probe_snapshot=True,
-            allow_stale_if_untriggered=True,
         )
 
         if not bool(solution_max.get("is_triggered")):
@@ -973,6 +972,46 @@ class CorrectionHandler(BaseStageHandler):
 
     # ── _run_check helpers (B1 decomposition) ──────────────────────────
 
+    async def _freeze_pid_integral_clock(
+        self,
+        *,
+        task: Any,
+        pid_state: Mapping[str, Any],
+        now: datetime,
+    ) -> None:
+        """Сдвинуть last_measurement_at без ΔI, пока окно решения не готово.
+
+        Иначе первая доза после минут ожидания считает ``I += gap * dt`` за всё
+        ожидание и упирается в max_integral.
+        """
+        if not isinstance(pid_state, Mapping):
+            return
+        updates: dict[str, Mapping[str, Any]] = {}
+        for kind in ("ec", "ph"):
+            entry = pid_state.get(kind)
+            if not isinstance(entry, Mapping):
+                continue
+            try:
+                gap = float(entry.get("prev_error") or 0.0)
+                current = float(entry.get("last_measured_value") or 0.0)
+            except (TypeError, ValueError):
+                continue
+            frozen = _next_pid_state(
+                kind=kind,
+                gap=gap,
+                current_value=current,
+                controller_cfg={},
+                pid_entry=entry,
+                now=now,
+                accumulate_integral=False,
+            )
+            updates[kind] = {
+                **dict(frozen),
+                "integral": float(entry.get("integral") or 0.0),
+            }
+        if updates:
+            await self._pid_state.persist(zone_id=task.zone_id, now=now, updates=updates)
+
     async def _read_measurements_or_interrupt(
         self,
         *,
@@ -1069,6 +1108,7 @@ class CorrectionHandler(BaseStageHandler):
                 getattr(task, "id", None),
                 CorrectionEventLogger.correction_window_id(task=task),
             )
+            await self._freeze_pid_integral_clock(task=task, pid_state=pid_state, now=now)
             return self._enter_correction_after_delay_or_interrupt(
                 task=task,
                 plan=plan,
@@ -1132,6 +1172,7 @@ class CorrectionHandler(BaseStageHandler):
                 getattr(task, "id", None),
                 CorrectionEventLogger.correction_window_id(task=task),
             )
+            await self._freeze_pid_integral_clock(task=task, pid_state=pid_state, now=now)
             return self._enter_correction_after_delay_or_interrupt(
                 task=task,
                 plan=plan,
@@ -1187,6 +1228,40 @@ class CorrectionHandler(BaseStageHandler):
         if not solution_tank_has_solution(solution_min):
             current_stage = str(getattr(task, "current_stage", "") or "").strip().lower()
             # Во время prepare_recirc опустошение бака → setup (fill), не бесконечный corr retry.
+            if current_stage == "solution_fill_check":
+                delay_ms = int(
+                    getattr(
+                        getattr(runtime, "fail_safe_guards", None),
+                        "solution_fill_solution_min_check_delay_ms",
+                        0,
+                    )
+                    or 0
+                )
+                # До guard-delay min ещё может быть выключен: бак только набирается.
+                # После delay выключенный min — утечка, насос нельзя оставлять в fill.
+                if self._stage_elapsed_ms(task=task, now=now) >= max(0, delay_ms):
+                    await self._log_correction_event(
+                        zone_id=task.zone_id,
+                        event_type="CORRECTION_INTERRUPTED_SOLUTION_LOW",
+                        task=task,
+                        corr=corr,
+                        payload={
+                            "reason": "solution_fill_leak_to_stop",
+                            "next_stage": "solution_fill_leak_stop",
+                            "current_ph": current_ph,
+                            "current_ec": current_ec,
+                        },
+                    )
+                    self._observe_fail_safe_transition(
+                        task=task,
+                        reason="solution_fill_leak",
+                        source="correction",
+                        next_stage="solution_fill_leak_stop",
+                    )
+                    return StageOutcome(
+                        kind="transition",
+                        next_stage="solution_fill_leak_stop",
+                    )
             if current_stage == "prepare_recirculation_check":
                 await self._log_correction_event(
                     zone_id=task.zone_id,
@@ -1748,6 +1823,7 @@ class CorrectionHandler(BaseStageHandler):
         is_parallel = str(getattr(corr, "ec_component", "") or "").strip().lower() == "multi_parallel"
         actuators = self._resolve_actuators(runtime=self._require_runtime_plan(plan=plan), task=task, plan=plan)
         result: Mapping[str, Any] = {}
+        dose_context = self._dose_accounting_context(task=task, plan=plan, corr=corr, pid_type="ec")
         if seq and is_parallel:
             # multi_parallel: отправляем ВСЕ dose-команды за один batch.
             # Все компоненты (Ca, Mg, Micro) дозируются одновременно.
@@ -1762,6 +1838,7 @@ class CorrectionHandler(BaseStageHandler):
                     channel=str(item["channel"]),
                     payload={
                         "cmd": "dose",
+                        "_ae3_dose_context": dose_context,
                         "params": {
                             "ml": float(item["amount_ml"]),
                             "duration_ms": int(item["duration_ms"]),
@@ -1841,6 +1918,7 @@ class CorrectionHandler(BaseStageHandler):
                     channel=str(item["channel"]),
                     payload={
                         "cmd": "dose",
+                        "_ae3_dose_context": dose_context,
                         "params": {
                             "ml": float(item["amount_ml"]),
                             "duration_ms": int(item["duration_ms"]),
@@ -1936,6 +2014,7 @@ class CorrectionHandler(BaseStageHandler):
                 channel=corr.ec_channel,
                 payload={
                     "cmd": "dose",
+                    "_ae3_dose_context": dose_context,
                     "params": {
                         "ml": corr.ec_amount_ml,
                         "duration_ms": int(corr.ec_duration_ms or 0),
@@ -1974,6 +2053,8 @@ class CorrectionHandler(BaseStageHandler):
                 ml_per_sec=ml_per_sec,
                 batch_result=result,
             )
+        # Все режимы, включая parallel, наблюдают подтверждённый объём.
+        corr = replace(corr, ec_amount_ml=round(float(effective_ml), 4))
         requested_ml = effective_ml
         if ec_single_meta is not None:
             requested_ml = float(ec_single_meta.get("requested_ml") or effective_ml)
@@ -2057,6 +2138,7 @@ class CorrectionHandler(BaseStageHandler):
                 },
             },
         )
+        await self._mark_accounted_dose_commands(batch_result=result, now=dose_completed_at)
         next_corr = replace(
             corr,
             corr_step="corr_wait_ec",
@@ -2135,6 +2217,9 @@ class CorrectionHandler(BaseStageHandler):
             channel=corr.ph_channel,
             payload={
                 "cmd": "dose",
+                "_ae3_dose_context": self._dose_accounting_context(
+                    task=task, plan=plan, corr=corr, pid_type="ph",
+                ),
                 "params": {
                     "ml": corr.ph_amount_ml,
                     "duration_ms": int(corr.ph_duration_ms or 0),
@@ -2158,6 +2243,7 @@ class CorrectionHandler(BaseStageHandler):
             ml_per_sec=ml_per_sec,
             batch_result=result,
         )
+        corr = replace(corr, ph_amount_ml=round(float(effective_ml), 4))
         # Read last_measured_value from DB (written by _persist_pid_state_updates in _run_check)
         # to avoid using the stale plan.runtime pid_state snapshot.
         current_ph = await self._pid_state.read_measurement_for_event(
@@ -2218,6 +2304,7 @@ class CorrectionHandler(BaseStageHandler):
                 },
             },
         )
+        await self._mark_accounted_dose_commands(batch_result=result, now=dose_completed_at)
         next_corr = replace(corr, corr_step="corr_wait_ph", ph_attempt=corr.ph_attempt + 1, wait_until=wait_until)
         return self._enter_correction_after_delay_or_interrupt(
             task=task,
@@ -3594,8 +3681,9 @@ class CorrectionHandler(BaseStageHandler):
                 },
             },
         )
-        if pid_type == "ec":
-            await self._pid_state.clear_feedforward_bias(zone_id=int(task.zone_id))
+        # Bias EC→pH должен дожить до следующего corr_check. Сброс — в _run_dose_ph
+        # после того, как planner его уже применил. Очистка здесь обнуляла сдвиг
+        # раньше решения pH.
 
         if next_no_effect_count >= int(observe_cfg["no_effect_limit"]):
             return await self._no_effect_limit_reached(
@@ -3800,6 +3888,70 @@ class CorrectionHandler(BaseStageHandler):
             return {}
         details = item.get("response_details")
         return details if isinstance(details, Mapping) else {}
+
+    def _dose_accounting_context(
+        self, *, task: Any, plan: Any, corr: CorrectionState, pid_type: str,
+    ) -> Mapping[str, Any]:
+        """Persist hold policy with the command before the physical effect.
+
+        Only cmd/params are sent to HL; this local metadata survives a crash
+        after DONE even when the task correction fields are already cleared.
+        """
+        runtime = self._require_runtime_plan(plan=plan)
+        observe = self._runtime_config.observation_config(
+            kind=pid_type,
+            correction_cfg=self._correction_config(plan=plan, task=task),
+            process_cfg=self._runtime_config.process_cfg_for_task(task=task, runtime=runtime),
+            pid_entry=_pid_entry_or_none(runtime.pid_state, pid_type),
+        )
+        return {
+            "pid_type": pid_type,
+            "last_correction_kind": (
+                "ec" if pid_type == "ec" else "ph_up" if corr.needs_ph_up else "ph_down"
+            ),
+            "hold_sec": int(observe["hold_window_sec"]),
+        }
+
+    async def _mark_accounted_dose_commands(
+        self,
+        *,
+        batch_result: Mapping[str, Any],
+        now: datetime,
+    ) -> None:
+        """Маркер учёта дозы — только после успешного PID persist этого шага.
+
+        Startup больше не подхватывает ту же DONE-команду. Ошибка маркера не
+        откатывает уже записанный PID: строка останется в выборке repair.
+        """
+        if getattr(self._pid_state, "_repository", None) is None:
+            return
+        repository = getattr(self._command_gateway, "_command_repository", None)
+        mark = getattr(repository, "mark_dose_accounted", None)
+        if not callable(mark):
+            return
+        statuses = batch_result.get("command_statuses")
+        if not isinstance(statuses, Sequence) or isinstance(statuses, (str, bytes)):
+            return
+        for status in statuses:
+            if not isinstance(status, Mapping):
+                continue
+            command_id = status.get("ae_command_id")
+            if command_id is None:
+                continue
+            cmd = str(status.get("cmd") or "dose").strip().lower()
+            if cmd != "dose":
+                continue
+            terminal = str(status.get("terminal_status") or "").strip().upper()
+            if terminal != "DONE":
+                continue
+            try:
+                await mark(ae_command_id=int(command_id), now=now)
+            except Exception:
+                _logger.warning(
+                    "AE3 не записал маркер учёта дозы ae_command_id=%s",
+                    command_id,
+                    exc_info=True,
+                )
 
     def _resolve_dose_outcome(
         self,

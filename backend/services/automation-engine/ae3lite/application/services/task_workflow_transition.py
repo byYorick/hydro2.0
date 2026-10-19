@@ -17,6 +17,14 @@ class TaskWorkflowTransition:
                 workflow=workflow, correction=correction, due_at=due_at, now=now,
                 preserve_pending_manual_step=preserve_pending_manual_step, conn=conn,
             )
+            if updated is not None and correction is None and workflow.current_stage in {
+                "prepare_recirculation_window_exhausted", "manual_hold",
+            }:
+                # The task row is locked and its claim generation has matched.
+                # Baseline progress and stage clearing must commit together.
+                from ae3lite.application.handlers.prepare_recirc import snapshot_recirc_pipeline_resume
+
+                await snapshot_recirc_pipeline_resume(task, conn=conn)
             if updated is not None and workflow_phase is not None:
                 await self._sync(conn=conn, task=updated, phase=workflow_phase, stage=stage, now=now)
             return updated

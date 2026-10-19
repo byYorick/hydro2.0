@@ -92,8 +92,10 @@ class ObservationAnalyzer:
 
         Uses the same effective process gain as ``CorrectionPlanner``
         (``effective_process_gain``: auth ⊕ learned EMA blend, retention/wave
-        weights, 0.25×–4× clamp, tank_recirc EC floor) so no-effect thresholds
-        match the gain that sized the dose.
+        weights, 0.25×–4× clamp, tank_recirc EC floor). An EC component on
+        ``corr.active_component`` / ``corr.ec_component`` selects
+        ``ec_component_gains`` and falls back to generic ``ec_gain_per_ml``
+        only when that component has no positive gain.
 
         Raises ValueError when the required process gain or dose amount is
         missing; the handler translates this into a TaskExecutionError.
@@ -112,12 +114,24 @@ class ObservationAnalyzer:
             process_cfg=process_cfg,
             pid_entry=pid_entry or {},
             phase_key=phase_key,
+            component=self._ec_component_for_gain(pid_type=pid_type, corr=corr),
         )
         if gain is None or gain <= 0 or amount_ml is None or amount_ml <= 0:
             raise ValueError(
                 f"Для оценки отклика {pid_type} требуется process gain и положительный amount_ml"
             )
         return float(gain) * float(amount_ml)
+
+    @staticmethod
+    def _ec_component_for_gain(*, pid_type: str, corr: CorrectionState) -> str | None:
+        if pid_type != "ec":
+            return None
+        skipped = {"", "ph", "none", "single", "multi_sequential", "multi_parallel"}
+        for raw in (corr.active_component, corr.ec_component):
+            name = str(raw or "").strip().lower()
+            if name not in skipped:
+                return name
+        return None
 
     def directional_effect(
         self,

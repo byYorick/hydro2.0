@@ -164,6 +164,81 @@ def _plan():
     return type("Plan", (), {"runtime": make_runtime_plan(), "named_plans": {}, "targets": {}})()
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("legacy_json_string", [False, True])
+async def test_recirc_resume_rolls_back_with_stage_then_commits_and_reenters(legacy_json_string):
+    import json
+    from dataclasses import replace
+    from ae3lite.application.handlers.prepare_recirc import PrepareRecircCheckHandler
+    from ae3lite.application.services.task_workflow_transition import TaskWorkflowTransition
+    from ae3lite.domain.entities.workflow_state import CorrectionState
+    from ae3lite.infrastructure.repositories.prepare_baseline_repository import PgPrepareBaselineRepository
+    from ae3lite.domain.services.nutrient_pipeline import compute_component_targets
+
+    prefix = f"ae3-resume-atomic-{uuid4().hex}"
+    now = datetime.now(timezone.utc).replace(tzinfo=None, microsecond=0)
+    tasks = PgAutomationTaskRepository()
+    baselines = PgPrepareBaselineRepository()
+    try:
+        gh = await _insert_greenhouse(prefix)
+        zone = await _insert_zone(prefix, greenhouse_id=gh)
+        task_id = await _insert_running_task(zone, prefix=prefix, now=now,
+                                             stage="prepare_recirculation_check", phase="tank_recirc")
+        await _insert_workflow_state(zone, now=now)
+        task = await tasks.get_by_id(task_id=task_id)
+        corr = CorrectionState.build_default(
+            corr_step="corr_check", max_attempts=5, ec_max_attempts=5, ph_max_attempts=5,
+            activated_here=False, stabilization_sec=60,
+            return_stage_success="prepare_recirculation_stop_to_ready",
+            return_stage_fail="prepare_recirculation_window_exhausted",
+        )
+        corr = replace(corr, pipeline_phase="recirc_npk", active_component="npk", dilute_attempts=2)
+        task = replace(task, correction=corr)
+        ratios = {"calcium": 0.2, "magnesium": 0.1, "npk": 0.6, "micro": 0.1}
+        targets = compute_component_targets(water_ec=0.4, water_ph=6.0, target_ec=1.8, ratios=ratios)
+        baseline_id = await baselines.insert_baseline(
+            zone_id=zone, ae_task_id=task_id, water_ec=0.4, water_ph=6.0, target_ec=1.8,
+            nutrient_budget=1.4, ratios=ratios, component_targets=json.loads(targets.to_json()), captured_at=now,
+        )
+        assert baseline_id is not None
+        if legacy_json_string:
+            await execute(
+                "UPDATE zone_prepare_baselines SET component_targets_json=to_jsonb(component_targets_json::text) WHERE id=$1",
+                baseline_id,
+            )
+        workflow = replace(task.workflow, current_stage="prepare_recirculation_window_exhausted")
+        args = dict(task=task, owner=task.claimed_by, claim_generation=task.claim_generation,
+                    workflow=workflow, correction=None, due_at=now, now=now,
+                    workflow_phase="tank_recirc", stage=workflow.current_stage)
+        transitions = TaskWorkflowTransition(task_repository=tasks, workflow_repository=_FailingWorkflowRepository())
+        with pytest.raises(TaskExecutionError):
+            await transitions.requeue(**args)
+        baseline = (await fetch("SELECT component_targets_json FROM zone_prepare_baselines WHERE id=$1", baseline_id))[0]
+        assert "pipeline_resume" not in baseline["component_targets_json"]
+        assert (await tasks.get_by_id(task_id=task_id)).current_stage == "prepare_recirculation_check"
+
+        transitions = TaskWorkflowTransition(task_repository=tasks, workflow_repository=PgZoneWorkflowRepository())
+        stale = await transitions.requeue(**{**args, "claim_generation": task.claim_generation + 1})
+        assert stale is None
+        still_original = (await fetch("SELECT component_targets_json FROM zone_prepare_baselines WHERE id=$1", baseline_id))[0]
+        assert "pipeline_resume" not in still_original["component_targets_json"]
+        updated = await transitions.requeue(**args)
+        assert updated is not None and updated.correction is None
+        stored = (await fetch("SELECT component_targets_json FROM zone_prepare_baselines WHERE id=$1", baseline_id))[0]
+        assert isinstance(stored["component_targets_json"], dict)
+        assert stored["component_targets_json"]["pipeline_resume"]["pipeline_phase"] == "recirc_npk"
+        handler = PrepareRecircCheckHandler(runtime_monitor=_RuntimeMonitor(), command_gateway=_CommandGateway(), task_repository=tasks)
+        resumed = await handler._enter_recirc_pipeline_correction(
+            task=updated, runtime=_plan().runtime,
+            return_stage_success=corr.return_stage_success, return_stage_fail=corr.return_stage_fail,
+        )
+        assert resumed.pipeline_phase == "recirc_npk"
+        assert resumed.active_component == "npk"
+        assert resumed.dilute_attempts == 2
+    finally:
+        await _cleanup(prefix)
+
+
 def _router(*, task_repo, workflow_repo) -> WorkflowRouter:
     return WorkflowRouter(
         task_repository=task_repo,

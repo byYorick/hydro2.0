@@ -876,6 +876,12 @@ Canonical status endpoint для зон на `ae3`.
 2. public backward-compatible `FORCE_IRRIGATION` в Laravel обязан маршрутизироваться в
    `POST /zones/{id}/start-irrigation`, а не в direct device command.
 3. `control_mode='manual'` запрещает только автоматические `start/stop` переходы, инициируемые самим AE3 по обычному poll-loop; hardware-originated safe/runtime events (`*_completed`, `*_source_empty`, `*_solution_low`, `emergency_stop_activated`) обязаны продолжать проходить через reconcile.
+4. После flow-stop в `manual_hold` auto-resume fill/recirc/drain проходит через start
+   со свежей проверкой уровней. Исходные deadline, retry count и время входа сохраняются
+   через start до check; `__mh_return:*` переносится на один промежуточный start и затем
+   очищается. Истёкший deadline запрещает повторный запуск. Полив после такой паузы
+   заканчивается через `irrigation_stop_to_ready` с chemistry outcome, без повторной
+   полной подачи воды. Ручной stop fill/recirc обрабатывается до проверки ON.
 
 ### 7.5 Config mode API (Phase 5, 2026-04-15)
 
@@ -965,11 +971,14 @@ Canonical status endpoint для зон на `ae3`.
 8. не создавать retry storm
 9. **graceful shutdown (фаза 4):** при `SIGTERM`/остановке lifespan worker перестаёт claim'ить новые задачи, ждёт in-flight до `AE_SHUTDOWN_GRACE_SEC` (default 30 с); `claimed|running` без `ae_commands` откатывается в `pending` с release zone lease
 10. **multi-instance (фаза 6):** `StartupRecoveryUseCase.run()` берёт PostgreSQL session advisory lock (`ae3_startup_recovery`); второй экземпляр AE пропускает проход recovery без сканирования задач. Алерты recovery-fail дедуплицируются ключом `biz_ae3_task_failed:{zone_id}:{task_id}:{recovery_source}`. В production рекомендуется **один активный writer** на зону (lease + partial unique index); при нескольких репликах AE координированный recovery обязателен.
-11. После active-task recovery тем же startup-проходом выбираются строки
-    `ae_commands.publish_status='accepted' AND terminal_status IS NULL`, принадлежащие
-    terminal task. Они сверяются с canonical `commands` без republish. Поздний `DONE`
-    идемпотентно чинит `ae_commands` и не откатывает более новый `pid_state.last_dose_at`;
-    unresolved/error получает event/alert, но не синтетический terminal status.
+11. После active-task recovery и периодически в существующем worker reconcile loop
+    выбираются terminal-task команды `accepted|published_unconfirmed` без terminal,
+    а также `DONE` dose без `_ae3_dose_accounted`. Периодический проход использует
+    интервал stale-task reconciliation и общий advisory lock со startup; active-task
+    startup recovery повторно не запускается. Сверка с `commands` не публикует команды.
+    Поздний `DONE` восстанавливает время дозы и hold из локального dose context,
+    не откатывает более новый PID и не сокращает выдержку; ошибка PID оставляет
+    строку для повторного repair. Неизвестный terminal status не синтезируется.
 
 ### 9.2 Crash windows
 

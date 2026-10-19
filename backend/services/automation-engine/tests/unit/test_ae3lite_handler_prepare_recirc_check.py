@@ -536,6 +536,98 @@ async def test_targets_not_reached_enters_correction() -> None:
 
 
 @pytest.mark.asyncio
+async def test_fresh_baseline_starts_recirc_at_calcium() -> None:
+    """Новый water baseline без pipeline_resume начинает партию с calcium."""
+    handler = _make_handler(monitor=_Monitor(ph=4.0, ec=1.1))
+    outcome = await handler.run(task=_make_task(), plan=_MockPlan(), stage_def=_StageDef(), now=NOW)
+    assert outcome.kind == "enter_correction"
+    assert outcome.correction.pipeline_phase == "recirc_ca"
+    assert outcome.correction.active_component == "calcium"
+    assert outcome.correction.dilute_attempts == 0
+
+
+@pytest.mark.asyncio
+async def test_same_batch_rollover_resumes_npk_not_calcium(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Rollover окна той же партии продолжает recirc_npk, не сравнивая EC с T_ca."""
+    import json
+
+    from ae3lite.domain.services.nutrient_pipeline import ComponentTargets, compute_component_targets
+
+    targets = compute_component_targets(
+        water_ec=0.4,
+        water_ph=7.0,
+        target_ec=1.66,
+        ratios={"calcium": 0.28, "magnesium": 0.16, "npk": 0.50, "micro": 0.06},
+    )
+    payload = json.loads(targets.to_json())
+    payload["pipeline_resume"] = {"pipeline_phase": "recirc_npk", "dilute_attempts": 1}
+    parsed = ComponentTargets.from_mapping(payload)
+    assert parsed.T_ca == pytest.approx(targets.T_ca)
+    row = {
+        "id": 7,
+        "water_ec": targets.water_ec,
+        "water_ph": targets.water_ph,
+        "target_ec": targets.target_ec,
+        "ratios_json": dict(targets.ratios),
+        "component_targets_json": json.dumps(payload),
+        "ae_task_id": 5,
+    }
+    monkeypatch.setattr(
+        "ae3lite.infrastructure.repositories.prepare_baseline_repository"
+        ".PgPrepareBaselineRepository.fetch_latest_baseline",
+        AsyncMock(return_value=row),
+    )
+    handler = _make_handler(monitor=_Monitor(ph=4.0, ec=1.1))
+    outcome = await handler.run(task=_make_task(), plan=_MockPlan(), stage_def=_StageDef(), now=NOW)
+    assert outcome.kind == "enter_correction"
+    assert outcome.correction.pipeline_phase == "recirc_npk"
+    assert outcome.correction.active_component == "npk"
+    assert outcome.correction.dilute_attempts == 1
+    assert outcome.correction.water_ec == pytest.approx(targets.water_ec)
+
+
+@pytest.mark.asyncio
+async def test_same_batch_rollover_resumes_ph_gate_after_mg(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import json
+
+    from ae3lite.domain.services.nutrient_pipeline import compute_component_targets
+
+    targets = compute_component_targets(
+        water_ec=0.4,
+        water_ph=7.0,
+        target_ec=1.66,
+        ratios={"calcium": 0.28, "magnesium": 0.16, "npk": 0.50, "micro": 0.06},
+    )
+    payload = json.loads(targets.to_json())
+    payload["pipeline_resume"] = {"pipeline_phase": "recirc_ph_after_mg", "dilute_attempts": 2}
+    row = {
+        "id": 7,
+        "water_ec": targets.water_ec,
+        "water_ph": targets.water_ph,
+        "target_ec": targets.target_ec,
+        "ratios_json": dict(targets.ratios),
+        "component_targets_json": payload,
+        "ae_task_id": 5,
+    }
+    monkeypatch.setattr(
+        "ae3lite.infrastructure.repositories.prepare_baseline_repository"
+        ".PgPrepareBaselineRepository.fetch_latest_baseline",
+        AsyncMock(return_value=row),
+    )
+    handler = _make_handler(monitor=_Monitor(ph=4.0, ec=1.1))
+    outcome = await handler.run(task=_make_task(), plan=_MockPlan(), stage_def=_StageDef(), now=NOW)
+    assert outcome.kind == "enter_correction"
+    assert outcome.correction.pipeline_phase == "recirc_ph_after_mg"
+    assert outcome.correction.active_component is None
+    assert outcome.correction.dilute_attempts == 2
+    assert outcome.correction.pipeline_phase != "recirc_ca"
+
+
+@pytest.mark.asyncio
 async def test_manual_prepare_recirculation_without_pending_step_enters_manual_hold() -> None:
     handler = _make_handler(
         monitor=_Monitor(ph=4.0, ec=1.4, irr_states=[dict(_IRR_MATCH)], irr_state=_IRR_OFF),
@@ -562,6 +654,22 @@ async def test_manual_prepare_recirculation_stop_transitions_to_ready() -> None:
     )
     assert outcome.kind == "transition"
     assert outcome.next_stage == "prepare_recirculation_stop_to_ready"
+
+
+@pytest.mark.asyncio
+async def test_prepare_recirculation_stop_on_off_snapshot_skips_on_probe() -> None:
+    """Операторский stop не требует уже включённый pump_main."""
+    monitor = _Monitor(ph=4.0, ec=1.1, irr_state=dict(_IRR_OFF))
+    handler = _make_handler(monitor=monitor)
+    outcome = await handler.run(
+        task=_make_task(control_mode="manual", pending_manual_step="prepare_recirculation_stop"),
+        plan=_MockPlan(),
+        stage_def=_StageDef(),
+        now=NOW,
+    )
+    assert outcome.kind == "transition"
+    assert outcome.next_stage == "prepare_recirculation_stop_to_ready"
+    assert monitor.irr_reads == 0
 
 
 @pytest.mark.asyncio

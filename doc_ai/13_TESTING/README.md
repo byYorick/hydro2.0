@@ -12,6 +12,7 @@
 - [AUTH_IN_E2E.md](AUTH_IN_E2E.md) — авторизация в E2E (AuthClient, токены)
 - [NODE_SIM.md](NODE_SIM.md) — симулятор узлов (`tests/node_sim/`)
 - [TROUBLESHOOTING.md](TROUBLESHOOTING.md) — диагностика проблем при прогоне тестов
+- [AE3LITE_AUDIT.md](AE3LITE_AUDIT.md) — аудит AE3-Lite от 2026-10-18: баки, коррекция, восстановление и подтверждённые дефекты
 
 ## См. также
 

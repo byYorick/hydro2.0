@@ -16,6 +16,7 @@ from ae3lite.application.dto.stage_outcome import StageOutcome
 from ae3lite.application.handlers.flow_path_guard import (
     MANUAL_HOLD_STAGE,
     decode_manual_hold_operator_step,
+    decode_manual_hold_return_stage,
     encode_manual_hold_return_stage,
 )
 from ae3lite.application.handlers.base import BaseStageHandler
@@ -490,6 +491,7 @@ class WorkflowRouter:
 
         if next_stage == MANUAL_HOLD_STAGE:
             workflow_phase = task.workflow.workflow_phase
+            stage_entered_at = task.workflow.stage_entered_at or now
             deadline = task.workflow.stage_deadline_at
             if deadline is None or self._deadline_reached(now=now, deadline=deadline):
                 computed = self._compute_deadline(
@@ -528,6 +530,26 @@ class WorkflowRouter:
             )
             if operator_step:
                 pending_manual_step = operator_step
+
+        saved_return = decode_manual_hold_return_stage(task.workflow.pending_manual_step)
+        resume_start = (
+            task.current_stage == MANUAL_HOLD_STAGE
+            and next_stage.endswith("_start")
+            and saved_return is not None
+        )
+        resume_check = (
+            str(task.current_stage or "").endswith("_start")
+            and saved_return == next_stage
+        )
+        if resume_start or resume_check:
+            # A pause cannot grant a new fill/recirc timeout or restart the
+            # leak guard clock. Carry the existing return marker for one hop.
+            deadline = task.workflow.stage_deadline_at
+            stage_entered_at = task.workflow.stage_entered_at
+            stage_retry_count = task.workflow.stage_retry_count
+            pending_manual_step = (
+                encode_manual_hold_return_stage(saved_return) if resume_start else None
+            )
 
         new_workflow = WorkflowState(
             current_stage=next_stage,

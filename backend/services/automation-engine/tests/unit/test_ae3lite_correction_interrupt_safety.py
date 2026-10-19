@@ -385,6 +385,52 @@ async def test_load_open_pending_skips_closed_and_restores_open(monkeypatch) -> 
     assert by_task[11].corr_step == "corr_wait_ph"
 
 
+def test_build_fail_safe_shutdown_commands_includes_valve_drain_after_pump() -> None:
+    from ae3lite.application.services.correction_interrupt_safety import (
+        FAIL_SAFE_SHUTDOWN_CHANNELS,
+        build_fail_safe_shutdown_commands,
+    )
+    from ae3lite.application.use_cases.execute_task import ExecuteTaskUseCase
+
+    assert ExecuteTaskUseCase.FAIL_SAFE_SHUTDOWN_CHANNELS is FAIL_SAFE_SHUTDOWN_CHANNELS
+    assert FAIL_SAFE_SHUTDOWN_CHANNELS[0] == "pump_main"
+    assert "valve_drain" in FAIL_SAFE_SHUTDOWN_CHANNELS
+
+    commands = build_fail_safe_shutdown_commands(
+        actuators=(
+            {"node_uid": "irrig-1", "node_type": "irrig", "channel": "valve_drain"},
+            {"node_uid": "irrig-1", "node_type": "irrig", "channel": "pump_main"},
+        )
+    )
+    assert [command.channel for command in commands] == ["pump_main", "valve_drain"]
+    assert all(command.payload.get("cmd") == "set_relay" for command in commands)
+    assert all(command.payload.get("params", {}).get("state") is False for command in commands)
+
+
+@pytest.mark.asyncio
+async def test_load_irrig_fail_safe_actuators_keeps_valve_drain(monkeypatch) -> None:
+    from ae3lite.application.services.correction_interrupt_safety import (
+        load_irrig_fail_safe_actuators,
+    )
+
+    async def _fetch(sql: str, *args):
+        assert "node_channels" in sql
+        assert args == (7,)
+        return [
+            {"node_uid": "irrig-1", "node_type": "irrig", "channel": "pump_main"},
+            {"node_uid": "irrig-1", "node_type": "irrig", "channel": "relay_aux"},
+            {"node_uid": "irrig-1", "node_type": "irrig", "channel": "valve_drain"},
+            {"node_uid": "  ", "node_type": "irrig", "channel": "valve_irrigation"},
+        ]
+
+    monkeypatch.setattr(
+        "ae3lite.application.services.correction_interrupt_safety.fetch",
+        _fetch,
+    )
+    actuators = await load_irrig_fail_safe_actuators(zone_id=7)
+    assert [item["channel"] for item in actuators] == ["pump_main", "valve_drain"]
+
+
 def test_build_fail_safe_shutdown_commands_orders_pump_first() -> None:
     from ae3lite.application.services.correction_interrupt_safety import (
         build_fail_safe_shutdown_commands,

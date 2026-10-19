@@ -84,6 +84,14 @@ class SolutionFillCheckHandler(BaseStageHandler):
         if recent_event_type == "SOLUTION_FILL_COMPLETED":
             return await self._completed_outcome(task=task, plan=plan, now=now, runtime=runtime)
 
+        # Stop до ON probe: насос уже может быть выключен flow interrupt'ом.
+        if pending_manual_step == "solution_fill_stop":
+            if str(getattr(task, "task_type", "") or "").strip().lower() == "solution_change":
+                return StageOutcome(kind="transition", next_stage="solution_fill_stop_to_refill_confirm")
+            if await self._should_finish_to_ready(task=task, plan=plan, now=now, runtime=runtime):
+                return StageOutcome(kind="transition", next_stage="solution_fill_stop_to_ready")
+            return StageOutcome(kind="transition", next_stage="solution_fill_stop_to_prepare")
+
         try:
             await self._probe_irr_state(
                 task=task, plan=plan, now=now,
@@ -110,12 +118,6 @@ class SolutionFillCheckHandler(BaseStageHandler):
                     return await self._completed_outcome(task=task, plan=plan, now=now, runtime=runtime)
             raise
 
-        if pending_manual_step == "solution_fill_stop":
-            if str(getattr(task, "task_type", "") or "").strip().lower() == "solution_change":
-                return StageOutcome(kind="transition", next_stage="solution_fill_stop_to_refill_confirm")
-            if await self._should_finish_to_ready(task=task, plan=plan, now=now, runtime=runtime):
-                return StageOutcome(kind="transition", next_stage="solution_fill_stop_to_ready")
-            return StageOutcome(kind="transition", next_stage="solution_fill_stop_to_prepare")
         flow_hold = await self._handle_control_mode_flow_path_interrupt(
             task=task,
             plan=plan,

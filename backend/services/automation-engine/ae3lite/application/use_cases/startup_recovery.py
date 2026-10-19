@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone as _tz
+from datetime import datetime, timedelta, timezone as _tz
 from typing import Any, Mapping, Optional
 
 from ae3lite.application.dto import StartupRecoveryResult, StartupRecoveryTerminalOutcome
@@ -249,8 +249,22 @@ class StartupRecoveryUseCase:
             unresolved_terminal_commands=unresolved_terminal_commands,
         )
 
+    async def reconcile_terminal_commands(self, *, now: datetime) -> tuple[int, int]:
+        """Periodic repair only; never repeat active-task startup recovery."""
+        if not self._use_startup_recovery_lock:
+            return await self._reconcile_terminal_task_commands(now=now)
+        async with try_session_advisory_lock(AE3_STARTUP_RECOVERY_ADVISORY_LOCK_KEY) as acquired:
+            if acquired:
+                return await self._reconcile_terminal_task_commands(now=now)
+        return 0, 0
+
     async def _reconcile_terminal_task_commands(self, *, now: datetime) -> tuple[int, int]:
-        """Repair accepted/NULL commands owned by terminal tasks from legacy SoT."""
+        """Сверить хвост команд terminal-задач и учесть DONE dose в PID.
+
+        Выборка шире accepted/NULL: туда же входят published_unconfirmed и
+        DONE dose без маркера учёта. Terminal status здесь не синтезируется.
+        Падение записи PID не ставит маркер, строка остаётся в следующей выборке.
+        """
         list_rows = getattr(
             self._command_repository,
             "list_unreconciled_for_terminal_tasks",
@@ -307,12 +321,23 @@ class StartupRecoveryUseCase:
 
             reconciled += 1
             if state == "done":
-                await self._reconcile_terminal_dose_pid_state(
-                    task=task,
-                    ae_command=ae_command,
-                    result=result,
-                    now=now,
-                )
+                try:
+                    await self._reconcile_terminal_dose_pid_state(
+                        task=task,
+                        ae_command=ae_command,
+                        result=result,
+                        now=now,
+                    )
+                except Exception:
+                    reconciled -= 1
+                    unresolved += 1
+                    logger.warning(
+                        "Startup recovery: terminal dose PID accounting failed task_id=%s ae_command_id=%s",
+                        task_id,
+                        ae_command.get("id"),
+                        exc_info=True,
+                    )
+                    continue
             await self._record_terminal_command_reconciled_event(
                 task=task,
                 ae_command=ae_command,
@@ -334,6 +359,12 @@ class StartupRecoveryUseCase:
             return None
         if str(payload.get("cmd") or "").strip().lower() != "dose":
             return None
+        context = payload.get("_ae3_dose_context")
+        if isinstance(context, Mapping):
+            pid_type = context.get("pid_type")
+            kind = context.get("last_correction_kind")
+            if (pid_type, kind) in {("ec", "ec"), ("ph", "ph_up"), ("ph", "ph_down")}:
+                return str(pid_type), str(kind)
         planner_step = str(ae_command.get("planner_step") or "").strip().lower()
         channel = str(ae_command.get("channel") or "").strip().lower()
         if "corr_dose_ec" in planner_step or any(token in channel for token in ("ec", "npk", "calcium")):
@@ -366,15 +397,37 @@ class StartupRecoveryUseCase:
         except (TypeError, ValueError):
             duration_ms = 0
         pid_type, correction_kind = dose_kind
+        context = payload.get("_ae3_dose_context")
+        if isinstance(context, Mapping):
+            hold_sec = max(0, int(context["hold_sec"]))
+        else:
+            # Legacy commands did not persist their process timing. Preserve
+            # the task's available stabilization policy, without inventing it.
+            hold_sec = max(0, int(getattr(getattr(task, "correction", None), "stabilization_sec", 0) or 0))
         await reconcile_pid(
             zone_id=int(task.zone_id),
             pid_type=pid_type,
             last_output_ms=duration_ms,
             last_dose_at=terminal_at,
+            hold_until=terminal_at + timedelta(seconds=hold_sec),
             last_correction_kind=correction_kind,
             ae_command_id=int(ae_command["id"]),
             now=now,
         )
+        await self._mark_terminal_dose_accounted(ae_command=ae_command, now=now)
+
+    async def _mark_terminal_dose_accounted(
+        self,
+        *,
+        ae_command: Mapping[str, Any],
+        now: datetime,
+    ) -> None:
+        """Закрыть учёт дозы только после успешного reconcile_completed_dose."""
+        mark = getattr(self._command_repository, "mark_dose_accounted", None)
+        command_id = ae_command.get("id")
+        if not callable(mark) or command_id is None:
+            return
+        await mark(ae_command_id=int(command_id), now=now)
 
     async def _record_terminal_command_reconciled_event(
         self,

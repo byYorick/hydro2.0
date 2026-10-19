@@ -53,7 +53,9 @@ DEFAULT_PENDING_VERIFY_LOOKBACK_HOURS = 24
 # Dose actuators (EC/pH pumps) are not represented in irrig IRR_STATE_SNAPSHOT.
 DOSE_ACTUATORS_UNVERIFIABLE_REASON = "dose_actuators_unverifiable_via_irr_state"
 
-# Mirror ExecuteTaskUseCase.FAIL_SAFE_SHUTDOWN_CHANNELS for interrupt fail-safe stop.
+# Канонический набор irrig-каналов для fail-safe OFF. pump_main остаётся первым в batch.
+# ExecuteTaskUseCase.FAIL_SAFE_SHUTDOWN_CHANNELS — ссылка на этот же кортеж.
+# Только эти гидравлические каналы, не все актуаторы зоны.
 FAIL_SAFE_SHUTDOWN_CHANNELS = (
     "pump_main",
     "valve_clean_fill",
@@ -61,6 +63,7 @@ FAIL_SAFE_SHUTDOWN_CHANNELS = (
     "valve_solution_fill",
     "valve_solution_supply",
     "valve_irrigation",
+    "valve_drain",
 )
 
 

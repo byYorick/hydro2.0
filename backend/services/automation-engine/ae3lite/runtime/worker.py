@@ -114,6 +114,7 @@ class Ae3RuntimeWorker:
             ),
         )
         self._last_stale_task_reconcile_monotonic: float | None = None
+        self._last_terminal_command_reconcile_monotonic: float | None = None
         self._orphan_intent_reconcile_interval_sec = max(
             1.0,
             float(
@@ -285,6 +286,7 @@ class Ae3RuntimeWorker:
             self._waiting_command_reconcile_use_case is None
             and self._stale_task_reconcile_use_case is None
             and self._orphan_intent_reconcile_use_case is None
+            and not callable(getattr(self._startup_recovery_use_case, "reconcile_terminal_commands", None))
         ):
             return
         if self._reconcile_loop_task is not None and not self._reconcile_loop_task.done():
@@ -298,6 +300,7 @@ class Ae3RuntimeWorker:
         while not self._shutting_down:
             try:
                 await self._run_waiting_command_reconcile_once()
+                await self._maybe_run_terminal_command_reconcile_once()
                 await self._maybe_run_correction_interrupt_safety_once()
                 await self._maybe_run_stale_task_reconcile_once()
                 await self._maybe_run_orphan_intent_reconcile_once()
@@ -340,6 +343,17 @@ class Ae3RuntimeWorker:
             except asyncio.TimeoutError:
                 pass
             self._reconcile_wake.clear()
+
+    async def _maybe_run_terminal_command_reconcile_once(self) -> None:
+        repair = getattr(self._startup_recovery_use_case, "reconcile_terminal_commands", None)
+        if not callable(repair):
+            return
+        now_mono = time.monotonic()
+        last = self._last_terminal_command_reconcile_monotonic
+        if last is not None and now_mono - last < self._stale_task_reconcile_interval_sec:
+            return
+        await repair(now=self._now_fn())
+        self._last_terminal_command_reconcile_monotonic = now_mono
 
     async def _run_waiting_command_reconcile_once(self) -> None:
         if self._waiting_command_reconcile_use_case is None:

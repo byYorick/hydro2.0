@@ -1,8 +1,8 @@
 ---
 name: Correction Pipeline Fix Plan
 description: План исправления дедлайнов, target outcome, sensor mode, PID deadband и эксплуатационных рисков AE3-Lite correction pipeline.
-version: 1.1.0
-last_updated: 2026-10-12
+version: 1.2.0
+last_updated: 2026-10-19
 maintained_by: Hydro 2.0 Automation Team
 status: implemented_pending_realhw
 ---
@@ -331,6 +331,27 @@ Laravel-тесты добавляются только если меняются
   MQTT `1884`, без node-sim; полный `--set=full` не требуется.
 
 ## 10. Связанные документы
+
+### Проверка реализации 2026-10-19
+
+Исходные отметки выполнения дополнены [повторной проверкой аудита A1–A9](doc_ai/13_TESTING/AE3LITE_AUDIT.md#10-проверка-исправлений--2026-10-19).
+До проверки уже имелись исправления и `1795` проходящих тестов. Дополнительно исправлены:
+
+- восстановление hold после DONE, повторный repair поздних результатов в worker loop;
+- атомарное сохранение шага рециркуляции и ошибочная двойная сериализация baseline JSONB;
+- частичный PID upsert, обнулявший непереданные integral/output/bias/no-effect;
+- сохранение фактического объёма в parallel-dose observe;
+- возобновление после manual hold со свежими уровнями и исходным deadline;
+- завершение прерванного полива без повторной подачи воды;
+- chemistry outcome по измерениям включённого EC независимо от запрета новой дозы.
+
+Проверены rollback перехода, отклонение устаревшего claim, продолжение NPK из БД,
+ошибка PID persistence после DONE, монотонность hold и поздний DONE без рестарта.
+Точное историческое hold старых команд без dose context не восстанавливается из
+утраченного config; сохраняется имеющийся hold и доступная stabilization policy задачи.
+
+Рабочий runtime не перезапускался, физические циклы не запускались. Пункт realhw
+остаётся открытым; программная проверка не заменяет проверку реальной гидравлики.
 
 - [`doc_ai/06_DOMAIN_ZONES_RECIPES/CORRECTION_CYCLE_SPEC.md`](doc_ai/06_DOMAIN_ZONES_RECIPES/CORRECTION_CYCLE_SPEC.md)
 - [`doc_ai/06_DOMAIN_ZONES_RECIPES/EFFECTIVE_TARGETS_SPEC.md`](doc_ai/06_DOMAIN_ZONES_RECIPES/EFFECTIVE_TARGETS_SPEC.md)

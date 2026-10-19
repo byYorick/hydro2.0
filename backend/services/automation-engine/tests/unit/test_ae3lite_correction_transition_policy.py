@@ -195,11 +195,23 @@ def test_no_effect_solution_fill_goes_to_timeout_stop(
     assert outcome.next_stage == "solution_fill_timeout_stop"
 
 
+def test_no_effect_irrigation_bumps_retry_and_stays_on_check(
+    policy: CorrectionTransitionPolicy,
+) -> None:
+    outcome = policy.decide_no_effect_transition(
+        current_stage="irrigation_check",
+        stage_retry_count=0,
+    )
+    assert outcome is not None
+    assert outcome.next_stage == "irrigation_check"
+    assert outcome.stage_retry_count == 1
+
+
 def test_no_effect_unknown_stage_returns_none(
     policy: CorrectionTransitionPolicy,
 ) -> None:
     assert policy.decide_no_effect_transition(
-        current_stage="irrigation_check",
+        current_stage="diagnostics_tick",
         stage_retry_count=0,
     ) is None
 

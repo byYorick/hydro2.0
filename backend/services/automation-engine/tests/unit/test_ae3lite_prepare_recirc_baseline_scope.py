@@ -61,7 +61,89 @@ async def test_prepare_reuses_same_task_corr_baseline(monkeypatch: pytest.Monkey
 
     assert corr.water_ec == pytest.approx(0.4)
     assert corr.baseline_id == 11
+    assert corr.pipeline_phase == "recirc_ca"
+    assert corr.active_component == "calcium"
+    assert corr.dilute_attempts == 0
     fetch_mock.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_enter_keeps_passed_recirc_npk_and_dilute_on_same_baseline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Валидный baseline + уже переданный recirc_npk не сбрасывается на calcium."""
+    from dataclasses import replace
+
+    targets = compute_component_targets(
+        water_ec=0.4,
+        water_ph=7.0,
+        target_ec=1.66,
+        ratios={"calcium": 0.28, "magnesium": 0.16, "npk": 0.50, "micro": 0.06},
+    )
+    existing = replace(
+        replace_corr_with_targets(targets, baseline_id=11),
+        pipeline_phase="recirc_npk",
+        active_component="npk",
+        dilute_attempts=2,
+    )
+    task = SimpleNamespace(id=5, zone_id=1, correction=existing)
+    fetch_mock = AsyncMock(return_value={"id": 99, "water_ec": 0.1, "target_ec": 9.0})
+    monkeypatch.setattr(
+        "ae3lite.infrastructure.repositories.prepare_baseline_repository"
+        ".PgPrepareBaselineRepository.fetch_latest_baseline",
+        fetch_mock,
+    )
+
+    corr = await _handler()._enter_recirc_pipeline_correction(
+        task=task,
+        runtime=_runtime(),
+        return_stage_success="prepare_recirculation_stop_to_ready",
+        return_stage_fail="prepare_recirculation_window_exhausted",
+    )
+
+    assert corr.pipeline_phase == "recirc_npk"
+    assert corr.active_component == "npk"
+    assert corr.dilute_attempts == 2
+    assert corr.water_ec == pytest.approx(targets.water_ec)
+    fetch_mock.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_enter_keeps_ph_gate_after_mg_without_resetting_dilute(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from dataclasses import replace
+
+    targets = compute_component_targets(
+        water_ec=0.4,
+        water_ph=7.0,
+        target_ec=1.66,
+        ratios={"calcium": 0.28, "magnesium": 0.16, "npk": 0.50, "micro": 0.06},
+    )
+    existing = replace(
+        replace_corr_with_targets(targets, baseline_id=11),
+        pipeline_phase="recirc_ph_after_mg",
+        active_component=None,
+        dilute_attempts=1,
+    )
+    task = SimpleNamespace(id=5, zone_id=1, correction=existing)
+    monkeypatch.setattr(
+        "ae3lite.infrastructure.repositories.prepare_baseline_repository"
+        ".PgPrepareBaselineRepository.fetch_latest_baseline",
+        AsyncMock(),
+    )
+
+    corr = await _handler()._enter_recirc_pipeline_correction(
+        task=task,
+        runtime=_runtime(),
+        return_stage_success="prepare_recirculation_stop_to_ready",
+        return_stage_fail="prepare_recirculation_window_exhausted",
+    )
+
+    assert corr.pipeline_phase == "recirc_ph_after_mg"
+    assert corr.active_component is None
+    assert corr.dilute_attempts == 1
+    assert corr.pipeline_phase != "recirc_ca"
 
 
 @pytest.mark.asyncio

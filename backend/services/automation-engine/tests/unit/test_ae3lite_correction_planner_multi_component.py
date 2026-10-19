@@ -409,3 +409,107 @@ def test_multi_parallel_dose_steps_sync_ml_and_duration_after_clamp() -> None:
         assert step.amount_ml == pytest.approx(ml_per_sec * max_dose_ms / 1000.0)
         assert step.requested_ml is not None
         assert step.requested_ml > step.amount_ml
+
+
+_DISTINCT_COMPONENT_GAINS = {
+    "calcium": {"ec_gain_per_ml": 0.2},
+    "magnesium": {"ec_gain_per_ml": 0.5},
+    "npk": {"ec_gain_per_ml": 0.25},
+    "micro": {"ec_gain_per_ml": 0.4},
+}
+
+
+def _single_component_plan(*, component: str, gains: dict, ec_dosing_mode: str = "multi_sequential"):
+    planner = CorrectionPlanner()
+    now = datetime(2026, 10, 18, 12, 0, 0, tzinfo=timezone.utc).replace(tzinfo=None)
+    correction_cfg = {
+        **_base_correction_cfg(),
+        "ec_dosing_mode": ec_dosing_mode,
+    }
+    return planner.build_dose_plan(
+        current_ph=6.0,
+        current_ec=1.0,
+        target_ph=6.0,
+        target_ec=1.4,
+        ph_tolerance_pct=1.0,
+        ec_tolerance_pct=1.0,
+        correction_config=correction_cfg,
+        workflow_phase="tank_recirc",
+        process_calibrations={
+            "tank_recirc": {
+                "ec_gain_per_ml": 0.1,
+                "ec_component_gains": gains,
+            }
+        },
+        ec_component_policy={},
+        pid_state={"ec": {"integral": 0.0, "prev_error": 0.0, "prev_derivative": 0.0}},
+        pid_configs={},
+        now=now,
+        ec_actuators={component: _actuator(f"nd-{component}", "pump_main")},
+        active_component=component,
+    )
+
+
+@pytest.mark.parametrize(
+    ("component", "expected_ml"),
+    [
+        ("calcium", 2.0),
+        ("magnesium", 0.8),
+        ("npk", 1.6),
+        ("micro", 1.0),
+    ],
+)
+def test_single_mode_active_component_uses_component_gain_not_generic(component: str, expected_ml: float) -> None:
+    """EC 1.0→1.4, kp=1, без интеграла: доза = gap / component gain, не / 0.1."""
+    plan = _single_component_plan(component=component, gains=_DISTINCT_COMPONENT_GAINS)
+
+    assert plan.needs_ec is True
+    assert plan.ec_component == component
+    assert plan.ec_dosing_mode == "single"
+    assert plan.ec_amount_ml == pytest.approx(expected_ml)
+    assert plan.ec_amount_ml != pytest.approx(4.0)
+
+
+def test_single_mode_magnesium_flat_component_gain_is_0_8_ml() -> None:
+    plan = _single_component_plan(
+        component="magnesium",
+        gains={"calcium": 0.2, "magnesium": 0.5, "npk": 0.25, "micro": 0.4},
+    )
+
+    assert plan.ec_amount_ml == pytest.approx(0.8)
+
+
+def test_single_mode_without_component_gain_falls_back_to_generic() -> None:
+    plan = _single_component_plan(
+        component="magnesium",
+        gains={"calcium": {"ec_gain_per_ml": 0.2}},
+    )
+
+    assert plan.ec_component == "magnesium"
+    assert plan.ec_amount_ml == pytest.approx(4.0)
+
+
+def test_single_mode_without_active_component_keeps_generic_gain() -> None:
+    planner = CorrectionPlanner()
+    now = datetime(2026, 10, 18, 12, 0, 0, tzinfo=timezone.utc).replace(tzinfo=None)
+    plan = planner.build_dose_plan(
+        current_ph=6.0,
+        current_ec=1.0,
+        target_ph=6.0,
+        target_ec=1.4,
+        ph_tolerance_pct=1.0,
+        ec_tolerance_pct=1.0,
+        correction_config={**_base_correction_cfg(), "ec_dosing_mode": "single"},
+        workflow_phase="tank_recirc",
+        process_calibrations={
+            "tank_recirc": {
+                "ec_gain_per_ml": 0.1,
+                "ec_component_gains": _DISTINCT_COMPONENT_GAINS,
+            }
+        },
+        pid_state={"ec": {"integral": 0.0}},
+        now=now,
+        ec_actuator=_actuator("nd-ec", "pump_a"),
+    )
+
+    assert plan.ec_amount_ml == pytest.approx(4.0)

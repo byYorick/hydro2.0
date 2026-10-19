@@ -13,6 +13,7 @@ Outcomes:
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -465,6 +466,49 @@ async def test_manual_solution_fill_stop_routes_to_prepare_when_not_full() -> No
     )
     assert outcome.kind == "transition"
     assert outcome.next_stage == "solution_fill_stop_to_prepare"
+
+
+@pytest.mark.asyncio
+async def test_solution_fill_stop_on_off_snapshot_does_not_require_pump_on() -> None:
+    m = _Monitor(max_triggered=False, min_triggered=False, ph=5.8, ec=1.4, irr_state=dict(_OFF_IRR))
+    outcome = await _handler(m).run(
+        task=_make_task(control_mode="manual", pending_manual_step="solution_fill_stop"),
+        plan=_Plan(),
+        stage_def=_StageDef(),
+        now=NOW,
+    )
+    assert outcome.kind == "transition"
+    assert outcome.next_stage == "solution_fill_stop_to_prepare"
+    assert m._irr_reads == 0
+
+
+@pytest.mark.asyncio
+async def test_hold_auto_resume_does_not_enter_off_solution_fill_check() -> None:
+    """interrupt → hold → auto не отдаёт следующий тик в check на OFF snapshot."""
+    from ae3lite.application.handlers.manual_hold import ManualHoldHandler
+
+    hold = ManualHoldHandler(runtime_monitor=_Monitor(max_triggered=False, min_triggered=True), command_gateway=SimpleNamespace())
+    resumed = await hold.run(
+        task=_make_task(
+            control_mode="auto",
+            pending_manual_step="__mh_return:solution_fill_check",
+        ),
+        plan=_Plan(),
+        stage_def=_StageDef(),
+        now=NOW,
+    )
+    assert resumed.kind == "transition"
+    assert resumed.next_stage == "solution_fill_start"
+
+    monitor = _Monitor(max_triggered=False, min_triggered=False, ph=5.8, ec=1.4, irr_state=dict(_OFF_IRR))
+    with pytest.raises(TaskExecutionError) as exc_info:
+        await _handler(monitor).run(
+            task=_make_task(),
+            plan=_Plan(),
+            stage_def=_StageDef(),
+            now=NOW,
+        )
+    assert exc_info.value.code == "irr_state_mismatch"
 
 
 # ── 3. Deadline exceeded → timeout_stop ──────────────────────────────────────

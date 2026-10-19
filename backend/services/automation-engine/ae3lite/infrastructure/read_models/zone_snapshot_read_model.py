@@ -350,73 +350,73 @@ class PgZoneSnapshotReadModel:
                         zone_id,
                     )
 
-        command_plans = profile_row.get("command_plans")
-        if not isinstance(command_plans, Mapping) or not command_plans:
-            raise SnapshotBuildError(
-                f"У зоны {zone_id} пустой command_plans",
-                code=ErrorCodes.AE3_SNAPSHOT_EMPTY_COMMAND_PLANS,
-            )
+                command_plans = profile_row.get("command_plans")
+                if not isinstance(command_plans, Mapping) or not command_plans:
+                    raise SnapshotBuildError(
+                        f"У зоны {zone_id} пустой command_plans",
+                        code=ErrorCodes.AE3_SNAPSHOT_EMPTY_COMMAND_PLANS,
+                    )
 
-        normalized_overrides = self._normalize_override_rows(override_rows)
-        phase_targets = self._build_phase_targets(zone_row=zone_row)
-        targets = self._build_targets(
-            zone_row=zone_row,
-            override_rows=normalized_overrides,
-            profile_row=profile_row,
-        )
-        diagnostics_execution = self._resolve_diagnostics_execution(
-            zone_row=zone_row,
-            override_rows=normalized_overrides,
-            profile_row=profile_row,
-        )
-        telemetry_last = self._build_telemetry_last(telemetry_rows)
-        pid_state = self._build_pid_state(pid_state_rows)
-        pid_configs = self._build_pid_configs(pid_config_rows)
-        correction_config = self._build_correction_config(correction_config_row)
-        if isinstance(correction_config, Mapping):
-            correction_config = self._merge_pump_calibration_policy(
-                correction_config,
-                pump_calibration_policy,
-            )
-        process_calibrations = self._build_process_calibrations(process_calibration_rows)
-        actuators = tuple(
-            ZoneActuatorRef(
-                node_uid=str(row.get("node_uid") or "").strip(),
-                node_type=str(row.get("node_type") or "").strip().lower(),
-                channel=str(row.get("channel") or "default").strip().lower() or "default",
-                node_channel_id=int(row["node_channel_id"]),
-                channel_type=str(row.get("channel_type") or "ACTUATOR").strip().upper() or "ACTUATOR",
-                role=str(row.get("role") or "").strip().lower() or None,
-                pump_calibration=self._extract_pump_calibration(
-                    row,
-                    pump_calibration_policy=pump_calibration_policy,
-                ),
-            )
-            for row in actuator_rows
-            if str(row.get("node_uid") or "").strip()
-        )
-        if not actuators:
-            raise SnapshotBuildError(
-                f"У зоны {zone_id} отсутствуют online actuator channels",
-                code=ErrorCodes.AE3_SNAPSHOT_NO_ONLINE_ACTUATOR_CHANNELS,
-                details=self._build_no_actuators_diagnostics(
+                normalized_overrides = self._normalize_override_rows(override_rows)
+                phase_targets = self._build_phase_targets(zone_row=zone_row)
+                targets = self._build_targets(
+                    zone_row=zone_row,
+                    override_rows=normalized_overrides,
+                    profile_row=profile_row,
+                )
+                diagnostics_execution = self._resolve_diagnostics_execution(
+                    zone_row=zone_row,
+                    override_rows=normalized_overrides,
+                    profile_row=profile_row,
+                )
+                telemetry_last = self._build_telemetry_last(telemetry_rows)
+                pid_state = self._build_pid_state(pid_state_rows)
+                pid_configs = self._build_pid_configs(pid_config_rows)
+                correction_config = self._build_correction_config(correction_config_row)
+                if isinstance(correction_config, Mapping):
+                    correction_config = self._merge_pump_calibration_policy(
+                        correction_config,
+                        pump_calibration_policy,
+                    )
+                process_calibrations = self._build_process_calibrations(process_calibration_rows)
+                actuators = tuple(
+                    ZoneActuatorRef(
+                        node_uid=str(row.get("node_uid") or "").strip(),
+                        node_type=str(row.get("node_type") or "").strip().lower(),
+                        channel=str(row.get("channel") or "default").strip().lower() or "default",
+                        node_channel_id=int(row["node_channel_id"]),
+                        channel_type=str(row.get("channel_type") or "ACTUATOR").strip().upper() or "ACTUATOR",
+                        role=str(row.get("role") or "").strip().lower() or None,
+                        pump_calibration=self._extract_pump_calibration(
+                            row,
+                            pump_calibration_policy=pump_calibration_policy,
+                        ),
+                    )
+                    for row in actuator_rows
+                    if str(row.get("node_uid") or "").strip()
+                )
+                if not actuators:
+                    raise SnapshotBuildError(
+                        f"У зоны {zone_id} отсутствуют online actuator channels",
+                        code=ErrorCodes.AE3_SNAPSHOT_NO_ONLINE_ACTUATOR_CHANNELS,
+                        details=self._build_no_actuators_diagnostics(
+                            zone_id=zone_id,
+                            diag_rows=zone_nodes_diag_rows,
+                        ),
+                    )
+
+                from .dli_light_series import load_dli_light_series
+
+                dli_light_series = await load_dli_light_series(
+                    conn,
                     zone_id=zone_id,
-                    diag_rows=zone_nodes_diag_rows,
-                ),
-            )
-
-        from .dli_light_series import load_dli_light_series
-
-        dli_light_series = await load_dli_light_series(
-            conn,
-            zone_id=zone_id,
-            targets=targets,
-            greenhouse_timezone=(
-                str(zone_row.get("greenhouse_timezone")).strip()
-                if isinstance(zone_row.get("greenhouse_timezone"), str)
-                else None
-            ),
-        )
+                    targets=targets,
+                    greenhouse_timezone=(
+                        str(zone_row.get("greenhouse_timezone")).strip()
+                        if isinstance(zone_row.get("greenhouse_timezone"), str)
+                        else None
+                    ),
+                )
 
         return ZoneSnapshot(
             zone_id=int(zone_row["zone_id"]),
@@ -535,25 +535,27 @@ class PgZoneSnapshotReadModel:
         for mode, payload in calibrations.items():
             if not isinstance(payload, Mapping):
                 continue
-            rows.append(
-                {
-                    "mode": mode,
-                    "ec_gain_per_ml": payload.get("ec_gain_per_ml"),
-                    "ph_up_gain_per_ml": payload.get("ph_up_gain_per_ml"),
-                    "ph_down_gain_per_ml": payload.get("ph_down_gain_per_ml"),
-                    "ph_per_ec_ml": payload.get("ph_per_ec_ml"),
-                    "ec_per_ph_ml": payload.get("ec_per_ph_ml"),
-                    "transport_delay_sec": payload.get("transport_delay_sec"),
-                    "settle_sec": payload.get("settle_sec"),
-                    "confidence": payload.get("confidence"),
-                    "source": payload.get("source"),
-                    "valid_from": payload.get("valid_from"),
-                    "valid_to": payload.get("valid_to"),
-                    "is_active": payload.get("is_active", True),
-                    "meta": payload.get("meta"),
-                    "updated_at": payload.get("updated_at"),
-                }
-            )
+            row: Dict[str, Any] = {
+                "mode": mode,
+                "ec_gain_per_ml": payload.get("ec_gain_per_ml"),
+                "ph_up_gain_per_ml": payload.get("ph_up_gain_per_ml"),
+                "ph_down_gain_per_ml": payload.get("ph_down_gain_per_ml"),
+                "ph_per_ec_ml": payload.get("ph_per_ec_ml"),
+                "ec_per_ph_ml": payload.get("ec_per_ph_ml"),
+                "transport_delay_sec": payload.get("transport_delay_sec"),
+                "settle_sec": payload.get("settle_sec"),
+                "confidence": payload.get("confidence"),
+                "source": payload.get("source"),
+                "valid_from": payload.get("valid_from"),
+                "valid_to": payload.get("valid_to"),
+                "is_active": payload.get("is_active", True),
+                "meta": payload.get("meta"),
+                "updated_at": payload.get("updated_at"),
+            }
+            gains = PgZoneSnapshotReadModel._ec_component_gains_from_source(payload)
+            if gains is not None:
+                row["ec_component_gains"] = gains
+            rows.append(row)
         return rows
 
     def _build_targets(
@@ -703,7 +705,8 @@ class PgZoneSnapshotReadModel:
             mode = normalize_phase_key(row.get("mode"))
             if not mode or mode in result:
                 continue
-            result[mode] = {
+            meta = self._as_mapping(row.get("meta"))
+            entry: Dict[str, Any] = {
                 "ec_gain_per_ml": self._to_float(row.get("ec_gain_per_ml")),
                 "ph_up_gain_per_ml": self._to_float(row.get("ph_up_gain_per_ml")),
                 "ph_down_gain_per_ml": self._to_float(row.get("ph_down_gain_per_ml")),
@@ -715,10 +718,44 @@ class PgZoneSnapshotReadModel:
                 "source": row.get("source"),
                 "valid_from": row.get("valid_from"),
                 "valid_to": row.get("valid_to"),
-                "meta": dict(row.get("meta")) if isinstance(row.get("meta"), Mapping) else {},
+                "meta": meta if meta is not None else {},
                 "updated_at": row.get("updated_at"),
             }
+            gains = self._ec_component_gains_from_source(row)
+            if gains is not None:
+                entry["ec_component_gains"] = gains
+            result[mode] = entry
         return result
+
+    @staticmethod
+    def _as_mapping(value: Any) -> Optional[Dict[str, Any]]:
+        if isinstance(value, str):
+            text = value.strip()
+            if not text:
+                return None
+            try:
+                value = json.loads(text)
+            except (TypeError, ValueError):
+                return None
+        if isinstance(value, Mapping):
+            return dict(value)
+        return None
+
+    @classmethod
+    def _ec_component_gains_from_source(cls, source: Mapping[str, Any]) -> Optional[Dict[str, Any]]:
+        """Поднимает ``ec_component_gains`` с верхнего уровня payload или из ``meta``.
+
+        Authority-калибровка хранит поле в JSON документа (не отдельной колонкой).
+        Legacy-строка может нести его только внутри ``meta``.
+        """
+        if "ec_component_gains" in source:
+            copied = cls._as_mapping(source.get("ec_component_gains"))
+            if copied is not None:
+                return copied
+        meta = cls._as_mapping(source.get("meta"))
+        if meta is not None and "ec_component_gains" in meta:
+            return cls._as_mapping(meta.get("ec_component_gains"))
+        return None
 
     def _merge_execution_sources(
         self,

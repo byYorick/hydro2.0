@@ -1188,7 +1188,17 @@ def _compute_amount_ml(
     pid_entry: Mapping[str, Any],
     now: datetime,
 ) -> tuple[float, Mapping[str, Any], str, Mapping[str, Any]]:
-    gain = _process_gain(kind=kind, process_cfg=process_cfg, pid_entry=pid_entry, phase_key=phase_key)
+    forced_component = None
+    if kind == "ec":
+        raw_forced = str(correction_config.get("ec_forced_component") or "").strip()
+        forced_component = raw_forced or None
+    gain = effective_process_gain(
+        kind=kind,
+        process_cfg=process_cfg,
+        pid_entry=pid_entry,
+        phase_key=phase_key,
+        component=forced_component,
+    )
     integral_before = float(pid_entry.get("integral") or 0.0)
     pid_update = _next_pid_state(
         kind=kind,
@@ -1271,12 +1281,16 @@ def _compute_amount_ml(
     return dose_ml, pid_update, discard_reason, discard_details
 
 
+_EC_GAIN_COMPONENT_SKIP = frozenset({"", "ph", "none", "single", "multi_sequential", "multi_parallel"})
+
+
 def effective_process_gain(
     *,
     kind: str,
     process_cfg: Mapping[str, Any],
     pid_entry: Mapping[str, Any],
     phase_key: str,
+    component: str | None = None,
 ) -> float | None:
     """Authoritative ⊕ learned process gain used by dose planning and no-effect thresholds.
 
@@ -1285,9 +1299,22 @@ def effective_process_gain(
     and apply the tank_recirc EC floor (learned may raise confidence but must
     not shrink auth gain and inflate the next impulse).
 
+    For a forced EC component, ``component`` selects ``ec_component_gains`` and
+    falls back to generic ``ec_gain_per_ml`` only when that component has no
+    positive gain. Per-component auth gain is not blended with the generic EMA.
+
     Shared with ``ObservationAnalyzer.expected_effect`` so the no-effect
     threshold uses the identical effective gain the planner used for the dose.
     """
+    if kind == "ec" and component:
+        name = _normalize_ec_component_alias(component)
+        if name and name not in _EC_GAIN_COMPONENT_SKIP:
+            return _ec_component_process_gain(
+                component=name,
+                process_cfg=process_cfg,
+                pid_entry=pid_entry,
+                phase_key=phase_key,
+            )
     return _process_gain(
         kind=kind,
         process_cfg=process_cfg,

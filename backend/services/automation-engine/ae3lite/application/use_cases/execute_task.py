@@ -11,6 +11,9 @@ from datetime import datetime
 from datetime import timedelta
 from typing import Any, Mapping
 
+from ae3lite.application.services.correction_interrupt_safety import (
+    FAIL_SAFE_SHUTDOWN_CHANNELS as _FAIL_SAFE_SHUTDOWN_CHANNELS,
+)
 from ae3lite.application.services.workflow_topology import TopologyRegistry
 from ae3lite.config.schema import RuntimePlan
 from ae3lite.application.services.task_failed_alert import emit_task_failed_alert
@@ -60,14 +63,8 @@ COMMAND_SEND_RETRY_EXHAUSTED_CODE = "ae3_command_send_retry_exhausted"
 class ExecuteTaskUseCase:
     """Выполняет один stage AE3 cycle_start и возвращает terminal-задачу или безопасно requeue'нутую."""
 
-    FAIL_SAFE_SHUTDOWN_CHANNELS = (
-        "pump_main",
-        "valve_clean_fill",
-        "valve_clean_supply",
-        "valve_solution_fill",
-        "valve_solution_supply",
-        "valve_irrigation",
-    )
+    # Тот же объект, что correction_interrupt_safety.FAIL_SAFE_SHUTDOWN_CHANNELS.
+    FAIL_SAFE_SHUTDOWN_CHANNELS = _FAIL_SAFE_SHUTDOWN_CHANNELS
 
     def __init__(
         self,
@@ -596,6 +593,7 @@ class ExecuteTaskUseCase:
             correction=getattr(task, "correction", None),
             due_at=due_at,
             now=now,
+            claim_generation=claim_generation(task),
         )
         if updated_task is None:
             raise TaskExecutionError(
@@ -712,6 +710,7 @@ class ExecuteTaskUseCase:
             correction=getattr(task, "correction", None),
             due_at=due_at,
             now=now,
+            claim_generation=claim_generation(task),
         )
         if updated_task is None:
             raise TaskExecutionError(

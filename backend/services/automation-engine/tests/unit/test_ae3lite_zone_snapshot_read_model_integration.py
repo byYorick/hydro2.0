@@ -980,3 +980,90 @@ async def test_zone_snapshot_read_model_fails_closed_without_active_grow_cycle()
             await read_model.load(zone_id=zone_id)
     finally:
         await _cleanup(prefix)
+
+
+@pytest.mark.asyncio
+async def test_zone_snapshot_load_with_positive_dli_keeps_component_gains() -> None:
+    """Полный load() при dli_target > 0 не роняет соединение и не теряет ec_component_gains."""
+    prefix = f"ae3-snapshot-dli-{uuid4().hex}"
+    read_model = PgZoneSnapshotReadModel()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    component_gains = {
+        "calcium": {"ec_gain_per_ml": 0.2},
+        "magnesium": {"ec_gain_per_ml": 0.5},
+        "npk": {"ec_gain_per_ml": 0.25},
+        "micro": {"ec_gain_per_ml": 0.4},
+    }
+
+    try:
+        greenhouse_id = await _insert_greenhouse(prefix)
+        zone_id = await _insert_zone(f"{prefix}-zone", greenhouse_id=greenhouse_id)
+        _, recipe_revision_id = await _insert_recipe_revision(prefix)
+        grow_cycle_id = await _insert_grow_cycle(
+            zone_id,
+            greenhouse_id=greenhouse_id,
+            recipe_revision_id=recipe_revision_id,
+        )
+        phase_id = await _insert_phase(grow_cycle_id, ph_target=5.8)
+        await execute(
+            """
+            UPDATE grow_cycles
+            SET current_phase_id = $2,
+                started_at = $3,
+                recipe_started_at = $3,
+                updated_at = $3
+            WHERE id = $1
+            """,
+            grow_cycle_id,
+            phase_id,
+            now,
+        )
+        await execute(
+            """
+            UPDATE grow_cycle_phases
+            SET dli_target = 12.50,
+                updated_at = NOW()
+            WHERE id = $1
+            """,
+            phase_id,
+        )
+        await _insert_profile(zone_id)
+        await _insert_process_calibrations(zone_id)
+        await _upsert_zone_bundle(
+            zone_id,
+            {
+                "process_calibration": {
+                    "solution_fill": {"ec_component_gains": component_gains},
+                    "tank_recirc": {"ec_component_gains": component_gains},
+                    "irrigation": {"ec_component_gains": component_gains},
+                    "generic": {
+                        "ec_gain_per_ml": 0.1,
+                        "is_active": True,
+                        "meta": {"ec_component_gains": component_gains},
+                    },
+                }
+            },
+        )
+        node_id, _node_uid = await _insert_irrig_node(zone_id, prefix=prefix)
+        await execute(
+            """
+            INSERT INTO node_channels (node_id, channel, type, config, created_at, updated_at)
+            VALUES ($1, 'pump_main', 'ACTUATOR', '{}'::jsonb, NOW(), NOW())
+            """,
+            node_id,
+        )
+
+        snapshot = await read_model.load(zone_id=zone_id)
+
+        assert snapshot.dli_light_series is not None
+        assert snapshot.dli_light_series["samples"] == []
+        assert snapshot.targets["lighting"]["dli_target"] == pytest.approx(12.5)
+        for mode in ("solution_fill", "tank_recirc", "irrigation", "generic"):
+            gains = snapshot.process_calibrations[mode]["ec_component_gains"]
+            assert gains["calcium"]["ec_gain_per_ml"] == pytest.approx(0.2)
+            assert gains["magnesium"]["ec_gain_per_ml"] == pytest.approx(0.5)
+            assert gains["npk"]["ec_gain_per_ml"] == pytest.approx(0.25)
+            assert gains["micro"]["ec_gain_per_ml"] == pytest.approx(0.4)
+        assert snapshot.process_calibrations["tank_recirc"]["ec_gain_per_ml"] == pytest.approx(0.1)
+    finally:
+        await _cleanup(prefix)

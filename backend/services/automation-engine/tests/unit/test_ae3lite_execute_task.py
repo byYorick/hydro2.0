@@ -146,6 +146,7 @@ class _TaskRepoRequeue(_TaskRepoRunning):
                 "correction": correction,
                 "due_at": due_at,
                 "now": now,
+                "claim_generation": claim_generation,
             }
         )
         return replace(
@@ -833,7 +834,7 @@ async def test_execute_task_transient_snapshot_gap_requeues_and_emits_observabil
         _record_infra_alert,
     )
 
-    task = _make_task(stage="solution_fill_check", topology="two_tank")
+    task = replace(_make_task(stage="solution_fill_check", topology="two_tank"), claim_generation=4)
     task_repo = _TaskRepoRequeue(running_task=task)
     finalize = _FinalizeTaskUseCase()
     alerts = _AlertRepositoryRecorder()
@@ -853,6 +854,7 @@ async def test_execute_task_transient_snapshot_gap_requeues_and_emits_observabil
     assert finalize.calls == []
     assert alerts.calls == []
     assert len(task_repo.update_stage_calls) == 1
+    assert task_repo.update_stage_calls[0]["claim_generation"] == 4
     assert task_repo.update_stage_calls[0]["due_at"] == NOW + timedelta(seconds=SNAPSHOT_TRANSIENT_RETRY_SEC)
     assert [event_type for _, event_type, _ in recorded_events] == ["AE_SNAPSHOT_RETRY_SCHEDULED"]
     payload = recorded_events[0][2]
@@ -944,7 +946,7 @@ async def test_execute_task_command_send_failed_requeues_and_emits_observability
         _record_infra_alert,
     )
 
-    task = _make_task(stage="irrigation_check", topology="two_tank")
+    task = replace(_make_task(stage="irrigation_check", topology="two_tank"), claim_generation=9)
     task_repo = _TaskRepoRequeue(running_task=task)
     finalize = _FinalizeTaskUseCase()
     alerts = _AlertRepositoryRecorder()
@@ -964,6 +966,7 @@ async def test_execute_task_command_send_failed_requeues_and_emits_observability
     assert finalize.calls == []
     assert alerts.calls == []
     assert len(task_repo.update_stage_calls) == 1
+    assert task_repo.update_stage_calls[0]["claim_generation"] == 9
     assert task_repo.update_stage_calls[0]["due_at"] == NOW + timedelta(seconds=COMMAND_SEND_RETRY_SEC)
     assert [event_type for _, event_type, _ in recorded_events] == ["AE_COMMAND_SEND_RETRY_SCHEDULED"]
     payload = recorded_events[0][2]
@@ -1753,6 +1756,7 @@ async def test_execute_task_two_tank_failure_triggers_fail_safe_shutdown() -> No
         "valve_solution_fill",
         "valve_solution_supply",
         "valve_irrigation",
+        "valve_drain",
     ]
     assert all(
         command.payload.get("params", {}).get("state") is False
@@ -1788,6 +1792,7 @@ async def test_execute_task_timeout_cancellation_fails_closed_and_runs_fail_safe
         "valve_solution_fill",
         "valve_solution_supply",
         "valve_irrigation",
+        "valve_drain",
     ]
 
 

@@ -8,7 +8,7 @@ from typing import Any, Mapping, Optional, Sequence
 
 from common.db import get_pool
 
-from ae3lite.domain.level_switch_semantics import level_switch_is_triggered
+from ae3lite.domain.level_switch_semantics import confirmed_level_switch, newer_level_sample
 from ae3lite.domain.services.metric_window_validator import is_stub_telemetry
 from ae3lite.domain.services.solution_temp_irrigation_guard import SOLUTION_TEMP_CHANNEL_LABELS
 
@@ -279,9 +279,9 @@ class PgZoneRuntimeMonitor:
                 initial_event_level = None
 
         if row is None:
+            chosen = newer_level_sample(event_level, initial_event_level)
             return (
-                event_level
-                or initial_event_level
+                chosen
                 or {"has_level": False, "is_stale": False, "is_triggered": False, "expected_labels": labels}
             )
 
@@ -292,19 +292,26 @@ class PgZoneRuntimeMonitor:
             level = None
         sample_ts = row.get("sample_ts")
         age_sec = self._age_sec(sample_ts)
-        is_stale = bool(level is not None and ((age_sec or 0.0) > max(0, int(telemetry_max_age_sec))))
+        has_level, is_triggered = confirmed_level_switch(value=level, threshold=float(threshold))
+        is_stale = bool(has_level and ((age_sec or 0.0) > max(0, int(telemetry_max_age_sec))))
         telemetry_level = {
             "sensor_id": row.get("sensor_id"),
             "sensor_label": row.get("sensor_label"),
             "level": level,
             "sample_ts": sample_ts,
             "sample_age_sec": age_sec,
-            "has_level": level is not None,
+            "has_level": has_level,
             "is_stale": is_stale,
-            "is_triggered": level_switch_is_triggered(level, threshold=float(threshold)) or False,
+            "is_triggered": is_triggered,
             "expected_labels": labels,
             "source": "telemetry_last",
         }
+        # Stale или небинарная телеметрия не должна затирать более новый initial.
+        if not has_level or is_stale:
+            chosen = newer_level_sample(event_level, initial_event_level)
+            if chosen is not None:
+                return chosen
+            return telemetry_level
         if event_level is None:
             preferred_initial = self._prefer_event_over_telemetry(
                 telemetry_level=telemetry_level,

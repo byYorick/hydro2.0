@@ -944,6 +944,9 @@ PK (zone_id, pid_type)
 ```
 
 Runtime-семантика AE3-Lite:
+- частичный upsert PID меняет только переданные поля; `None` сохраняет прежнее
+  значение, явный `0` сбрасывает его. INSERT-default не должен обнулять интеграл,
+  производную, последнюю длительность, feedforward или no-effect при UPDATE;
 - `last_dose_at` — время последней **успешной** (`DONE`) дозы; якорь `min_interval_sec` и observe-window; при fail/TIMEOUT не обновляется;
 - `last_measured_value` хранит baseline/последнее подтверждённое измерение controller-а;
 - `hold_until` блокирует раннее повторное решение до окончания process observation window;
@@ -1496,6 +1499,10 @@ zone_prepare_baselines_task_idx (ae_task_id) WHERE ae_task_id IS NOT NULL
 - `nutrient_ec_budget = target_ec − water_ec` (> 0, иначе AE3 fail-closed до INSERT);
 - `ratios_json` — snapshot `ec_component_ratios` (нормализованные доли);
 - `component_targets_json` — `{T_ca, T_ca_mg, T_ca_mg_npk, T_full, …}`;
+- JSONB хранит объект, не сериализованную JSON-строку. При rollover/переходе в
+  manual hold добавляется `pipeline_resume: {pipeline_phase, dilute_attempts}`
+  baseline той же task. Запись атомарна с fenced stage transition; новый baseline
+  не наследует resume. Старые JSON-строки нормализуются при этой записи;
 - `ae_tasks.corr_baseline_id` может ссылаться на эту строку на время active prepare.
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0
@@ -1566,6 +1573,14 @@ ae_commands_task_planner_step_unpublished_idx UNIQUE (task_id, planner_step)
 - `failed` — ошибка публикации в HL или terminal fail по deadline.
 
 `cmd_id` в `payload` стабилен для retry: `ae3-t{task_id}-z{zone_id}-s{step_no}`; при повторной попытке того же `planner_step` переиспользуется существующая строка и тот же `step_no`/`cmd_id`.
+
+Локальный учёт dose (2026-10-19), без новых колонок:
+- `payload._ae3_dose_context = {pid_type, last_correction_kind, hold_sec}` записывается
+  до publish; эти служебные поля не передаются в HL params/MQTT;
+- `payload._ae3_dose_accounted=true` ставится только для `DONE` dose после PID persist;
+- terminal-task repair выбирает также DONE без этого маркера и повторяет учёт после
+  ошибки. `last_dose_at` не откатывается назад; hold обновляется монотонно, для EC
+  совместно с pH в одной транзакции. Маркер может быть повторно записан идемпотентно.
 
 Примечание по статусам:
 - `publish_status` хранится в lowercase;

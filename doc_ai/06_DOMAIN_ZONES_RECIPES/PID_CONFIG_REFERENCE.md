@@ -13,6 +13,13 @@ anti-windup; `expected_effect` на `effective_process_gain`; порог доз�
 `pump_calibration.min_dose_ms`; legacy `AdaptivePid` / `pid_config_service` /
 `correction_cooldown` **удалены**.
 
+Проверка 2026-10-19: компонентные gains одинаково применяются в sequential planner
+и observe; объём для learning/no-effect/feedforward берётся из подтверждения дозы.
+Частичный PID upsert сохраняет непереданные I/D, output, bias и no-effect count.
+Recovery восстанавливает hold от DONE по сохранённому до publish dose context;
+EC hold распространяется также на pH. Frozen EC остаётся в итоговой проверке
+полного target, если оператор явно не выбрал `irrigation_ec_component=none`.
+
 ---
 
 ## 0. Authority matrix (канон AE3)

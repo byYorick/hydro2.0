@@ -126,6 +126,14 @@ class CorrectionTransitionPolicy:
                 kind="transition",
                 next_stage="solution_fill_timeout_stop",
             )
+        if stage == "irrigation_check":
+            # Без увеличения stage_retry_count следующий тик полива снова открывает
+            # окно коррекции и дозирует после уже достигнутого no-effect лимита.
+            return StageOutcome(
+                kind="transition",
+                next_stage="irrigation_check",
+                stage_retry_count=stage_retry_count + 1,
+            )
         return None
 
     # ── Stage-deadline interrupt ─────────────────────────────────────
