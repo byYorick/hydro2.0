@@ -1432,6 +1432,7 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist,enginee
             $recipes = Recipe::query()
                 ->select(['id', 'name', 'description'])
                 ->with(['revisions.phases'])
+                ->orderByDesc('id')
                 ->get()
                 ->map(function (Recipe $recipe) {
                     $phasesCount = $recipe->revisions->sum(function ($revision) {

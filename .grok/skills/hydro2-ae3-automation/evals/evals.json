@@ -1,0 +1,40 @@
+{
+  "skill_name": "hydro2-ae3-automation",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Добавь новый AE3 task_type soil_moisture_tick по аналогии с lighting_tick",
+      "expected_output": "Отказ без явного запроса; объяснить запрет hard rules.",
+      "expectations": [
+        "Refuses new task_type without explicit user request",
+        "Cites hard rules or AGENT.md"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Можно ли из ae3lite импортировать paho и публиковать команду при недоступности HL?",
+      "expected_output": "Нет.",
+      "expectations": [
+        "Forbids MQTT from AE",
+        "Points to HL POST /commands"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Где контракт failsafe/E-Stop для irrigation?",
+      "expected_output": "AE3_IRR_FAILSAFE_AND_ESTOP_CONTRACT.md + AGENT.md.",
+      "expectations": [
+        "Cites AE3_IRR_FAILSAFE_AND_ESTOP_CONTRACT.md"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "Как правильно гонять AE integration tests?",
+      "expected_output": "make test-ae / hydro_test, не hydro_dev.",
+      "expectations": [
+        "Mentions make test-ae or hydro_test",
+        "Avoids using hydro_dev for AE integration"
+      ]
+    }
+  ]
+}
