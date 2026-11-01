@@ -142,13 +142,10 @@
                 />
               </div>
               
-              <!-- Иконка устройства: SVG из внутреннего whitelist типов -->
-              <!-- eslint-disable vue/no-v-html -->
-              <div
-                class="w-8 h-8 sm:w-10 sm:h-10 mb-1 text-[color:var(--text-dim)]"
-                v-html="getDeviceIconSvg(device.type)"
-              ></div>
-              <!-- eslint-enable vue/no-v-html -->
+              <SafeSvg
+                :markup="getDeviceIconSvg(device.type)"
+                svg-class="w-8 h-8 sm:w-10 sm:h-10 mb-1 text-[color:var(--text-dim)]"
+              />
               
               <!-- Название устройства -->
               <div class="text-[9px] sm:text-xs font-semibold text-center truncate w-full px-1">
@@ -181,12 +178,10 @@
           :href="`/devices/${device.id}`"
           class="flex items-center gap-1.5 px-2 py-1.5 hover:bg-[color:var(--bg-elevated)]/40 transition-colors"
         >
-          <!-- eslint-disable vue/no-v-html -->
-          <span
-            class="w-5 h-5 shrink-0 text-[color:var(--text-dim)]"
-            v-html="getDeviceIconSvg(device.type)"
-          ></span>
-          <!-- eslint-enable vue/no-v-html -->
+          <SafeSvg
+            :markup="getDeviceIconSvg(device.type)"
+            svg-class="w-5 h-5 shrink-0 text-[color:var(--text-dim)]"
+          />
           <div class="min-w-0 flex-1">
             <div class="text-[11px] font-semibold truncate text-[color:var(--text-primary)]">
               {{ device.uid || device.name || `#${device.id}` }}
@@ -290,6 +285,7 @@ import { Link } from '@inertiajs/vue3'
 import Button from '@/Components/Button.vue'
 import Badge from '@/Components/Badge.vue'
 import StatusIndicator from '@/Components/StatusIndicator.vue'
+import SafeSvg from '@/Components/SafeSvg.vue'
 import type { Device } from '@/types'
 import { useRole } from '@/composables/useRole'
 

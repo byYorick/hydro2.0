@@ -15,19 +15,11 @@
       @mouseenter="onTipEnter"
       @mouseleave="showTip = false"
     >
-      <!-- eslint-disable vue/no-v-html -->
-      <svg
+      <SafeSvg
         v-if="icon"
-        class="h-5 w-5 shrink-0"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="1.5"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-        v-html="icon"
+        :markup="icon"
+        svg-class="h-5 w-5 shrink-0"
       />
-      <!-- eslint-enable vue/no-v-html -->
     </Link>
     <Teleport to="body">
       <div
@@ -55,19 +47,11 @@
         : isActive ? 'nav-link--active' : ''
     ]"
   >
-    <!-- eslint-disable vue/no-v-html -->
-    <svg
+    <SafeSvg
       v-if="icon && !mobile"
-      class="h-4 w-4 shrink-0"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      stroke-width="1.5"
-      stroke-linecap="round"
-      stroke-linejoin="round"
-      v-html="icon"
+      :markup="icon"
+      svg-class="h-4 w-4 shrink-0"
     />
-    <!-- eslint-enable vue/no-v-html -->
     <slot><span class="truncate">{{ label }}</span></slot>
   </Link>
 </template>
@@ -75,6 +59,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { Link, usePage } from '@inertiajs/vue3'
+import SafeSvg from '@/Components/SafeSvg.vue'
 
 const props = defineProps<{
   href: string

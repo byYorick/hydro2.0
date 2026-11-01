@@ -10,14 +10,16 @@
     :stroke-linejoin="def.strokeLinejoin ?? 'round'"
     aria-hidden="true"
   >
-    <!-- eslint-disable vue/no-v-html -->
-    <g v-html="def.body" />
-    <!-- eslint-enable vue/no-v-html -->
+    <SafeSvg
+      bare
+      :markup="def.body"
+    />
   </svg>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import SafeSvg from '@/Components/SafeSvg.vue'
 
 /**
  * Hydroflow iconset — 19 monochrome 16px stroke icons
