@@ -12,43 +12,29 @@ MQTT брокер настроен с обязательной аутентиф�
 ## Пользователи
 
 ### 1. python_service
-- **Назначение:** Python сервисы (общий пользователь)
-- **Пароль:** Настраивается через `MQTT_PYTHON_SERVICE_PASS`
-- **Доступ:** Полный доступ к `hydro/#`
+- **Назначение:** зарезервированная учётка, runtime к брокеру не подключается
+- **Пароль:** `MQTT_PYTHON_SERVICE_PASS`
+- **Доступ:** нет топиков
 
 ### 2. automation_engine
-- **Назначение:** Automation Engine сервис
-- **Пароль:** Настраивается через `MQTT_AUTOMATION_ENGINE_PASS`
-- **Доступ:**
-  - Чтение: `hydro/+/+/+/+/telemetry`, `hydro/+/+/+/status`, `hydro/+/+/+/+/command_response`, `hydro/+/+/+/+/event`
-  - Чтение/Запись: `hydro/+/+/events/#`
-  - Публикация команд удалена — команды через history-logger REST API
+- **Назначение:** Automation Engine (команды только через REST history-logger)
+- **Пароль:** `MQTT_AUTOMATION_ENGINE_PASS`
+- **Доступ:** нет топиков
 
 ### 3. history_logger
-- **Назначение:** History Logger сервис
-- **Пароль:** Настраивается через `MQTT_HISTORY_LOGGER_PASS`
-- **Доступ:**
-  - Чтение: `hydro/+/+/+/+/telemetry`, `hydro/+/+/+/status`, `hydro/+/+/+/heartbeat`,
-    `hydro/+/+/+/lwt`, `hydro/+/+/+/diagnostics`, `hydro/+/+/+/error`,
-    `hydro/+/+/+/config_report`, `hydro/+/+/+/node_hello`,
-    `hydro/+/+/+/+/command_response`, `hydro/+/+/+/+/event`, `hydro/node_hello`, `hydro/time/request`
-  - Запись: `hydro/+/+/+/+/command`, `hydro/+/+/events/#`
+- **Назначение:** единственная точка MQTT-команд, config и чтения телеметрии
+- **Пароль:** `MQTT_HISTORY_LOGGER_PASS`
+- **Доступ:** `readwrite hydro/#`
 
 ### 4. mqtt_bridge
-- **Назначение:** MQTT Bridge сервис
-- **Пароль:** Настраивается через `MQTT_MQTT_BRIDGE_PASS`
-- **Доступ:** Полный доступ к `hydro/#`
+- **Назначение:** чтение живого статуса узла (`status_probe`)
+- **Пароль:** `MQTT_MQTT_BRIDGE_PASS`
+- **Доступ:** чтение `status`, `lwt`, `heartbeat`, `+/telemetry` (включая `gh-temp`)
 
 ### 5. esp32_node
-- **Назначение:** ESP32 узлы
-- **Пароль:** Настраивается через `MQTT_ESP32_NODE_PASS`
-- **Доступ:**
-  - Запись: `hydro/+/+/+/+/telemetry`
-  - Запись: `hydro/node_hello`, `hydro/+/+/+/node_hello`
-  - Запись: `hydro/+/+/+/status`, `hydro/+/+/+/heartbeat`, `hydro/+/+/+/lwt`,
-    `hydro/+/+/+/diagnostics`, `hydro/+/+/+/error`, `hydro/+/+/+/config_report`,
-    `hydro/+/+/+/+/command_response`, `hydro/+/+/+/+/event`
-  - Чтение: `hydro/+/+/+/config`, `hydro/+/+/+/+/command`
+- **Назначение:** ESP32 узлы. Client id = `node_uid`
+- **Пароль:** `MQTT_ESP32_NODE_PASS`
+- **Доступ:** `pattern readwrite hydro/+/+/%c/#`, запись `hydro/node_hello` и `hydro/time/request`, чтение `hydro/time/response`, pre-bind `hydro/gh-temp/zn-temp/#`
 
 ## Генерация паролей
 
