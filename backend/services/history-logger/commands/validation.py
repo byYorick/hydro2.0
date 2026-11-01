@@ -3,16 +3,12 @@
 from __future__ import annotations
 
 import json
-import logging
 from typing import Any
 
 from fastapi import HTTPException
 
-from common.env import get_settings
 from common.trace_context import get_trace_id, set_trace_id
 from models import CommandRequest
-
-logger = logging.getLogger(__name__)
 
 
 def validate_command_request_contract(req: CommandRequest) -> None:
@@ -31,16 +27,18 @@ def apply_trace_id(trace_id: str | None) -> None:
 
 
 def ensure_node_secret(config: dict) -> dict:
-    """Inject default node_secret if missing (required for HMAC publish)."""
-    node_secret = config.get("node_secret")
-    if isinstance(node_secret, str) and node_secret:
-        return config
-    secret = get_settings().node_default_secret
-    if not secret:
-        raise HTTPException(status_code=500, detail="node_default_secret is not configured")
-    config["node_secret"] = secret
-    logger.warning("NodeConfig missing node_secret, injecting default secret for publish")
-    return config
+    """Backward-compatible name: never put plaintext node_secret on MQTT.
+
+    Command HMAC still uses ``_resolve_node_secret`` (DB). Config publish goes
+    through ``prepare_node_config_for_mqtt``.
+    """
+    from commands.node_secret_wire import prepare_node_config_for_mqtt
+
+    node_uid = ""
+    raw_uid = config.get("node_id") or config.get("node_uid")
+    if isinstance(raw_uid, str):
+        node_uid = raw_uid
+    return prepare_node_config_for_mqtt(config, node_uid=node_uid)
 
 
 def normalize_command_status(status: Any) -> str:

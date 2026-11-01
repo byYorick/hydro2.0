@@ -519,8 +519,8 @@ docker compose logs history-logger | grep "Failed to update zone_id"
 **Решение:** Проверьте токены в docker-compose.dev.yml:
 ```yaml
 environment:
-  - PY_INGEST_TOKEN=dev-token-12345
-  - HISTORY_LOGGER_API_TOKEN=dev-token-12345
+  - PY_INGEST_TOKEN=${PY_INGEST_TOKEN}  # make ensure-dev-secrets
+  - HISTORY_LOGGER_API_TOKEN=${HISTORY_LOGGER_API_TOKEN}
 ```
 
 ### Узел отправляет данные, но они не записываются

@@ -48,6 +48,11 @@ extern "C" {
 #define EC_NODE_EC_CACHE_MAX_AGE_MS 2500U
 #define EC_NODE_EC_SENSOR_PRECISION 2
 
+/* E-STOP: GPIO32, active-low, внутренний pull-up. Не занимать этот GPIO насосом. */
+#define EC_NODE_ESTOP_GPIO GPIO_NUM_32
+#define EC_NODE_ESTOP_ACTIVE_LOW 1
+#define EC_NODE_ESTOP_DEBOUNCE_MS 80U
+
 // Pump defaults
 #define EC_NODE_PUMP_A_GPIO 26
 #define EC_NODE_PUMP_B_GPIO 27
@@ -63,7 +68,8 @@ extern "C" {
 #define EC_NODE_PUMP_CURRENT_MAX_MA 500.0f
 
 // Setup portal defaults
-#define EC_NODE_SETUP_AP_PASSWORD    "hydro2025"
+/* NULL: setup_portal генерирует пароль AP на сессию и пишет его в serial. */
+#define EC_NODE_SETUP_AP_PASSWORD    NULL
 
 // Factory reset (long-press) defaults
 #define EC_NODE_FACTORY_RESET_GPIO           GPIO_NUM_0  // BOOT button on most devkits

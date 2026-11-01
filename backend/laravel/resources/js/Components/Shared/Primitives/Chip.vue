@@ -17,20 +17,11 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import { chipToneClass, type ChipTone } from '@/theme/statusTones'
 
-export type ChipTone = 'neutral' | 'brand' | 'growth' | 'warn' | 'alert'
+export type { ChipTone }
 
 const props = withDefaults(defineProps<{ tone?: ChipTone }>(), { tone: 'neutral' })
 
-const toneClass = computed(
-  () =>
-    ({
-      neutral:
-        'bg-[var(--bg-elevated)] text-[var(--text-muted)] border-[var(--border-muted)]',
-      brand: 'bg-brand-soft text-brand-ink border-brand-soft',
-      growth: 'bg-growth-soft text-growth border-growth-soft',
-      warn: 'bg-warn-soft text-warn border-warn-soft',
-      alert: 'bg-alert-soft text-alert border-alert-soft',
-    })[props.tone],
-)
+const toneClass = computed(() => chipToneClass(props.tone))
 </script>

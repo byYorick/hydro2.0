@@ -99,7 +99,7 @@ class NodeCompatibilityTester:
             "ts": ts,
         }
         canonical = json.dumps(base_payload, sort_keys=True, separators=(',', ':'))
-        secret = os.getenv("NODE_DEFAULT_SECRET", "hydro-default-secret-key-2025")
+        secret = os.environ["NODE_DEFAULT_SECRET"]
         sig = hmac.new(secret.encode("utf-8"), canonical.encode("utf-8"), hashlib.sha256).hexdigest()
         base_payload["sig"] = sig
         return base_payload

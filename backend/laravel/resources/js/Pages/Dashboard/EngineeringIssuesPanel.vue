@@ -40,7 +40,7 @@
             </div>
             <Link
               :href="issue.openHref"
-              class="shrink-0 text-xs text-[color:var(--accent-cyan)] hover:underline"
+              class="shrink-0 text-xs text-[color:var(--status-info)] hover:underline"
             >
               Открыть зону
             </Link>

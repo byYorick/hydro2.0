@@ -172,9 +172,9 @@ const status = computed((): 'ok' | 'warning' | 'danger' | 'neutral' => {
 
 const statusColor = computed(() => {
   switch (status.value) {
-    case 'ok': return 'var(--accent-green)'
-    case 'warning': return 'var(--accent-amber)'
-    case 'danger': return 'var(--accent-red)'
+    case 'ok': return 'var(--status-ok)'
+    case 'warning': return 'var(--status-warning)'
+    case 'danger': return 'var(--status-critical)'
     default: return 'var(--text-dim)'
   }
 })
@@ -190,9 +190,9 @@ const statusIcon = computed(() => {
 
 const statusBgClass = computed(() => {
   switch (status.value) {
-    case 'ok': return 'bg-[color:var(--badge-success-bg)] text-[color:var(--accent-green)]'
-    case 'warning': return 'bg-[color:var(--badge-warning-bg)] text-[color:var(--accent-amber)]'
-    case 'danger': return 'bg-[color:var(--badge-danger-bg)] text-[color:var(--accent-red)]'
+    case 'ok': return 'bg-[color:var(--badge-success-bg)] text-[color:var(--status-ok)]'
+    case 'warning': return 'bg-[color:var(--badge-warning-bg)] text-[color:var(--status-warning)]'
+    case 'danger': return 'bg-[color:var(--badge-danger-bg)] text-[color:var(--status-critical)]'
     default: return ''
   }
 })

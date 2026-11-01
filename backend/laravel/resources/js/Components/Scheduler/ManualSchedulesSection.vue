@@ -91,14 +91,14 @@
                   :aria-checked="schedule.enabled"
                   :aria-label="schedule.label ? `Активно: ${schedule.label}` : `Активно: ${laneLabel(schedule.task_type)}`"
                   class="relative inline-flex h-5 w-9 shrink-0 rounded-full transition motion-reduce:transition-none"
-                  :class="schedule.enabled ? 'bg-[color:var(--accent-green)]' : 'bg-[color:var(--border-muted)]'"
+                  :class="schedule.enabled ? 'bg-[color:var(--status-ok)]' : 'bg-[color:var(--border-muted)]'"
                   :disabled="togglingId === schedule.id"
                   @click="toggleEnabled(schedule)"
                 >
                   <span
                     class="absolute top-0.5 h-4 w-4 rounded-full bg-white transition motion-reduce:transition-none"
                     :class="schedule.enabled ? 'left-[18px]' : 'left-0.5'"
-                  />
+                  ></span>
                 </button>
                 <Badge
                   v-else
@@ -126,7 +126,7 @@
                 </Badge>
                 <span
                   v-if="!isExecutable(schedule.task_type)"
-                  class="text-[10px] text-amber-400/90"
+                  class="text-[10px] text-status-warning"
                   title="Без автозапуска на AE3"
                 >
                   план
@@ -169,7 +169,7 @@
                 <Button
                   size="sm"
                   variant="ghost"
-                  class="h-7 px-2 text-[10px] text-red-500"
+                  class="h-7 px-2 text-[10px] text-status-critical"
                   @click="removeSchedule(schedule)"
                 >
                   Удал.

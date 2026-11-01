@@ -4,6 +4,30 @@
     data-testid="zone-page-header"
   >
     <div class="min-w-0 space-y-1.5">
+      <nav
+        v-if="hierarchy.length"
+        class="flex flex-wrap items-center gap-1.5 text-xs text-[color:var(--text-muted)]"
+        aria-label="Расположение зоны"
+        data-testid="zone-page-hierarchy"
+      >
+        <template
+          v-for="(item, index) in hierarchy"
+          :key="`${item.label}-${index}`"
+        >
+          <Link
+            v-if="item.href"
+            :href="item.href"
+            class="hover:text-[color:var(--text-primary)] hover:underline"
+          >
+            {{ item.label }}
+          </Link>
+          <span v-else>{{ item.label }}</span>
+          <span
+            v-if="index < hierarchy.length - 1"
+            aria-hidden="true"
+          >/</span>
+        </template>
+      </nav>
       <div class="flex flex-wrap items-center gap-2">
         <h1
           class="truncate text-lg font-bold text-[color:var(--text-primary)]"
@@ -106,6 +130,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import { Link, usePage } from '@inertiajs/vue3'
 import Badge from '@/Components/Badge.vue'
 import Button from '@/Components/Button.vue'
 import { useRole } from '@/composables/useRole'
@@ -135,6 +160,24 @@ const props = withDefaults(defineProps<Props>(), {
   cycleStatus: null,
   pauseLoading: false,
   nextPhaseLoading: false,
+})
+
+const page = usePage()
+
+const hierarchy = computed(() => {
+  const zone = (page.props as { zone?: { greenhouse?: { id?: number; name?: string } } }).zone
+  const greenhouse = zone?.greenhouse
+  if (!greenhouse?.name) {
+    return []
+  }
+
+  return [
+    {
+      label: greenhouse.name,
+      href: greenhouse.id ? `/greenhouses/${greenhouse.id}` : '/greenhouses',
+    },
+    { label: 'Зоны', href: '/zones' },
+  ]
 })
 
 defineEmits<{

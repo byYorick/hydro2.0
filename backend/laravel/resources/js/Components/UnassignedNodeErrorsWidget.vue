@@ -18,7 +18,7 @@
 
     <div
       v-else-if="error"
-      class="text-[color:var(--accent-red)] text-sm py-2"
+      class="text-[color:var(--status-critical)] text-sm py-2"
     >
       {{ error }}
     </div>
@@ -78,7 +78,7 @@
     >
       <a
         href="/monitoring/unassigned-errors"
-        class="text-sm text-[color:var(--accent-cyan)] hover:text-[color:var(--accent-green)] transition-colors"
+        class="text-sm text-[color:var(--status-info)] hover:text-[color:var(--status-ok)] transition-colors"
       >
         Показать все ошибки →
       </a>

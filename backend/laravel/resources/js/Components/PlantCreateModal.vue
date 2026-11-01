@@ -14,11 +14,11 @@
         <div class="flex items-center gap-1">
           <span
             class="h-2 w-2 rounded-full"
-            :class="currentStep >= 1 ? 'bg-[color:var(--accent-primary)]' : 'bg-[color:var(--border-muted)]'"
+            :class="currentStep >= 1 ? 'bg-[color:var(--series-primary)]' : 'bg-[color:var(--border-muted)]'"
           ></span>
           <span
             class="h-2 w-2 rounded-full"
-            :class="currentStep >= 2 ? 'bg-[color:var(--accent-primary)]' : 'bg-[color:var(--border-muted)]'"
+            :class="currentStep >= 2 ? 'bg-[color:var(--series-primary)]' : 'bg-[color:var(--border-muted)]'"
           ></span>
         </div>
       </div>
@@ -32,18 +32,19 @@
             for="plant-name"
             class="block text-xs text-[color:var(--text-muted)] mb-1"
           >
-            Название <span class="text-[color:var(--accent-red)]">*</span>
+            Название <span class="text-[color:var(--status-critical)]">*</span>
           </label>
-          <input
+          <TextField
             id="plant-name"
             v-model="form.name"
             type="text"
-            class="input-field h-9 w-full"
-            :class="errors.name ? 'border-[color:var(--accent-red)] bg-[color:var(--badge-danger-bg)]' : ''"
+            class="w-full"
+            :class="errors.name ? 'border-[color:var(--status-critical)] bg-[color:var(--badge-danger-bg)]' : ''"
+            input-class="h-9"
           />
           <div
             v-if="errors.name"
-            class="text-xs text-[color:var(--accent-red)] mt-1"
+            class="text-xs text-[color:var(--status-critical)] mt-1"
           >
             {{ errors.name }}
           </div>
@@ -54,11 +55,12 @@
             for="plant-species"
             class="block text-xs text-[color:var(--text-muted)] mb-1"
           >Вид</label>
-          <input
+          <TextField
             id="plant-species"
             v-model="form.species"
             type="text"
-            class="input-field h-9 w-full"
+            class="w-full"
+            input-class="h-9"
           />
         </div>
 
@@ -67,11 +69,12 @@
             for="plant-variety"
             class="block text-xs text-[color:var(--text-muted)] mb-1"
           >Сорт</label>
-          <input
+          <TextField
             id="plant-variety"
             v-model="form.variety"
             type="text"
-            class="input-field h-9 w-full"
+            class="w-full"
+            input-class="h-9"
           />
         </div>
 
@@ -105,7 +108,7 @@
           </div>
           <div
             v-if="errors.growing_system"
-            class="text-xs text-[color:var(--accent-red)] mt-1"
+            class="text-xs text-[color:var(--status-critical)] mt-1"
           >
             {{ errors.growing_system }}
           </div>
@@ -176,12 +179,13 @@
             for="plant-description"
             class="block text-xs text-[color:var(--text-muted)] mb-1"
           >Описание</label>
-          <textarea
+          <TextField
             id="plant-description"
             v-model="form.description"
+            multiline
             rows="3"
-            class="input-field w-full"
-          ></textarea>
+            class="w-full"
+          />
         </div>
       </div>
 
@@ -208,7 +212,7 @@
 
       <div
         v-if="errors.general"
-        class="text-sm text-[color:var(--accent-red)]"
+        class="text-sm text-[color:var(--status-critical)]"
       >
         {{ errors.general }}
       </div>
@@ -245,6 +249,8 @@
 </template>
 
 <script setup lang="ts">
+import TextField from '@/Components/TextField.vue'
+
 import { toRef } from 'vue'
 import Modal from '@/Components/Modal.vue'
 import Button from '@/Components/Button.vue'

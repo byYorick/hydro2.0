@@ -16,17 +16,18 @@
         type="button"
         class="h-5 px-2 rounded text-[10px] font-semibold uppercase tracking-wide border transition-colors"
         :class="selectedStatus === status.value
-          ? 'border-[color:var(--accent-cyan)] text-[color:var(--accent-cyan)] bg-[color:var(--bg-elevated)]'
+          ? 'border-[color:var(--status-info)] text-[color:var(--status-info)] bg-[color:var(--bg-elevated)]'
           : 'border-transparent text-[color:var(--text-dim)] hover:border-[color:var(--border-strong)] hover:text-[color:var(--text-muted)]'"
         @click="selectedStatus = status.value"
       >
         {{ status.label }}
       </button>
       <div class="ml-auto flex items-center">
-        <input
-          :value="query"
-          class="input-field h-6 w-32 text-xs px-2"
+        <TextField
+          :model-value="query"
+          class="w-32"
           placeholder="Поиск..."
+          input-class="h-6 text-xs px-2"
           @input="query = ($event.target as HTMLInputElement).value"
         />
       </div>
@@ -92,6 +93,8 @@
 </template>
 
 <script setup lang="ts">
+import TextField from '@/Components/TextField.vue'
+
 import { computed, ref, watch } from 'vue'
 import Badge from '@/Components/Badge.vue'
 import AlertRow from '@/Components/Alerts/AlertRow.vue'

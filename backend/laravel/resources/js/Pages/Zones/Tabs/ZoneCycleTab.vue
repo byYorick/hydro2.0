@@ -45,7 +45,7 @@
               >&middot;</span>
               <span
                 v-if="phaseTimeLeftLabel"
-                class="text-[color:var(--accent-cyan)]"
+                class="text-[color:var(--status-info)]"
               >
                 {{ phaseTimeLeftLabel }}
               </span>
@@ -131,7 +131,7 @@
       <button
         v-if="canManageRecipe"
         type="button"
-        class="mt-5 inline-flex items-center gap-2 rounded-lg border border-[color:var(--accent-cyan)]/40 bg-[color:var(--accent-cyan)]/10 px-4 py-2 text-sm font-medium text-[color:var(--accent-cyan)] transition-colors hover:bg-[color:var(--accent-cyan)]/20"
+        class="mt-5 inline-flex items-center gap-2 rounded-lg border border-[color:var(--status-info)]/40 bg-[color:var(--status-info)]/10 px-4 py-2 text-sm font-medium text-[color:var(--status-info)] transition-colors hover:bg-[color:var(--status-info)]/20"
         @click="$emit('run-cycle')"
       >
         <svg

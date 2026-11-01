@@ -74,9 +74,9 @@ export function getEventVariant(kind: string): BadgeVariant {
 
 export function eventDotClass(kind: string): string {
   const category = classifyEventKind(kind)
-  if (category === 'ALERT') return 'bg-[color:var(--accent-red)]'
-  if (category === 'WARNING') return 'bg-[color:var(--accent-amber)]'
-  if (category === 'INFO') return 'bg-[color:var(--accent-cyan)]'
-  if (category === 'ACTION') return 'bg-[color:var(--accent-green)]'
+  if (category === 'ALERT') return 'bg-[color:var(--status-critical)]'
+  if (category === 'WARNING') return 'bg-[color:var(--status-warning)]'
+  if (category === 'INFO') return 'bg-[color:var(--status-info)]'
+  if (category === 'ACTION') return 'bg-[color:var(--status-ok)]'
   return 'bg-[color:var(--text-muted)]'
 }

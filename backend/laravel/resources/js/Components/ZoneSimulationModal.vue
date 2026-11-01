@@ -75,7 +75,7 @@
           </div>
           <div class="relative w-full h-2 bg-[color:var(--border-muted)] rounded-full overflow-hidden">
             <div
-              class="relative h-2 bg-[linear-gradient(90deg,var(--accent-cyan),var(--accent-green))] transition-all duration-500"
+              class="relative h-2 bg-[linear-gradient(90deg,var(--status-info),var(--status-ok))] transition-all duration-500"
               :style="{ width: `${simulationProgress}%` }"
             >
               <div class="absolute inset-0 bg-[linear-gradient(90deg,transparent,rgba(255,255,255,0.2),transparent)] simulation-shimmer"></div>
@@ -133,7 +133,7 @@
                 </div>
                 <div
                   v-if="pid.error"
-                  class="text-[11px] text-[color:var(--accent-red)]"
+                  class="text-[11px] text-[color:var(--status-critical)]"
                 >
                   Ошибка: {{ pid.error }}
                 </div>
@@ -154,7 +154,7 @@
           </div>
           <div
             v-if="simulationEventsError"
-            class="mt-2 text-xs text-[color:var(--accent-red)]"
+            class="mt-2 text-xs text-[color:var(--status-critical)]"
           >
             {{ simulationEventsError }}
           </div>
@@ -318,14 +318,14 @@
           </div>
           <div
             v-if="reportErrors.length"
-            class="mt-3 text-xs text-[color:var(--accent-red)]"
+            class="mt-3 text-xs text-[color:var(--status-critical)]"
           >
             Ошибки отчета: {{ formatReportValue(reportErrors) }}
           </div>
         </div>
         <div
           v-if="error"
-          class="text-sm text-[color:var(--accent-red)]"
+          class="text-sm text-[color:var(--status-critical)]"
         >
           {{ error }}
         </div>

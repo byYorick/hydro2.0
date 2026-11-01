@@ -15,7 +15,7 @@
       </p>
     </header>
 
-    <slot />
+    <slot></slot>
   </section>
 </template>
 

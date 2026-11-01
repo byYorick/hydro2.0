@@ -6,7 +6,7 @@
     <div class="space-y-3">
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-2">
-          <div class="w-2 h-2 rounded-full bg-[color:var(--accent-cyan)] animate-pulse"></div>
+          <div class="w-2 h-2 rounded-full bg-[color:var(--status-info)] animate-pulse"></div>
           <div class="text-sm font-semibold">
             Прогресс рецепта
           </div>
@@ -31,13 +31,13 @@
               (день {{ phaseDaysElapsed }}/{{ phaseDaysTotal }})
             </span>
           </span>
-          <span class="font-semibold text-[color:var(--accent-cyan)]">{{ Math.round(phaseProgress) }}%</span>
+          <span class="font-semibold text-[color:var(--status-info)]">{{ Math.round(phaseProgress) }}%</span>
         </div>
         
         <!-- Прогресс-бар -->
         <div class="relative w-full h-3 bg-[color:var(--border-muted)] rounded-full overflow-hidden">
           <div
-            class="absolute inset-0 bg-[linear-gradient(90deg,var(--accent-cyan),var(--accent-green))] rounded-full transition-all duration-500 ease-out"
+            class="absolute inset-0 bg-[linear-gradient(90deg,var(--status-info),var(--status-ok))] rounded-full transition-all duration-500 ease-out"
             :style="{ width: `${phaseProgress}%` }"
           >
             <div class="absolute inset-0 bg-[linear-gradient(90deg,transparent,rgba(255,255,255,0.12),transparent)] animate-shimmer"></div>
@@ -45,7 +45,7 @@
           <!-- Индикатор цели -->
           <div
             v-if="phaseProgress < 100"
-            class="absolute top-0 bottom-0 w-0.5 bg-[color:var(--accent-cyan)]/40"
+            class="absolute top-0 bottom-0 w-0.5 bg-[color:var(--status-info)]/40"
             :style="{ left: `${phaseProgress}%` }"
           ></div>
         </div>
@@ -94,7 +94,7 @@
           <Link
             v-if="recipeInstance.recipe.id"
             :href="`/recipes/${recipeInstance.recipe.id}`"
-            class="text-[color:var(--accent-cyan)] hover:text-[color:var(--accent-green)] transition-colors"
+            class="text-[color:var(--status-info)] hover:text-[color:var(--status-ok)] transition-colors"
           >
             Открыть →
           </Link>
@@ -168,9 +168,9 @@ const progressVariant = computed(() => {
 
 function getPhaseBarClass(phaseIndex: number): string {
   if (phaseIndex < currentPhaseIndex.value) {
-    return 'bg-[color:var(--accent-green)]' // Завершенные фазы
+    return 'bg-[color:var(--status-ok)]' // Завершенные фазы
   } else if (phaseIndex === currentPhaseIndex.value) {
-    return 'bg-[color:var(--accent-cyan)]' // Текущая фаза
+    return 'bg-[color:var(--status-info)]' // Текущая фаза
   } else {
     return 'bg-[color:var(--border-muted)]' // Предстоящие фазы
   }

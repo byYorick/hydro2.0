@@ -265,8 +265,12 @@ CMD ["python", "main.py"]
 
 ```conf
 listener 1883
-allow_anonymous true
+allow_anonymous false
+password_file /mosquitto/config/passwords
+acl_file /mosquitto/config/acl
 ```
+
+Dev compose публикует `1883`, `5432` и `6379` на `127.0.0.1`. Для ESP32 в LAN: `MQTT_BIND_ADDR=0.0.0.0`.
 
 ИИ-агент может:
 - добавить авторизацию,

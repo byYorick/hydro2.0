@@ -15,7 +15,10 @@ class CommandTimeoutDiagnosticsBuilderTest extends TestCase
 
     public function test_builds_timeout_payload_from_command_and_node(): void
     {
-        config(['commands.timeout_minutes' => 7]);
+        config([
+            'commands.timeout_minutes' => 7,
+            'commands.node_offline_timeout_sec' => 120,
+        ]);
 
         $zone = Zone::factory()->create();
         $node = DeviceNode::query()->create([
@@ -41,5 +44,10 @@ class CommandTimeoutDiagnosticsBuilderTest extends TestCase
         $this->assertSame('pump_main', $payload['channel']);
         $this->assertSame(7, $payload['timeout_minutes']);
         $this->assertSame('online', $payload['node_status']);
+        $this->assertTrue($payload['node_stale_online_candidate']);
+
+        config(['commands.node_offline_timeout_sec' => 1000]);
+        $freshPayload = app(CommandTimeoutDiagnosticsBuilder::class)->fromCommand($command->fresh());
+        $this->assertFalse($freshPayload['node_stale_online_candidate']);
     }
 }

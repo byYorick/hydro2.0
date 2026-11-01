@@ -2,7 +2,7 @@
   <span class="inline-flex shrink-0">
     <button
       type="button"
-      class="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)] text-[10px] font-semibold text-[color:var(--text-muted)] hover:border-[color:var(--accent-green)] hover:text-[color:var(--accent-green)] transition-colors"
+      class="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)] text-[10px] font-semibold text-[color:var(--text-muted)] hover:border-[color:var(--status-ok)] hover:text-[color:var(--status-ok)] transition-colors"
       :aria-label="`Подробнее: ${title}`"
       :data-testid="testId"
       @click.stop="open = true"

@@ -17,13 +17,13 @@
               <span
                 class="inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px]"
                 :class="greenhouseClimateEnabled
-                  ? 'border-[color:var(--accent-green)]/35 bg-[color:var(--accent-green)]/10 text-[color:var(--accent-green)]'
+                  ? 'border-[color:var(--status-ok)]/35 bg-[color:var(--status-ok)]/10 text-[color:var(--status-ok)]'
                   : 'border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] text-[color:var(--text-muted)]'"
               >
                 <span
                   class="ui-state-dot"
-                  :class="greenhouseClimateEnabled ? 'bg-[color:var(--accent-green)]' : 'bg-[color:var(--text-dim)]'"
-                />
+                  :class="greenhouseClimateEnabled ? 'bg-[color:var(--status-ok)]' : 'bg-[color:var(--text-dim)]'"
+                ></span>
                 Климат {{ greenhouseClimateEnabled ? 'вкл' : 'выкл' }}
               </span>
             </div>
@@ -74,7 +74,7 @@
             <div class="ui-kpi-label">
               Зоны
             </div>
-            <div class="ui-kpi-value text-[color:var(--accent-cyan)]">
+            <div class="ui-kpi-value text-[color:var(--status-info)]">
               {{ zones.length }}
             </div>
             <div class="ui-kpi-hint">
@@ -88,7 +88,7 @@
             <div class="ui-kpi-label">
               Узлы онлайн
             </div>
-            <div class="ui-kpi-value text-[color:var(--accent-cyan)]">
+            <div class="ui-kpi-value text-[color:var(--status-info)]">
               {{ nodeSummary.online }}<span class="text-base font-semibold text-[color:var(--text-muted)]">/{{ nodeSummary.total ?? nodes.length }}</span>
             </div>
             <div class="ui-kpi-hint">
@@ -98,14 +98,14 @@
           <div
             class="ui-kpi-card"
             data-testid="greenhouse-kpi-alerts"
-            :class="activeAlerts > 0 ? 'border-[color:var(--accent-red)]/45' : ''"
+            :class="activeAlerts > 0 ? 'border-[color:var(--status-critical)]/45' : ''"
           >
             <div class="ui-kpi-label">
               Оповещения
             </div>
             <div
               class="ui-kpi-value"
-              :class="activeAlerts > 0 ? 'text-[color:var(--accent-red)]' : ''"
+              :class="activeAlerts > 0 ? 'text-[color:var(--status-critical)]' : ''"
             >
               {{ activeAlerts }}
             </div>
@@ -117,11 +117,11 @@
 
         <div
           v-if="activeAlerts > 0"
-          class="flex flex-col gap-2 rounded-xl border border-[color:var(--accent-red)]/35 bg-[color:var(--accent-red)]/8 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between"
+          class="flex flex-col gap-2 rounded-xl border border-[color:var(--status-critical)]/35 bg-[color:var(--status-critical)]/8 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between"
         >
           <div class="flex items-start gap-2 text-sm text-[color:var(--text-primary)]">
             <svg
-              class="mt-0.5 h-4 w-4 shrink-0 text-[color:var(--accent-red)]"
+              class="mt-0.5 h-4 w-4 shrink-0 text-[color:var(--status-critical)]"
               fill="currentColor"
               viewBox="0 0 20 20"
             >
@@ -137,7 +137,7 @@
           </div>
           <Link
             href="/alerts"
-            class="text-xs font-medium text-[color:var(--accent-red)] hover:underline shrink-0"
+            class="text-xs font-medium text-[color:var(--status-critical)] hover:underline shrink-0"
           >
             Открыть оповещения
           </Link>
@@ -166,13 +166,13 @@
                 <span
                   class="inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] tabular-nums"
                   :class="maintenanceExitTargets.length > 0
-                    ? 'border-[color:var(--accent-amber)]/40 bg-[color:var(--accent-amber)]/10 text-[color:var(--accent-amber)]'
+                    ? 'border-[color:var(--status-warning)]/40 bg-[color:var(--status-warning)]/10 text-[color:var(--status-warning)]'
                     : 'border-[color:var(--border-muted)] text-[color:var(--text-muted)]'"
                 >
                   <span
                     class="h-1.5 w-1.5 rounded-full"
-                    :class="maintenanceExitTargets.length > 0 ? 'bg-[color:var(--accent-amber)]' : 'bg-[color:var(--accent-green)]'"
-                  />
+                    :class="maintenanceExitTargets.length > 0 ? 'bg-[color:var(--status-warning)]' : 'bg-[color:var(--status-ok)]'"
+                  ></span>
                   {{ maintenanceExitTargets.length > 0 ? 'Есть в maintenance' : 'Нет в maintenance' }}
                 </span>
               </div>
@@ -209,7 +209,7 @@
                 </div>
                 <div
                   class="mt-1 text-xl font-semibold tabular-nums"
-                  :class="maintenanceExitTargets.length > 0 ? 'text-[color:var(--accent-amber)]' : 'text-[color:var(--text-primary)]'"
+                  :class="maintenanceExitTargets.length > 0 ? 'text-[color:var(--status-warning)]' : 'text-[color:var(--text-primary)]'"
                 >
                   {{ maintenanceExitTargets.length }}
                 </div>

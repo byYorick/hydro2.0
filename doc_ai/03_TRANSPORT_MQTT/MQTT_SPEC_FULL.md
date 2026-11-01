@@ -231,7 +231,6 @@ hydro/{gh}/{zone}/{node}/config_report
  "type": "ph",
  "gh_uid": "gh-1",
  "zone_uid": "zn-3",
- "node_secret": "CHANGE_ME_32_PLUS_CHARS_XXXXXXXXX",
  "channels": [
  {
  "name": "ph_sensor",
@@ -263,7 +262,7 @@ hydro/{gh}/{zone}/{node}/config_report
 
 Обязательные поля верхнего уровня v3: `node_id`, `version`, `type`, `gh_uid`, `zone_uid`,
 `channels`, `wifi`, `mqtt` (см. `../02_HARDWARE_FIRMWARE/NODE_CONFIG_SPEC.md`).
-`node_secret` обязателен для HMAC команд (длина ≥ 32 символа/байта).
+`node_secret` обязателен для HMAC команд (длина ≥ 32, хранится в NVS и в `nodes.config`). В MQTT NodeConfig plaintext **не передаётся**; доставка — поле `node_secret_enc` (см. `NODE_CONFIG_SPEC.md`).
 
 ## 5.3. Requirements
 - QoS = 1
@@ -1014,9 +1013,11 @@ Backend никогда не остаётся "в неизвестности": п
 9. Для `irrigation` при включённом `irrigation_solution_min_guard_enabled`
    нода обязана остановить stage по `level_solution_min=0`, снять stage-guard и опубликовать
    `irrigation_solution_low`.
-10. Пока физическая кнопка `E-Stop` удерживается нажатой, нода обязана держать все актуаторы в `OFF`;
+10. Пока физическая кнопка `E-Stop` удерживается нажатой, нода обязана держать все актуаторы в `OFF`
+    (прямой GPIO safe-OFF; таймаут мьютекса актуаторов стоп не отменяет);
     на момент нажатия публикуется `emergency_stop_activated`. Новые `set_relay {state:true}`
-    отклоняются с `ERROR` / `error_code=estop_active`; OFF-команды разрешены.
+    отклоняются с `ERROR` / `error_code=estop_active`, пока защёлка не снята после bookkeeping
+    отпускания; OFF-команды разрешены.
 11. Для каждого подтверждённого изменения любого `level_*` датчика нода публикует отдельное channel-level событие:
 
 Топик:

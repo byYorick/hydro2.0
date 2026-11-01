@@ -3,6 +3,7 @@
     ref="el"
     :class="containerClass"
     :style="containerStyle"
+    :aria-label="label || undefined"
   ></div>
 </template>
 
@@ -10,19 +11,25 @@
 import * as echarts from 'echarts'
 import { onMounted, onBeforeUnmount, ref, watch, computed } from 'vue'
 import type { ECharts, EChartsOption } from 'echarts'
+import { useTheme } from '@/composables/useTheme'
+import { mergeChartOption } from '@/theme/chartTheme'
 
 interface Props {
   option: EChartsOption
   dark?: boolean
   height?: string
   fullHeight?: boolean
+  label?: string
 }
 
 const props = withDefaults(defineProps<Props>(), {
   dark: true,
   height: '256px',
-  fullHeight: false
+  fullHeight: false,
+  label: '',
 })
+
+const { theme } = useTheme()
 
 const containerClass = computed(() => {
   // Используем overflow-hidden для canvas, но tooltip будет в body
@@ -45,9 +52,10 @@ let chart: ECharts | undefined
 let resizeObserver: ResizeObserver | undefined
 
 const buildSafeOption = (option: EChartsOption): EChartsOption => {
-  const gridOption = Array.isArray(option.grid) ? option.grid[0] : option.grid
+  const themed = mergeChartOption(option)
+  const gridOption = Array.isArray(themed.grid) ? themed.grid[0] : themed.grid
   return {
-    ...option,
+    ...themed,
     grid: {
       left: gridOption?.left ?? 40,
       right: gridOption?.right ?? 16,
@@ -69,7 +77,8 @@ const initChart = (): void => {
     chart = undefined
   }
 
-  chart = echarts.init(el.value, props.dark ? 'dark' : undefined, {
+  // Цвета берутся из CSS-переменных темы, а не из встроенной темы ECharts `dark`.
+  chart = echarts.init(el.value, undefined, {
     renderer: 'canvas',
     useDirtyRect: false,
   })
@@ -134,6 +143,12 @@ watch(
     initChart()
   }
 )
+
+watch(theme, () => {
+  if (chart) {
+    chart.setOption(buildSafeOption(props.option), { notMerge: false, lazyUpdate: false })
+  }
+})
 
 onBeforeUnmount(() => {
   window.removeEventListener('resize', onResize)

@@ -147,7 +147,7 @@
             :hint="field.hint"
             :error="validationErrors[field.key]"
           >
-            <input
+            <TextField
               v-model="form[field.key]"
               :type="field.type"
               :data-testid="`process-calibration-input-${field.key}`"
@@ -155,8 +155,9 @@
               :min="field.min"
               :max="field.max"
               :placeholder="field.placeholder"
-              :class="inputCls"
               :title="field.description"
+              input-class="font-mono"
+              class="max-w-[8.5rem]"
             />
           </Field>
         </div>
@@ -297,6 +298,7 @@ import type {
   ZoneProcessCalibration,
   ZoneProcessCalibrationForm,
 } from '@/types/ProcessCalibration'
+import TextField from '@/Components/TextField.vue'
 
 type FormKey = keyof ZoneProcessCalibrationForm
 
@@ -348,9 +350,6 @@ const emit = defineEmits<{
 const automationConfig = useAutomationConfig()
 const { showToast } = useToast()
 const processCalibrationDefaults = useProcessCalibrationDefaults()
-
-const inputCls =
-  'block w-full max-w-[8.5rem] h-8 px-2 rounded-md border border-[var(--border-muted)] bg-[var(--bg-surface)] text-sm font-mono text-[var(--text-primary)] focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/40'
 
 const modes: Array<{ key: ProcessCalibrationMode; label: string; description: string }> = [
   {

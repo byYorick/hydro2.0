@@ -34,7 +34,7 @@
             <div class="ui-kpi-label">
               pH
             </div>
-            <div class="ui-kpi-value text-[color:var(--accent-cyan)]">
+            <div class="ui-kpi-value text-[color:var(--status-info)]">
               {{ formatValue(telemetry?.ph, 2) }}
             </div>
           </div>
@@ -42,7 +42,7 @@
             <div class="ui-kpi-label">
               EC
             </div>
-            <div class="ui-kpi-value text-[color:var(--accent-cyan)]">
+            <div class="ui-kpi-value text-[color:var(--status-info)]">
               {{ formatValue(telemetry?.ec, 2) }}
             </div>
           </div>

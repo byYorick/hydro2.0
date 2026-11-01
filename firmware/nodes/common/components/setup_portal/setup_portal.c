@@ -7,6 +7,7 @@
 #include "esp_netif.h"
 #include "esp_event.h"
 #include "esp_mac.h"
+#include "esp_random.h"
 #include "esp_system.h"
 #include "nvs_flash.h"
 #include "esp_http_server.h"
@@ -382,6 +383,24 @@ esp_err_t setup_portal_generate_pin(char *pin_out, size_t pin_size) {
     return ESP_OK;
 }
 
+esp_err_t setup_portal_generate_ap_password(char *out, size_t out_size) {
+    /* Без похожих символов 0/O, 1/I/l. 12 символов — минимум WPA2 (8) с запасом. */
+    static const char alphabet[] = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
+    const size_t alphabet_len = sizeof(alphabet) - 1U;
+    const size_t password_len = 12U;
+    size_t i;
+
+    if (!out || out_size < password_len + 1U) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    for (i = 0; i < password_len; i++) {
+        out[i] = alphabet[esp_random() % alphabet_len];
+    }
+    out[password_len] = '\0';
+    return ESP_OK;
+}
+
 // Forward declaration
 static void credentials_callback_wrapper(const setup_portal_credentials_t *creds, void *ctx);
 
@@ -620,8 +639,19 @@ esp_err_t setup_portal_run_full_setup(const setup_portal_full_config_t *config) 
     
     // Create AP SSID
     char ap_ssid[32] = {0};
+    char generated_password[13] = {0};
     snprintf(ap_ssid, sizeof(ap_ssid), "%s_SETUP_%s", config->node_type_prefix, setup_pin);
-    const char *ap_password = config->ap_password ? config->ap_password : "hydro2025";
+    const char *ap_password = config->ap_password;
+    bool generated_password_used = false;
+    if (ap_password == NULL || ap_password[0] == '\0') {
+        err = setup_portal_generate_ap_password(generated_password, sizeof(generated_password));
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to generate setup AP password: %s", esp_err_to_name(err));
+            return err;
+        }
+        ap_password = generated_password;
+        generated_password_used = true;
+    }
     
     // Initialize OLED if enabled
     if (config->enable_oled) {
@@ -720,8 +750,13 @@ esp_err_t setup_portal_run_full_setup(const setup_portal_full_config_t *config) 
     ESP_LOGI(TAG, "========================================");
     ESP_LOGI(TAG, "Connection data:");
     ESP_LOGI(TAG, "  WiFi SSID:    %s", ap_ssid);
-    // Безопасность: не логируем пароль и PIN в открытом виде
-    ESP_LOGI(TAG, "  WiFi Pass:    [%d characters]", (int)strlen(ap_password));
+    if (generated_password_used) {
+        /* Пароль уникален для этой сессии и больше нигде не записан.
+         * Оператор читает его из serial (OLED пароль не показывает). */
+        ESP_LOGW(TAG, "  WiFi Pass:    %s", ap_password);
+    } else {
+        ESP_LOGI(TAG, "  WiFi Pass:    [%d characters]", (int)strlen(ap_password));
+    }
     ESP_LOGI(TAG, "  PIN:          [%d characters]", (int)strlen(setup_pin));
     ESP_LOGI(TAG, "  Open browser: http://192.168.4.1");
     ESP_LOGI(TAG, "========================================");

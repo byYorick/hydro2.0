@@ -13,16 +13,15 @@
             <label
               for="greenhouse-name"
               class="block text-xs text-[color:var(--text-muted)] mb-1"
-            >Название <span class="text-[color:var(--accent-red)]">*</span></label>
-            <input
+            >Название <span class="text-[color:var(--status-critical)]">*</span></label>
+            <TextField
               id="greenhouse-name"
               v-model="form.name"
               name="name"
               type="text"
               required
               placeholder="Main Greenhouse"
-              class="input-field"
-              :class="errors.name ? 'border-[color:var(--accent-red)] bg-[color:var(--badge-danger-bg)]' : ''"
+              :class="errors.name ? 'border-[color:var(--status-critical)] bg-[color:var(--badge-danger-bg)]' : ''"
             />
             <div
               v-if="errors.name"
@@ -40,13 +39,12 @@
               for="greenhouse-timezone"
               class="block text-xs text-[color:var(--text-muted)] mb-1"
             >Часовой пояс</label>
-            <input
+            <TextField
               id="greenhouse-timezone"
               v-model="form.timezone"
               name="timezone"
               type="text"
               placeholder="Europe/Moscow"
-              class="input-field"
             />
           </div>
           
@@ -55,11 +53,10 @@
               for="greenhouse-type"
               class="block text-xs text-[color:var(--text-muted)] mb-1"
             >Тип</label>
-            <select
+            <SelectField
               id="greenhouse-type"
               v-model.number="form.greenhouse_type_id"
               name="greenhouse_type_id"
-              class="input-select"
             >
               <option :value="null">
                 Выберите тип
@@ -71,7 +68,7 @@
               >
                 {{ greenhouseType.name }}
               </option>
-            </select>
+            </SelectField>
           </div>
           
           <div class="md:col-span-2">
@@ -79,14 +76,15 @@
               for="greenhouse-description"
               class="block text-xs text-[color:var(--text-muted)] mb-1"
             >Описание</label>
-            <textarea
+            <TextField
               id="greenhouse-description"
               v-model="form.description"
               name="description"
-              rows="3"
+              multiline
+              :rows="3"
               placeholder="Описание теплицы..."
-              class="w-full rounded-md border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] px-2 py-1 text-sm text-[color:var(--text-primary)] focus:border-[color:var(--accent-green)] focus:outline-none"
-            ></textarea>
+              class="w-full"
+            />
           </div>
         </div>
         
@@ -114,6 +112,10 @@
 </template>
 
 <script setup lang="ts">
+import SelectField from '@/Components/SelectField.vue'
+
+import TextField from '@/Components/TextField.vue'
+
 import { reactive, ref, computed, onMounted } from 'vue'
 import { Link, router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'

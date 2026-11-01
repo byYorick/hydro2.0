@@ -42,7 +42,7 @@ describe('ErrorBoundary (P1-3)', () => {
     expect(wrapper.text()).toContain('Произошла ошибка')
     const heading = wrapper.find('h2')
     expect(heading.exists()).toBe(true)
-    expect(heading.classes()).toContain('text-[color:var(--accent-red)]')
+    expect(heading.classes()).toContain('text-[color:var(--status-critical)]')
   })
 
   it('displays error message in fallback UI', async () => {

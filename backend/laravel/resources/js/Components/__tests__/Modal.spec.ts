@@ -53,4 +53,62 @@ describe('Modal.vue', () => {
 
     wrapper.unmount()
   })
+
+  it('закрывается по Escape и возвращает фокус', async () => {
+    const trigger = document.createElement('button')
+    trigger.type = 'button'
+    document.body.appendChild(trigger)
+    trigger.focus()
+
+    const wrapper = mount(Modal, {
+      props: { open: true, title: 'Закрытие' },
+      attachTo: document.body,
+    })
+
+    await nextTick()
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await nextTick()
+
+    expect(wrapper.emitted('close')).toBeTruthy()
+    wrapper.unmount()
+  })
+
+  it('циклически переносит Tab и Shift+Tab внутри диалога и возвращает фокус триггеру', async () => {
+    const trigger = document.createElement('button')
+    trigger.type = 'button'
+    document.body.appendChild(trigger)
+    trigger.focus()
+
+    const wrapper = mount(Modal, {
+      props: { open: true, title: 'Фокус', hideDefaultCancel: true },
+      slots: {
+        default: '<button type="button" data-testid="focus-first">Раз</button><button type="button" data-testid="focus-second">Два</button>',
+      },
+      attachTo: document.body,
+    })
+
+    await nextTick()
+
+    const first = document.body.querySelector('[data-testid="focus-first"]') as HTMLButtonElement
+    const second = document.body.querySelector('[data-testid="focus-second"]') as HTMLButtonElement
+    first.focus()
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }))
+    expect(document.activeElement).toBe(second)
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }))
+    expect(document.activeElement).toBe(first)
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true }))
+    expect(document.activeElement).toBe(second)
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    expect(wrapper.emitted('close')?.length).toBeGreaterThan(0)
+
+    await wrapper.setProps({ open: false })
+    await nextTick()
+    expect(document.activeElement).toBe(trigger)
+
+    wrapper.unmount()
+  })
 })

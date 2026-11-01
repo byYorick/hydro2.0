@@ -32,7 +32,7 @@
             <div class="ui-kpi-label">
               Ошибки
             </div>
-            <div class="ui-kpi-value text-[color:var(--accent-red)]">
+            <div class="ui-kpi-value text-[color:var(--status-critical)]">
               {{ errorLogsCount }}
             </div>
             <div class="ui-kpi-hint">
@@ -43,7 +43,7 @@
             <div class="ui-kpi-label">
               Предупреждения
             </div>
-            <div class="ui-kpi-value text-[color:var(--accent-amber)]">
+            <div class="ui-kpi-value text-[color:var(--status-warning)]">
               {{ warningLogsCount }}
             </div>
             <div class="ui-kpi-hint">
@@ -77,10 +77,10 @@
         <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
           <div class="flex flex-wrap items-center gap-2">
             <span class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">Фильтр</span>
-            <select
+            <SelectField
               v-model="filters.level"
-              class="input-select h-9"
               data-testid="logs-filter-level"
+              input-class="h-9"
             >
               <option value="">
                 Все уровни
@@ -92,24 +92,25 @@
               >
                 {{ level }}
               </option>
-            </select>
-            <input
+            </SelectField>
+            <TextField
               v-model="filters.search"
               type="search"
               placeholder="Поиск по сообщению/контексту"
-              class="input-field h-9 w-full sm:w-64"
+              class="w-full sm:w-64"
+              input-class="h-9"
             />
           </div>
           <div class="flex flex-wrap items-center gap-2">
-            <input
+            <TextField
               v-model="filters.from"
               type="date"
-              class="input-field h-9"
+              input-class="h-9"
             />
-            <input
+            <TextField
               v-model="filters.to"
               type="date"
-              class="input-field h-9"
+              input-class="h-9"
             />
             <Button
               size="sm"
@@ -140,7 +141,7 @@
 
         <div
           v-if="error"
-          class="text-sm text-[color:var(--accent-red)]"
+          class="text-sm text-[color:var(--status-critical)]"
         >
           {{ error }}
         </div>
@@ -231,6 +232,10 @@
 </template>
 
 <script setup lang="ts">
+import SelectField from '@/Components/SelectField.vue'
+
+import TextField from '@/Components/TextField.vue'
+
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Tabs from '@/Components/Tabs.vue'

@@ -151,10 +151,10 @@ export function useDashboardRealtimeFeed({
   const telemetryPalette = computed(() => {
     theme.value
     return {
-      ph: resolveCssColor('--accent-cyan', '#3b82f6'),
-      ec: resolveCssColor('--accent-green', '#10b981'),
-      temperature: resolveCssColor('--accent-amber', '#f59e0b'),
-      humidity: resolveCssColor('--accent-lime', '#8b5cf6'),
+      ph: resolveCssColor('--status-info', '#3b82f6'),
+      ec: resolveCssColor('--status-ok', '#10b981'),
+      temperature: resolveCssColor('--status-warning', '#f59e0b'),
+      humidity: resolveCssColor('--series-lime', '#8b5cf6'),
     }
   })
 

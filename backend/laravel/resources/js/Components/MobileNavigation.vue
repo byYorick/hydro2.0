@@ -20,8 +20,9 @@
           stroke-width="2"
           stroke-linecap="round"
           stroke-linejoin="round"
-          v-html="item.icon"
-        />
+        >
+          <SvgNodes :nodes="item.icon" />
+        </svg>
         <span>{{ item.label }}</span>
       </NavLink>
     </div>
@@ -32,6 +33,7 @@
 import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { usePage } from '@inertiajs/vue3'
 import NavLink from '@/Components/NavLink.vue'
+import SvgNodes from '@/Components/Icons/SvgNodes.vue'
 import { getRoleNavigationItems } from '@/Components/RoleBasedNavigation.vue'
 
 const page = usePage()

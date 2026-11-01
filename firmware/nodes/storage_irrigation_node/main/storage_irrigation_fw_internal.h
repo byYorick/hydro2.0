@@ -157,7 +157,11 @@ extern storage_irrigation_node_binary_guard_state_t g_recirculation_guard;
 extern storage_irrigation_node_binary_guard_state_t g_irrigation_guard;
 extern storage_irrigation_node_estop_debounce_t g_estop_debounce;
 extern bool g_estop_input_ready;
-extern bool g_estop_active;
+extern volatile bool g_estop_active;
+/** Bookkeeping (guards/driver sync) ещё не догнан после de-energize. */
+extern volatile bool g_estop_sync_pending;
+/** emergency_stop_activated уже ушёл на этот фронт нажатия. */
+extern volatile bool g_estop_event_published;
 extern bool g_estop_restore_valid;
 extern bool g_estop_restore_states[PUMP_DRIVER_MAX_CHANNELS];
 extern bool g_level_switch_inputs_ready;

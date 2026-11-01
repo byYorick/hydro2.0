@@ -7,7 +7,7 @@
       <!-- Заголовок с бейджем стадии -->
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-2">
-          <div class="w-2 h-2 rounded-full bg-[color:var(--accent-cyan)] animate-pulse"></div>
+          <div class="w-2 h-2 rounded-full bg-[color:var(--status-info)] animate-pulse"></div>
           <div class="text-sm font-semibold">
             Прогресс цикла
           </div>
@@ -58,7 +58,7 @@
                 <span class="text-sm font-semibold text-[color:var(--text-primary)]">
                   {{ currentPhaseName || `Фаза ${currentPhaseIndex + 1}` }}
                 </span>
-                <span class="text-lg font-bold text-[color:var(--accent-cyan)]">{{ Math.round(phaseProgress) }}%</span>
+                <span class="text-lg font-bold text-[color:var(--status-info)]">{{ Math.round(phaseProgress) }}%</span>
               </div>
               <div
                 v-if="phaseDaysElapsed !== null && phaseDaysTotal !== null"
@@ -78,7 +78,7 @@
             <div class="space-y-1">
               <div class="relative w-full h-3 bg-[color:var(--border-muted)] rounded-full overflow-hidden">
                 <div
-                  class="absolute inset-0 bg-[linear-gradient(90deg,var(--accent-cyan),var(--accent-green))] rounded-full transition-all duration-500 ease-out"
+                  class="absolute inset-0 bg-[linear-gradient(90deg,var(--status-info),var(--status-ok))] rounded-full transition-all duration-500 ease-out"
                   :style="{ width: `${phaseProgress}%` }"
                 >
                   <div class="absolute inset-0 bg-[linear-gradient(90deg,transparent,rgba(255,255,255,0.15),transparent)] animate-shimmer"></div>
@@ -110,7 +110,7 @@
                 class="flex items-center justify-between text-xs mt-1"
               >
                 <span class="text-[color:var(--text-muted)]">Осталось до перехода:</span>
-                <span class="font-semibold text-[color:var(--accent-cyan)]">
+                <span class="font-semibold text-[color:var(--status-info)]">
                   {{ formatDays(nextPhaseInfo.daysRemaining) }}
                 </span>
               </div>
@@ -151,7 +151,7 @@
           <Link
             v-if="recipeId"
             :href="`/recipes/${recipeId}`"
-            class="text-[color:var(--accent-cyan)] hover:text-[color:var(--accent-green)] transition-colors"
+            class="text-[color:var(--status-info)] hover:text-[color:var(--status-ok)] transition-colors"
           >
             Открыть →
           </Link>
@@ -408,9 +408,9 @@ function getPhaseBarClass(phaseIndex: number): string {
   // v-for="idx in totalPhases" даёт 1-based индексы, currentPhaseIndex — 0-based
   const zeroIdx = phaseIndex - 1
   if (zeroIdx < currentPhaseIndex.value) {
-    return 'bg-[color:var(--accent-green)]'
+    return 'bg-[color:var(--status-ok)]'
   } else if (zeroIdx === currentPhaseIndex.value) {
-    return 'bg-[color:var(--accent-cyan)]'
+    return 'bg-[color:var(--status-info)]'
   } else {
     return 'bg-[color:var(--border-muted)]'
   }

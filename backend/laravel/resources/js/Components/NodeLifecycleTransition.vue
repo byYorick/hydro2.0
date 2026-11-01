@@ -13,7 +13,7 @@
     
     <div
       v-else-if="error"
-      class="text-xs text-[color:var(--accent-red)]"
+      class="text-xs text-[color:var(--status-critical)]"
     >
       {{ error }}
     </div>
@@ -29,10 +29,11 @@
       v-else
       class="flex items-center gap-2"
     >
-      <select
+      <SelectField
         v-model="selectedState"
-        class="input-select h-9 flex-1"
+        class="flex-1"
         :disabled="transitioning"
+        input-class="h-9"
       >
         <option :value="null">
           Выберите состояние...
@@ -45,10 +46,10 @@
           {{ state.label }}
           <span
             v-if="state.is_active"
-            class="text-[color:var(--accent-green)]"
+            class="text-[color:var(--status-ok)]"
           >(Активно)</span>
         </option>
-      </select>
+      </SelectField>
       
       <Button
         size="sm"
@@ -70,6 +71,8 @@
 </template>
 
 <script setup lang="ts">
+import SelectField from '@/Components/SelectField.vue'
+
 import { ref, onMounted, watch } from 'vue'
 import Button from './Button.vue'
 import { useNodeLifecycle, type AllowedTransition, type CurrentState } from '@/composables/useNodeLifecycle'

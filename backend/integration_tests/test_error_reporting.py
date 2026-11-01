@@ -36,7 +36,7 @@ MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
 MQTT_USER = os.getenv("MQTT_USER", None)
 MQTT_PASS = os.getenv("MQTT_PASS", None)
 LARAVEL_URL = os.getenv("LARAVEL_URL", "http://localhost:8080")
-LARAVEL_API_TOKEN = os.getenv("LARAVEL_API_TOKEN", "dev-token-12345")
+LARAVEL_API_TOKEN = os.getenv("LARAVEL_API_TOKEN", "")
 PROMETHEUS_URL = os.getenv("PROMETHEUS_URL", "http://localhost:9090")
 HISTORY_LOGGER_URL = os.getenv("HISTORY_LOGGER_URL", "http://localhost:9300")
 
@@ -594,6 +594,10 @@ if (!$found) {{
 
 async def main():
     """Главная функция."""
+    if not LARAVEL_API_TOKEN:
+        raise RuntimeError(
+            "LARAVEL_API_TOKEN is required. Run: make ensure-dev-secrets"
+        )
     runner = IntegrationTestRunner()
     success = await runner.run_all_tests()
     sys.exit(0 if success else 1)

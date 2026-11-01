@@ -13,14 +13,20 @@
         @click="$emit('close')"
       ></div>
       <div
-        class="relative w-full rounded-2xl border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] p-4 max-h-[90vh] overflow-y-auto shadow-[var(--shadow-card)]"
+        ref="dialogRef"
+        class="relative w-full rounded-2xl border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] p-4 max-h-[90vh] overflow-y-auto shadow-[var(--shadow-card)] focus:outline-none"
         :class="size === 'xlarge' ? 'max-w-6xl' : size === 'large' ? 'max-w-4xl' : 'max-w-lg'"
         role="dialog"
         aria-modal="true"
-        :aria-label="title || 'Диалог'"
+        tabindex="-1"
+        :aria-labelledby="title ? titleId : undefined"
+        :aria-label="title ? undefined : 'Диалог'"
         :data-testid="$attrs['data-testid']"
       >
-        <div class="mb-2 text-base font-semibold text-[color:var(--text-primary)]">
+        <div
+          :id="titleId"
+          class="mb-2 text-base font-semibold text-[color:var(--text-primary)]"
+        >
           {{ title }}
         </div>
         <div class="mb-4 text-sm text-[color:var(--text-muted)]">
@@ -31,6 +37,7 @@
             v-if="!hideDefaultCancel"
             variant="secondary"
             size="sm"
+            type="button"
             @click="$emit('close')"
           >
             Отмена
@@ -43,7 +50,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, useAttrs } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, useAttrs, watch } from 'vue'
 import Button from './Button.vue'
 
 interface Props {
@@ -53,16 +60,90 @@ interface Props {
   hideDefaultCancel?: boolean
 }
 
-withDefaults(defineProps<Props>(), {
+const props = withDefaults(defineProps<Props>(), {
   open: false,
   title: '',
   size: 'default',
   hideDefaultCancel: false,
 })
 
-defineEmits<{
+const emit = defineEmits<{
   close: []
 }>()
+
+const titleId = `app-modal-title-${Math.random().toString(36).slice(2, 10)}`
+const dialogRef = ref<HTMLElement | null>(null)
+let previouslyFocused: HTMLElement | null = null
+
+const FOCUSABLE_SELECTOR = [
+  'a[href]',
+  'button:not([disabled])',
+  'textarea:not([disabled])',
+  'input:not([disabled]):not([type="hidden"])',
+  'select:not([disabled])',
+  '[tabindex]:not([tabindex="-1"])',
+].join(', ')
+
+function focusableElements(): HTMLElement[] {
+  if (!dialogRef.value) {
+    return []
+  }
+  return Array.from(dialogRef.value.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR))
+    .filter((element) => !element.hasAttribute('disabled') && element.tabIndex !== -1)
+}
+
+function onKeydown(event: KeyboardEvent): void {
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    emit('close')
+    return
+  }
+
+  if (event.key !== 'Tab' || !dialogRef.value) {
+    return
+  }
+
+  const items = focusableElements()
+  if (items.length === 0) {
+    event.preventDefault()
+    dialogRef.value.focus()
+    return
+  }
+
+  const currentIndex = items.indexOf(document.activeElement as HTMLElement)
+  event.preventDefault()
+  if (event.shiftKey) {
+    const nextIndex = currentIndex <= 0 ? items.length - 1 : currentIndex - 1
+    items[nextIndex]?.focus()
+    return
+  }
+  const nextIndex = currentIndex === -1 || currentIndex >= items.length - 1 ? 0 : currentIndex + 1
+  items[nextIndex]?.focus()
+}
+
+watch(() => props.open, async (isOpen) => {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  if (isOpen) {
+    previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    window.addEventListener('keydown', onKeydown)
+    await nextTick()
+    dialogRef.value?.focus()
+    return
+  }
+
+  window.removeEventListener('keydown', onKeydown)
+  previouslyFocused?.focus()
+  previouslyFocused = null
+}, { immediate: true })
+
+onBeforeUnmount(() => {
+  if (typeof window !== 'undefined') {
+    window.removeEventListener('keydown', onKeydown)
+  }
+})
 
 defineOptions({
   inheritAttrs: false,

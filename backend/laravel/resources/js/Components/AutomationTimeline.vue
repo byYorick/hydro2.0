@@ -73,8 +73,8 @@ function formatTime(timestamp: string): string {
 }
 
 .timeline-item--active .timeline-dot {
-  background: var(--accent-cyan);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-cyan) 35%, transparent);
+  background: var(--status-info);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--status-info) 35%, transparent);
 }
 
 .timeline-label {
