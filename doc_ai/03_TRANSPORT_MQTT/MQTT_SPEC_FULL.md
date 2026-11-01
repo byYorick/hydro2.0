@@ -231,7 +231,6 @@ hydro/{gh}/{zone}/{node}/config_report
  "type": "ph",
  "gh_uid": "gh-1",
  "zone_uid": "zn-3",
- "node_secret": "CHANGE_ME_32_PLUS_CHARS_XXXXXXXXX",
  "channels": [
  {
  "name": "ph_sensor",
@@ -263,7 +262,7 @@ hydro/{gh}/{zone}/{node}/config_report
 
 Обязательные поля верхнего уровня v3: `node_id`, `version`, `type`, `gh_uid`, `zone_uid`,
 `channels`, `wifi`, `mqtt` (см. `../02_HARDWARE_FIRMWARE/NODE_CONFIG_SPEC.md`).
-`node_secret` обязателен для HMAC команд (длина ≥ 32 символа/байта).
+`node_secret` обязателен для HMAC команд (длина ≥ 32, хранится в NVS и в `nodes.config`). В MQTT NodeConfig plaintext **не передаётся**; доставка — поле `node_secret_enc` (см. `NODE_CONFIG_SPEC.md`).
 
 ## 5.3. Requirements
 - QoS = 1
