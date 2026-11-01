@@ -60,9 +60,9 @@ async def test_read_only_database_rejects_writes_and_pool_recovers():
         with pytest.raises(asyncpg.ReadOnlySQLTransactionError):
             async with conn.transaction(readonly=True):
                 assert await conn.fetchval('SELECT 1') == 1
-                # Large object creation is a write even without any application table.
-                # The transaction rolls back if a regression unexpectedly permits it.
-                await conn.execute('SELECT lo_create(0)')
+                # UPDATE is forbidden in a read-only transaction even for zero rows.
+                # The system table exists before Laravel migrations too.
+                await conn.execute('UPDATE pg_catalog.pg_class SET relname = relname WHERE false')
     async with pool.acquire() as conn:
         assert await conn.fetchval('SELECT 1') == 1
         assert await conn.fetchval('SHOW transaction_read_only') == 'off'

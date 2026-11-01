@@ -5,10 +5,18 @@ name: nightly
 # автоматически в 02:00 UTC, либо руками через workflow_dispatch.
 
 on:
+  pull_request:
+    branches: [main, develop]
   schedule:
     # 02:00 UTC ежедневно.
     - cron: '0 2 * * *'
   workflow_dispatch:
+
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   chaos-tests:
@@ -66,6 +74,7 @@ jobs:
         with:
           scan-type: 'fs'
           scan-ref: '.'
+          trivyignores: .trivyignore.yaml
           severity: 'CRITICAL,HIGH'
           ignore-unfixed: 'true'
           format: 'table'
@@ -75,6 +84,7 @@ jobs:
         with:
           scan-type: 'config'
           scan-ref: '.'
+          trivyignores: .trivyignore.yaml
           severity: 'CRITICAL,HIGH'
           format: 'table'
           exit-code: '1'
@@ -96,3 +106,19 @@ jobs:
         run: pip-audit -r backend/services/history-logger/requirements.txt
       - name: Audit mqtt-bridge
         run: pip-audit -r backend/services/mqtt-bridge/requirements.txt
+
+  required:
+    name: Security required
+    if: always()
+    needs: [chaos-tests, trivy-docker-images, pip-audit]
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PYCODE'
+          import json, os
+          failed = {name: job['result'] for name, job in json.loads(os.environ['RESULTS']).items() if job['result'] != 'success'}
+          if failed:
+              raise SystemExit(str(failed))
+          PYCODE

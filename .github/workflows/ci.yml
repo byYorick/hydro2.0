@@ -604,6 +604,8 @@ jobs:
           distribution: temurin
           java-version: '17'
       - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-34 build-tools;34.0.0'
       - uses: gradle/actions/setup-gradle@v4
       - working-directory: mobile/app/android
         run: bash gradlew --no-daemon assembleDevDebug assembleProdRelease testDevDebugUnitTest
@@ -628,10 +630,23 @@ jobs:
             pip-audit -r "backend/services/$service/requirements.txt"
           done
 
+  pipeline-smoke:
+    name: Scheduler to MQTT pipeline smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash tools/ci/test_pipeline.sh
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: pipeline-smoke-logs
+          path: /tmp/hydro-ci-pipeline.log
+
   required:
     name: CI required
     if: always()
-    needs: [python-lint, firmware-build-ph-node, automation-engine-smoke-all, build-and-test, laravel-scheduler-smoke, read-model-contract, python-services, mqtt-runtime, firmware-host, android, python-security]
+    needs: [python-lint, firmware-build-ph-node, automation-engine-smoke-all, build-and-test, laravel-scheduler-smoke, read-model-contract, python-services, mqtt-runtime, firmware-host, android, python-security, pipeline-smoke]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

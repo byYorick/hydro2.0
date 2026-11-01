@@ -24,7 +24,7 @@ class ChannelAuthorizationTest extends TestCase
 
     private function grantZoneAccess(User $user, \App\Models\Zone $zone): void
     {
-        $user->zones()->attach($zone->id);
+        $user->zones()->syncWithoutDetaching([$zone->id]);
     }
 
     /**

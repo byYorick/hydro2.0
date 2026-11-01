@@ -1,0 +1,74 @@
+"""Laravel ScheduleDispatcher -> real AE -> real HL -> MQTT -> simulated device ACK.
+
+Reuses the canonical E95 database fixture and assertions. The CI-only adapters
+replace its hand-written intent and SQL DONE with the real scheduler and MQTT.
+"""
+import asyncio
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import time
+
+import yaml
+
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / 'tests/e2e'))
+from runner.e2e_runner import E2ERunner
+
+
+class PipelineRunner(E2ERunner):
+    def _ensure_infra_started(self):
+        # The shell driver starts an isolated compose project explicitly.
+        pass
+
+    async def _execute_action_step(self, step_type, cfg, raw):
+        if step_type == 'ci_laravel_dispatch':
+            zone_id = int(self.context['zone_id'])
+            script = (ROOT / 'tools/ci/dispatch_schedule.php').read_text()
+            result = await asyncio.to_thread(subprocess.run,
+                ['docker', 'exec', '-i', os.environ['CI_LARAVEL_CONTAINER'],
+                 'php', '/dev/stdin', str(zone_id)],
+                input=script, text=True, capture_output=True, check=True, timeout=30)
+            self.context.update(json.loads(result.stdout))
+            return
+        if step_type == 'ci_device_done':
+            row = self.context['ae_command_row'][0]
+            message = await self.mqtt.wait_message(timeout=30, condition=lambda msg:
+                msg['topic'].endswith('/command') and
+                isinstance(msg['payload'], dict) and msg['payload'].get('cmd_id') == row['cmd_id'])
+            if message is None:
+                raise AssertionError('HL accepted the command but it never reached the broker')
+            self.mqtt.publish_json(message['topic'].removesuffix('/command') + '/command_response',
+                {'cmd_id': row['cmd_id'], 'status': 'DONE', 'ts': int(time.time())})
+            return
+        return await super()._execute_action_step(step_type, cfg, raw)
+
+
+async def main():
+    scenario = yaml.safe_load((ROOT / 'tests/e2e/scenarios/ae3lite/E95_ae3_start_cycle_done_completed.yaml').read_text())
+    actions = []
+    for action in scenario['actions']:
+        name = action['step']
+        if name == 'insert_scheduler_like_intent':
+            actions.append({'step': 'dispatch_real_laravel_schedule', 'type': 'ci_laravel_dispatch'})
+        elif name == 'mark_legacy_command_done':
+            actions.append({'step': 'receive_command_and_ack_over_mqtt', 'type': 'ci_device_done'})
+        elif name not in ('start_cycle_http', 'set_task_id'):
+            actions.append(action)
+    scenario['actions'] = actions
+    runner = PipelineRunner({'api_token': os.environ['CI_PIPELINE_API_TOKEN']})
+    try:
+        await runner.setup()
+        if not runner.mqtt.connected:
+            raise AssertionError('MQTT must be connected for pipeline smoke')
+        runner.mqtt.subscribe('hydro/#')
+        if not await runner._run_actions_scenario(scenario, 'ci_real_scheduler_pipeline'):
+            raise AssertionError('Pipeline scenario failed')
+    finally:
+        await runner.cleanup()
+
+
+if __name__ == '__main__':
+    asyncio.run(main())

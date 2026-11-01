@@ -1,0 +1,32 @@
+# Only configuration exceptions; dependency CVEs remain blocking.
+misconfigurations:
+  - id: AVD-DS-0031
+    paths:
+      - backend/laravel/Dockerfile
+    statement: VITE_REVERB_APP_KEY and VITE_PUSHER_APP_KEY are public browser application identifiers, not the Reverb app secret. They must be included in the browser bundle.
+  - id: AVD-DS-0002
+    paths:
+      - backend/laravel/Dockerfile
+      - backend/laravel/Dockerfile.prod
+      - backend/services/automation-engine/Dockerfile
+      - backend/services/history-logger/Dockerfile
+      - backend/services/mqtt-bridge/Dockerfile
+      - backend/services/digital-twin/Dockerfile
+      - backend/services/feature-builder/Dockerfile
+      - backend/services/telemetry-aggregator/Dockerfile
+    expired_at: 2026-12-01
+    statement: Existing supervisor images explicitly configure root-owned sockets, logs and child users. Changing USER alone breaks startup; migrate supervisor and filesystem ownership together before this exception expires.
+  - id: AVD-DS-0002
+    paths:
+      - backend/services/db/Dockerfile
+    expired_at: 2026-12-01
+    statement: The inherited PostgreSQL entrypoint initializes volume ownership as root and drops privileges to postgres. Review the upstream image startup contract before changing USER.
+  - id: AVD-DS-0002
+    paths:
+      - backend/services/Dockerfile.test
+      - backend/services/node-emulator/Dockerfile
+      - backend/services/node-sim-manager/Dockerfile
+      - tests/e2e/Dockerfile.e2e-runner
+      - tests/node_sim/Dockerfile
+    expired_at: 2026-12-01
+    statement: Isolated test orchestration images use Docker or bind-mounted fixture directories. They are not production deployment images; migrate their socket and fixture ownership before expiry.
