@@ -1,5 +1,6 @@
 <?php
 // Test driver for the production Laravel scheduler dispatcher. No HTTP fakes.
+try {
 require '/app/vendor/autoload.php';
 $app = require '/app/bootstrap/app.php';
 $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
@@ -34,4 +35,9 @@ $task = Illuminate\Support\Facades\DB::table('ae_tasks')->where('zone_id', $zone
 if (! $intent || ! $task) {
     throw new RuntimeException('Scheduler dispatch must create both intent and AE task.');
 }
-echo json_encode(['idempotency_key' => $intent->idempotency_key, 'task_id' => (string) $task->id]);
+echo 'CI_SCHEDULER_RESULT='.json_encode(['idempotency_key' => $intent->idempotency_key, 'task_id' => (string) $task->id]);
+
+} catch (Throwable $error) {
+    fwrite(STDERR, get_class($error).': '.$error->getMessage().PHP_EOL);
+    exit(1);
+}

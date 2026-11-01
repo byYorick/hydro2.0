@@ -40,8 +40,15 @@ class PipelineRunner(E2ERunner):
             result = await asyncio.to_thread(subprocess.run,
                 ['docker', 'exec', '-i', os.environ['CI_LARAVEL_CONTAINER'],
                  'php', '/dev/stdin', str(zone_id)],
-                input=script, text=True, capture_output=True, check=True, timeout=30)
-            self.context.update(json.loads(result.stdout))
+                input=script, text=True, capture_output=True, check=False, timeout=30)
+            marker = 'CI_SCHEDULER_RESULT='
+            lines = [line for line in result.stdout.splitlines() if line.startswith(marker)]
+            if result.returncode != 0 or len(lines) != 1:
+                diagnostic = (result.stdout + result.stderr)[-4000:]
+                for key in ('PY_API_TOKEN', 'CI_PIPELINE_API_TOKEN'):
+                    diagnostic = diagnostic.replace(os.environ.get(key) or 'not-a-token', '[redacted]')
+                raise RuntimeError('Laravel scheduler driver failed: ' + diagnostic)
+            self.context.update(json.loads(lines[0].removeprefix(marker)))
             return
         if step_type == 'ci_device_done':
             row = self.context['ae_command_row'][0]
