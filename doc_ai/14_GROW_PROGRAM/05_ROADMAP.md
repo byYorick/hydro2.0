@@ -9,31 +9,36 @@
 
 ## M0. Затвор перед живым насосом
 
-Не поливать и не дозировать, пока это не зелёное.
+Не поливать и не дозировать, пока приёмка ниже не зелёная. Код SEC-01, SEC-02, SEC-03, SEC-04, SAF-01 и SAF-02 заново не писать: он уже в открытых PR (таблица в [02_GAP_ANALYSIS.md](02_GAP_ANALYSIS.md)).
 
-Затрагивает: `backend/services/mqtt-bridge/mosquitto.dev.conf`, `mosquitto.prod.conf`, `acl`, `docker-compose`, history-logger `publish_config_mqtt`, Laravel `PublishNodeConfigJob` / `NodeConfigService`, `PythonBridgeService`, `firmware/nodes/storage_irrigation_node/main/storage_irrigation_fw_fail_safe.c`, `node_command_handler.c`, `node_config_handler.c`, прошивки `ph_node` / `ec_node` / `pump_node`, CI `.github/workflows/ci.yml`.
+Уже сделано в ветках, осталось влить и проверить на стенде:
 
-Сделать:
+| PR | Ветка | Роль в M0 |
+|----|--------|-----------|
+| [#19](https://github.com/byYorick/hydro2.0/pull/19) | `cursor/sec-01-dev-mqtt-auth-373e` | Закрыть анонимный dev-MQTT, не публиковать plaintext `node_secret` |
+| [#21](https://github.com/byYorick/hydro2.0/pull/21) | `cursor/sec-02-prod-mqtt-tls-acl-373e` | TLS 8883 и per-node ACL. На ферме выключить plaintext |
+| [#20](https://github.com/byYorick/hydro2.0/pull/20) | `cursor/sec-03-04-cleartext-secrets-01b1` | Убрать известные токены и пароль setup AP, закрыть cleartext Android |
+| [#18](https://github.com/byYorick/hydro2.0/pull/18) | `cursor/saf-01-estop-lock-2924` | E-STOP полива не теряется на занятом мьютексе |
+| [#22](https://github.com/byYorick/hydro2.0/pull/22) | `cursor/saf-02-actuator-failsafe-2924` | GPIO E-STOP на `ph_node`, `ec_node`, `pump_node` |
 
-- Dev-брокер без анонимного входа. Порты 1883, Postgres и Redis не висят на всех интерфейсах фермы.
-- Prod и ферма: TLS, отдельный логин узла на свой префикс `hydro/{gh}/{zone}/{node}/#`. Сервисным учёткам запретить `readwrite hydro/#`, кроме публикации команд history-logger. Учётке history-logger добавить запись config, иначе провижининг мёртв.
-- `node_secret` не класть в широко читаемый JSON. Пока подписи config нет, config читает только сам узел и history-logger.
-- Хост теплицы: `APP_ENV=production`, свой секрет на узел, свой токен AE3/HL. Строка `hydro-default-secret-key-2025` и `dev-token-12345` на этом хосте не используются.
-- E-STOP storage: останов выходов и защёлка даже если мьютекс актуаторов занят.
-- Защёлка: отпускание кнопки не даёт облаку снова включить насос. Снятие — отдельное действие оператора.
-- Дозаторы pH/EC: аппаратный контактор в цепи питания от того же гриба. GPIO-защёлка в `node_framework` — в этой же вехе, контактор остаётся даже после прошивки.
-- Ручные команды Laravel на `dose`, `run_pump`, `set_relay` не обходят защёлку.
-- Сравнение HMAC без раннего выхода и без лога подписи.
-- GPIO `relay_node` не прошивать «как в примере». Если нода не используется, не прошивать её вообще.
-- Локально собрать `ph_node`, `ec_node`, `storage_irrigation_node`, `climate_node` из этого дерева до прошивки. Матрица тех же целей в CI.
+На 2026-11-01 workflow `ci` этих PR красный так же, как `main`: `build-and-test`, `automation-engine-smoke-all`, `Laravel-AE3 Read-Model Contract`. Вливать после того, как эти job зелёные на базе, либо падение явно признано внешним и не связано с диффом.
+
+Остаток M0, которого в этих PR нет:
+
+- Хост теплицы: свои токены и passphrase обёртки секрета, не dev-default из описания #19 и #20. Plaintext MQTT на ферме выключен (`MQTT_PLAINTEXT_ENABLED=0`, сертификат на узлах).
+- Контактор в цепи 12 В дозаторов и насоса полива. Ветки гасят GPIO, пока кнопка зажата, и после отпускания облако снова может прислать ON.
+- Ручные `dose` / `run_pump` / `set_relay` из `PythonBridgeService` не обходят защёлку (ARC-01). Отдельной ветки нет.
+- Подпись NodeConfig на ноде до записи NVS (SEC-06) — P1 после влития #19 и #21, не дублировать снятие секрета из payload.
+- Сравнение HMAC без раннего выхода и без лога подписи (SEC-05) — P1, отдельной ветки нет.
+- `relay_node` с GPIO 25/26/27 не прошивать, пока пины не сняты с реальной платы (FW-01).
+- До прошивки локально собрать `ec_node`, `storage_irrigation_node`, `climate_node`. Матрица CI сверх `ph_node` (QUAL-01) — P1, в перечисленных PR её нет.
 
 Приёмка:
 
-- С постороннего хоста в LAN нельзя подписаться на config и нельзя опубликовать command.
-- Удержание гриба гасит насос, даже если в этот момент идёт команда. Отпускание не включает насос обратно. Снятие защёлки видно в журнале.
-- Контактор дозатора физически щёлкает от гриба (проверка отвёрткой питания, без кислоты).
-- `POST` ручной дозы при активной защёлке не приводит к `DONE` на насосе.
-- Прошивки четырёх нод собираются в CI, не только `ph_node`.
+- PR #18, #19, #20, #21, #22 влиты или явно заменены более новым диффом с тем же покрытием. Посторонний хост в LAN фермы не читает config и не публикует command.
+- Удержание гриба гасит полив и дозатор, даже если мьютекс занят. Отпускание само не включает насос. Контактор дозатора щёлкает от гриба без кислоты в линии.
+- `POST` ручной дозы при зажатом грибе не приводит к `DONE`.
+- На хосте теплицы нет `dev-token-12345`, `hydro-default-secret-key-2025` и пароля AP `hydro2025`.
 
 ## M1. Симуляция полного дня в CI
 
