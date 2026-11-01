@@ -7,6 +7,7 @@
 
 <script setup lang="ts">
 import { computed, useAttrs } from 'vue'
+import { badgeVariantClass } from '@/theme/statusTones'
 
 export type BadgeVariant = 'success' | 'warning' | 'danger' | 'info' | 'neutral' | 'secondary' | 'ok' | 'critical' | 'offline'
 type BadgeSize = 'xs' | 'sm'
@@ -25,22 +26,11 @@ const attrs = useAttrs()
 
 const classes = computed(() => {
   const base = 'badge'
-  const variants: Record<BadgeVariant, string> = {
-    success: 'badge--success',
-    warning: 'badge--warning',
-    danger: 'badge--danger',
-    info: 'badge--info',
-    neutral: 'badge--neutral',
-    secondary: 'badge--secondary',
-    ok: 'badge--ok',
-    critical: 'badge--critical',
-    offline: 'badge--offline',
-  }
   const sizes: Record<BadgeSize, string> = {
     xs: 'badge--xs',
     sm: 'badge--sm',
   }
-  return [base, variants[props.variant] ?? variants.neutral, sizes[props.size] ?? sizes.xs, attrs.class]
+  return [base, badgeVariantClass(props.variant), sizes[props.size] ?? sizes.xs, attrs.class]
     .filter(Boolean)
     .join(' ')
 })

@@ -1168,6 +1168,52 @@ textarea.input-field {
   background: color-mix(in srgb, var(--bg-elevated) 40%, transparent);
 }
 
+.tone-ok,
+.tone-warning,
+.tone-critical,
+.tone-offline,
+.tone-info,
+.tone-neutral {
+  border-style: solid;
+  border-width: 1px;
+}
+
+.tone-ok {
+  background: var(--status-ok-soft);
+  color: var(--status-ok);
+  border-color: color-mix(in srgb, var(--status-ok) 45%, transparent);
+}
+
+.tone-warning {
+  background: var(--status-warning-soft);
+  color: var(--status-warning);
+  border-color: color-mix(in srgb, var(--status-warning) 45%, transparent);
+}
+
+.tone-critical {
+  background: var(--status-critical-soft);
+  color: var(--status-critical);
+  border-color: color-mix(in srgb, var(--status-critical) 45%, transparent);
+}
+
+.tone-offline {
+  background: var(--status-offline-soft);
+  color: var(--status-offline);
+  border-color: color-mix(in srgb, var(--status-offline) 45%, transparent);
+}
+
+.tone-info {
+  background: var(--status-info-soft);
+  color: var(--status-info);
+  border-color: color-mix(in srgb, var(--status-info) 45%, transparent);
+}
+
+.tone-neutral {
+  background: var(--badge-neutral-bg);
+  color: var(--badge-neutral-text);
+  border-color: var(--badge-neutral-border);
+}
+
 .telemetry-value {
   font-family: 'JetBrains Mono', ui-monospace, monospace;
   font-variant-numeric: tabular-nums;
