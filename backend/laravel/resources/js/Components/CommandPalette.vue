@@ -28,8 +28,8 @@
           ref="inputRef"
           v-model="q"
           placeholder="Команда или поиск..."
-          input-class="h-12 px-4 text-sm transition-all duration-200"
-          class="w-full"
+          class="w-full transition-all duration-200"
+          input-class="h-12 px-4 text-sm"
           @keydown.down.prevent="selectedIndex = Math.min(selectedIndex + 1, totalItemsCount - 1)"
           @keydown.up.prevent="selectedIndex = Math.max(selectedIndex - 1, 0)"
           @keydown.enter.prevent="runSelected()"
@@ -137,6 +137,8 @@
 </template>
 
 <script setup lang="ts">
+import TextField from '@/Components/TextField.vue'
+
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { router, usePage } from '@inertiajs/vue3'
 import { logger } from '@/utils/logger'
@@ -149,7 +151,6 @@ import ConfirmModal from '@/Components/ConfirmModal.vue'
 import ZoneActionModal from '@/Components/ZoneActionModal.vue'
 import { pickIrrigationDurationFromTargets } from '@/utils/irrigationModalDefaults'
 import type { CommandParams, CommandType } from '@/types'
-import TextField from '@/Components/TextField.vue'
 
 interface ConfirmModalState {
   open: boolean
@@ -163,7 +164,7 @@ const { sendZoneCommand } = useCommands()
 const { role } = useRole()
 
 const open = ref<boolean>(false)
-const inputRef = ref<HTMLInputElement | null>(null)
+const inputRef = ref<{ focus: () => void } | null>(null)
 const commandHistory = ref<CommandHistoryItem[]>([])
 const maxHistorySize = 10
 const visitTimers = new Map<string, ReturnType<typeof setTimeout>>()

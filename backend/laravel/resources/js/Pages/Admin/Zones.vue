@@ -19,9 +19,7 @@
           v-model="form.description"
           placeholder="Description"
         />
-        <SelectField
-          v-model="form.status"
-        >
+        <SelectField v-model="form.status">
           <option value="RUNNING">
             RUNNING
           </option>
@@ -35,9 +33,7 @@
             ALARM
           </option>
         </SelectField>
-        <SelectField
-          v-model="form.greenhouse_id"
-        >
+        <SelectField v-model="form.greenhouse_id">
           <option :value="null">
             Выберите теплицу
           </option>
@@ -79,6 +75,10 @@
 </template>
 
 <script setup lang="ts">
+import SelectField from '@/Components/SelectField.vue'
+
+import TextField from '@/Components/TextField.vue'
+
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
 import Button from '@/Components/Button.vue'
@@ -91,8 +91,6 @@ import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import { useZonesStore } from '@/stores/zones'
 import { extractHumanErrorMessage } from '@/utils/errorMessage'
 import type { Greenhouse, Zone } from '@/types'
-import TextField from '@/Components/TextField.vue'
-import SelectField from '@/Components/SelectField.vue'
 
 interface PageProps {
   zones?: Zone[]

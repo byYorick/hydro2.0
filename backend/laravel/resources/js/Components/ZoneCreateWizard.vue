@@ -23,10 +23,10 @@
               name="name"
               type="text"
               placeholder="Например: Зона A"
+              class="w-full"
               autocomplete="off"
               required
               input-class="h-9"
-              class="w-full"
             />
           </div>
           <div>
@@ -37,12 +37,12 @@
             <TextField
               id="zone-description"
               v-model="form.description"
+              multiline
               name="description"
               placeholder="Описание зоны..."
-              autocomplete="off"
-              multiline
-              input-class="min-h-[60px] py-2 h-auto"
               class="w-full"
+              autocomplete="off"
+              input-class="min-h-[60px] py-2 h-auto"
             />
           </div>
         </div>
@@ -89,6 +89,8 @@
 </template>
 
 <script setup lang="ts">
+import TextField from '@/Components/TextField.vue'
+
 import { ref, reactive, watch } from 'vue'
 import Modal from './Modal.vue'
 import Button from './Button.vue'
@@ -96,7 +98,6 @@ import { logger } from '@/utils/logger'
 import { api } from '@/services/api'
 import { useToast } from '@/composables/useToast'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
-import TextField from '@/Components/TextField.vue'
 
 interface Props {
   show: boolean

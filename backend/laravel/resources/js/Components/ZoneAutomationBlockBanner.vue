@@ -86,10 +86,10 @@
           Причина (обязательно)
           <TextField
             v-model="reason"
-            class="mt-1 w-full"
-            :rows="3"
-            data-testid="zone-operator-unblock-reason"
             multiline
+            :rows="3"
+            class="mt-1 w-full"
+            data-testid="zone-operator-unblock-reason"
           />
         </label>
         <label class="mt-2 flex items-start gap-2 text-xs text-[color:var(--text-secondary)]">
@@ -134,12 +134,12 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import TextField from '@/Components/TextField.vue'
 import {
   automationBlockHint,
   automationBlockLabel,
   type AutomationBlockPayload,
 } from '@/utils/automationBlock'
-import TextField from '@/Components/TextField.vue'
 
 interface Props {
   block: AutomationBlockPayload | null

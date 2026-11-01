@@ -210,8 +210,8 @@
               min="0"
               max="600"
               step="5"
-              data-testid="alerts-filter-suppression"
               class="w-24"
+              data-testid="alerts-filter-suppression"
             />
           </div>
         </div>
@@ -553,6 +553,8 @@
 </template>
 
 <script setup lang="ts">
+import SelectField from '@/Components/SelectField.vue'
+
 import { computed, ref } from 'vue'
 import { Link } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
@@ -589,7 +591,6 @@ import {
   PROCESS_STOPPING_SECTION_TITLE,
 } from '@/utils/automationBlock'
 import { zoneAlertsTabUrl } from '@/utils/alertContext'
-import SelectField from '@/Components/SelectField.vue'
 
 const {
   statusFilter,

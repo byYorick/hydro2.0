@@ -22,7 +22,7 @@
         ref="control"
         class="input-field min-w-0 flex-1"
         :class="inputClass"
-        :rows="rows"
+        :rows="resolvedRows"
         :value="displayValue"
         :disabled="disabled || undefined"
         :required="required || undefined"
@@ -79,7 +79,7 @@ interface Props {
   hint?: string
   inline?: boolean
   multiline?: boolean
-  rows?: number
+  rows?: number | string
   suffix?: string
   disabled?: boolean
   required?: boolean
@@ -125,6 +125,11 @@ const inputAttrs = computed(() => {
 })
 
 const displayValue = computed(() => (model.value == null ? '' : String(model.value)))
+
+const resolvedRows = computed(() => {
+  const parsed = Number(props.rows)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 3
+})
 
 const isInvalid = computed(() => props.invalid || Boolean(props.error))
 

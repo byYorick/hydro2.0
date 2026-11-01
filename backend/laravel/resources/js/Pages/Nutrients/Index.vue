@@ -96,8 +96,8 @@
       <TextField
         v-model="query"
         type="text"
-        placeholder="Поиск по производителю/названию"
         class="sm:w-64"
+        placeholder="Поиск по производителю/названию"
       />
       <SelectField
         v-model="componentFilter"
@@ -220,6 +220,10 @@
 </template>
 
 <script setup lang="ts">
+import SelectField from '@/Components/SelectField.vue'
+
+import TextField from '@/Components/TextField.vue'
+
 import { computed, ref, watch } from 'vue'
 import { Link, usePage } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
@@ -227,8 +231,6 @@ import Button from '@/Components/Button.vue'
 import Card from '@/Components/Card.vue'
 import Pagination from '@/Components/Pagination.vue'
 import type { NutrientProduct } from '@/types'
-import TextField from '@/Components/TextField.vue'
-import SelectField from '@/Components/SelectField.vue'
 
 interface PageProps {
   nutrients?: NutrientProduct[]

@@ -47,9 +47,9 @@
         </div>
         <SelectField
           v-model="assignments[role.key]"
+          class="flex-1"
           :disabled="!canManage"
           input-class="h-8 text-xs"
-          class="flex-1"
         >
           <option value="">
             — не назначено —
@@ -73,7 +73,7 @@
     </div>
     <div
       v-if="saveSuccess"
-      class="text-sm text-green-500"
+      class="text-sm text-status-ok"
     >
       Привязки сохранены
     </div>
@@ -81,11 +81,12 @@
 </template>
 
 <script setup lang="ts">
+import SelectField from '@/Components/SelectField.vue'
+
 import { ref, reactive, computed, onMounted } from 'vue'
 import Button from '@/Components/Button.vue'
 import { api } from '@/services/api'
 import { logger } from '@/utils/logger'
-import SelectField from '@/Components/SelectField.vue'
 
 interface Props {
   zoneId: number

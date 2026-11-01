@@ -49,10 +49,9 @@
         :hint="meta('phPct').hint"
       >
         <TextField
-          type="number"
+          v-bind="numAttrs"
           :title="meta('phPct').details"
-          :value="waterForm.phPct"
-          input-class="font-mono"
+          :model-value="waterForm.phPct"
           @input="upd('phPct', toNum($event))"
         />
       </Field>
@@ -61,10 +60,9 @@
         :hint="meta('ecPct').hint"
       >
         <TextField
-          type="number"
+          v-bind="numAttrs"
           :title="meta('ecPct').details"
-          :value="waterForm.ecPct"
-          input-class="font-mono"
+          :model-value="waterForm.ecPct"
           @input="upd('ecPct', toNum($event))"
         />
       </Field>
@@ -81,6 +79,8 @@
 </template>
 
 <script setup lang="ts">
+import TextField from '@/Components/TextField.vue'
+
 import { ref, watch } from 'vue'
 import { Field, Hint } from '@/Components/Shared/Primitives'
 import Ic from '@/Components/Icons/Ic.vue'
@@ -89,7 +89,6 @@ import type { CorrectionProfileKey } from '../correctionPresets'
 import { useLaunchPreferences } from '@/composables/useLaunchPreferences'
 import type { WaterFormState } from '@/composables/zoneAutomationTypes'
 import { createMetaResolver, toNum, type FieldMeta } from './sharedFormUtils'
-import TextField from '@/Components/TextField.vue'
 
 const props = defineProps<{ waterForm: WaterFormState }>()
 const emit = defineEmits<{ (e: 'update:waterForm', next: WaterFormState): void }>()
@@ -104,6 +103,8 @@ watch(
     /* keep profileKey local; reset on form-mismatch handled by chooser. */
   },
 )
+
+const numAttrs = { type: 'number' }
 
 const lockedCls =
   'flex items-center h-8 px-3 rounded-md border border-[var(--border-muted)] bg-[var(--bg-elevated)] text-sm font-mono text-[var(--text-primary)] gap-1.5'

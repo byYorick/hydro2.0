@@ -43,8 +43,8 @@
                   Компонент
                   <SelectField
                     v-model="form.component"
-                    data-testid="pump-calibration-component"
                     class="mt-1 w-full"
+                    data-testid="pump-calibration-component"
                   >
                     <option
                       v-for="option in componentOptions"
@@ -63,8 +63,8 @@
                   Канал помпы
                   <SelectField
                     v-model.number="form.node_channel_id"
-                    data-testid="pump-calibration-channel"
                     class="mt-1 w-full"
+                    data-testid="pump-calibration-channel"
                   >
                     <option
                       v-for="channel in pumpChannels"
@@ -87,8 +87,8 @@
                     :min="pumpSettings.calibration_duration_min_sec"
                     :max="pumpSettings.calibration_duration_max_sec"
                     step="1"
-                    data-testid="pump-calibration-duration"
                     class="mt-1 w-full"
+                    data-testid="pump-calibration-duration"
                   />
                 </label>
               </div>
@@ -113,8 +113,8 @@
                     min="0.01"
                     max="100000"
                     step="0.01"
-                    data-testid="pump-calibration-actual-ml"
                     class="mt-1 w-full"
+                    data-testid="pump-calibration-actual-ml"
                   />
                 </label>
 
@@ -129,8 +129,8 @@
                     min="0"
                     max="50"
                     step="0.1"
-                    data-testid="pump-calibration-temperature"
                     class="mt-1 w-full"
+                    data-testid="pump-calibration-temperature"
                   />
                 </label>
 
@@ -145,8 +145,8 @@
                     min="0.1"
                     max="1000"
                     step="0.1"
-                    data-testid="pump-calibration-test-volume"
                     class="mt-1 w-full"
+                    data-testid="pump-calibration-test-volume"
                   />
                 </label>
 
@@ -161,8 +161,8 @@
                     min="0"
                     max="20"
                     step="0.001"
-                    data-testid="pump-calibration-ec-before"
                     class="mt-1 w-full"
+                    data-testid="pump-calibration-ec-before"
                   />
                 </label>
 
@@ -177,8 +177,8 @@
                     min="0"
                     max="20"
                     step="0.001"
-                    data-testid="pump-calibration-ec-after"
                     class="mt-1 w-full"
+                    data-testid="pump-calibration-ec-after"
                   />
                 </label>
               </div>
@@ -357,6 +357,10 @@
 </template>
 
 <script setup lang="ts">
+import SelectField from '@/Components/SelectField.vue'
+
+import TextField from '@/Components/TextField.vue'
+
 import { computed } from 'vue'
 import Modal from '@/Components/Modal.vue'
 import Button from '@/Components/Button.vue'
@@ -365,8 +369,6 @@ import { usePumpCalibrationSettings } from '@/composables/usePumpCalibrationSett
 import type { Device } from '@/types'
 import type { PumpCalibrationComponent, PumpCalibrationRunPayload, PumpCalibrationSavePayload } from '@/types/Calibration'
 import { usePumpCalibration } from '@/composables/usePumpCalibration'
-import TextField from '@/Components/TextField.vue'
-import SelectField from '@/Components/SelectField.vue'
 
 interface Props {
   show?: boolean

@@ -1,6 +1,6 @@
 <template>
   <section
-    class="surface-card surface-card--elevated border border-status-warning rounded-2xl p-4 space-y-3 bg-status-warning-soft"
+    class="surface-card surface-card--elevated border border-status-warning dark:border-status-warning rounded-2xl p-4 space-y-3 bg-status-warning-soft dark:bg-status-warning-soft"
     data-testid="recipe-phase-live-edit"
   >
     <header class="flex items-center justify-between gap-2">
@@ -34,23 +34,25 @@
         class="flex flex-col gap-1 text-xs"
       >
         <span class="text-[color:var(--text-dim)]">{{ field.label }}</span>
-        <TextField
+        <input
           :value="formatNumberField(form[field.key])"
           type="number"
           :step="field.step"
           :min="field.min"
           :max="field.max"
+          class="text-sm px-2 py-1 rounded border border-[color:var(--border-muted)] bg-[color:var(--surface-card)]"
           @input="updateNumberField(field.key, $event)"
         />
         <span class="text-[11px] text-[color:var(--text-dim)]">{{ field.description }}</span>
       </label>
       <label class="col-span-2 md:col-span-3 flex flex-col gap-1 text-xs">
         <span class="text-[color:var(--text-dim)]">Причина изменения (обязательно, &ge; 3)</span>
-        <TextField
+        <input
           v-model="form.reason"
           type="text"
           minlength="3"
           maxlength="500"
+          class="text-sm px-2 py-1 rounded border border-[color:var(--border-muted)] bg-[color:var(--surface-card)]"
           data-testid="recipe-phase-reason"
         />
         <span class="text-[11px] text-[color:var(--text-dim)]">
@@ -60,7 +62,7 @@
       <div class="col-span-2 md:col-span-3 flex items-center justify-between gap-2">
         <p
           v-if="errorMessage"
-          class="text-xs text-status-critical"
+          class="text-xs text-status-critical text-status-critical"
           data-testid="recipe-phase-error"
         >
           {{ errorMessage }}
@@ -73,7 +75,7 @@
         </p>
         <p
           v-else-if="lastRevision !== null"
-          class="text-xs text-status-ok"
+          class="text-xs text-emerald-600 dark:text-emerald-400"
           data-testid="recipe-phase-success"
         >
           ✓ сохранено, ревизия {{ lastRevision }}
@@ -100,7 +102,6 @@ import {
   type PhaseConfigUpdatePayload,
   zoneConfigModeApi,
 } from '@/services/api/zoneConfigMode'
-import TextField from '@/Components/TextField.vue'
 
 interface Props {
   growCycleId: number

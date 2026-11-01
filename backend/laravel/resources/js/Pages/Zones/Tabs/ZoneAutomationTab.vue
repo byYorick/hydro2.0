@@ -221,8 +221,8 @@
                         Режим профиля
                         <SelectField
                           v-model="automationLogicMode"
-                          :disabled="!canConfigureAutomation || isApplyingProfile || isSyncingAutomationLogicProfile"
                           class="mt-1 w-full"
+                          :disabled="!canConfigureAutomation || isApplyingProfile || isSyncingAutomationLogicProfile"
                         >
                           <option value="setup">
                             setup
@@ -385,10 +385,10 @@
             Причина
             <TextField
               v-model="controlModeReason"
-              data-testid="control-mode-reason"
               multiline
-              input-class="min-h-[80px]"
               class="mt-1 w-full"
+              data-testid="control-mode-reason"
+              input-class="min-h-[80px]"
             />
           </label>
         </div>
@@ -398,6 +398,10 @@
 </template>
 
 <script setup lang="ts">
+import SelectField from '@/Components/SelectField.vue'
+
+import TextField from '@/Components/TextField.vue'
+
 import { computed, ref, toRef, watch } from 'vue'
 import AIPredictionsSection from '@/Components/AIPredictionsSection.vue'
 import AutomationProfileCard from '@/Components/AutomationProfileCard.vue'
@@ -444,8 +448,6 @@ import {
   isControlModeTransitionAllowed,
 } from '@/utils/zoneAutomationControlMode'
 import { useToast } from '@/composables/useToast'
-import TextField from '@/Components/TextField.vue'
-import SelectField from '@/Components/SelectField.vue'
 
 interface ZoneAutomationWizardApplyPayload {
   climateForm: ClimateFormState

@@ -191,10 +191,10 @@ const { resolveCssColor } = useChartColors(theme)
 
 const SOIL_MOISTURE_COLORS = [
   { cssVar: '--status-warning', fallback: '#f59e0b' },
-  { cssVar: '--series-orange', fallback: '#fb923c' },
-  { cssVar: '--series-purple', fallback: '#c084fc' },
-  { cssVar: '--series-pink', fallback: '#f472b6' },
-  { cssVar: '--series-teal', fallback: '#2dd4bf' },
+  { cssVar: '--series-orange', fallback: '#f97316' },
+  { cssVar: '--series-purple', fallback: '#a855f7' },
+  { cssVar: '--series-pink', fallback: '#ec4899' },
+  { cssVar: '--series-teal', fallback: '#14b8a6' },
 ]
 
 const chartPalette = computed(() => {

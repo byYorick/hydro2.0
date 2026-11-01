@@ -99,8 +99,8 @@
           >
             <SelectField
               v-model="assignWeatherNodeId"
-              data-testid="site-weather-assign-select"
               class="min-w-[180px]"
+              data-testid="site-weather-assign-select"
             >
               <option :value="null">
                 Выберите climate-ноду

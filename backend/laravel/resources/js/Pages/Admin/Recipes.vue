@@ -11,9 +11,7 @@
         class="grid grid-cols-1 md:grid-cols-3 gap-2"
         @submit.prevent="onUpdate"
       >
-        <SelectField
-          v-model="selectedId"
-        >
+        <SelectField v-model="selectedId">
           <option
             v-for="r in recipes"
             :key="r.id"
@@ -57,6 +55,10 @@
 </template>
 
 <script setup lang="ts">
+import SelectField from '@/Components/SelectField.vue'
+
+import TextField from '@/Components/TextField.vue'
+
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
 import Button from '@/Components/Button.vue'
@@ -69,8 +71,6 @@ import { useRecipesStore } from '@/stores/recipes'
 import { logger } from '@/utils/logger'
 import { extractHumanErrorMessage } from '@/utils/errorMessage'
 import type { Recipe } from '@/types/Recipe'
-import TextField from '@/Components/TextField.vue'
-import SelectField from '@/Components/SelectField.vue'
 
 interface PageProps {
   recipes?: Recipe[]

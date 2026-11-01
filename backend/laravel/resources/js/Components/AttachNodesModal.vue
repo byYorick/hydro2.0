@@ -22,7 +22,7 @@
       <div
         v-if="bindError"
         role="alert"
-        class="rounded-md border border-status-critical bg-status-critical-soft px-3 py-2 text-sm text-status-critical"
+        class="rounded-md border border-status-critical bg-status-critical-soft px-3 py-2 text-sm text-status-critical dark:border-status-critical dark:bg-status-critical-soft dark:text-status-critical"
       >
         {{ bindError }}
       </div>

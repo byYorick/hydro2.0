@@ -14,9 +14,9 @@
       type="number"
       min="1"
       max="720"
+      class="w-full"
       required
       input-class="h-9"
-      class="w-full"
     />
   </div>
 
@@ -35,9 +35,9 @@
       type="number"
       min="1"
       max="60"
+      class="w-full"
       required
       input-class="h-9"
-      class="w-full"
     />
   </div>
 
@@ -56,8 +56,8 @@
       type="number"
       min="1"
       max="10080"
-      input-class="h-9"
       class="w-full"
+      input-class="h-9"
     />
   </div>
 
@@ -92,15 +92,15 @@
       name="recipe_search"
       type="text"
       placeholder="Поиск по названию..."
-      input-class="h-9"
       class="w-full mb-2"
+      input-class="h-9"
     />
     <SelectField
       id="simulation-recipe-select"
       v-model="form.recipe_id"
       name="recipe_id"
-      input-class="h-9"
       class="w-full"
+      input-class="h-9"
     >
       <option :value="null">
         Рецепт зоны (по умолчанию)
@@ -149,8 +149,8 @@
           name="initial_state_ph"
           type="number"
           step="0.0001"
-          input-class="h-8"
           class="w-full"
+          input-class="h-8"
         />
       </div>
       <div>
@@ -167,8 +167,8 @@
           name="initial_state_ec"
           type="number"
           step="0.0001"
-          input-class="h-8"
           class="w-full"
+          input-class="h-8"
         />
       </div>
       <div>
@@ -185,8 +185,8 @@
           name="initial_state_temp_air"
           type="number"
           step="0.0001"
-          input-class="h-8"
           class="w-full"
+          input-class="h-8"
         />
       </div>
       <div>
@@ -203,8 +203,8 @@
           name="initial_state_temp_water"
           type="number"
           step="0.0001"
-          input-class="h-8"
           class="w-full"
+          input-class="h-8"
         />
       </div>
       <div class="col-span-2">
@@ -221,8 +221,8 @@
           name="initial_state_humidity_air"
           type="number"
           step="0.0001"
-          input-class="h-8"
           class="w-full"
+          input-class="h-8"
         />
       </div>
     </div>
@@ -268,8 +268,8 @@
           name="node_sim_drift_ph"
           type="number"
           step="0.0001"
-          input-class="h-8"
           class="w-full"
+          input-class="h-8"
           @input="$emit('markDriftTouched', 'ph')"
         />
       </div>
@@ -284,8 +284,8 @@
           name="node_sim_drift_ec"
           type="number"
           step="0.0001"
-          input-class="h-8"
           class="w-full"
+          input-class="h-8"
           @input="$emit('markDriftTouched', 'ec')"
         />
       </div>
@@ -300,8 +300,8 @@
           name="node_sim_drift_temp_air"
           type="number"
           step="0.0001"
-          input-class="h-8"
           class="w-full"
+          input-class="h-8"
           @input="$emit('markDriftTouched', 'temp_air')"
         />
       </div>
@@ -316,8 +316,8 @@
           name="node_sim_drift_temp_water"
           type="number"
           step="0.0001"
-          input-class="h-8"
           class="w-full"
+          input-class="h-8"
           @input="$emit('markDriftTouched', 'temp_water')"
         />
       </div>
@@ -332,8 +332,8 @@
           name="node_sim_drift_humidity_air"
           type="number"
           step="0.0001"
-          input-class="h-8"
           class="w-full"
+          input-class="h-8"
           @input="$emit('markDriftTouched', 'humidity_air')"
         />
       </div>
@@ -348,8 +348,8 @@
           name="node_sim_drift_noise"
           type="number"
           step="0.0001"
-          input-class="h-8"
           class="w-full"
+          input-class="h-8"
           @input="$emit('markDriftTouched', 'noise')"
         />
       </div>
@@ -358,11 +358,13 @@
 </template>
 
 <script setup lang="ts">
+import SelectField from '@/Components/SelectField.vue'
+
+import TextField from '@/Components/TextField.vue'
+
 import Button from '@/Components/Button.vue'
 import type { RecipeOption } from '@/composables/useSimulationRecipes'
 import type { SimulationSubmitForm } from '@/composables/useSimulationSubmit'
-import TextField from '@/Components/TextField.vue'
-import SelectField from '@/Components/SelectField.vue'
 
 type DriftTouchedKey = 'ph' | 'ec' | 'temp_air' | 'temp_water' | 'humidity_air' | 'noise'
 

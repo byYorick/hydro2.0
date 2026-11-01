@@ -24,9 +24,10 @@
             type="text"
             required
             placeholder="Main Greenhouse"
-            autocomplete="off"
-            :input-class="[errors.name ? 'border-[color:var(--status-critical)] bg-[color:var(--badge-danger-bg)]' : '', 'h-9']"
             class="w-full"
+            :class="errors.name ? 'border-[color:var(--status-critical)] bg-[color:var(--badge-danger-bg)]' : ''"
+            autocomplete="off"
+            input-class="h-9"
           />
           <div
             v-if="errors.name"
@@ -52,9 +53,9 @@
             step="0.1"
             min="0"
             placeholder="10.0"
+            class="w-full"
             autocomplete="off"
             input-class="h-9"
-            class="w-full"
           />
         </div>
 
@@ -71,9 +72,9 @@
             step="0.1"
             min="0"
             placeholder="20.0"
+            class="w-full"
             autocomplete="off"
             input-class="h-9"
-            class="w-full"
           />
         </div>
 
@@ -90,9 +91,9 @@
             step="0.1"
             min="0"
             placeholder="3.0"
+            class="w-full"
             autocomplete="off"
             input-class="h-9"
-            class="w-full"
           />
         </div>
 
@@ -105,8 +106,8 @@
             id="greenhouse-type"
             v-model="form.type"
             name="type"
-            input-class="h-9"
             class="w-full"
+            input-class="h-9"
           >
             <option value="">
               Выберите тип
@@ -134,9 +135,9 @@
             name="location"
             type="text"
             placeholder="Москва, ул. Примерная, д. 1"
+            class="w-full"
             autocomplete="off"
             input-class="h-9"
-            class="w-full"
           />
         </div>
 
@@ -148,13 +149,13 @@
           <TextField
             id="greenhouse-description"
             v-model="form.description"
-            name="description"
-            :rows="3"
-            placeholder="Описание теплицы..."
-            autocomplete="off"
             multiline
-            input-class="py-2 h-auto"
+            name="description"
+            rows="3"
+            placeholder="Описание теплицы..."
             class="w-full"
+            autocomplete="off"
+            input-class="py-2 h-auto"
           />
         </div>
       </div>
@@ -180,6 +181,10 @@
 </template>
 
 <script setup lang="ts">
+import SelectField from '@/Components/SelectField.vue'
+
+import TextField from '@/Components/TextField.vue'
+
 import { reactive, ref, computed, watch } from 'vue'
 import { router } from '@inertiajs/vue3'
 import Modal from '@/Components/Modal.vue'
@@ -189,8 +194,6 @@ import { api } from '@/services/api'
 import { useToast } from '@/composables/useToast'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import { generateUid } from '@/utils/transliterate'
-import TextField from '@/Components/TextField.vue'
-import SelectField from '@/Components/SelectField.vue'
 
 interface Props {
   show?: boolean

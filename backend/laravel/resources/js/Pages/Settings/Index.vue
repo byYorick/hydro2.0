@@ -237,6 +237,10 @@
 </template>
 
 <script setup>
+import SelectField from '@/Components/SelectField.vue'
+
+import TextField from '@/Components/TextField.vue'
+
 import { computed, reactive, ref, watch, onMounted } from 'vue'
 import { usePage } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
@@ -257,8 +261,6 @@ import { useAutomationConfig } from '@/composables/useAutomationConfig'
 import { useToast } from '@/composables/useToast'
 import { ERROR_MESSAGES } from '@/constants/messages'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
-import TextField from '@/Components/TextField.vue'
-import SelectField from '@/Components/SelectField.vue'
 
 const page = usePage()
 const currentUser = computed(() => page.props.auth?.user)

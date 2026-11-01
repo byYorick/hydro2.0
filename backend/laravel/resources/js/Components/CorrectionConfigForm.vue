@@ -329,7 +329,7 @@
                 <SelectField
                   v-else-if="field.type === 'enum'"
                   :id="`correction-config-${currentTab}-${field.path}`"
-                  :value="String(getByPath(currentForm, field.path) ?? '')"
+                  :model-value="String(getByPath(currentForm, field.path) ?? '')"
                   :data-testid="`correction-config-${currentTab}-${field.path}`"
                   :disabled="Boolean(field.readonly)"
                   input-class="settings-control--select"
@@ -347,14 +347,14 @@
                 <TextField
                   v-else
                   :id="`correction-config-${currentTab}-${field.path}`"
-                  :value="String(getByPath(currentForm, field.path) ?? '')"
+                  :model-value="String(getByPath(currentForm, field.path) ?? '')"
                   :data-testid="`correction-config-${currentTab}-${field.path}`"
                   :type="field.type === 'string' ? 'text' : 'number'"
                   :step="field.step ?? (field.type === 'integer' ? 1 : 'any')"
                   :min="field.min"
                   :max="field.max"
                   :disabled="Boolean(field.readonly)"
-                  :input-class="field.type === 'string' ? 'settings-control--text font-mono' : 'settings-control--num text-right'"
+                  :class="field.type === 'string' ? 'settings-control--text font-mono' : 'settings-control--num text-right'"
                   @input="handleScalarInput(currentForm, field, $event)"
                 />
                 <span
@@ -705,10 +705,10 @@
             <Field label="Описание">
               <TextField
                 v-model="newPresetDescription"
+                multiline
+                input-class="min-h-[80px]"
                 placeholder="Когда использовать этот пресет, какие цели"
                 data-testid="correction-config-new-preset-description"
-                multiline
-                :rows="3"
               />
             </Field>
           </div>
@@ -735,6 +735,10 @@
 </template>
 
 <script setup lang="ts">
+import SelectField from '@/Components/SelectField.vue'
+
+import TextField from '@/Components/TextField.vue'
+
 import { computed, onMounted, ref, watch } from 'vue'
 import Button from '@/Components/Button.vue'
 import SettingsFieldRow from '@/Components/Settings/SettingsFieldRow.vue'
@@ -754,8 +758,6 @@ import type {
   ZoneCorrectionConfigPayload,
 } from '@/types/CorrectionConfig'
 import { logger } from '@/utils/logger'
-import TextField from '@/Components/TextField.vue'
-import SelectField from '@/Components/SelectField.vue'
 
 interface Props {
   zoneId: number

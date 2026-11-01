@@ -39,14 +39,14 @@
               label="Название"
               required
             >
-              <TextField
+              <TextInput
                 v-model="newPlantName"
                 placeholder="Томат"
                 maxlength="255"
               />
             </Field>
             <Field label="Сорт">
-              <TextField
+              <TextInput
                 v-model="newPlantVariety"
                 placeholder="Cherry"
                 maxlength="255"
@@ -165,8 +165,8 @@
             <div class="flex gap-2">
               <TextField
                 type="datetime-local"
-                :value="plantingLocalValue"
-                input-class="font-mono"
+               
+                :model-value="plantingLocalValue"
                 @input="onPlantingChange(($event.target as HTMLInputElement).value)"
               />
               <Button
@@ -182,11 +182,11 @@
             label="Метка партии"
             hint="например batch-2026-04"
           >
-            <TextField
+            <TextInput
               :model-value="batchLabel ?? ''"
               placeholder="batch-2026-04"
               maxlength="100"
-              @update:model-value="(value) => onBatchChange(String(value ?? ''))"
+              @update:model-value="onBatchChange"
             />
           </Field>
           <Field
@@ -194,11 +194,12 @@
             class="md:col-span-2"
           >
             <TextField
+              multiline
+             
               :model-value="notes ?? ''"
               maxlength="2000"
-              multiline
-              :rows="3"
-              @update:model-value="(value) => onNotesChange(String(value ?? ''))"
+              rows="3"
+              @input="onNotesChange(($event.target as HTMLTextAreaElement).value)"
             />
           </Field>
         </div>
@@ -238,11 +239,14 @@
 </template>
 
 <script setup lang="ts">
+import TextField from '@/Components/TextField.vue'
+
 import { computed, ref } from 'vue'
 import { api } from '@/services/api'
 import { useToast } from '@/composables/useToast'
 import { useLaunchPreferences } from '@/composables/useLaunchPreferences'
 import Button from '@/Components/Button.vue'
+import TextInput from '@/Components/TextInput.vue'
 import {
   Field,
   Select,
@@ -254,7 +258,6 @@ import ShellCard from '@/Components/Launch/Shell/ShellCard.vue'
 import PhaseStrip, {
   type PhasePreview,
 } from '@/Components/Launch/Recipe/PhaseStrip.vue'
-import TextField from '@/Components/TextField.vue'
 
 interface PlantOption {
   id: number

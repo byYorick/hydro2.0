@@ -30,7 +30,7 @@
 
       <div
         v-if="activeUsage && activeUsage.count > 0"
-        class="rounded-md border border-status-warning bg-status-warning-soft p-3 text-sm text-status-warning"
+        class="rounded-md border border-status-warning bg-status-warning-soft dark:bg-status-warning-soft p-3 text-sm text-status-warning dark:text-status-warning"
         data-testid="recipe-active-usage-warning"
       >
         <div class="font-semibold mb-1">

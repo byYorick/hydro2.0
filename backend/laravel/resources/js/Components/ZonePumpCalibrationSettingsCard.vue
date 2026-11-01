@@ -35,14 +35,14 @@
             {{ field.label }}
           </label>
           <TextField
-            :value="stringValue(field.path)"
+            :model-value="stringValue(field.path)"
             :type="field.type === 'string' ? 'text' : 'number'"
             :step="field.step ?? (field.type === 'integer' ? 1 : 'any')"
             :min="field.min"
             :max="field.max"
+            class="w-full"
             :placeholder="`Система: ${resolvedSystemSettings[field.path as keyof PumpCalibrationSettings]}`"
             :title="field.description"
-            class="w-full"
             @input="updateField(field.path, ($event.target as HTMLInputElement).value)"
           />
           <div class="text-[11px] text-[color:var(--text-dim)]">
@@ -76,6 +76,8 @@
 </template>
 
 <script setup lang="ts">
+import TextField from '@/Components/TextField.vue'
+
 import { computed, onMounted, ref } from 'vue'
 import Badge from '@/Components/Badge.vue'
 import Button from '@/Components/Button.vue'
@@ -84,7 +86,6 @@ import { api } from '@/services/api'
 import { usePumpCalibrationSettings } from '@/composables/usePumpCalibrationSettings'
 import { useToast } from '@/composables/useToast'
 import type { PumpCalibrationSettings, SystemSettingsField, SystemSettingsSection } from '@/types/SystemSettings'
-import TextField from '@/Components/TextField.vue'
 
 interface CorrectionConfigResponse {
   preset: { id: number } | null

@@ -400,9 +400,7 @@
             </div>
             <div>
               <label class="block text-xs text-[color:var(--text-muted)] mb-1">Субстрат</label>
-              <SelectField
-                v-model="form.substrate_type"
-              >
+              <SelectField v-model="form.substrate_type">
                 <option value="">
                   Не выбрано
                 </option>
@@ -417,9 +415,7 @@
             </div>
             <div>
               <label class="block text-xs text-[color:var(--text-muted)] mb-1">Система</label>
-              <SelectField
-                v-model="form.growing_system"
-              >
+              <SelectField v-model="form.growing_system">
                 <option value="">
                   Не выбрано
                 </option>
@@ -434,9 +430,7 @@
             </div>
             <div>
               <label class="block text-xs text-[color:var(--text-muted)] mb-1">Фотопериод</label>
-              <SelectField
-                v-model="form.photoperiod_preset"
-              >
+              <SelectField v-model="form.photoperiod_preset">
                 <option value="">
                   Не выбрано
                 </option>
@@ -451,9 +445,7 @@
             </div>
             <div>
               <label class="block text-xs text-[color:var(--text-muted)] mb-1">Сезонность</label>
-              <SelectField
-                v-model="form.seasonality"
-              >
+              <SelectField v-model="form.seasonality">
                 <option value="">
                   Не выбрано
                 </option>
@@ -470,8 +462,8 @@
               <label class="block text-xs text-[color:var(--text-muted)] mb-1">Описание</label>
               <TextField
                 v-model="form.description"
-                :rows="4"
                 multiline
+                rows="4"
                 input-class="h-auto"
               />
             </div>
@@ -535,6 +527,10 @@
   </AppLayout>
 </template>
 <script setup lang="ts">
+import SelectField from '@/Components/SelectField.vue'
+
+import TextField from '@/Components/TextField.vue'
+
 import { Head, Link } from "@inertiajs/vue3";
 import AppLayout from "@/Layouts/AppLayout.vue";
 import Card from "@/Components/Card.vue";
@@ -543,8 +539,6 @@ import Badge from "@/Components/Badge.vue";
 import Modal from "@/Components/Modal.vue";
 import ConfirmModal from "@/Components/ConfirmModal.vue";
 import { usePlantShowPage } from "@/composables/usePlantShowPage";
-import TextField from '@/Components/TextField.vue'
-import SelectField from '@/Components/SelectField.vue'
 
 const {
     plant,

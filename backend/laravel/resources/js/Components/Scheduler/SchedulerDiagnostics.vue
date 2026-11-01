@@ -68,7 +68,7 @@
       >
         <p
           v-if="diagnosticsError"
-          class="rounded-md border border-status-warning bg-status-warning-soft px-2.5 py-1.5 text-[11px] text-status-warning"
+          class="rounded-md border border-status-warning bg-status-warning-soft px-2.5 py-1.5 text-[11px] text-status-warning dark:border-status-warning dark:bg-status-warning-soft dark:text-status-warning"
         >
           {{ diagnosticsError }}
         </p>

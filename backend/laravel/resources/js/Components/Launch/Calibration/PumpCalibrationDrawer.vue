@@ -132,11 +132,10 @@
                   </Field>
                   <Field label="Длительность (сек)">
                     <TextField
+                      v-bind="numAttrs"
                       v-model.number="form.duration_sec"
-                      type="number"
                       min="1"
                       max="60"
-                      input-class="font-mono"
                     />
                   </Field>
                 </div>
@@ -180,11 +179,10 @@
                       hint="мл"
                     >
                       <TextField
+                        v-bind="numAttrs"
                         v-model.number="form.actual_ml"
-                        type="number"
                         step="0.1"
                         min="0"
-                        input-class="font-mono"
                       />
                     </Field>
                     <Field
@@ -192,10 +190,9 @@
                       hint="°C, опц."
                     >
                       <TextField
+                        v-bind="numAttrs"
                         v-model.number="form.temperature_c"
-                        type="number"
                         step="0.1"
-                        input-class="font-mono"
                       />
                     </Field>
                     <Field
@@ -203,11 +200,10 @@
                       hint="л"
                     >
                       <TextField
+                        v-bind="numAttrs"
                         v-model.number="form.test_volume_l"
-                        type="number"
                         step="0.1"
                         min="0"
-                        input-class="font-mono"
                       />
                     </Field>
                     <Field
@@ -215,11 +211,10 @@
                       hint="mS/cm"
                     >
                       <TextField
+                        v-bind="numAttrs"
                         v-model.number="form.ec_before_ms"
-                        type="number"
                         step="0.01"
                         min="0"
-                        input-class="font-mono"
                       />
                     </Field>
                     <Field
@@ -227,11 +222,10 @@
                       hint="mS/cm"
                     >
                       <TextField
+                        v-bind="numAttrs"
                         v-model.number="form.ec_after_ms"
-                        type="number"
                         step="0.01"
                         min="0"
-                        input-class="font-mono"
                       />
                     </Field>
                   </div>
@@ -394,6 +388,8 @@
 </template>
 
 <script setup lang="ts">
+import TextField from '@/Components/TextField.vue'
+
 import { computed, reactive, ref, watch } from 'vue'
 import Button from '@/Components/Button.vue'
 import { Chip, Field, Stat } from '@/Components/Shared/Primitives'
@@ -406,7 +402,6 @@ import type {
   PumpCalibrationSavePayload,
 } from '@/types/Calibration'
 import type { PumpCalibration } from '@/types/PidConfig'
-import TextField from '@/Components/TextField.vue'
 
 const props = withDefaults(
   defineProps<{
@@ -438,6 +433,8 @@ const emit = defineEmits<{
   (e: 'start', payload: PumpCalibrationRunPayload): void
   (e: 'save', payload: PumpCalibrationSavePayload): void
 }>()
+
+const numAttrs = { type: 'number' }
 
 const componentOptions: Array<{ value: PumpCalibrationComponent; label: string }> = [
   { value: 'npk', label: 'NPK' },

@@ -237,9 +237,7 @@
               :max="durationMaxValue"
               data-testid="manual-schedule-duration"
             />
-            <SelectField
-              v-model="durationUnit"
-            >
+            <SelectField v-model="durationUnit">
               <option value="seconds">
                 сек
               </option>
@@ -351,6 +349,10 @@
 </template>
 
 <script setup lang="ts">
+import SelectField from '@/Components/SelectField.vue'
+
+import TextField from '@/Components/TextField.vue'
+
 import { computed, reactive, ref, watch } from 'vue'
 import Button from '@/Components/Button.vue'
 import Modal from '@/Components/Modal.vue'
@@ -366,8 +368,6 @@ import {
   isTaskExecutableOnAe3,
   previewManualScheduleTriggers,
 } from '@/utils/manualSchedulePreview'
-import TextField from '@/Components/TextField.vue'
-import SelectField from '@/Components/SelectField.vue'
 
 const props = defineProps<{
   open: boolean
@@ -508,12 +508,12 @@ function fieldError(key: string): string | null {
 function taskCardClass(option: (typeof taskOptions)[number]): string {
   const selected = form.task_type === option.value
   const accentMap: Record<string, string> = {
-    cyan: 'border-[color:var(--series-teal)] bg-[color:color-mix(in_srgb,var(--series-teal)_14%,transparent)]',
-    amber: 'border-[color:var(--series-yellow)] bg-[color:color-mix(in_srgb,var(--series-yellow)_14%,transparent)]',
-    green: 'border-[color:var(--series-lime)] bg-[color:color-mix(in_srgb,var(--series-lime)_14%,transparent)]',
-    blue: 'border-[color:var(--series-blue)] bg-[color:color-mix(in_srgb,var(--series-blue)_14%,transparent)]',
-    violet: 'border-[color:var(--series-violet)] bg-[color:color-mix(in_srgb,var(--series-violet)_14%,transparent)]',
-    slate: 'border-[color:var(--status-offline)] bg-status-offline-soft',
+    cyan: 'border-cyan-500/50 bg-cyan-500/10',
+    amber: 'border-status-warning bg-status-warning-soft',
+    green: 'border-emerald-500/50 bg-emerald-500/10',
+    blue: 'border-status-info bg-status-info-soft',
+    violet: 'border-violet-500/50 bg-violet-500/10',
+    slate: 'border-slate-500/50 bg-slate-500/10',
   }
   return selected
     ? `${accentMap[option.accent] ?? 'border-[color:var(--status-info)]'} ring-1 ring-[color:var(--status-info)]/30`

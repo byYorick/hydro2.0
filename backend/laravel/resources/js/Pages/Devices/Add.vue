@@ -284,6 +284,10 @@
 </template>
 
 <script setup lang="ts">
+import SelectField from '@/Components/SelectField.vue'
+
+import TextField from '@/Components/TextField.vue'
+
 import { ref, reactive, onMounted, onUnmounted, computed } from 'vue'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
@@ -300,8 +304,6 @@ import { api } from '@/services/api'
 import { useLoading } from '@/composables/useLoading'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import type { Device, Greenhouse, Zone } from '@/types'
-import TextField from '@/Components/TextField.vue'
-import SelectField from '@/Components/SelectField.vue'
 
 const { showToast } = useToast()
 const { loading, startLoading, stopLoading } = useLoading<boolean>(false)

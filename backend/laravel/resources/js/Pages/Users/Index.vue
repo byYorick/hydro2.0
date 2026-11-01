@@ -15,9 +15,7 @@
             placeholder="Поиск по имени/email..."
             class="w-64"
           />
-          <SelectField
-            v-model="roleFilter"
-          >
+          <SelectField v-model="roleFilter">
             <option value="">
               Все роли
             </option>
@@ -150,8 +148,8 @@
           <label class="text-sm text-[color:var(--text-muted)]">Имя</label>
           <TextField
             v-model="userForm.name"
-            :input-class="formErrors.name ? 'border-[color:var(--status-critical)] bg-[color:var(--bg-elevated)]' : ''"
             class="mt-1"
+            :class="formErrors.name ? 'border-[color:var(--status-critical)] bg-[color:var(--bg-elevated)]' : ''"
           />
           <div
             v-if="formErrors.name"
@@ -165,8 +163,8 @@
           <TextField
             v-model="userForm.email"
             type="email"
-            :input-class="formErrors.email ? 'border-[color:var(--status-critical)] bg-[color:var(--bg-elevated)]' : ''"
             class="mt-1"
+            :class="formErrors.email ? 'border-[color:var(--status-critical)] bg-[color:var(--bg-elevated)]' : ''"
           />
           <div
             v-if="formErrors.email"
@@ -180,9 +178,9 @@
           <TextField
             v-model="userForm.password"
             type="password"
-            :placeholder="editingUser ? 'Оставьте пустым, чтобы не менять' : 'Минимум 8 символов'"
-            :input-class="formErrors.password ? 'border-[color:var(--status-critical)] bg-[color:var(--bg-elevated)]' : ''"
             class="mt-1"
+            :class="formErrors.password ? 'border-[color:var(--status-critical)] bg-[color:var(--bg-elevated)]' : ''"
+            :placeholder="editingUser ? 'Оставьте пустым, чтобы не менять' : 'Минимум 8 символов'"
           />
           <div
             v-if="formErrors.password"
@@ -195,8 +193,8 @@
           <label class="text-sm text-[color:var(--text-muted)]">Роль</label>
           <SelectField
             v-model="userForm.role"
-            :input-class="formErrors.role ? 'border-[color:var(--status-critical)] bg-[color:var(--bg-elevated)]' : ''"
             class="mt-1"
+            :class="formErrors.role ? 'border-[color:var(--status-critical)] bg-[color:var(--bg-elevated)]' : ''"
           >
             <option value="viewer">
               Наблюдатель
@@ -268,6 +266,10 @@
 </template>
 
 <script setup lang="ts">
+import SelectField from '@/Components/SelectField.vue'
+
+import TextField from '@/Components/TextField.vue'
+
 import { computed, reactive, ref, watch, onMounted } from 'vue'
 import { usePage } from '@inertiajs/vue3'
 import type { AxiosError } from 'axios'
@@ -284,8 +286,6 @@ import { api } from '@/services/api'
 import { useToast } from '@/composables/useToast'
 import { useSimpleModal } from '@/composables/useModal'
 import type { User } from '@/types'
-import TextField from '@/Components/TextField.vue'
-import SelectField from '@/Components/SelectField.vue'
 
 interface PageProps {
   auth?: {

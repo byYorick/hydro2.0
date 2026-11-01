@@ -15,9 +15,7 @@
         <Card class="mb-4">
           <div class="mb-3 flex flex-wrap items-center gap-2">
             <label class="text-sm text-[color:var(--text-muted)]">Уровень:</label>
-            <SelectField
-              v-model="levelFilter"
-            >
+            <SelectField v-model="levelFilter">
               <option value="">
                 Все уровни
               </option>
@@ -206,6 +204,10 @@
 </template>
 
 <script setup lang="ts">
+import SelectField from '@/Components/SelectField.vue'
+
+import TextField from '@/Components/TextField.vue'
+
 import { computed, ref, watch, onMounted } from 'vue'
 import { usePage, router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
@@ -222,8 +224,6 @@ import Pagination from '@/Components/Pagination.vue'
 import { logger } from '@/utils/logger'
 import { useToast } from '@/composables/useToast'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
-import TextField from '@/Components/TextField.vue'
-import SelectField from '@/Components/SelectField.vue'
 
 interface SystemLog {
   id: number

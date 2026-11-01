@@ -72,10 +72,10 @@
           <label class="block text-xs text-[color:var(--text-muted)] mb-1">Заметки</label>
           <TextField
             v-model="form.notes"
-            :rows="2"
-            placeholder="Например: хорошо растворим в тёплой воде; хранить в сухом месте"
             multiline
-            input-class="!h-auto !py-2"
+            rows="2"
+            class="!h-auto !py-2"
+            placeholder="Например: хорошо растворим в тёплой воде; хранить в сухом месте"
           />
         </div>
       </div>
@@ -94,6 +94,8 @@
 </template>
 
 <script setup lang="ts">
+import TextField from '@/Components/TextField.vue'
+
 import { computed, reactive, ref, watch } from 'vue'
 import Modal from '@/Components/Modal.vue'
 import Button from '@/Components/Button.vue'
@@ -101,7 +103,6 @@ import type { NutrientProduct } from '@/types'
 import { api } from '@/services/api'
 import { useToast } from '@/composables/useToast'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
-import TextField from '@/Components/TextField.vue'
 
 const props = defineProps<{
   open: boolean

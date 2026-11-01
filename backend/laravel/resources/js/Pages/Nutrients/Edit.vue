@@ -10,69 +10,124 @@
         @submit.prevent="onSave"
       >
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <TextField
-            v-model="form.manufacturer"
-            label="Производитель"
-            placeholder="Yara"
-            :error="errors.manufacturer"
-          />
-          <TextField
-            v-model="form.name"
-            label="Название продукта"
-            placeholder="YaraRega Water-Soluble NPK"
-            :error="errors.name"
-          />
-          <SelectField
-            v-model="form.component"
-            label="Компонент"
-            :error="errors.component"
-          >
-            <option value="npk">
-              NPK
-            </option>
-            <option value="calcium">
-              Кальций
-            </option>
-            <option value="magnesium">
-              Магний
-            </option>
-            <option value="micro">
-              Микроэлементы
-            </option>
-          </SelectField>
-          <TextField
-            v-model="form.composition"
-            label="Состав"
-            placeholder="NPK 18-18-18"
-            :error="errors.composition"
-          />
-          <TextField
-            v-model="form.recommended_stage"
-            label="Рекомендуемые стадии"
-            placeholder="ROOTING,VEG,FLOWER,FRUIT"
-            :error="errors.recommended_stage"
-          />
-          <TextField
-            v-model="form.source_url"
-            type="url"
-            label="Ссылка на источник"
-            placeholder="example.test/product"
-          />
-          <TextField
-            v-model="form.system_code"
-            label="Код системы питания"
-            class="md:col-span-2"
-            placeholder="YARAREGA_CALCINIT_HAIFA_MICRO_V1"
-          />
-          <TextField
-            v-model="form.notes"
-            label="Заметки"
-            class="md:col-span-2"
-            multiline
-            :rows="5"
-            placeholder="Технологические примечания по применению..."
-            :error="errors.notes"
-          />
+          <div>
+            <label class="block text-xs text-[color:var(--text-muted)] mb-1">Производитель</label>
+            <TextField
+              v-model="form.manufacturer"
+              type="text"
+              placeholder="Yara"
+            />
+            <p
+              v-if="errors.manufacturer"
+              class="text-xs text-[color:var(--badge-danger-text)] mt-1"
+            >
+              {{ errors.manufacturer }}
+            </p>
+          </div>
+
+          <div>
+            <label class="block text-xs text-[color:var(--text-muted)] mb-1">Название продукта</label>
+            <TextField
+              v-model="form.name"
+              type="text"
+              placeholder="YaraRega Water-Soluble NPK"
+            />
+            <p
+              v-if="errors.name"
+              class="text-xs text-[color:var(--badge-danger-text)] mt-1"
+            >
+              {{ errors.name }}
+            </p>
+          </div>
+
+          <div>
+            <label class="block text-xs text-[color:var(--text-muted)] mb-1">Компонент</label>
+            <SelectField v-model="form.component">
+              <option value="npk">
+                NPK
+              </option>
+              <option value="calcium">
+                Кальций
+              </option>
+              <option value="magnesium">
+                Магний
+              </option>
+              <option value="micro">
+                Микроэлементы
+              </option>
+            </SelectField>
+            <p
+              v-if="errors.component"
+              class="text-xs text-[color:var(--badge-danger-text)] mt-1"
+            >
+              {{ errors.component }}
+            </p>
+          </div>
+
+          <div>
+            <label class="block text-xs text-[color:var(--text-muted)] mb-1">Состав</label>
+            <TextField
+              v-model="form.composition"
+              type="text"
+              placeholder="NPK 18-18-18"
+            />
+            <p
+              v-if="errors.composition"
+              class="text-xs text-[color:var(--badge-danger-text)] mt-1"
+            >
+              {{ errors.composition }}
+            </p>
+          </div>
+
+          <div>
+            <label class="block text-xs text-[color:var(--text-muted)] mb-1">Рекомендуемые стадии</label>
+            <TextField
+              v-model="form.recommended_stage"
+              type="text"
+              placeholder="ROOTING,VEG,FLOWER,FRUIT"
+            />
+            <p
+              v-if="errors.recommended_stage"
+              class="text-xs text-[color:var(--badge-danger-text)] mt-1"
+            >
+              {{ errors.recommended_stage }}
+            </p>
+          </div>
+
+          <div>
+            <label class="block text-xs text-[color:var(--text-muted)] mb-1">Ссылка на источник</label>
+            <TextField
+              v-model="form.source_url"
+              type="url"
+              placeholder="example.test/product"
+            />
+          </div>
+
+          <div class="md:col-span-2">
+            <label class="block text-xs text-[color:var(--text-muted)] mb-1">Код системы питания</label>
+            <TextField
+              v-model="form.system_code"
+              type="text"
+              placeholder="YARAREGA_CALCINIT_HAIFA_MICRO_V1"
+            />
+          </div>
+
+          <div class="md:col-span-2">
+            <label class="block text-xs text-[color:var(--text-muted)] mb-1">Заметки</label>
+            <TextField
+              v-model="form.notes"
+              multiline
+              rows="5"
+              placeholder="Технологические примечания по применению..."
+              input-class="h-auto"
+            />
+            <p
+              v-if="errors.notes"
+              class="text-xs text-[color:var(--badge-danger-text)] mt-1"
+            >
+              {{ errors.notes }}
+            </p>
+          </div>
         </div>
 
         <div
@@ -130,14 +185,16 @@
 </template>
 
 <script setup lang="ts">
+import SelectField from '@/Components/SelectField.vue'
+
+import TextField from '@/Components/TextField.vue'
+
 import { computed, reactive, ref } from 'vue'
 import { Link, router, usePage } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
 import Button from '@/Components/Button.vue'
 import ConfirmModal from '@/Components/ConfirmModal.vue'
-import TextField from '@/Components/TextField.vue'
-import SelectField from '@/Components/SelectField.vue'
 import { useConfirmDialog } from '@/composables/useConfirmDialog'
 import { api } from '@/services/api'
 import { useToast } from '@/composables/useToast'

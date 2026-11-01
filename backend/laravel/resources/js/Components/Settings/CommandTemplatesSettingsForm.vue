@@ -69,7 +69,7 @@
             />
             <SelectField
               :id="stepInputId(field.path, index, 'state')"
-              :value="step.params.state ? 'true' : 'false'"
+              :model-value="step.params.state ? 'true' : 'false'"
               :aria-label="`Состояние шага ${index + 1}`"
               :data-testid="`command-template-state-${field.path}-${index}`"
               input-class="settings-control--select"
@@ -129,12 +129,14 @@
 </template>
 
 <script setup lang="ts">
+import SelectField from '@/Components/SelectField.vue'
+
+import TextField from '@/Components/TextField.vue'
+
 import { ref, watch } from 'vue'
 import Button from '@/Components/Button.vue'
 import SettingsFieldHelp from '@/Components/Settings/SettingsFieldHelp.vue'
 import type { AutomationCommandTemplateStep, SystemSettingsField } from '@/types/SystemSettings'
-import TextField from '@/Components/TextField.vue'
-import SelectField from '@/Components/SelectField.vue'
 
 const TEMPLATE_LABELS: Record<string, string> = {
   irrigation_start: 'Полив — запуск',

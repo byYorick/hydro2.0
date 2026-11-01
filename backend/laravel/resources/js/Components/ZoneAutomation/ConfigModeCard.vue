@@ -26,7 +26,7 @@
         </p>
         <p
           v-if="state?.config_mode === 'live' && countdownLabel"
-          class="text-xs text-status-warning mt-1"
+          class="text-xs text-status-warning dark:text-status-warning mt-1"
           data-testid="config-mode-countdown"
         >
           ⏱ {{ countdownLabel }}
@@ -83,7 +83,7 @@
         </p>
         <p
           v-if="errorMessage"
-          class="text-xs text-status-critical text-right"
+          class="text-xs text-status-critical text-status-critical text-right"
           data-testid="config-mode-error"
         >
           {{ errorMessage }}
@@ -113,11 +113,12 @@
     >
       <label class="flex flex-col gap-1 text-xs">
         <span class="text-[color:var(--text-dim)]">Причина перехода в locked (&ge; 3 символов)</span>
-        <TextField
+        <input
           v-model="lockedDialog.reason"
           type="text"
           minlength="3"
           maxlength="500"
+          class="input input-bordered text-sm px-2 py-1 rounded border border-[color:var(--border-muted)] bg-[color:var(--surface-card)]"
         />
       </label>
       <div class="flex gap-2 justify-end">
@@ -148,20 +149,22 @@
     >
       <label class="flex flex-col gap-1 text-xs">
         <span class="text-[color:var(--text-dim)]">Длительность live (минут, 5..10080)</span>
-        <TextField
+        <input
           v-model.number="liveDialog.ttlMin"
           type="number"
           min="5"
           max="10080"
+          class="input input-bordered text-sm px-2 py-1 rounded border border-[color:var(--border-muted)] bg-[color:var(--surface-card)]"
         />
       </label>
       <label class="flex flex-col gap-1 text-xs">
         <span class="text-[color:var(--text-dim)]">Причина (&ge; 3 символов)</span>
-        <TextField
+        <input
           v-model="liveDialog.reason"
           type="text"
           minlength="3"
           maxlength="500"
+          class="input input-bordered text-sm px-2 py-1 rounded border border-[color:var(--border-muted)] bg-[color:var(--surface-card)]"
         />
       </label>
       <div class="flex gap-2 justify-end">
@@ -192,11 +195,12 @@
     >
       <label class="flex flex-col gap-1 text-xs">
         <span class="text-[color:var(--text-dim)]">Новое время окончания (минут от now, 5..10080)</span>
-        <TextField
+        <input
           v-model.number="extendDialog.ttlMin"
           type="number"
           min="5"
           max="10080"
+          class="input input-bordered text-sm px-2 py-1 rounded border border-[color:var(--border-muted)] bg-[color:var(--surface-card)]"
         />
       </label>
       <div class="flex gap-2 justify-end">
@@ -227,7 +231,6 @@ import {
   type ConfigModeState,
   zoneConfigModeApi,
 } from '@/services/api/zoneConfigMode'
-import TextField from '@/Components/TextField.vue'
 
 interface Props {
   zoneId: number

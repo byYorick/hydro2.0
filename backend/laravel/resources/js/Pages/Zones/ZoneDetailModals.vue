@@ -62,8 +62,8 @@
           <label class="text-xs text-[color:var(--text-dim)]">Метка партии (опционально)</label>
           <TextField
             v-model="harvestBatchLabel"
-            placeholder="Например: Batch-042"
             class="mt-1 w-full"
+            placeholder="Например: Batch-042"
           />
         </div>
         <div>
@@ -74,9 +74,9 @@
             min="0"
             step="0.01"
             inputmode="decimal"
+            class="mt-1 w-full"
             placeholder="Необязательно"
             data-testid="harvest-yield-kg"
-            class="mt-1 w-full"
           />
         </div>
       </div>
@@ -98,10 +98,10 @@
           <label class="text-xs text-[color:var(--text-dim)]">Причина (опционально)</label>
           <TextField
             v-model="abortNotes"
-            placeholder="Короткое описание причины"
             multiline
-            input-class="h-20 resize-none"
-            class="mt-1 w-full"
+            class="mt-1 w-full resize-none"
+            placeholder="Короткое описание причины"
+            input-class="h-20"
           />
         </div>
       </div>
@@ -123,8 +123,8 @@
           <label class="text-xs text-[color:var(--text-dim)]">ID ревизии рецепта</label>
           <TextField
             v-model="changeRecipeRevisionId"
-            placeholder="Например: 42"
             class="mt-1 w-full"
+            placeholder="Например: 42"
           />
         </div>
         <div class="flex flex-wrap gap-2">
@@ -151,6 +151,8 @@
 </template>
 
 <script setup lang="ts">
+import TextField from '@/Components/TextField.vue'
+
 import { computed } from 'vue'
 import type { CommandType, Device, IrrigationCorrectionSummary } from '@/types'
 import ZoneActionModal from '@/Components/ZoneActionModal.vue'
@@ -159,7 +161,6 @@ import AttachNodesModal from '@/Components/AttachNodesModal.vue'
 import NodeConfigModal from '@/Components/NodeConfigModal.vue'
 import ConfirmModal from '@/Components/ConfirmModal.vue'
 import { pickIrrigationDurationFromTargets } from '@/utils/irrigationModalDefaults'
-import TextField from '@/Components/TextField.vue'
 
 interface HarvestModalState {
   open: boolean

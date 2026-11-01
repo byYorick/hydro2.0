@@ -120,8 +120,8 @@
               <SelectField
                 v-model="sharedWeatherStationSelect"
                 data-testid="greenhouse-shared-weather-station"
-                :disabled="!canConfigure"
                 class="mt-1 w-full"
+                :disabled="!canConfigure"
               >
                 <option :value="null">
                   Не использовать
@@ -210,8 +210,8 @@
               Режим runtime
               <SelectField
                 v-model="climateForm.controlMode"
-                :disabled="!canConfigure"
                 class="mt-1 w-full"
+                :disabled="!canConfigure"
               >
                 <option value="auto">
                   Auto
@@ -235,8 +235,8 @@
                 type="number"
                 min="1"
                 max="1440"
-                :disabled="!canConfigure"
                 class="mt-1 w-full"
+                :disabled="!canConfigure"
               />
             </label>
             <label
@@ -249,8 +249,8 @@
                 type="number"
                 min="5"
                 max="120"
-                :disabled="!canConfigure"
                 class="mt-1 w-full"
+                :disabled="!canConfigure"
               />
             </label>
             <label
@@ -260,8 +260,8 @@
               Внешняя телеметрия
               <SelectField
                 v-model="climateForm.useExternalTelemetry"
-                :disabled="!canConfigure"
                 class="mt-1 w-full"
+                :disabled="!canConfigure"
               >
                 <option :value="true">
                   Использовать
@@ -283,8 +283,8 @@
                 min="10"
                 max="35"
                 step="0.5"
-                :disabled="!canConfigure"
                 class="mt-1 w-full"
+                :disabled="!canConfigure"
               />
             </label>
             <label
@@ -298,8 +298,8 @@
                 min="10"
                 max="35"
                 step="0.5"
-                :disabled="!canConfigure"
                 class="mt-1 w-full"
+                :disabled="!canConfigure"
               />
             </label>
             <label
@@ -312,8 +312,8 @@
                 type="number"
                 min="30"
                 max="90"
-                :disabled="!canConfigure"
                 class="mt-1 w-full"
+                :disabled="!canConfigure"
               />
             </label>
             <label
@@ -326,8 +326,8 @@
                 type="number"
                 min="30"
                 max="90"
-                :disabled="!canConfigure"
                 class="mt-1 w-full"
+                :disabled="!canConfigure"
               />
             </label>
             <p
@@ -347,9 +347,9 @@
                 min="0.1"
                 max="3"
                 step="0.01"
-                :value="optionalKpaValue('vpdMinKpa')"
-                :disabled="!canConfigure"
                 class="mt-1 w-full"
+                :model-value="optionalKpaValue('vpdMinKpa')"
+                :disabled="!canConfigure"
                 @input="setOptionalKpa('vpdMinKpa', $event)"
               />
             </label>
@@ -364,9 +364,9 @@
                 min="0.1"
                 max="3"
                 step="0.01"
-                :value="optionalKpaValue('vpdMaxKpa')"
-                :disabled="!canConfigure"
                 class="mt-1 w-full"
+                :model-value="optionalKpaValue('vpdMaxKpa')"
+                :disabled="!canConfigure"
                 @input="setOptionalKpa('vpdMaxKpa', $event)"
               />
             </label>
@@ -380,8 +380,8 @@
                 type="number"
                 min="0"
                 max="100"
-                :disabled="!canConfigure"
                 class="mt-1 w-full"
+                :disabled="!canConfigure"
               />
             </label>
             <label
@@ -394,8 +394,8 @@
                 type="number"
                 min="0"
                 max="100"
-                :disabled="!canConfigure"
                 class="mt-1 w-full"
+                :disabled="!canConfigure"
               />
             </label>
             <label
@@ -409,8 +409,8 @@
                 type="number"
                 min="1"
                 max="100"
-                :disabled="!canConfigure"
                 class="mt-1 w-full"
+                :disabled="!canConfigure"
               />
             </label>
             <label
@@ -421,8 +421,8 @@
               <TextField
                 v-model="climateForm.dayStart"
                 type="time"
-                :disabled="!canConfigure"
                 class="mt-1 w-full"
+                :disabled="!canConfigure"
               />
             </label>
             <label
@@ -433,8 +433,8 @@
               <TextField
                 v-model="climateForm.nightStart"
                 type="time"
-                :disabled="!canConfigure"
                 class="mt-1 w-full"
+                :disabled="!canConfigure"
               />
             </label>
             <label
@@ -447,8 +447,8 @@
                 type="number"
                 min="-30"
                 max="45"
-                :disabled="!canConfigure"
                 class="mt-1 w-full"
+                :disabled="!canConfigure"
               />
             </label>
             <label
@@ -461,8 +461,8 @@
                 type="number"
                 min="-30"
                 max="45"
-                :disabled="!canConfigure"
                 class="mt-1 w-full"
+                :disabled="!canConfigure"
               />
             </label>
             <label
@@ -475,8 +475,8 @@
                 type="number"
                 min="20"
                 max="100"
-                :disabled="!canConfigure"
                 class="mt-1 w-full"
+                :disabled="!canConfigure"
               />
             </label>
             <label
@@ -486,8 +486,8 @@
               Ручной override климата
               <SelectField
                 v-model="climateForm.manualOverrideEnabled"
-                :disabled="!canConfigure"
                 class="mt-1 w-full"
+                :disabled="!canConfigure"
               >
                 <option :value="true">
                   Включен
@@ -521,13 +521,13 @@
             >
               {{ field.label }}
               <TextField
-                :value="numberFieldValue(field.key, field.fallback)"
+                :model-value="numberFieldValue(field.key, field.fallback)"
                 type="number"
                 :min="field.min"
                 :max="field.max"
                 :step="field.step ?? 1"
-                :disabled="!canConfigure"
                 class="mt-1 w-full"
+                :disabled="!canConfigure"
                 @input="setNumberField(field.key, $event)"
               />
             </label>
@@ -555,13 +555,13 @@
             >
               {{ field.label }}
               <TextField
-                :value="numberFieldValue(field.key, field.fallback)"
+                :model-value="numberFieldValue(field.key, field.fallback)"
                 type="number"
                 :min="field.min"
                 :max="field.max"
                 :step="field.step ?? 1"
-                :disabled="!canConfigure"
                 class="mt-1 w-full"
+                :disabled="!canConfigure"
                 @input="setNumberField(field.key, $event)"
               />
             </label>
@@ -589,13 +589,13 @@
             >
               {{ field.label }}
               <TextField
-                :value="numberFieldValue(field.key, field.fallback)"
+                :model-value="numberFieldValue(field.key, field.fallback)"
                 type="number"
                 :min="field.min"
                 :max="field.max"
                 :step="field.step ?? 1"
-                :disabled="!canConfigure"
                 class="mt-1 w-full"
+                :disabled="!canConfigure"
                 @input="setNumberField(field.key, $event)"
               />
             </label>
@@ -622,8 +622,8 @@
               Источник целей
               <SelectField
                 v-model="climateForm.targetPolicy"
-                :disabled="!canConfigure"
                 class="mt-1 w-full"
+                :disabled="!canConfigure"
               >
                 <option value="greenhouse_targets">
                   Цели теплицы
@@ -642,11 +642,11 @@
             >
               Основная зона
               <TextField
-                :value="nullableNumberFieldValue('primaryZoneId')"
+                :model-value="nullableNumberFieldValue('primaryZoneId')"
                 type="number"
                 min="1"
-                :disabled="!canConfigure || climateForm.targetPolicy !== 'primary_zone'"
                 class="mt-1 w-full"
+                :disabled="!canConfigure || climateForm.targetPolicy !== 'primary_zone'"
                 @input="setNullableNumberField('primaryZoneId', $event)"
               />
             </label>
@@ -658,13 +658,13 @@
             >
               {{ field.label }}
               <TextField
-                :value="nullableNumberFieldValue(field.key)"
+                :model-value="nullableNumberFieldValue(field.key)"
                 type="number"
                 min="0"
                 max="359.999"
                 step="0.1"
-                :disabled="!canConfigure"
                 class="mt-1 w-full"
+                :disabled="!canConfigure"
                 @input="setNullableNumberField(field.key, $event)"
               />
             </label>
@@ -675,8 +675,8 @@
               Аварийное переопределение
               <SelectField
                 v-model="climateForm.manualEmergencyOverrideEnabled"
-                :disabled="!canConfigure"
                 class="mt-1 w-full"
+                :disabled="!canConfigure"
               >
                 <option :value="true">
                   Включен
@@ -712,12 +712,14 @@
 </template>
 
 <script setup lang="ts">
+import SelectField from '@/Components/SelectField.vue'
+
+import TextField from '@/Components/TextField.vue'
+
 import { computed, ref } from 'vue'
 import { ToggleField } from '@/Components/Shared/Primitives'
 import type { ClimateFormState } from '@/composables/zoneAutomationTypes'
 import type { AutomationNode as SetupWizardNode } from '@/types/AutomationNode'
-import TextField from '@/Components/TextField.vue'
-import SelectField from '@/Components/SelectField.vue'
 
 interface GreenhouseClimateBindingsState {
   climate_sensors: number[]

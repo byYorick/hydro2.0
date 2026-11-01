@@ -1,6 +1,6 @@
 <template>
   <section
-    class="surface-card surface-card--elevated border border-status-warning rounded-2xl p-4 space-y-4 bg-status-warning-soft"
+    class="surface-card surface-card--elevated border border-status-warning dark:border-status-warning rounded-2xl p-4 space-y-4 bg-status-warning-soft dark:bg-status-warning-soft"
     data-testid="correction-live-edit"
   >
     <header class="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
@@ -40,7 +40,7 @@
     </p>
     <p
       v-else-if="loadError"
-      class="text-xs text-status-critical"
+      class="text-xs text-status-critical text-status-critical"
       data-testid="correction-live-load-error"
     >
       {{ loadError }}
@@ -59,8 +59,8 @@
           </span>
           <SelectField
             v-model="correctionTarget"
-            data-testid="correction-live-correction-target"
             class="w-full"
+            data-testid="correction-live-correction-target"
           >
             <option value="base">Базовая конфигурация</option>
             <option
@@ -82,8 +82,8 @@
           </span>
           <SelectField
             v-model="calibrationTarget"
-            data-testid="correction-live-calibration-target"
             class="w-full"
+            data-testid="correction-live-calibration-target"
           >
             <option value="none">Не менять process calibration</option>
             <option
@@ -163,10 +163,10 @@
 
                 <SelectField
                   v-else-if="field.type === 'enum'"
-                  :value="String(getByPath(correctionForm, field.path) ?? '')"
+                  :model-value="String(getByPath(correctionForm, field.path) ?? '')"
                   :data-testid="fieldTestId('correction-live-field', field.path)"
-                  :disabled="Boolean(field.readonly)"
                   class="w-full"
+                  :disabled="Boolean(field.readonly)"
                   @change="setByPath(correctionForm, field.path, ($event.target as HTMLSelectElement).value)"
                 >
                   <option
@@ -180,7 +180,7 @@
 
                 <TextField
                   v-else
-                  :value="String(getByPath(correctionForm, field.path) ?? '')"
+                  :model-value="String(getByPath(correctionForm, field.path) ?? '')"
                   :data-testid="fieldTestId('correction-live-field', field.path)"
                   :type="field.type === 'string' ? 'text' : 'number'"
                   :step="field.step ?? (field.type === 'integer' ? 1 : 'any')"
@@ -230,7 +230,7 @@
                   {{ field.label }}
                 </label>
                 <TextField
-                  :value="String(getByPath(calibrationForm, field.path) ?? '')"
+                  :model-value="String(getByPath(calibrationForm, field.path) ?? '')"
                   :data-testid="fieldTestId('correction-live-calibration-field', field.path)"
                   type="number"
                   :step="field.step ?? 'any'"
@@ -290,12 +290,12 @@
               </span>
               <TextField
                 v-model="reason"
-                :rows="3"
-                maxlength="500"
-                data-testid="correction-live-reason"
                 multiline
-                input-class="min-h-[96px]"
+                rows="3"
+                maxlength="500"
                 class="w-full"
+                data-testid="correction-live-reason"
+                input-class="min-h-[96px]"
               />
               <span class="block text-[11px] text-[color:var(--text-dim)]">
                 Коротко опишите, зачем меняете live runtime: например, «увеличиваю окно наблюдения из-за медленного отклика EC» или «снижаю Kp pH, чтобы убрать перерегулирование».
@@ -304,7 +304,7 @@
 
             <p
               v-if="errorMessage"
-              class="text-xs text-status-critical"
+              class="text-xs text-status-critical text-status-critical"
               data-testid="correction-live-error"
             >
               {{ errorMessage }}
@@ -317,14 +317,14 @@
             </p>
             <p
               v-else-if="lastRevision !== null"
-              class="text-xs text-status-ok"
+              class="text-xs text-emerald-600 dark:text-emerald-400"
               data-testid="correction-live-success"
             >
               ✓ сохранено, ревизия {{ lastRevision }}
             </p>
             <p
               v-else-if="submitBlocker"
-              class="text-xs text-status-warning"
+              class="text-xs text-status-warning dark:text-status-warning"
               data-testid="correction-live-blocker"
             >
               {{ submitBlocker }}
@@ -348,6 +348,10 @@
 </template>
 
 <script setup lang="ts">
+import SelectField from '@/Components/SelectField.vue'
+
+import TextField from '@/Components/TextField.vue'
+
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import Badge from '@/Components/Badge.vue'
 import Button from '@/Components/Button.vue'
@@ -369,8 +373,6 @@ import type {
   ZoneCorrectionConfigPayload,
 } from '@/types/CorrectionConfig'
 import type { ProcessCalibrationMode } from '@/types/ProcessCalibration'
-import TextField from '@/Components/TextField.vue'
-import SelectField from '@/Components/SelectField.vue'
 
 interface Props {
   zoneId: number

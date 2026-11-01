@@ -7,10 +7,10 @@
       <TextField
         v-model="search"
         type="search"
+        class="w-full sm:w-64"
         placeholder="Поиск параметра"
         aria-label="Поиск параметра"
         data-testid="automation-runtime-search"
-        class="w-full sm:w-64"
       />
       <button
         v-if="advancedCount > 0"
@@ -125,12 +125,14 @@
 </template>
 
 <script setup lang="ts">
+import SelectField from '@/Components/SelectField.vue'
+
+import TextField from '@/Components/TextField.vue'
+
 import { computed, ref, watch } from 'vue'
 import SettingsFieldRow from '@/Components/Settings/SettingsFieldRow.vue'
 import { isSameSettingsDraft, type SettingsDraftValue } from '@/utils/settingsDraft'
 import type { AutomationRuntimeSettingItem, AutomationRuntimeSettingSection } from '@/types/SystemSettings'
-import TextField from '@/Components/TextField.vue'
-import SelectField from '@/Components/SelectField.vue'
 
 type DraftValue = SettingsDraftValue
 

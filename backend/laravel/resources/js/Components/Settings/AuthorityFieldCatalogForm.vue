@@ -10,10 +10,10 @@
       <TextField
         v-model="search"
         type="search"
+        class="w-full sm:w-64"
         placeholder="Поиск параметра"
         aria-label="Поиск параметра"
         data-testid="authority-field-search"
-        class="w-full sm:w-64"
       />
       <span class="text-xs text-[color:var(--text-dim)]">
         {{ matchedFields }} из {{ totalFields }}
@@ -98,9 +98,9 @@
               v-else-if="field.type === 'json'"
               :id="fieldInputId(field.path)"
               v-model="draft[field.path]"
-              :rows="6"
-              :data-testid="`authority-field-${field.path}`"
               multiline
+              rows="6"
+              :data-testid="`authority-field-${field.path}`"
               input-class="settings-control--wide font-mono text-xs"
             />
 
@@ -112,8 +112,8 @@
               :step="field.step ?? (field.type === 'integer' ? 1 : 'any')"
               :min="field.min"
               :max="field.max"
+              :class="field.type === 'string' ? 'settings-control--text' : 'settings-control--num text-right'"
               :data-testid="`authority-field-${field.path}`"
-              :input-class="field.type === 'string' ? 'settings-control--text' : 'settings-control--num text-right'"
             />
           </SettingsFieldRow>
         </div>
@@ -123,12 +123,13 @@
 </template>
 
 <script setup lang="ts">
+import TextField from '@/Components/TextField.vue'
+
 import { computed, ref, watch } from 'vue'
 import SettingsFieldRow from '@/Components/Settings/SettingsFieldRow.vue'
 import SettingsFieldHelp from '@/Components/Settings/SettingsFieldHelp.vue'
 import { isSameSettingsDraft } from '@/utils/settingsDraft'
 import type { SystemSettingsField, SystemSettingsSection } from '@/types/SystemSettings'
-import TextField from '@/Components/TextField.vue'
 
 /** Ниже этого числа полей поиск только мешает. */
 const SEARCH_THRESHOLD = 12

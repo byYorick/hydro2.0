@@ -31,9 +31,9 @@
     >
       <SelectField
         v-model="selectedState"
+        class="flex-1"
         :disabled="transitioning"
         input-class="h-9"
-        class="flex-1"
       >
         <option :value="null">
           Выберите состояние...
@@ -71,12 +71,13 @@
 </template>
 
 <script setup lang="ts">
+import SelectField from '@/Components/SelectField.vue'
+
 import { ref, onMounted, watch } from 'vue'
 import Button from './Button.vue'
 import { useNodeLifecycle, type AllowedTransition, type CurrentState } from '@/composables/useNodeLifecycle'
 import { logger } from '@/utils/logger'
 import type { NodeLifecycleState } from '@/types/Device'
-import SelectField from '@/Components/SelectField.vue'
 
 // Простая обертка для toast (если useToast недоступен)
 function showToast(message: string, variant: string = 'info', _duration?: number, _options?: unknown): number {

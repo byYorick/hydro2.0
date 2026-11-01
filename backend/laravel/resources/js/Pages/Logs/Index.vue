@@ -97,8 +97,8 @@
               v-model="filters.search"
               type="search"
               placeholder="Поиск по сообщению/контексту"
-              input-class="h-9"
               class="w-full sm:w-64"
+              input-class="h-9"
             />
           </div>
           <div class="flex flex-wrap items-center gap-2">
@@ -232,6 +232,10 @@
 </template>
 
 <script setup lang="ts">
+import SelectField from '@/Components/SelectField.vue'
+
+import TextField from '@/Components/TextField.vue'
+
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Tabs from '@/Components/Tabs.vue'
@@ -241,8 +245,6 @@ import { formatTime } from '@/utils/formatTime'
 import { api } from '@/services/api'
 import { extractData } from '@/utils/apiHelpers'
 import { logger } from '@/utils/logger'
-import TextField from '@/Components/TextField.vue'
-import SelectField from '@/Components/SelectField.vue'
 
 interface ServiceOption {
   key: string

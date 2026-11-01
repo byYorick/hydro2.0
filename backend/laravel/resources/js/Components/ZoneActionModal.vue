@@ -29,8 +29,8 @@
             max="3600"
             step="1"
             required
-            :placeholder="String(defaultIrrigationDuration)"
             class="w-full"
+            :placeholder="String(defaultIrrigationDuration)"
           />
           <div class="text-xs text-[color:var(--text-dim)] mt-1">
             По умолчанию: системная настройка или длительность из фазы рецепта (если задана). Диапазон 1–3600 с.
@@ -58,8 +58,8 @@
             max="9.0"
             step="0.1"
             required
-            placeholder="6.0"
             class="w-full"
+            placeholder="6.0"
           />
           <div class="text-xs text-[color:var(--text-dim)] mt-1">
             От 4.0 до 9.0
@@ -85,8 +85,8 @@
             max="10.0"
             step="0.1"
             required
-            placeholder="1.5"
             class="w-full"
+            placeholder="1.5"
           />
           <div class="text-xs text-[color:var(--text-dim)] mt-1">
             От 0.1 до 10.0
@@ -112,8 +112,8 @@
             max="35"
             step="0.5"
             required
-            placeholder="22"
             class="w-full"
+            placeholder="22"
           />
           <div class="text-xs text-[color:var(--text-dim)] mt-1">
             От 10 до 35°C
@@ -133,8 +133,8 @@
             max="90"
             step="1"
             required
-            placeholder="60"
             class="w-full"
+            placeholder="60"
           />
           <div class="text-xs text-[color:var(--text-dim)] mt-1">
             От 30 до 90%
@@ -160,8 +160,8 @@
             max="100"
             step="1"
             required
-            placeholder="80"
             class="w-full"
+            placeholder="80"
           />
           <div class="text-xs text-[color:var(--text-dim)] mt-1">
             От 0 до 100%
@@ -181,8 +181,8 @@
             max="24"
             step="0.5"
             required
-            placeholder="12"
             class="w-full"
+            placeholder="12"
           />
           <div class="text-xs text-[color:var(--text-dim)] mt-1">
             От 0.5 до 24 часов
@@ -226,6 +226,8 @@
 </template>
 
 <script setup lang="ts">
+import TextField from '@/Components/TextField.vue'
+
 import { ref, computed, watch } from 'vue'
 import Modal from '@/Components/Modal.vue'
 import Button from '@/Components/Button.vue'
@@ -234,7 +236,6 @@ import { useAutomationDefaults } from '@/composables/useAutomationDefaults'
 import { validateNumberRange } from '@/utils/validation'
 import { VALIDATION_RANGES } from '@/constants/validation'
 import type { CommandType, IrrigationCorrectionSummary } from '@/types'
-import TextField from '@/Components/TextField.vue'
 
 type ActionType = CommandType
 

@@ -287,6 +287,8 @@
 </template>
 
 <script setup lang="ts">
+import TextField from '@/Components/TextField.vue'
+
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import Button from '@/Components/Button.vue'
 import { useSensorCalibration } from '@/composables/useSensorCalibration'
@@ -298,7 +300,6 @@ import type {
   SensorCalibrationSessionOutcome,
 } from '@/types/SensorCalibration'
 import type { SensorCalibrationSettings } from '@/types/SystemSettings'
-import TextField from '@/Components/TextField.vue'
 
 const props = defineProps<{
   zoneId: number

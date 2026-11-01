@@ -205,9 +205,7 @@
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label class="block text-xs text-[color:var(--text-muted)] mb-1">Субстрат</label>
-            <SelectField
-              v-model="form.substrate_type"
-            >
+            <SelectField v-model="form.substrate_type">
               <option value="">
                 Не выбрано
               </option>
@@ -222,9 +220,7 @@
           </div>
           <div>
             <label class="block text-xs text-[color:var(--text-muted)] mb-1">Система</label>
-            <SelectField
-              v-model="form.growing_system"
-            >
+            <SelectField v-model="form.growing_system">
               <option value="">
                 Не выбрано
               </option>
@@ -241,9 +237,7 @@
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label class="block text-xs text-[color:var(--text-muted)] mb-1">Фотопериод</label>
-            <SelectField
-              v-model="form.photoperiod_preset"
-            >
+            <SelectField v-model="form.photoperiod_preset">
               <option value="">
                 Не выбрано
               </option>
@@ -258,9 +252,7 @@
           </div>
           <div>
             <label class="block text-xs text-[color:var(--text-muted)] mb-1">Сезонность</label>
-            <SelectField
-              v-model="form.seasonality"
-            >
+            <SelectField v-model="form.seasonality">
               <option value="">
                 Не выбрано
               </option>
@@ -278,8 +270,8 @@
           <label class="block text-xs text-[color:var(--text-muted)] mb-1">Описание</label>
           <TextField
             v-model="form.description"
-            :rows="4"
             multiline
+            rows="4"
             input-class="h-auto"
           />
         </div>
@@ -351,6 +343,10 @@
 </template>
 
 <script setup lang="ts">
+import SelectField from '@/Components/SelectField.vue'
+
+import TextField from '@/Components/TextField.vue'
+
 import { Head, useForm, router, Link, usePage } from '@inertiajs/vue3'
 import { computed, ref, watch } from 'vue'
 import AppLayout from '@/Layouts/AppLayout.vue'
@@ -361,8 +357,6 @@ import Pagination from '@/Components/Pagination.vue'
 import ConfirmModal from '@/Components/ConfirmModal.vue'
 import { useToast } from '@/composables/useToast'
 import { useSimpleModal } from '@/composables/useModal'
-import TextField from '@/Components/TextField.vue'
-import SelectField from '@/Components/SelectField.vue'
 
 interface EnvironmentRange {
   min?: number | string | null
