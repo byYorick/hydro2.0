@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\User;
 use App\Models\Zone;
 use App\Models\ZoneManualSchedule;
+use Illuminate\Support\Carbon;
 use Tests\RefreshDatabase;
 use Tests\TestCase;
 
@@ -95,6 +96,19 @@ class ZoneManualScheduleControllerTest extends TestCase
     }
 
     public function test_manual_schedule_appears_in_schedule_workspace(): void
+    {
+        // Понедельник 08:00 UTC: слот 10:00 в будни попадает в горизонт 24h
+        // независимо от дня недели, когда запускается CI.
+        Carbon::setTestNow(Carbon::parse('2026-11-02 08:00:00', 'UTC'));
+
+        try {
+            $this->assertManualScheduleWindowInsideHorizon();
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
+    private function assertManualScheduleWindowInsideHorizon(): void
     {
         $zone = Zone::factory()->create(['automation_runtime' => 'ae3']);
         $user = User::factory()->create(['role' => 'viewer']);

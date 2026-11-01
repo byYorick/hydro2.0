@@ -24,11 +24,12 @@
           </div>
         </div>
         
-        <input 
-          ref="inputRef" 
+        <TextField
+          ref="inputRef"
           v-model="q"
-          placeholder="Команда или поиск..." 
-          class="input-field h-12 w-full px-4 text-sm transition-all duration-200"
+          placeholder="Команда или поиск..."
+          class="w-full transition-all duration-200"
+          input-class="h-12 px-4 text-sm"
           @keydown.down.prevent="selectedIndex = Math.min(selectedIndex + 1, totalItemsCount - 1)"
           @keydown.up.prevent="selectedIndex = Math.max(selectedIndex - 1, 0)"
           @keydown.enter.prevent="runSelected()"
@@ -57,7 +58,7 @@
                   :data-index="getItemIndex(groupIndex, itemIndex)"
                   class="px-3 py-2.5 text-sm hover:bg-[color:var(--bg-elevated)] cursor-pointer rounded-md flex items-center gap-3 transition-all duration-150"
                   :class="{ 
-                    'bg-[color:var(--bg-elevated)] border-l-2 border-[color:var(--accent-cyan)]': getItemIndex(groupIndex, itemIndex) === selectedIndex 
+                    'bg-[color:var(--bg-elevated)] border-l-2 border-[color:var(--status-info)]': getItemIndex(groupIndex, itemIndex) === selectedIndex 
                   }"
                   @click="run(item)"
                   @mouseenter="selectedIndex = getItemIndex(groupIndex, itemIndex)"
@@ -136,6 +137,8 @@
 </template>
 
 <script setup lang="ts">
+import TextField from '@/Components/TextField.vue'
+
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { router, usePage } from '@inertiajs/vue3'
 import { logger } from '@/utils/logger'
@@ -161,7 +164,7 @@ const { sendZoneCommand } = useCommands()
 const { role } = useRole()
 
 const open = ref<boolean>(false)
-const inputRef = ref<HTMLInputElement | null>(null)
+const inputRef = ref<{ focus: () => void } | null>(null)
 const commandHistory = ref<CommandHistoryItem[]>([])
 const maxHistorySize = 10
 const visitTimers = new Map<string, ReturnType<typeof setTimeout>>()

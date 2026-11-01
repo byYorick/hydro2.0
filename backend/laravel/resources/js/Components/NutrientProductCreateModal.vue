@@ -13,18 +13,16 @@
         </div>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div>
-            <label class="block text-xs text-[color:var(--text-muted)] mb-1">Производитель <span class="text-red-500">*</span></label>
-            <input
+            <label class="block text-xs text-[color:var(--text-muted)] mb-1">Производитель <span class="text-status-critical">*</span></label>
+            <TextField
               v-model="form.manufacturer"
-              class="input-field"
               placeholder="Yara, Masterblend, Haifa..."
             />
           </div>
           <div>
-            <label class="block text-xs text-[color:var(--text-muted)] mb-1">Название продукта <span class="text-red-500">*</span></label>
-            <input
+            <label class="block text-xs text-[color:var(--text-muted)] mb-1">Название продукта <span class="text-status-critical">*</span></label>
+            <TextField
               v-model="form.name"
-              class="input-field"
               placeholder="Masterblend 4-18-38"
             />
           </div>
@@ -45,9 +43,8 @@
         </div>
         <div>
           <label class="block text-xs text-[color:var(--text-muted)] mb-1">Состав / формула</label>
-          <input
+          <TextField
             v-model="form.composition"
-            class="input-field"
             placeholder="N 4% · P 18% · K 38%"
           />
           <p class="text-[11px] text-[color:var(--text-muted)] mt-1">
@@ -63,9 +60,8 @@
         </div>
         <div>
           <label class="block text-xs text-[color:var(--text-muted)] mb-1">Рекомендуемые стадии роста</label>
-          <input
+          <TextField
             v-model="form.recommended_stage"
-            class="input-field"
             placeholder="VEG, BLOOM, FRUIT"
           />
           <p class="text-[11px] text-[color:var(--text-muted)] mt-1">
@@ -74,12 +70,13 @@
         </div>
         <div>
           <label class="block text-xs text-[color:var(--text-muted)] mb-1">Заметки</label>
-          <textarea
+          <TextField
             v-model="form.notes"
+            multiline
             rows="2"
-            class="input-field !h-auto !py-2"
+            class="!h-auto !py-2"
             placeholder="Например: хорошо растворим в тёплой воде; хранить в сухом месте"
-          ></textarea>
+          />
         </div>
       </div>
     </div>
@@ -97,6 +94,8 @@
 </template>
 
 <script setup lang="ts">
+import TextField from '@/Components/TextField.vue'
+
 import { computed, reactive, ref, watch } from 'vue'
 import Modal from '@/Components/Modal.vue'
 import Button from '@/Components/Button.vue'

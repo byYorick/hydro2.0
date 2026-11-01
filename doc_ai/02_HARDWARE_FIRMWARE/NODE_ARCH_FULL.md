@@ -427,7 +427,7 @@ payload: "offline"
 
 - Узел переходит в режим Access Point (AP)
 - SSID: `{NODE_TYPE}_SETUP_{PIN}`, где PIN генерируется из MAC-адреса
-- Пароль: `hydro2025` (настраивается)
+- Пароль: генерируется на сессию setup (`setup_portal_generate_ap_password`) и один раз пишется в serial, если узел не передал свой
 - HTTP-сервер для ввода Wi-Fi credentials
 - После получения credentials:
   - Сохранение в NVS через `config_storage`

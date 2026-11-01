@@ -74,7 +74,7 @@
             v-else
             :key="getRowKey(row, index)"
             :data-testid="getRowTestId(row, index)"
-            class="border-b border-[color:var(--border-muted)] transition-colors"
+            class="border-b border-[color:var(--border-muted)] transition-colors hover:bg-[color:var(--bg-elevated)]"
             :class="[stripedClass(index), rowClass(row, index), rowClickableClass]"
             @click="emitRowClick(row)"
           >
@@ -118,7 +118,7 @@
             <tr
               :key="getRowKey(item, index)"
               :data-testid="getRowTestId(item, index)"
-              class="border-b border-[color:var(--border-muted)] transition-colors"
+              class="border-b border-[color:var(--border-muted)] transition-colors hover:bg-[color:var(--bg-elevated)]"
               :class="[stripedClass(index), rowClass(item, index), rowClickableClass]"
               @click="emitRowClick(item)"
             >

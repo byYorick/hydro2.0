@@ -62,7 +62,7 @@ function parseControlModePayload(raw: unknown): {
 
 export function useZoneAutomationScheduler(props: ZoneAutomationTabProps, deps: ZoneAutomationSchedulerDeps) {
   const { showToast, onControlModeChanged } = deps
-  const { subscribeToZoneCommands, unsubscribeAll } = useWebSocket(
+  const { unsubscribeAll } = useWebSocket(
     showToast,
     'zone-automation-runtime'
   )
@@ -284,13 +284,13 @@ export function useZoneAutomationScheduler(props: ZoneAutomationTabProps, deps: 
       await fetchAutomationControlMode()
     } finally {
       // Ignore stale finally after zone switch — do not clear a newer refresh.
-      if (generation !== refreshGeneration || props.zoneId !== requestedZoneId) {
-        return
-      }
-      refreshInFlight = false
-      if (refreshQueued) {
-        refreshQueued = false
-        void refreshRuntimeState()
+      const stale = generation !== refreshGeneration || props.zoneId !== requestedZoneId
+      if (!stale) {
+        refreshInFlight = false
+        if (refreshQueued) {
+          refreshQueued = false
+          void refreshRuntimeState()
+        }
       }
     }
   }

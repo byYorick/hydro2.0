@@ -41,9 +41,9 @@
                   :title="fieldHelp('component')"
                 >
                   Компонент
-                  <select
+                  <SelectField
                     v-model="form.component"
-                    class="input-select mt-1 w-full"
+                    class="mt-1 w-full"
                     data-testid="pump-calibration-component"
                   >
                     <option
@@ -53,7 +53,7 @@
                     >
                       {{ option.label }}
                     </option>
-                  </select>
+                  </SelectField>
                 </label>
 
                 <label
@@ -61,9 +61,9 @@
                   :title="fieldHelp('node_channel_id')"
                 >
                   Канал помпы
-                  <select
+                  <SelectField
                     v-model.number="form.node_channel_id"
-                    class="input-select mt-1 w-full"
+                    class="mt-1 w-full"
                     data-testid="pump-calibration-channel"
                   >
                     <option
@@ -73,7 +73,7 @@
                     >
                       {{ channel.label }}
                     </option>
-                  </select>
+                  </SelectField>
                 </label>
 
                 <label
@@ -81,13 +81,13 @@
                   :title="fieldHelp('duration_sec')"
                 >
                   Время запуска (сек)
-                  <input
+                  <TextField
                     v-model.number="form.duration_sec"
                     type="number"
                     :min="pumpSettings.calibration_duration_min_sec"
                     :max="pumpSettings.calibration_duration_max_sec"
                     step="1"
-                    class="input-field mt-1 w-full"
+                    class="mt-1 w-full"
                     data-testid="pump-calibration-duration"
                   />
                 </label>
@@ -107,13 +107,13 @@
                   :title="fieldHelp('actual_ml')"
                 >
                   Фактический объём (мл)
-                  <input
+                  <TextField
                     v-model.number="form.actual_ml"
                     type="number"
                     min="0.01"
                     max="100000"
                     step="0.01"
-                    class="input-field mt-1 w-full"
+                    class="mt-1 w-full"
                     data-testid="pump-calibration-actual-ml"
                   />
                 </label>
@@ -123,13 +123,13 @@
                   :title="fieldHelp('temperature_c')"
                 >
                   Температура (°C, опц.)
-                  <input
+                  <TextField
                     v-model.number="form.temperature_c"
                     type="number"
                     min="0"
                     max="50"
                     step="0.1"
-                    class="input-field mt-1 w-full"
+                    class="mt-1 w-full"
                     data-testid="pump-calibration-temperature"
                   />
                 </label>
@@ -139,13 +139,13 @@
                   :title="fieldHelp('test_volume_l')"
                 >
                   Объём теста (л)
-                  <input
+                  <TextField
                     v-model.number="form.test_volume_l"
                     type="number"
                     min="0.1"
                     max="1000"
                     step="0.1"
-                    class="input-field mt-1 w-full"
+                    class="mt-1 w-full"
                     data-testid="pump-calibration-test-volume"
                   />
                 </label>
@@ -155,13 +155,13 @@
                   :title="fieldHelp('ec_before_ms')"
                 >
                   EC до дозы (mS/cm)
-                  <input
+                  <TextField
                     v-model.number="form.ec_before_ms"
                     type="number"
                     min="0"
                     max="20"
                     step="0.001"
-                    class="input-field mt-1 w-full"
+                    class="mt-1 w-full"
                     data-testid="pump-calibration-ec-before"
                   />
                 </label>
@@ -171,13 +171,13 @@
                   :title="fieldHelp('ec_after_ms')"
                 >
                   EC после дозы (mS/cm)
-                  <input
+                  <TextField
                     v-model.number="form.ec_after_ms"
                     type="number"
                     min="0"
                     max="20"
                     step="0.001"
-                    class="input-field mt-1 w-full"
+                    class="mt-1 w-full"
                     data-testid="pump-calibration-ec-after"
                   />
                 </label>
@@ -268,7 +268,7 @@
                   v-for="item in currentPathStatuses"
                   :key="item.component"
                   class="inline-flex items-center rounded-full border px-2 py-1"
-                  :class="item.calibrated ? 'border-[color:var(--accent-green)] text-[color:var(--accent-green)]' : (item.current ? 'border-[color:var(--accent-yellow)] text-[color:var(--accent-yellow)]' : 'border-[color:var(--border-muted)] text-[color:var(--text-dim)]')"
+                  :class="item.calibrated ? 'border-[color:var(--status-ok)] text-[color:var(--status-ok)]' : (item.current ? 'border-[color:var(--series-yellow)] text-[color:var(--series-yellow)]' : 'border-[color:var(--border-muted)] text-[color:var(--text-dim)]')"
                 >
                   {{ item.label }}: {{ item.stateLabel }}
                 </span>
@@ -312,10 +312,10 @@
 
             <div
               v-if="allRequiredComponentsCalibrated"
-              class="rounded-xl border border-[color:var(--accent-green)] bg-[color:var(--bg-surface)] p-3 text-xs text-[color:var(--text-muted)]"
+              class="rounded-xl border border-[color:var(--status-ok)] bg-[color:var(--bg-surface)] p-3 text-xs text-[color:var(--text-muted)]"
               data-testid="pump-calibration-complete"
             >
-              <div class="text-sm font-semibold text-[color:var(--accent-green)]">
+              <div class="text-sm font-semibold text-[color:var(--status-ok)]">
                 Насосы откалиброваны
               </div>
               <div class="mt-1">
@@ -357,6 +357,10 @@
 </template>
 
 <script setup lang="ts">
+import SelectField from '@/Components/SelectField.vue'
+
+import TextField from '@/Components/TextField.vue'
+
 import { computed } from 'vue'
 import Modal from '@/Components/Modal.vue'
 import Button from '@/Components/Button.vue'

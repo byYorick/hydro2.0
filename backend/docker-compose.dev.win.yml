@@ -17,10 +17,17 @@
 services:
   mqtt:
     image: eclipse-mosquitto:2
+    entrypoint: ["/bin/sh", "/mosquitto-entrypoint.sh"]
+    environment:
+      MQTT_PYTHON_SERVICE_PASS: ${MQTT_PYTHON_SERVICE_PASS:-python_service_pass}
+      MQTT_AUTOMATION_ENGINE_PASS: ${MQTT_AUTOMATION_ENGINE_PASS:-automation_pass}
+      MQTT_HISTORY_LOGGER_PASS: ${MQTT_HISTORY_LOGGER_PASS:-logger_pass}
+      MQTT_MQTT_BRIDGE_PASS: ${MQTT_MQTT_BRIDGE_PASS:-bridge_pass}
+      MQTT_ESP32_NODE_PASS: ${MQTT_ESP32_NODE_PASS:-esp32_pass}
     ports:
-      - "1883:1883"
+      - "${MQTT_BIND_ADDR:-127.0.0.1}:1883:1883"
     volumes:
-      # Windows-совместимые пути (Docker Desktop автоматически конвертирует)
+      - ./services/mqtt-bridge/mosquitto-entrypoint.sh:/mosquitto-entrypoint.sh:ro
       - ./services/mqtt-bridge/mosquitto.dev.conf:/mosquitto/config/mosquitto.conf:ro
       - ./services/mqtt-bridge/passwords.txt:/mosquitto/config/passwords:ro
       - ./services/mqtt-bridge/acl:/mosquitto/config/acl:ro
@@ -33,7 +40,7 @@ services:
       POSTGRES_USER: hydro
       POSTGRES_DB: hydro_dev
     ports:
-      - "5432:5432"
+      - "${POSTGRES_BIND_ADDR:-127.0.0.1}:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - wal_archive:/wal_archive
@@ -42,7 +49,7 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      - "${REDIS_BIND_ADDR:-127.0.0.1}:6379:6379"
   laravel:
     build:
       context: ./laravel
@@ -54,7 +61,7 @@ services:
       - WEB_DOCUMENT_ROOT=/app/public
       - APP_ENV=local
       - APP_DEBUG=1
-      - APP_KEY=${APP_KEY:-base64:Go+le0yjTxoJWvbMib0hJTWXbzUdG00oeQpEVdNwUyc=}
+      - APP_KEY=${APP_KEY:?APP_KEY is required (run: make ensure-dev-secrets)}
       - SESSION_DRIVER=file
       - CACHE_DRIVER=redis
       - CACHE_STORE=redis
@@ -107,17 +114,15 @@ services:
       - VITE_WS_TLS=false
       # Python services token (must be set via environment variable or .env file)
       # Never commit actual tokens to version control
-      # ⚠️ ВАЖНО: dev-token-12345 - это известный dev-токен для разработки
-      # ⚠️ ОБЯЗАТЕЛЬНО переопределите все токены в production!
-      # ⚠️ Использование этого токена в production создает критическую уязвимость безопасности
-      - PY_API_TOKEN=${PY_API_TOKEN:-dev-token-12345}
-      - PY_INGEST_TOKEN=${PY_INGEST_TOKEN:-dev-token-12345}
-      - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:-dev-token-12345}
+      # Сервисные токены только из env (make ensure-dev-secrets). Один Bearer на Laravel/AE/history-logger.
+      - PY_API_TOKEN=${PY_API_TOKEN:?PY_API_TOKEN is required (run: make ensure-dev-secrets)}
+      - PY_INGEST_TOKEN=${PY_INGEST_TOKEN:?PY_INGEST_TOKEN is required (run: make ensure-dev-secrets)}
+      - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:?LARAVEL_API_TOKEN is required (run: make ensure-dev-secrets)}
       # Как у history-logger: сегмент зоны в MQTT (uid vs zn-id)
       - MQTT_ZONE_FORMAT=${MQTT_ZONE_FORMAT:-uid}
       # Laravel scheduler owner flags
       - AUTOMATION_LARAVEL_SCHEDULER_ENABLED=${AUTOMATION_LARAVEL_SCHEDULER_ENABLED:-0}
-      - AUTOMATION_LARAVEL_SCHEDULER_API_TOKEN=${AUTOMATION_LARAVEL_SCHEDULER_API_TOKEN:-${PY_INGEST_TOKEN:-dev-token-12345}}
+      - AUTOMATION_LARAVEL_SCHEDULER_API_TOKEN=${AUTOMATION_LARAVEL_SCHEDULER_API_TOKEN:-${PY_INGEST_TOKEN:?PY_INGEST_TOKEN is required (run: make ensure-dev-secrets)}}
       - AUTOMATION_LARAVEL_SCHEDULER_DISPATCH_INTERVAL_SEC=${AUTOMATION_LARAVEL_SCHEDULER_DISPATCH_INTERVAL_SEC:-60}
       - AUTOMATION_LARAVEL_SCHEDULER_DISPATCH_PARALLELISM=${AUTOMATION_LARAVEL_SCHEDULER_DISPATCH_PARALLELISM:-8}
       - AUTOMATION_LARAVEL_SCHEDULER_LOCK_TTL_SEC=${AUTOMATION_LARAVEL_SCHEDULER_LOCK_TTL_SEC:-55}
@@ -164,16 +169,15 @@ services:
       - MQTT_PORT=1883
       - MQTT_TLS=0
       - MQTT_USER=mqtt_bridge
-      - MQTT_PASS=bridge_pass
+      - MQTT_PASS=${MQTT_MQTT_BRIDGE_PASS:-bridge_pass}
       - PG_HOST=db
       - PG_DB=hydro_dev
       - PG_USER=hydro
       - PG_PASS=hydro
       - LARAVEL_API_URL=http://laravel
-      # ⚠️ ВАЖНО: dev-token-12345 - это известный dev-токен для разработки
-      # ⚠️ ОБЯЗАТЕЛЬНО переопределите в production!
-      - PY_API_TOKEN=${PY_API_TOKEN:-dev-token-12345}
-      - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:-dev-token-12345}
+      # Сервисные токены только из env (make ensure-dev-secrets). Один Bearer на Laravel/AE/history-logger.
+      - PY_API_TOKEN=${PY_API_TOKEN:?PY_API_TOKEN is required (run: make ensure-dev-secrets)}
+      - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:?LARAVEL_API_TOKEN is required (run: make ensure-dev-secrets)}
       # Сегмент зоны в MQTT (uid vs zn-id) — должен совпадать с Laravel/history-logger
       - MQTT_ZONE_FORMAT=${MQTT_ZONE_FORMAT:-uid}
     depends_on:
@@ -204,17 +208,18 @@ services:
       - MQTT_PORT=1883
       - MQTT_TLS=0
       - MQTT_USER=history_logger
-      - MQTT_PASS=logger_pass
+      - MQTT_PASS=${MQTT_HISTORY_LOGGER_PASS:-logger_pass}
+      - NODE_SECRET_WRAP_PASSPHRASE=${NODE_SECRET_WRAP_PASSPHRASE:-esp32_pass}
       - PG_HOST=db
       - PG_DB=hydro_dev
       - PG_USER=hydro
       - PG_PASS=hydro
       - LARAVEL_API_URL=http://laravel
-      # ⚠️ ВАЖНО: dev-токены для разработки, ОБЯЗАТЕЛЬНО переопределите в production!
-      - PY_API_TOKEN=${PY_API_TOKEN:-dev-token-12345}
-      - PY_INGEST_TOKEN=${PY_INGEST_TOKEN:-dev-token-12345}
-      - HISTORY_LOGGER_API_TOKEN=${HISTORY_LOGGER_API_TOKEN:-${PY_INGEST_TOKEN:-dev-token-12345}}
-      - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:-dev-token-12345}
+      # Сервисные токены только из env (make ensure-dev-secrets). Один Bearer на Laravel/AE/history-logger.
+      - PY_API_TOKEN=${PY_API_TOKEN:?PY_API_TOKEN is required (run: make ensure-dev-secrets)}
+      - PY_INGEST_TOKEN=${PY_INGEST_TOKEN:?PY_INGEST_TOKEN is required (run: make ensure-dev-secrets)}
+      - HISTORY_LOGGER_API_TOKEN=${HISTORY_LOGGER_API_TOKEN:-${PY_INGEST_TOKEN:?PY_INGEST_TOKEN is required (run: make ensure-dev-secrets)}}
+      - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:?LARAVEL_API_TOKEN is required (run: make ensure-dev-secrets)}
       - REDIS_HOST=redis
       - REDIS_PORT=6379
     depends_on:
@@ -249,7 +254,7 @@ services:
       - MQTT_PORT=1883
       - MQTT_TLS=0
       - MQTT_USER=automation_engine
-      - MQTT_PASS=automation_pass
+      - MQTT_PASS=${MQTT_AUTOMATION_ENGINE_PASS:-automation_pass}
       - PG_HOST=db
       - PG_DB=hydro_dev
       - PG_USER=hydro
@@ -258,9 +263,9 @@ services:
       - AE_WORKER_OWNER=ae3-${HOSTNAME:-dev}
       - PG_POOL_MAX_SIZE=10
       - LARAVEL_API_URL=http://laravel
-      # ⚠️ ВАЖНО: dev-токены для разработки, ОБЯЗАТЕЛЬНО переопределите в production!
-      - PY_API_TOKEN=${PY_API_TOKEN:-dev-token-12345}
-      - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:-dev-token-12345}
+      # Сервисные токены только из env (make ensure-dev-secrets). Один Bearer на Laravel/AE/history-logger.
+      - PY_API_TOKEN=${PY_API_TOKEN:?PY_API_TOKEN is required (run: make ensure-dev-secrets)}
+      - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:?LARAVEL_API_TOKEN is required (run: make ensure-dev-secrets)}
     depends_on:
       - mqtt
       - db

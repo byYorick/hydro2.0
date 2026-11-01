@@ -193,10 +193,10 @@ const variantClasses: Record<ToastVariant, string> = {
 
 function progressBarColor(variant: ToastVariant = 'info'): string {
   const colors = {
-    success: 'bg-[color:var(--accent-green)]',
-    error: 'bg-[color:var(--accent-red)]',
-    warning: 'bg-[color:var(--accent-amber)]',
-    info: 'bg-[color:var(--accent-cyan)]',
+    success: 'bg-[color:var(--status-ok)]',
+    error: 'bg-[color:var(--status-critical)]',
+    warning: 'bg-[color:var(--status-warning)]',
+    info: 'bg-[color:var(--status-info)]',
   }
   return colors[variant]
 }

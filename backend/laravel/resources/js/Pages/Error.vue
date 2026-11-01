@@ -6,7 +6,7 @@
           <div class="text-6xl mb-4">
             ⚠️
           </div>
-          <h1 class="text-2xl font-bold mb-2 text-[color:var(--accent-red)]">
+          <h1 class="text-2xl font-bold mb-2 text-[color:var(--status-critical)]">
             {{ status || 'Ошибка' }}
           </h1>
           <p class="text-sm text-[color:var(--text-muted)] mb-4">
@@ -24,7 +24,7 @@
             v-if="errors && Object.keys(errors).length > 0"
             class="text-left bg-[color:var(--bg-elevated)] p-3 rounded mb-4"
           >
-            <div class="text-sm font-semibold text-[color:var(--accent-red)] mb-2">
+            <div class="text-sm font-semibold text-[color:var(--status-critical)] mb-2">
               Ошибки валидации:
             </div>
             <ul class="text-xs text-[color:var(--text-muted)] space-y-1">
@@ -49,7 +49,7 @@
             v-if="isDev && exception"
             class="text-left bg-[color:var(--bg-elevated)] p-3 rounded mb-4 overflow-auto max-h-60"
           >
-            <div class="text-xs font-semibold text-[color:var(--accent-amber)] mb-2">
+            <div class="text-xs font-semibold text-[color:var(--status-warning)] mb-2">
               Детали ошибки (только в dev режиме):
             </div>
             <pre class="text-xs text-[color:var(--text-muted)] whitespace-pre-wrap">{{ exception }}</pre>

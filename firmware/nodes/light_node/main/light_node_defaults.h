@@ -40,7 +40,8 @@ extern "C" {
 #define LIGHT_NODE_LIGHT_SENSOR_PRECISION 0
 
 // Setup portal defaults
-#define LIGHT_NODE_SETUP_AP_PASSWORD    "hydro2025"
+/* NULL: setup_portal генерирует пароль AP на сессию и пишет его в serial. */
+#define LIGHT_NODE_SETUP_AP_PASSWORD    NULL
 
 // Factory reset (long-press) defaults
 // ESP32-C3: BOOT button обычно на GPIO9

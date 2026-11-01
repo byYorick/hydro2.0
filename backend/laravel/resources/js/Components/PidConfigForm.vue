@@ -169,7 +169,8 @@
         </span>
       </summary>
       <div class="p-3 grid grid-cols-1 md:grid-cols-4 gap-3">
-        <Field compact
+        <Field
+          compact
           label="Цель"
           :hint="phaseTargetAvailable ? phaseTargetSourceHint : 'runtime не подставит значения по умолчанию'"
         >
@@ -182,19 +183,21 @@
               из рецепта
             </span>
           </template>
-          <input
+          <TextField
             :value="phaseTargetDisplay"
             data-testid="pid-config-input-target"
             type="number"
             :step="0.01"
             :min="selectedType === 'ph' ? 4 : 0"
             :max="selectedType === 'ph' ? 9 : 10"
-            :class="readonlyCls"
             :placeholder="`Цель ${selectedType.toUpperCase()} не задана`"
             readonly
+            input-class="font-mono"
+            class="max-w-[8.5rem]"
           />
         </Field>
-        <Field compact
+        <Field
+          compact
           label="Мёртвая зона"
           hint="0..2 · игнорируется мелкое отклонение"
         >
@@ -204,17 +207,19 @@
           >
             <span class="text-brand font-mono text-xs">●</span>
           </template>
-          <input
+          <TextField
             v-model.number="form.dead_zone"
             type="number"
             step="0.01"
             min="0"
             max="2"
-            :class="inputCls"
             :title="fieldHelp('dead_zone')"
+            input-class="font-mono"
+            class="max-w-[8.5rem]"
           />
         </Field>
-        <Field compact
+        <Field
+          compact
           label="Ближняя зона"
           hint="должна быть > мёртвой"
         >
@@ -224,17 +229,19 @@
           >
             <span class="text-brand font-mono text-xs">●</span>
           </template>
-          <input
+          <TextField
             v-model.number="form.close_zone"
             type="number"
             step="0.01"
             min="0"
             max="5"
-            :class="inputCls"
             :title="fieldHelp('close_zone')"
+            input-class="font-mono"
+            class="max-w-[8.5rem]"
           />
         </Field>
-        <Field compact
+        <Field
+          compact
           label="Дальняя зона"
           hint="должна быть > ближней"
         >
@@ -244,14 +251,15 @@
           >
             <span class="text-brand font-mono text-xs">●</span>
           </template>
-          <input
+          <TextField
             v-model.number="form.far_zone"
             type="number"
             step="0.01"
             min="0"
             max="10"
-            :class="inputCls"
             :title="fieldHelp('far_zone')"
+            input-class="font-mono"
+            class="max-w-[8.5rem]"
           />
         </Field>
       </div>
@@ -268,55 +276,67 @@
         <span class="text-[11px] text-[var(--text-dim)]">мягкая коррекция около target</span>
       </summary>
       <div class="p-3 grid grid-cols-1 md:grid-cols-3 gap-3">
-        <Field compact label="Kp">
+        <Field
+          compact
+          label="Kp"
+        >
           <template
             v-if="isCoeffDirty('close', 'kp')"
             #right
           >
             <span class="text-brand font-mono text-xs">●</span>
           </template>
-          <input
+          <TextField
             v-model.number="form.zone_coeffs.close.kp"
             type="number"
             step="0.1"
             min="0"
             max="1000"
-            :class="inputCls"
             :title="fieldHelp('close.kp')"
+            input-class="font-mono"
+            class="max-w-[8.5rem]"
           />
         </Field>
-        <Field compact label="Ki">
+        <Field
+          compact
+          label="Ki"
+        >
           <template
             v-if="isCoeffDirty('close', 'ki')"
             #right
           >
             <span class="text-brand font-mono text-xs">●</span>
           </template>
-          <input
+          <TextField
             v-model.number="form.zone_coeffs.close.ki"
             type="number"
             step="0.01"
             min="0"
             max="100"
-            :class="inputCls"
             :title="fieldHelp('close.ki')"
+            input-class="font-mono"
+            class="max-w-[8.5rem]"
           />
         </Field>
-        <Field compact label="Kd">
+        <Field
+          compact
+          label="Kd"
+        >
           <template
             v-if="isCoeffDirty('close', 'kd')"
             #right
           >
             <span class="text-brand font-mono text-xs">●</span>
           </template>
-          <input
+          <TextField
             v-model.number="form.zone_coeffs.close.kd"
             type="number"
             step="0.01"
             min="0"
             max="100"
-            :class="inputCls"
             :title="fieldHelp('close.kd')"
+            input-class="font-mono"
+            class="max-w-[8.5rem]"
           />
         </Field>
       </div>
@@ -333,55 +353,67 @@
         <span class="text-[11px] text-[var(--text-dim)]">агрессивная коррекция при большом отклонении</span>
       </summary>
       <div class="p-3 grid grid-cols-1 md:grid-cols-3 gap-3">
-        <Field compact label="Kp">
+        <Field
+          compact
+          label="Kp"
+        >
           <template
             v-if="isCoeffDirty('far', 'kp')"
             #right
           >
             <span class="text-brand font-mono text-xs">●</span>
           </template>
-          <input
+          <TextField
             v-model.number="form.zone_coeffs.far.kp"
             type="number"
             step="0.1"
             min="0"
             max="1000"
-            :class="inputCls"
             :title="fieldHelp('far.kp')"
+            input-class="font-mono"
+            class="max-w-[8.5rem]"
           />
         </Field>
-        <Field compact label="Ki">
+        <Field
+          compact
+          label="Ki"
+        >
           <template
             v-if="isCoeffDirty('far', 'ki')"
             #right
           >
             <span class="text-brand font-mono text-xs">●</span>
           </template>
-          <input
+          <TextField
             v-model.number="form.zone_coeffs.far.ki"
             type="number"
             step="0.01"
             min="0"
             max="100"
-            :class="inputCls"
             :title="fieldHelp('far.ki')"
+            input-class="font-mono"
+            class="max-w-[8.5rem]"
           />
         </Field>
-        <Field compact label="Kd">
+        <Field
+          compact
+          label="Kd"
+        >
           <template
             v-if="isCoeffDirty('far', 'kd')"
             #right
           >
             <span class="text-brand font-mono text-xs">●</span>
           </template>
-          <input
+          <TextField
             v-model.number="form.zone_coeffs.far.kd"
             type="number"
             step="0.01"
             min="0"
             max="100"
-            :class="inputCls"
             :title="fieldHelp('far.kd')"
+            input-class="font-mono"
+            class="max-w-[8.5rem]"
           />
         </Field>
       </div>
@@ -398,7 +430,8 @@
         <span class="text-[11px] text-[var(--text-dim)]">защита от накопления ошибки</span>
       </summary>
       <div class="p-3 grid grid-cols-1 md:grid-cols-3 gap-3">
-        <Field compact
+        <Field
+          compact
           label="Предел интеграла"
           hint="pH обычно 12–20 · EC 20–100"
         >
@@ -408,14 +441,15 @@
           >
             <span class="text-brand font-mono text-xs">●</span>
           </template>
-          <input
+          <TextField
             v-model.number="form.max_integral"
             type="number"
             step="1"
             min="1"
             max="500"
-            :class="inputCls"
             :title="fieldHelp('max_integral')"
+            input-class="font-mono"
+            class="max-w-[8.5rem]"
           />
         </Field>
       </div>
@@ -477,6 +511,7 @@ import {
 } from '@/composables/runtimeTuningBundle'
 import { logger } from '@/utils/logger'
 import type { PidConfig, PidConfigWithMeta } from '@/types/PidConfig'
+import TextField from '@/Components/TextField.vue'
 
 const props = withDefaults(
   defineProps<{
@@ -491,10 +526,6 @@ const emit = defineEmits<{
   saved: [config: PidConfigWithMeta]
 }>()
 
-const inputCls =
-  'block w-full max-w-[8.5rem] h-8 rounded-md border border-[var(--border-muted)] bg-[var(--bg-surface)] text-[var(--text-primary)] px-2 text-sm font-mono outline-none focus-visible:ring-2 focus-visible:ring-brand'
-const readonlyCls =
-  'block w-full max-w-[8.5rem] h-8 rounded-md border border-[var(--border-muted)] bg-[var(--bg-elevated)] text-[var(--text-muted)] px-2 text-sm font-mono outline-none cursor-not-allowed'
 const summaryCls =
   'flex items-baseline gap-2 px-3 py-2 cursor-pointer bg-[var(--bg-elevated)] border-b border-[var(--border-muted)] hover:bg-[var(--bg-surface-strong)] [&::-webkit-details-marker]:hidden [&::marker]:content-none'
 

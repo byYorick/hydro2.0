@@ -129,13 +129,13 @@ export function alertBadgeVariant(
 }
 
 export function severityRailClass(alert: Alert): string {
-  if (normalizeAlertStatus(alert.status) === 'RESOLVED') return 'bg-[color:var(--accent-green)]'
+  if (normalizeAlertStatus(alert.status) === 'RESOLVED') return 'bg-[color:var(--status-ok)]'
 
   const severity = normalizeAlertSeverity(resolveEffectiveAlertSeverity(alert))
-  if (severity === 'critical') return 'bg-[color:var(--accent-red)]'
-  if (severity === 'error') return 'bg-[color:var(--accent-red)]/80'
-  if (severity === 'warning') return 'bg-[color:var(--accent-amber)]'
-  if (severity === 'info') return 'bg-[color:var(--accent-cyan)]'
+  if (severity === 'critical') return 'bg-[color:var(--status-critical)]'
+  if (severity === 'error') return 'bg-[color:var(--status-critical)]/80'
+  if (severity === 'warning') return 'bg-[color:var(--status-warning)]'
+  if (severity === 'info') return 'bg-[color:var(--status-info)]'
   return 'bg-[color:var(--text-muted)]'
 }
 

@@ -440,8 +440,14 @@ esp_err_t node_utils_publish_config_report(void) {
 
     const char *node_type = node_utils_get_node_type();
     cJSON *config = cJSON_Parse(config_json);
-    if (config) {
+    if (config == NULL) {
+        if (strstr(config_json, "\"node_secret\"") != NULL) {
+            ESP_LOGE(TAG, "config_report parse failed and payload contains node_secret; not publishing");
+            return ESP_FAIL;
+        }
+    } else {
         bool changed = false;
+        bool stripped_secret = false;
         cJSON *type_item = cJSON_GetObjectItem(config, "type");
         bool needs_patch = !cJSON_IsString(type_item) || !type_item->valuestring ||
             strlen(type_item->valuestring) == 0 || strcmp(type_item->valuestring, "unknown") == 0;
@@ -455,6 +461,15 @@ esp_err_t node_utils_publish_config_report(void) {
         cJSON_AddStringToObject(config, "fw_version", node_utils_get_firmware_version());
         changed = true;
 
+        /* HMAC-секрет остаётся в NVS, но не уходит в config_report. */
+        if (cJSON_GetObjectItem(config, "node_secret") != NULL ||
+            cJSON_GetObjectItem(config, "node_secret_enc") != NULL) {
+            cJSON_DeleteItemFromObject(config, "node_secret");
+            cJSON_DeleteItemFromObject(config, "node_secret_enc");
+            stripped_secret = true;
+            changed = true;
+        }
+
         if (changed) {
             char *patched = cJSON_PrintUnformatted(config);
             if (patched) {
@@ -462,10 +477,19 @@ esp_err_t node_utils_publish_config_report(void) {
                 if (patched_len < sizeof(config_json)) {
                     memcpy(config_json, patched, patched_len + 1);
                     ESP_LOGI(TAG, "Patched config_report metadata");
+                } else if (stripped_secret) {
+                    ESP_LOGE(TAG, "config_report exceeds buffer after stripping node_secret; not publishing raw NVS");
+                    free(patched);
+                    cJSON_Delete(config);
+                    return ESP_ERR_INVALID_SIZE;
                 } else {
                     ESP_LOGW(TAG, "Patched config_report exceeds buffer, sending original config");
                 }
                 free(patched);
+            } else if (stripped_secret) {
+                cJSON_Delete(config);
+                ESP_LOGE(TAG, "Failed to serialize config_report without node_secret");
+                return ESP_ERR_NO_MEM;
             }
         }
         cJSON_Delete(config);

@@ -14,7 +14,7 @@ from ae3lite.infrastructure.clients import history_logger_client as history_logg
 async def test_history_logger_client_posts_canonical_publish_payload() -> None:
     async def handler(request: httpx.Request) -> httpx.Response:
         assert str(request.url) == "http://history-logger:9300/commands"
-        assert request.headers["Authorization"] == "Bearer dev-token-12345"
+        assert request.headers["Authorization"] == "Bearer unit-test-service-token"
         payload = json.loads(request.content.decode("utf-8"))
         assert payload == {
             "greenhouse_uid": "gh-1",
@@ -30,7 +30,7 @@ async def test_history_logger_client_posts_canonical_publish_payload() -> None:
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     gateway = HistoryLoggerClient(
         base_url="http://history-logger:9300",
-        token="dev-token-12345",
+        token="unit-test-service-token",
         source="automation-engine",
         client=client,
     )

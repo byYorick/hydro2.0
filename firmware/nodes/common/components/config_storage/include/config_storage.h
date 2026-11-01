@@ -93,6 +93,15 @@ esp_err_t config_storage_load(void);
 esp_err_t config_storage_save(const char *json_config, size_t json_len);
 
 /**
+ * @brief Есть ли в incoming новый node_secret (plaintext или расшифрованный enc),
+ *        отличный от уже сохранённого.
+ *
+ * Ошибка расшифровки не считается изменением: NVS-секрет сохраняется.
+ */
+struct cJSON;
+bool config_storage_node_secret_changed(const struct cJSON *incoming, const struct cJSON *previous);
+
+/**
  * @brief Проверка наличия конфигурации в NVS
  * 
  * @return true если конфиг существует

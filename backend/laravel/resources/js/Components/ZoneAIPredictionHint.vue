@@ -116,10 +116,10 @@ const hintIcon = computed(() => {
 
 const hintClass = computed(() => {
   if (isOutOfRange.value) {
-    return 'border-[color:var(--badge-danger-border)] bg-[color:var(--badge-danger-bg)] text-[color:var(--accent-red)]'
+    return 'border-[color:var(--badge-danger-border)] bg-[color:var(--badge-danger-bg)] text-[color:var(--status-critical)]'
   }
   if (isNearEdge.value) {
-    return 'border-[color:var(--badge-warning-border)] bg-[color:var(--badge-warning-bg)] text-[color:var(--accent-amber)]'
+    return 'border-[color:var(--badge-warning-border)] bg-[color:var(--badge-warning-bg)] text-[color:var(--status-warning)]'
   }
   return 'border-[color:var(--border-muted)] bg-[color:var(--bg-surface)] text-[color:var(--text-dim)]'
 })

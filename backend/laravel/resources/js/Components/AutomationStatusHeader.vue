@@ -5,9 +5,9 @@
     >
       <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div class="min-w-0 space-y-2">
-        <p class="text-[11px] uppercase tracking-[0.22em] text-[color:var(--text-dim)]">
-          Текущий этап
-        </p>
+          <p class="text-[11px] uppercase tracking-[0.22em] text-[color:var(--text-dim)]">
+            Текущий этап
+          </p>
           <h3 class="text-lg font-semibold leading-snug text-[color:var(--text-primary)] md:text-xl">
             {{ stateLabel }}
           </h3>
@@ -35,7 +35,7 @@
             </span>
             <span
               v-if="displayRemainingLabel"
-              class="inline-flex items-center rounded-full border border-amber-400/35 bg-amber-500/10 px-2.5 py-1 font-mono text-xs tabular-nums text-amber-200"
+              class="inline-flex items-center rounded-full border border-status-warning bg-status-warning-soft px-2.5 py-1 font-mono text-xs tabular-nums text-status-warning"
             >
               {{ displayRemainingLabel }}
             </span>
@@ -65,22 +65,22 @@
         </div>
         <div class="h-1.5 overflow-hidden rounded-full bg-[color:var(--surface-muted)]/70">
           <div
-            class="h-full rounded-full bg-amber-400/90 transition-all duration-500"
+            class="h-full rounded-full bg-status-warning transition-all duration-500"
             :style="{ width: `${Math.max(progressPercent, isProcessActive ? 8 : 0)}%` }"
-          />
+          ></div>
         </div>
       </div>
     </div>
 
     <p
       v-if="errorMessage"
-      class="text-xs text-red-500"
+      class="text-xs text-status-critical"
     >
       {{ errorMessage }}
     </p>
     <p
       v-if="warningMessage"
-      class="text-xs text-amber-400"
+      class="text-xs text-status-warning"
     >
       {{ warningMessage }}
     </p>
@@ -128,7 +128,7 @@
             class="pipeline-connector mx-0.5"
             :class="connectorClass(stage.status)"
             aria-hidden="true"
-          />
+          ></span>
         </li>
       </ul>
     </section>
@@ -195,37 +195,34 @@ function stageStatusIcon(status: PipelineStageVisualStatus): string {
 
 function stageCardClass(status: PipelineStageVisualStatus): string {
   if (status === 'running') {
-    return 'border-amber-400/45 bg-amber-500/10 shadow-[0_0_0_1px_rgb(245_158_11/0.15)]'
+    return 'border-status-warning bg-status-warning-soft shadow-[0_0_0_1px_var(--status-warning)]'
   }
   if (status === 'completed') {
-    return 'border-emerald-400/35 bg-emerald-500/8'
+    return 'border-status-ok bg-status-ok-soft'
   }
   if (status === 'failed') {
-    return 'border-red-400/35 bg-red-500/10'
+    return 'border-status-critical bg-status-critical-soft'
   }
   return 'border-[color:var(--border-muted)]/40 bg-[color:var(--surface-card)]/25'
 }
 
 function stagePillClass(status: PipelineStageVisualStatus): string {
   if (status === 'running') {
-    return 'bg-amber-500/20 text-amber-300 border border-amber-400/40'
+    return 'bg-status-warning-soft text-status-warning border border-status-warning'
   }
   if (status === 'completed') {
-    return 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/40'
+    return 'bg-status-ok-soft text-status-ok border border-status-ok'
   }
   if (status === 'failed') {
-    return 'bg-red-500/20 text-red-300 border border-red-400/40'
+    return 'bg-status-critical-soft text-status-critical border border-status-critical'
   }
   if (status === 'manual') {
-    return 'bg-sky-500/20 text-sky-300 border border-sky-400/40'
+    return 'bg-status-info-soft text-status-info border border-status-info'
   }
-  if (status === 'canceled') {
-    return 'bg-zinc-500/25 text-zinc-300 border border-zinc-400/40'
+  if (status === 'canceled' || status === 'skipped') {
+    return 'bg-status-offline-soft text-status-offline border border-status-offline'
   }
-  if (status === 'skipped') {
-    return 'bg-slate-500/20 text-slate-300 border border-slate-400/40'
-  }
-  return 'bg-slate-500/15 text-slate-400 border border-slate-500/30'
+  return 'bg-status-offline-soft text-status-offline border border-status-offline'
 }
 
 function stageDotClass(status: PipelineStageVisualStatus): string {
@@ -259,42 +256,37 @@ function connectorClass(status: PipelineStageVisualStatus): string {
   font-weight: 700;
 }
 
-.pipeline-stage-dot--pending {
-  background: rgb(71 85 105 / 0.25);
-  border-color: rgb(148 163 184 / 0.4);
-  color: rgb(203 213 225 / 0.95);
+.pipeline-stage-dot--pending,
+.pipeline-stage-dot--canceled,
+.pipeline-stage-dot--skipped {
+  background: var(--status-offline-soft);
+  border-color: var(--status-offline);
+  color: var(--status-offline);
 }
 
 .pipeline-stage-dot--running {
-  background: rgb(245 158 11 / 0.2);
-  border-color: rgb(251 191 36 / 0.5);
-  color: rgb(253 230 138 / 0.95);
+  background: var(--status-warning-soft);
+  border-color: var(--status-warning);
+  color: var(--status-warning);
   animation: stage-running-pulse 1.1s ease-in-out infinite;
 }
 
 .pipeline-stage-dot--completed {
-  background: rgb(16 185 129 / 0.2);
-  border-color: rgb(52 211 153 / 0.5);
-  color: rgb(110 231 183 / 1);
+  background: var(--status-ok-soft);
+  border-color: var(--status-ok);
+  color: var(--status-ok);
 }
 
 .pipeline-stage-dot--failed {
-  background: rgb(239 68 68 / 0.2);
-  border-color: rgb(248 113 113 / 0.5);
-  color: rgb(252 165 165 / 1);
+  background: var(--status-critical-soft);
+  border-color: var(--status-critical);
+  color: var(--status-critical);
 }
 
 .pipeline-stage-dot--manual {
-  background: rgb(14 165 233 / 0.2);
-  border-color: rgb(56 189 248 / 0.5);
-  color: rgb(125 211 252 / 1);
-}
-
-.pipeline-stage-dot--canceled,
-.pipeline-stage-dot--skipped {
-  background: rgb(100 116 139 / 0.24);
-  border-color: rgb(148 163 184 / 0.4);
-  color: rgb(203 213 225 / 0.95);
+  background: var(--status-info-soft);
+  border-color: var(--status-info);
+  color: var(--status-info);
 }
 
 .pipeline-connector {

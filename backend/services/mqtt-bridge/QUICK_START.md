@@ -2,7 +2,7 @@
 
 ## Для Development окружения
 
-По умолчанию в development используется `allow_anonymous true` для упрощения разработки.
+В development анонимный доступ выключен (`allow_anonymous false`). Пароли берутся из `passwords.txt` или генерируются `mosquitto-entrypoint.sh` из `MQTT_*_PASS`. Порт `1883` на хосте слушает только `127.0.0.1`.
 
 ## Для Production окружения
 

@@ -81,26 +81,26 @@ const offset = computed(() => {
 const progressColorClass = computed(() => {
   switch (props.variant) {
     case 'success':
-      return 'text-[color:var(--accent-green)]'
+      return 'text-[color:var(--status-ok)]'
     case 'warning':
-      return 'text-[color:var(--accent-amber)]'
+      return 'text-[color:var(--status-warning)]'
     case 'danger':
-      return 'text-[color:var(--accent-red)]'
+      return 'text-[color:var(--status-critical)]'
     default:
-      return 'text-[color:var(--accent-cyan)]'
+      return 'text-[color:var(--status-info)]'
   }
 })
 
 const textColorClass = computed(() => {
   switch (props.variant) {
     case 'success':
-      return 'text-[color:var(--accent-green)]'
+      return 'text-[color:var(--status-ok)]'
     case 'warning':
-      return 'text-[color:var(--accent-amber)]'
+      return 'text-[color:var(--status-warning)]'
     case 'danger':
-      return 'text-[color:var(--accent-red)]'
+      return 'text-[color:var(--status-critical)]'
     default:
-      return 'text-[color:var(--accent-cyan)]'
+      return 'text-[color:var(--status-info)]'
   }
 })
 </script>

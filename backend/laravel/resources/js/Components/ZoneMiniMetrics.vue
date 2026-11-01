@@ -203,12 +203,12 @@ function getDeltaClass(delta: number | null, tolerance: number): string {
   
   const absDelta = Math.abs(delta)
   if (absDelta <= tolerance) {
-    return 'text-[color:var(--accent-green)] bg-[color:var(--badge-success-bg)]'
+    return 'text-[color:var(--status-ok)] bg-[color:var(--badge-success-bg)]'
   }
   if (absDelta <= tolerance * 2) {
-    return 'text-[color:var(--accent-amber)] bg-[color:var(--badge-warning-bg)]'
+    return 'text-[color:var(--status-warning)] bg-[color:var(--badge-warning-bg)]'
   }
-  return 'text-[color:var(--accent-red)] bg-[color:var(--badge-danger-bg)]'
+  return 'text-[color:var(--status-critical)] bg-[color:var(--badge-danger-bg)]'
 }
 
 function formatDelta(delta: number | null): string {

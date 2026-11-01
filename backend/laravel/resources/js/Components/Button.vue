@@ -11,7 +11,7 @@
 import { computed, useAttrs } from 'vue'
 
 export type ButtonVariant = 'primary' | 'secondary' | 'outline' | 'ghost' | 'danger' | 'warning' | 'success' | 'default'
-type ButtonSize = 'sm' | 'md'
+type ButtonSize = 'sm' | 'md' | 'lg'
 
 interface Props {
   variant?: ButtonVariant
@@ -26,7 +26,7 @@ const props = withDefaults(defineProps<Props>(), {
 const attrs = useAttrs()
 
 const classes = computed(() => {
-  const base = 'btn shadow-sm'
+  const base = 'btn shadow-sm disabled:cursor-not-allowed disabled:opacity-50'
   const variants: Record<ButtonVariant, string> = {
     primary: 'btn-primary',
     secondary: 'btn-secondary',
@@ -40,6 +40,7 @@ const classes = computed(() => {
   const sizes: Record<ButtonSize, string> = {
     sm: 'h-9 px-3 text-xs',
     md: 'h-11 px-5 text-sm',
+    lg: 'h-12 px-6 text-base',
   }
   return [base, variants[props.variant] ?? variants.primary, sizes[props.size] ?? sizes.md, attrs.class]
     .filter(Boolean)

@@ -1,7 +1,7 @@
 <template>
   <article
     class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)] p-4"
-    :class="highlighted ? 'ring-1 ring-[color:var(--accent-cyan)]' : ''"
+    :class="highlighted ? 'ring-1 ring-[color:var(--status-info)]' : ''"
     data-testid="recipe-phase-card"
   >
     <header class="flex flex-wrap items-start justify-between gap-2">

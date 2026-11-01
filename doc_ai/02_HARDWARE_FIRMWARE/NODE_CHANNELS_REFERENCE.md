@@ -252,6 +252,27 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
 а факт исполнения подтверждается через `command_response` (см. `../03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md` и
 `DEVICE_NODE_PROTOCOL.md`).
 
+### 3.0. Аппаратный E-STOP нод ph / ec / pump
+
+Production `ph_node`, `ec_node` и `pump_node` читают общую кнопку через компонент
+`actuator_failsafe`:
+
+- GPIO `32`, `active_low`, внутренняя подтяжка pull-up, debounce 80 мс;
+- GPIO не strapping; канал насоса этот пин занимать нельзя;
+- пока вход защёлкнут, `run_pump` и `dose` отклоняются terminal `ERROR` /
+  `error_code=estop_active` и не попадают в очередь. Команда, уже стоявшая в очереди,
+  не стартует и завершается тем же `ERROR`;
+- safe-OFF — `pump_driver_force_deenergize`: direct GPIO level 0 пишется до мьютекса
+  драйвера. Таймаут мьютекса логируется и не оставляет выход включённым;
+- отпускание снимает защёлку и не восстанавливает насос;
+- boot/reset вызывает safe-OFF один раз. Кнопка, зажатая на первом отсчёте, латчит сразу;
+- safe mode (watchdog / потеря связи) вызывает тот же force-OFF;
+- `pump_driver_run` / `dose` / `set_state(true)` сами отказываются, если защёлка уже стоит.
+  Нода без компонента (weak-символ пуст) этот отказ не получает.
+
+Очередь дозирования pH/EC по-прежнему не включает два насоса одновременно. Это отдельный
+программный interlock и не заменяет аппаратный E-STOP.
+
 ### 3.1. Насосы pH
 
 - Domain keys: `pump_acid`, `pump_base`.
@@ -447,6 +468,7 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
 8. `set_relay {state:true}` на IRR-actuator path работает как latched `ON/OFF` и остаётся включенным до явного `OFF`.
 9. На отдельном физическом входе `E-Stop` нода должна держать все актуаторы в `OFF`, пока кнопка нажата,
    и публиковать `emergency_stop_activated` в `storage_state/event` на факт нажатия.
+   Таймаут мьютекса актуаторов не отменяет GPIO safe-OFF и защёлку `estop_active`.
 
 ### 3.5. Канал суммарного тока насосов (SENSOR + связь с актуаторами)
 

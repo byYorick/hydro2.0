@@ -34,13 +34,13 @@
           <label class="block text-xs font-medium text-[color:var(--text-muted)]">
             {{ field.label }}
           </label>
-          <input
-            :value="stringValue(field.path)"
+          <TextField
+            :model-value="stringValue(field.path)"
             :type="field.type === 'string' ? 'text' : 'number'"
             :step="field.step ?? (field.type === 'integer' ? 1 : 'any')"
             :min="field.min"
             :max="field.max"
-            class="input-field w-full"
+            class="w-full"
             :placeholder="`Система: ${resolvedSystemSettings[field.path as keyof PumpCalibrationSettings]}`"
             :title="field.description"
             @input="updateField(field.path, ($event.target as HTMLInputElement).value)"
@@ -76,6 +76,8 @@
 </template>
 
 <script setup lang="ts">
+import TextField from '@/Components/TextField.vue'
+
 import { computed, onMounted, ref } from 'vue'
 import Badge from '@/Components/Badge.vue'
 import Button from '@/Components/Button.vue'

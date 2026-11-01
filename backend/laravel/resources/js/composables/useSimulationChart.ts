@@ -22,9 +22,9 @@ export function useSimulationChart(params: UseSimulationChartParams) {
       text: resolveCssColor('--text-muted', '#9ca3af'),
       textStrong: resolveCssColor('--text-primary', '#e5e7eb'),
       grid: resolveCssColor('--border-muted', '#374151'),
-      ph: resolveCssColor('--accent-cyan', '#3b82f6'),
-      ec: resolveCssColor('--accent-green', '#10b981'),
-      temp: resolveCssColor('--accent-amber', '#f59e0b'),
+      ph: resolveCssColor('--status-info', '#3b82f6'),
+      ec: resolveCssColor('--status-ok', '#10b981'),
+      temp: resolveCssColor('--status-warning', '#f59e0b'),
     }
   })
 

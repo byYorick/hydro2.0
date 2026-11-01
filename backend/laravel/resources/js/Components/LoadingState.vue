@@ -70,7 +70,7 @@ const props = withDefaults(defineProps<Props>(), {
   loading: false,
   message: '',
   size: 'md',
-  color: 'var(--accent-cyan)',
+  color: 'var(--status-info)',
   fullScreen: false,
   containerClass: '',
   skeleton: false,

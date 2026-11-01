@@ -65,7 +65,7 @@ class CommandSignatureServiceTest extends TestCase
     {
         $this->app['env'] = 'testing';
         config([
-            'app.node_default_secret' => 'hydro-default-secret-key-2025',
+            'app.node_default_secret' => 'local-node-secret-fixture',
             'app.key' => 'base64:test-key',
         ]);
 
@@ -78,7 +78,7 @@ class CommandSignatureServiceTest extends TestCase
         /** @var NodeSecretService $secrets */
         $secrets = $this->app->make(NodeSecretService::class);
 
-        $this->assertSame('hydro-default-secret-key-2025', $secrets->resolve($node));
+        $this->assertSame('local-node-secret-fixture', $secrets->resolve($node));
     }
 
     public function test_resolve_returns_null_in_production_without_per_node_secret(): void

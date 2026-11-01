@@ -68,6 +68,7 @@ defineEmits<{ (e: 'pick', id: number): void }>()
 
 function statusTone(raw: string | null | undefined): ChipTone {
   const s = (raw ?? '').toLowerCase()
+  if (s.includes('offline') || s.includes('stale')) return 'offline'
   if (s.includes('run')) return 'growth'
   if (s.includes('draft') || s.includes('stop') || s.includes('paus')) return 'warn'
   if (s.includes('error') || s.includes('fail')) return 'alert'

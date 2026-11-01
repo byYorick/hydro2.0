@@ -5401,15 +5401,21 @@ static void mqtt_connected_callback(bool connected, void *user_ctx) {
 
 static esp_err_t run_setup_portal_blocking(void) {
     esp_err_t err;
+    char generated_ap_password[13] = {0};
+    char setup_pin[7] = {0};
+    char ap_ssid[32] = {0};
+    err = setup_portal_generate_ap_password(generated_ap_password, sizeof(generated_ap_password));
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to generate setup AP password: %s", esp_err_to_name(err));
+        return err;
+    }
     setup_portal_full_config_t setup_cfg = {
         .node_type_prefix = "TESTNODE",
-        .ap_password = "hydro2025",
+        .ap_password = generated_ap_password,
         .enable_oled = false,
         .oled_user_ctx = NULL,
     };
-    char setup_pin[7] = {0};
-    char ap_ssid[32] = {0};
-    const char *ap_password = setup_cfg.ap_password ? setup_cfg.ap_password : "hydro2025";
+    const char *ap_password = generated_ap_password;
 
     ESP_LOGW(TAG, "Launching setup portal for WiFi/MQTT configuration");
     test_node_ui_set_mode("SETUP");

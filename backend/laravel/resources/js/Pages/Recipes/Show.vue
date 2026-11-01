@@ -14,13 +14,13 @@
           </span>
           <Link
             href="/plants"
-            class="text-[color:var(--accent-cyan)] hover:underline"
+            class="text-[color:var(--status-info)] hover:underline"
           >
             Культуры
           </Link>
           <Link
             href="/nutrients"
-            class="text-[color:var(--accent-cyan)] hover:underline"
+            class="text-[color:var(--status-info)] hover:underline"
           >
             Удобрения
           </Link>
@@ -121,7 +121,7 @@
               >
                 <Link
                   :href="`/zones/${item.zone_id}`"
-                  class="text-[color:var(--accent-cyan)] hover:underline"
+                  class="text-[color:var(--status-info)] hover:underline"
                 >
                   {{ item.zone_name || `Зона #${item.zone_id}` }}
                 </Link>

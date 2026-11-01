@@ -131,7 +131,7 @@
                     </div>
                   </Field>
                   <Field label="Длительность (сек)">
-                    <input
+                    <TextField
                       v-bind="numAttrs"
                       v-model.number="form.duration_sec"
                       min="1"
@@ -178,7 +178,7 @@
                       label="Фактический объём *"
                       hint="мл"
                     >
-                      <input
+                      <TextField
                         v-bind="numAttrs"
                         v-model.number="form.actual_ml"
                         step="0.1"
@@ -189,7 +189,7 @@
                       label="Температура"
                       hint="°C, опц."
                     >
-                      <input
+                      <TextField
                         v-bind="numAttrs"
                         v-model.number="form.temperature_c"
                         step="0.1"
@@ -199,7 +199,7 @@
                       label="Объём теста (для k)"
                       hint="л"
                     >
-                      <input
+                      <TextField
                         v-bind="numAttrs"
                         v-model.number="form.test_volume_l"
                         step="0.1"
@@ -210,7 +210,7 @@
                       label="EC до дозы"
                       hint="mS/cm"
                     >
-                      <input
+                      <TextField
                         v-bind="numAttrs"
                         v-model.number="form.ec_before_ms"
                         step="0.01"
@@ -221,7 +221,7 @@
                       label="EC после дозы"
                       hint="mS/cm"
                     >
-                      <input
+                      <TextField
                         v-bind="numAttrs"
                         v-model.number="form.ec_after_ms"
                         step="0.01"
@@ -388,6 +388,8 @@
 </template>
 
 <script setup lang="ts">
+import TextField from '@/Components/TextField.vue'
+
 import { computed, reactive, ref, watch } from 'vue'
 import Button from '@/Components/Button.vue'
 import { Chip, Field, Stat } from '@/Components/Shared/Primitives'
@@ -432,9 +434,7 @@ const emit = defineEmits<{
   (e: 'save', payload: PumpCalibrationSavePayload): void
 }>()
 
-const inputCls =
-  'block w-full h-8 rounded-lg border border-[var(--border-muted)] bg-[var(--bg-surface)] text-[var(--text-primary)] px-2.5 text-sm font-mono outline-none transition-[border-color,box-shadow,background-color] duration-150 focus:border-brand focus:ring-2 focus:ring-brand-soft focus-visible:border-brand focus-visible:ring-2 focus-visible:ring-brand-soft'
-const numAttrs = { class: inputCls, type: 'number' }
+const numAttrs = { type: 'number' }
 
 const componentOptions: Array<{ value: PumpCalibrationComponent; label: string }> = [
   { value: 'npk', label: 'NPK' },

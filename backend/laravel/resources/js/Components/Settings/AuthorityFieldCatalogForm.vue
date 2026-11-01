@@ -7,10 +7,10 @@
       v-if="totalFields > SEARCH_THRESHOLD"
       class="flex flex-wrap items-center gap-2"
     >
-      <input
+      <TextField
         v-model="search"
         type="search"
-        class="input-field w-full sm:w-64"
+        class="w-full sm:w-64"
         placeholder="Поиск параметра"
         aria-label="Поиск параметра"
         data-testid="authority-field-search"
@@ -94,16 +94,17 @@
               </span>
             </label>
 
-            <textarea
+            <TextField
               v-else-if="field.type === 'json'"
               :id="fieldInputId(field.path)"
               v-model="draft[field.path]"
+              multiline
               rows="6"
-              class="input-field settings-control--wide font-mono text-xs"
               :data-testid="`authority-field-${field.path}`"
+              input-class="settings-control--wide font-mono text-xs"
             />
 
-            <input
+            <TextField
               v-else
               :id="fieldInputId(field.path)"
               v-model="draft[field.path]"
@@ -111,7 +112,6 @@
               :step="field.step ?? (field.type === 'integer' ? 1 : 'any')"
               :min="field.min"
               :max="field.max"
-              class="input-field"
               :class="field.type === 'string' ? 'settings-control--text' : 'settings-control--num text-right'"
               :data-testid="`authority-field-${field.path}`"
             />
@@ -123,6 +123,8 @@
 </template>
 
 <script setup lang="ts">
+import TextField from '@/Components/TextField.vue'
+
 import { computed, ref, watch } from 'vue'
 import SettingsFieldRow from '@/Components/Settings/SettingsFieldRow.vue'
 import SettingsFieldHelp from '@/Components/Settings/SettingsFieldHelp.vue'

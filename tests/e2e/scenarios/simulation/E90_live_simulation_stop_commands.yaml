@@ -236,7 +236,7 @@ actions:
     method: GET
     url: http://localhost:9101/sessions/${node_sim_session_id}
     headers:
-      Authorization: Bearer dev-token-12345
+      Authorization: Bearer ${PY_API_TOKEN}
     retries: 10
     retry_delay_seconds: 2
     capture_response: node_sim_session
@@ -259,7 +259,7 @@ actions:
     method: GET
     url: http://localhost:9101/sessions/${node_sim_session_id}
     headers:
-      Authorization: Bearer dev-token-12345
+      Authorization: Bearer ${PY_API_TOKEN}
     retries: 10
     retry_delay_seconds: 2
     capture_response: node_sim_session_after

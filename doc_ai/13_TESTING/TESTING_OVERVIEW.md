@@ -129,7 +129,7 @@ MQTT_PASS=                         # Пароль (опционально)
 
 # Laravel API
 LARAVEL_URL=http://localhost:8081  # URL Laravel API (E2E использует 8081)
-LARAVEL_API_TOKEN=dev-token-12345  # Опционально (legacy); по умолчанию AuthClient
+LARAVEL_API_TOKEN=  # задайте через make ensure-dev-secrets; для UI-шагов по умолчанию AuthClient
 
 # WebSocket (Reverb)
 WS_URL=ws://localhost:6002         # URL WebSocket сервера (E2E использует 6002)

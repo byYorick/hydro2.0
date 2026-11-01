@@ -16,7 +16,7 @@
           <div class="flex items-center gap-1 text-xs text-[color:var(--text-muted)]">
             <div
               class="w-2 h-2 rounded-full"
-              :class="nodesOnline > 0 ? 'bg-[color:var(--accent-green)]' : 'bg-[color:var(--text-dim)]'"
+              :class="nodesOnline > 0 ? 'bg-[color:var(--status-ok)]' : 'bg-[color:var(--text-dim)]'"
             ></div>
             <span>{{ nodesOnline }}/{{ nodesTotal }}</span>
           </div>
@@ -50,11 +50,11 @@
           <div>
             <div class="flex items-center justify-between text-xs mb-1">
               <span class="text-[color:var(--text-muted)]">Прогресс цикла</span>
-              <span class="font-semibold text-[color:var(--accent-cyan)]">{{ Math.round(zone.cycle_progress ?? 0) }}%</span>
+              <span class="font-semibold text-[color:var(--status-info)]">{{ Math.round(zone.cycle_progress ?? 0) }}%</span>
             </div>
             <div class="relative w-full h-2 bg-[color:var(--border-muted)] rounded-full overflow-hidden">
               <div
-                class="absolute inset-0 bg-[linear-gradient(90deg,var(--accent-cyan),var(--accent-green))] rounded-full transition-all duration-500"
+                class="absolute inset-0 bg-[linear-gradient(90deg,var(--status-info),var(--status-ok))] rounded-full transition-all duration-500"
                 :style="{ width: `${zone.cycle_progress}%` }"
               ></div>
             </div>
@@ -70,7 +70,7 @@
             </div>
             <div class="relative w-full h-1.5 bg-[color:var(--border-muted)] rounded-full overflow-hidden">
               <div
-                class="absolute inset-0 bg-[linear-gradient(90deg,var(--accent-green),var(--accent-cyan))] rounded-full transition-all duration-500"
+                class="absolute inset-0 bg-[linear-gradient(90deg,var(--status-ok),var(--status-info))] rounded-full transition-all duration-500"
                 :style="{ width: `${Math.min(100, (zone.current_phase.progress / (zone.current_phase.progress + 1)) * 100)}%` }"
               ></div>
             </div>
@@ -155,7 +155,7 @@
             class="flex items-start gap-2 p-2 rounded bg-[color:var(--badge-danger-bg)] border border-[color:var(--badge-danger-border)]"
           >
             <svg
-              class="w-4 h-4 text-[color:var(--accent-red)] shrink-0 mt-0.5"
+              class="w-4 h-4 text-[color:var(--status-critical)] shrink-0 mt-0.5"
               fill="currentColor"
               viewBox="0 0 20 20"
             >
@@ -166,7 +166,7 @@
               />
             </svg>
             <div class="flex-1 min-w-0">
-              <div class="text-xs font-medium text-[color:var(--accent-red)]">
+              <div class="text-xs font-medium text-[color:var(--status-critical)]">
                 {{ alert.type || 'Алерт' }}
               </div>
               <div
@@ -198,7 +198,7 @@
         </div>
         <Link
           :href="`/zones/${zone.id}`"
-          class="text-xs text-[color:var(--accent-cyan)] hover:text-[color:var(--accent-green)] transition-colors"
+          class="text-xs text-[color:var(--status-info)] hover:text-[color:var(--status-ok)] transition-colors"
         >
           Подробнее →
         </Link>

@@ -35,7 +35,7 @@
             :href="src.url"
             target="_blank"
             rel="noopener noreferrer"
-            class="text-xs text-[color:var(--accent-cyan)] hover:underline break-all"
+            class="text-xs text-[color:var(--status-info)] hover:underline break-all"
           >
             {{ src.label }}
           </a>

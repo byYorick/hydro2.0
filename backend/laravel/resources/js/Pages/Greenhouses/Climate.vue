@@ -3,6 +3,8 @@ import { Head, Link } from '@inertiajs/vue3'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { api } from '@/services/api'
 import { route } from '@/utils/route'
+import TextField from '@/Components/TextField.vue'
+import SelectField from '@/Components/SelectField.vue'
 
 type ControlMode = 'auto' | 'semi' | 'manual'
 
@@ -208,7 +210,7 @@ onMounted(loadState)
 
       <div
         v-if="error"
-        class="border border-red-800 bg-red-950/30 p-3 text-sm text-red-100"
+        class="border border-status-critical bg-status-critical-soft p-3 text-sm text-status-critical"
       >
         {{ error }}
       </div>
@@ -306,13 +308,13 @@ onMounted(loadState)
               </div>
               <div
                 v-if="state.last_error_code"
-                class="mt-3 border border-red-900 bg-red-950/30 p-3 text-sm text-red-100"
+                class="mt-3 border border-status-critical bg-status-critical-soft p-3 text-sm text-status-critical"
               >
                 {{ state.last_error_code }}<span v-if="state.last_error_message"> · {{ state.last_error_message }}</span>
               </div>
               <div
                 v-if="state.active_alerts_summary?.length"
-                class="mt-3 border border-amber-900 bg-amber-950/30 p-3 text-sm text-amber-100"
+                class="mt-3 border border-status-warning bg-status-warning-soft p-3 text-sm text-status-warning"
               >
                 <div class="font-medium">
                   Активные ограничения
@@ -367,57 +369,52 @@ onMounted(loadState)
               <div class="mt-3 grid grid-cols-2 gap-3">
                 <label class="text-xs text-zinc-400">
                   Левая, %
-                  <input
+                  <TextField
                     v-model.number="overrideForm.left_position_pct"
                     type="number"
                     min="0"
                     max="100"
-                    class="mt-1 h-9 w-full border border-zinc-700 bg-zinc-950 px-2 text-sm text-zinc-100"
                     :disabled="!canOperate || savingOverride"
                   />
                 </label>
                 <label class="text-xs text-zinc-400">
                   Правая, %
-                  <input
+                  <TextField
                     v-model.number="overrideForm.right_position_pct"
                     type="number"
                     min="0"
                     max="100"
-                    class="mt-1 h-9 w-full border border-zinc-700 bg-zinc-950 px-2 text-sm text-zinc-100"
                     :disabled="!canOperate || savingOverride"
                   />
                 </label>
                 <label class="text-xs text-zinc-400">
                   TTL, сек
-                  <input
+                  <TextField
                     v-model.number="overrideForm.ttl_sec"
                     type="number"
                     min="60"
                     max="86400"
-                    class="mt-1 h-9 w-full border border-zinc-700 bg-zinc-950 px-2 text-sm text-zinc-100"
                     :disabled="!canOperate || savingOverride"
                   />
                 </label>
                 <label class="text-xs text-zinc-400">
                   Вернуть режим
-                  <select
+                  <SelectField
                     v-model="overrideForm.return_mode"
-                    class="mt-1 h-9 w-full border border-zinc-700 bg-zinc-950 px-2 text-sm text-zinc-100"
                     :disabled="!canOperate || savingOverride"
                   >
                     <option value="auto">auto</option>
                     <option value="semi">semi</option>
                     <option value="manual">manual</option>
-                  </select>
+                  </SelectField>
                 </label>
               </div>
               <label class="mt-3 block text-xs text-zinc-400">
                 Причина
-                <input
+                <TextField
                   v-model="overrideForm.reason"
                   type="text"
                   maxlength="500"
-                  class="mt-1 h-9 w-full border border-zinc-700 bg-zinc-950 px-2 text-sm text-zinc-100"
                   :disabled="!canOperate || savingOverride"
                 />
               </label>

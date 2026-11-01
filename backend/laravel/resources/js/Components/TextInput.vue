@@ -1,26 +1,20 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { ref } from 'vue'
+import TextField from '@/Components/TextField.vue'
 
-const model = defineModel<string>({
-    required: true,
-});
+defineOptions({ inheritAttrs: false })
 
-const input = ref<HTMLInputElement | null>(null);
+const model = defineModel<string>({ required: true })
+const field = ref<{ focus: () => void } | null>(null)
 
-onMounted(() => {
-    if (input.value?.hasAttribute('autofocus')) {
-        input.value.focus();
-    }
-});
-
-defineExpose({ focus: () => input.value?.focus() });
+defineExpose({ focus: () => field.value?.focus() })
 </script>
 
 <template>
-  <input
-    v-bind="$attrs"
-    ref="input"
+  <TextField
+    ref="field"
     v-model="model"
-    class="input-field w-full"
+    class="w-full"
+    v-bind="$attrs"
   />
 </template>

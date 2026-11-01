@@ -114,7 +114,7 @@ const submit = () => {
 
         <div
           v-show="status === 'verification-link-sent'"
-          class="mt-2 text-sm font-medium text-[color:var(--accent-green)]"
+          class="mt-2 text-sm font-medium text-[color:var(--status-ok)]"
         >
           Новое письмо с подтверждением отправлено на ваш адрес электронной почты.
         </div>

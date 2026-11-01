@@ -29,18 +29,18 @@
           v-if="$slots.actions"
           class="flex flex-wrap items-center gap-2 shrink-0"
         >
-          <slot name="actions" />
+          <slot name="actions"></slot>
         </div>
       </div>
     </header>
 
     <div class="settings-card__body">
-      <slot />
+      <slot></slot>
       <div
         v-if="$slots.footer"
         class="settings-sticky-footer"
       >
-        <slot name="footer" />
+        <slot name="footer"></slot>
       </div>
     </div>
   </section>

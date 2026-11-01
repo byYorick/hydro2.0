@@ -9,6 +9,7 @@ const pageProps = vi.hoisted(() => ({
 
 vi.mock('@inertiajs/vue3', () => ({
   usePage: () => ({ props: pageProps }),
+  Link: { name: 'Link', props: ['href'], template: '<a :href="href"><slot /></a>' },
 }))
 
 function mountHeader(role: UserRole, extra: Record<string, unknown> = {}) {

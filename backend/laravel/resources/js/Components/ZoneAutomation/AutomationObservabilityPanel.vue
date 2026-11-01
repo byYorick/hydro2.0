@@ -373,7 +373,7 @@
         <button
           v-if="causalStrip.taskId != null && causalStrip.zoneId != null"
           type="button"
-          class="text-[10px] font-semibold uppercase tracking-wide text-[color:var(--accent-cyan)] hover:underline"
+          class="text-[10px] font-semibold uppercase tracking-wide text-[color:var(--status-info)] hover:underline"
           data-testid="automation-causal-events-link"
           @click="openTaskEvents(causalStrip.zoneId, causalStrip.taskId)"
         >

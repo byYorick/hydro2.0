@@ -19,6 +19,14 @@ describe('Chip', () => {
     expect(w.classes().some((c) => c.includes('bg-[var(--bg-elevated)]'))).toBe(true)
   })
 
+  it('принимает общий тон offline, не ломая growth', () => {
+    const offline = mount(Chip, { props: { tone: 'offline' }, slots: { default: 'нет связи' } })
+    const growth = mount(Chip, { props: { tone: 'growth' }, slots: { default: 'ok' } })
+    expect(offline.classes()).toContain('tone-offline')
+    expect(growth.classes()).toContain('bg-growth-soft')
+    expect(offline.classes()).not.toContain('bg-growth-soft')
+  })
+
   it('renders icon slot', () => {
     const w = mount(Chip, {
       props: { tone: 'brand' },
