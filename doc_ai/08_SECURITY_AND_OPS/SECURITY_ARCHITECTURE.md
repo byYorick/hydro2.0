@@ -52,30 +52,20 @@ MQTT работает в режиме:
 - включен WPA2/WPA3,
 - LAN недоступна извне.
 
-## 2.2. Рекомендуемая конфигурация для “production”
+## 2.2. Production
 
-```
-listener 1883
-allow_anonymous false
+`mosquitto.prod.conf`: `allow_anonymous false`, `password_file`, `acl_file`, listener 1883.
 
-password_file /mosquitto/config/passwords
-acl_file /mosquitto/config/acl
-```
+TLS: `generate_mqtt_certs.sh` кладёт сертификат в `backend/services/mqtt-bridge/certs/`. Entrypoint добавляет listener **8883**, если есть `server.crt` и `server.key`. Клиенты: `MQTT_TLS=1`, `MQTT_PORT=8883`, `MQTT_CA_FILE`. После перевода всех клиентов — `MQTT_PLAINTEXT_ENABLED=0`. Пошагово: `configs/security/tls_mqtt_example.md`.
 
-Пользователь:
-```
-python_service
-```
+ACL (`backend/services/mqtt-bridge/acl`):
 
-ACL:
-```
-user python_service
-topic readwrite hydro/#
+- `history_logger` — `readwrite hydro/#` (единственная широкая учётка: команды, config, телеметрия).
+- `mqtt_bridge` — чтение status/lwt/heartbeat/telemetry.
+- `automation_engine`, `python_service` — без топиков (AE пишет команды через REST history-logger).
+- `esp32_node` — pattern по `%c` (client id = `node_uid`): запись telemetry/status/heartbeat/lwt/diagnostics/error/config_report/command_response/event, чтение `config` и `command`. Плюс `node_hello`, `time/request` (write), `time/response` (read) и тот же набор на pre-bind `gh-temp` (command/config там тоже только чтение).
 
-user esp32
-topic readwrite hydro/+/+/esp32/#
-topic write hydro/+/+/+/status
-```
+Старые прошивки с client id = MAC не попадут в зональные топики, пока их не перешьют этой версией `mqtt_manager`.
 
 ## 2.3. Подпись команд и конфигураций
 

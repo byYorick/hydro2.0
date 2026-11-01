@@ -1,57 +1,64 @@
-# MQTT ACL (Access Control List) File
-# Format: user <username>
-#         topic [read|write|readwrite] <topic_pattern>
+# MQTT ACL
+# history-logger — единственный сервис с широким доступом к hydro/#:
+# он читает телеметрию/статусы и публикует command, config и time/response.
+# Остальные учётки — только то, чем они реально пользуются.
 #
-# Topic patterns support wildcards:
-#   + - single level wildcard (e.g., hydro/+/telemetry)
-#   # - multi-level wildcard (e.g., hydro/#)
+# Per-node: прошивка ставит MQTT client id = node_uid.
+# Строки pattern действуют на всех пользователей и подставляют %c (client id).
+# Поэтому client id сервисов не должен совпадать с node_uid.
+# Узел не публикует command и config: эти topic — только чтение.
+# Запись command/config остаётся у history-logger.
 
-# Python services - full access to hydro namespace
-user python_service
-topic readwrite hydro/#
-
-# Automation engine - только чтение телеметрии и ответов, команды через history-logger REST API
-user automation_engine
-topic read hydro/+/+/+/+/telemetry
-topic read hydro/+/+/+/status
-topic read hydro/+/+/+/+/command_response
-topic read hydro/+/+/+/+/event
-topic readwrite hydro/+/+/events/#
-
-# ESP32 nodes - read/write their own topics
-# Pattern: hydro/{greenhouse_uid}/{zone_uid}/{node_uid}/#
-user esp32_node
-topic write hydro/+/+/+/+/telemetry
-topic write hydro/node_hello
-topic write hydro/+/+/+/node_hello
-topic write hydro/+/+/+/status
-topic write hydro/+/+/+/heartbeat
-topic write hydro/+/+/+/lwt
-topic write hydro/+/+/+/diagnostics
-topic write hydro/+/+/+/error
-topic write hydro/+/+/+/config_report
-topic write hydro/+/+/+/+/command_response
-topic write hydro/+/+/+/+/event
-topic read hydro/+/+/+/config
-topic read hydro/+/+/+/+/command
-
-# History logger - единственная точка публикации команд, читает телеметрию
 user history_logger
-topic read hydro/+/+/+/+/telemetry
-topic read hydro/+/+/+/status
-topic read hydro/+/+/+/heartbeat
-topic read hydro/+/+/+/lwt
-topic read hydro/+/+/+/diagnostics
-topic read hydro/+/+/+/error
-topic read hydro/+/+/+/config_report
-topic read hydro/+/+/+/node_hello
-topic read hydro/+/+/+/+/command_response
-topic read hydro/+/+/+/+/event
-topic read hydro/node_hello
-topic read hydro/time/request
-topic write hydro/+/+/+/+/command
-topic write hydro/+/+/events/#
-
-# MQTT Bridge - full access (bridge between systems)
-user mqtt_bridge
 topic readwrite hydro/#
+
+# mqtt-bridge только читает живой статус узла (status_probe).
+user mqtt_bridge
+topic read hydro/+/+/+/status
+topic read hydro/+/+/+/lwt
+topic read hydro/+/+/+/heartbeat
+topic read hydro/+/+/+/+/telemetry
+topic read hydro/gh-temp/zn-temp/+/status
+topic read hydro/gh-temp/zn-temp/+/lwt
+topic read hydro/gh-temp/zn-temp/+/heartbeat
+topic read hydro/gh-temp/zn-temp/+/+/telemetry
+
+# automation-engine команды не публикует: только REST history-logger.
+# Учётка остаётся в passwords.txt, топиков нет.
+user automation_engine
+
+# python_service в runtime не подключается к брокеру.
+user python_service
+
+# ESP32. Зональные топики — только своего client id (node_uid).
+# gh-temp — общий pre-bind namespace (сегмент там hardware_id, не node_uid).
+user esp32_node
+topic write hydro/node_hello
+topic write hydro/time/request
+topic read hydro/time/response
+topic read hydro/gh-temp/zn-temp/+/config
+topic read hydro/gh-temp/zn-temp/+/+/command
+topic write hydro/gh-temp/zn-temp/+/+/telemetry
+topic write hydro/gh-temp/zn-temp/+/status
+topic write hydro/gh-temp/zn-temp/+/heartbeat
+topic write hydro/gh-temp/zn-temp/+/lwt
+topic write hydro/gh-temp/zn-temp/+/diagnostics
+topic write hydro/gh-temp/zn-temp/+/error
+topic write hydro/gh-temp/zn-temp/+/config_report
+topic write hydro/gh-temp/zn-temp/+/node_hello
+topic write hydro/gh-temp/zn-temp/+/+/command_response
+topic write hydro/gh-temp/zn-temp/+/+/event
+
+# %c = client id = node_uid. Команды и NodeConfig — только чтение.
+pattern read hydro/+/+/%c/config
+pattern read hydro/+/+/%c/+/command
+pattern write hydro/+/+/%c/+/telemetry
+pattern write hydro/+/+/%c/status
+pattern write hydro/+/+/%c/heartbeat
+pattern write hydro/+/+/%c/lwt
+pattern write hydro/+/+/%c/diagnostics
+pattern write hydro/+/+/%c/error
+pattern write hydro/+/+/%c/config_report
+pattern write hydro/+/+/%c/node_hello
+pattern write hydro/+/+/%c/+/command_response
+pattern write hydro/+/+/%c/+/event
