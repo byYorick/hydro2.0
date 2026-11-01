@@ -108,7 +108,7 @@ class TestAe3RuntimeConfigValidate:
         cfg.validate()  # second call must also succeed
 
     def test_token_with_only_valid_content_passes(self) -> None:
-        for token in ("x", "dev-token-12345", "Bearer abc", "a" * 256):
+        for token in ("x", "unit-test-service-token", "Bearer abc", "a" * 256):
             cfg = _config(history_logger_api_token=token)
             cfg.validate()  # should not raise
 

@@ -64,7 +64,7 @@ python3 integration_tests/test_error_reporting.py
 export MQTT_HOST=localhost
 export MQTT_PORT=1883
 export LARAVEL_URL=http://localhost:8080
-export LARAVEL_API_TOKEN=dev-token-12345
+export LARAVEL_API_TOKEN=  # значение из backend/.env после make ensure-dev-secrets
 export PROMETHEUS_URL=http://localhost:9090
 export HISTORY_LOGGER_URL=http://localhost:9300
 

@@ -164,18 +164,16 @@ services:
       - VITE_WS_TLS=false
       # Python services token (must be set via environment variable or .env file)
       # Never commit actual tokens to version control
-      # ⚠️ ВАЖНО: dev-token-12345 - это известный dev-токен для разработки
-      # ⚠️ ОБЯЗАТЕЛЬНО переопределите все токены в production!
-      # ⚠️ Использование этого токена в production создает критическую уязвимость безопасности
-      - PY_API_TOKEN=${PY_API_TOKEN:-dev-token-12345}
-      - PY_INGEST_TOKEN=${PY_INGEST_TOKEN:-dev-token-12345}
-      - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:-dev-token-12345}
-      - ALERTMANAGER_WEBHOOK_SECRET=${ALERTMANAGER_WEBHOOK_SECRET:-dev-alertmanager-webhook-secret}
+      # Сервисные токены только из env (make ensure-dev-secrets). Один Bearer на Laravel/AE/history-logger.
+      - PY_API_TOKEN=${PY_API_TOKEN:?PY_API_TOKEN is required (run: make ensure-dev-secrets)}
+      - PY_INGEST_TOKEN=${PY_INGEST_TOKEN:?PY_INGEST_TOKEN is required (run: make ensure-dev-secrets)}
+      - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:?LARAVEL_API_TOKEN is required (run: make ensure-dev-secrets)}
+      - ALERTMANAGER_WEBHOOK_SECRET=${ALERTMANAGER_WEBHOOK_SECRET:?ALERTMANAGER_WEBHOOK_SECRET is required (run: make ensure-dev-secrets)}
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
       - TELEGRAM_CHAT_IDS=${TELEGRAM_CHAT_IDS:-}
       # Laravel scheduler owner flags
       - AUTOMATION_LARAVEL_SCHEDULER_ENABLED=${AUTOMATION_LARAVEL_SCHEDULER_ENABLED:-1}
-      - AUTOMATION_LARAVEL_SCHEDULER_API_TOKEN=${AUTOMATION_LARAVEL_SCHEDULER_API_TOKEN:-${PY_INGEST_TOKEN:-dev-token-12345}}
+      - AUTOMATION_LARAVEL_SCHEDULER_API_TOKEN=${AUTOMATION_LARAVEL_SCHEDULER_API_TOKEN:-${PY_INGEST_TOKEN:?PY_INGEST_TOKEN is required (run: make ensure-dev-secrets)}}
       # Tick dispatch и HTTP-параллелизм (см. doc_ai/06_DOMAIN_ZONES_RECIPES/SCHEDULER_ENGINE.md)
       - AUTOMATION_LARAVEL_SCHEDULER_DISPATCH_INTERVAL_SEC=${AUTOMATION_LARAVEL_SCHEDULER_DISPATCH_INTERVAL_SEC:-60}
       - AUTOMATION_LARAVEL_SCHEDULER_DISPATCH_PARALLELISM=${AUTOMATION_LARAVEL_SCHEDULER_DISPATCH_PARALLELISM:-8}
@@ -250,10 +248,9 @@ services:
       - PG_USER=hydro
       - PG_PASS=hydro
       - LARAVEL_API_URL=http://laravel
-      # ⚠️ ВАЖНО: dev-token-12345 - это известный dev-токен для разработки
-      # ⚠️ ОБЯЗАТЕЛЬНО переопределите в production!
-      - PY_API_TOKEN=${PY_API_TOKEN:-dev-token-12345}
-      - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:-dev-token-12345}
+      # Сервисные токены только из env (make ensure-dev-secrets). Один Bearer на Laravel/AE/history-logger.
+      - PY_API_TOKEN=${PY_API_TOKEN:?PY_API_TOKEN is required (run: make ensure-dev-secrets)}
+      - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:?LARAVEL_API_TOKEN is required (run: make ensure-dev-secrets)}
       # Сегмент зоны в MQTT (uid vs zn-id) — должен совпадать с Laravel/history-logger
       - MQTT_ZONE_FORMAT=${MQTT_ZONE_FORMAT:-uid}
     depends_on:
@@ -304,11 +301,11 @@ services:
       - AE_DB_DSN=postgresql://hydro:hydro@db:5432/hydro_dev
       - LARAVEL_API_URL=http://laravel
       - MQTT_ZONE_FORMAT=uid
-      # ⚠️ ВАЖНО: dev-токены для разработки, ОБЯЗАТЕЛЬНО переопределите в production!
-      - PY_API_TOKEN=${PY_API_TOKEN:-dev-token-12345}
-      - PY_INGEST_TOKEN=${PY_INGEST_TOKEN:-dev-token-12345}
-      - HISTORY_LOGGER_API_TOKEN=${HISTORY_LOGGER_API_TOKEN:-${PY_INGEST_TOKEN:-dev-token-12345}}
-      - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:-dev-token-12345}
+      # Сервисные токены только из env (make ensure-dev-secrets). Один Bearer на Laravel/AE/history-logger.
+      - PY_API_TOKEN=${PY_API_TOKEN:?PY_API_TOKEN is required (run: make ensure-dev-secrets)}
+      - PY_INGEST_TOKEN=${PY_INGEST_TOKEN:?PY_INGEST_TOKEN is required (run: make ensure-dev-secrets)}
+      - HISTORY_LOGGER_API_TOKEN=${HISTORY_LOGGER_API_TOKEN:-${PY_INGEST_TOKEN:?PY_INGEST_TOKEN is required (run: make ensure-dev-secrets)}}
+      - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:?LARAVEL_API_TOKEN is required (run: make ensure-dev-secrets)}
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - SIMULATION_TELEMETRY_EVENTS=1
@@ -367,11 +364,11 @@ services:
       - AE_WORKER_OWNER=ae3-${HOSTNAME:-dev}
       - PG_POOL_MAX_SIZE=10
       - LARAVEL_API_URL=http://laravel
-      # ⚠️ ВАЖНО: dev-токены для разработки, ОБЯЗАТЕЛЬНО переопределите в production!
-      - PY_API_TOKEN=${PY_API_TOKEN:-dev-token-12345}
-      - PY_INGEST_TOKEN=${PY_INGEST_TOKEN:-dev-token-12345}
-      - HISTORY_LOGGER_API_TOKEN=${HISTORY_LOGGER_API_TOKEN:-${PY_INGEST_TOKEN:-dev-token-12345}}
-      - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:-dev-token-12345}
+      # Сервисные токены только из env (make ensure-dev-secrets). Один Bearer на Laravel/AE/history-logger.
+      - PY_API_TOKEN=${PY_API_TOKEN:?PY_API_TOKEN is required (run: make ensure-dev-secrets)}
+      - PY_INGEST_TOKEN=${PY_INGEST_TOKEN:?PY_INGEST_TOKEN is required (run: make ensure-dev-secrets)}
+      - HISTORY_LOGGER_API_TOKEN=${HISTORY_LOGGER_API_TOKEN:-${PY_INGEST_TOKEN:?PY_INGEST_TOKEN is required (run: make ensure-dev-secrets)}}
+      - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:?LARAVEL_API_TOKEN is required (run: make ensure-dev-secrets)}
       - CONFIG_FETCH_MIN_INTERVAL_SECONDS=60
       - HYDRO_CONFIGS_DIR=/hydro-configs
     depends_on:
@@ -520,7 +517,7 @@ services:
     container_name: alertmanager
     entrypoint: ["/bin/sh", "/etc/alertmanager/entrypoint.sh"]
     environment:
-      - ALERTMANAGER_WEBHOOK_SECRET=${ALERTMANAGER_WEBHOOK_SECRET:-dev-alertmanager-webhook-secret}
+      - ALERTMANAGER_WEBHOOK_SECRET=${ALERTMANAGER_WEBHOOK_SECRET:?ALERTMANAGER_WEBHOOK_SECRET is required (run: make ensure-dev-secrets)}
     command:
       - '--config.file=/etc/alertmanager/config.yml'
       - '--storage.path=/alertmanager'
@@ -749,7 +746,7 @@ services:
       - MQTT_USER=node_emulator
       - MQTT_PASS=node_emulator_pass
       - LARAVEL_URL=http://laravel
-      - LARAVEL_API_TOKEN=dev-token-12345
+      - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:?LARAVEL_API_TOKEN is required (run: make ensure-dev-secrets)}
       - PROMETHEUS_URL=http://prometheus:9090
       - HISTORY_LOGGER_URL=http://history-logger:9300
       - PYTHONPATH=/app
