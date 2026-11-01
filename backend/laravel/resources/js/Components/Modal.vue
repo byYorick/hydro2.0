@@ -75,11 +75,50 @@ const titleId = `app-modal-title-${Math.random().toString(36).slice(2, 10)}`
 const dialogRef = ref<HTMLElement | null>(null)
 let previouslyFocused: HTMLElement | null = null
 
+const FOCUSABLE_SELECTOR = [
+  'a[href]',
+  'button:not([disabled])',
+  'textarea:not([disabled])',
+  'input:not([disabled]):not([type="hidden"])',
+  'select:not([disabled])',
+  '[tabindex]:not([tabindex="-1"])',
+].join(', ')
+
+function focusableElements(): HTMLElement[] {
+  if (!dialogRef.value) {
+    return []
+  }
+  return Array.from(dialogRef.value.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR))
+    .filter((element) => !element.hasAttribute('disabled') && element.tabIndex !== -1)
+}
+
 function onKeydown(event: KeyboardEvent): void {
   if (event.key === 'Escape') {
     event.preventDefault()
     emit('close')
+    return
   }
+
+  if (event.key !== 'Tab' || !dialogRef.value) {
+    return
+  }
+
+  const items = focusableElements()
+  if (items.length === 0) {
+    event.preventDefault()
+    dialogRef.value.focus()
+    return
+  }
+
+  const currentIndex = items.indexOf(document.activeElement as HTMLElement)
+  event.preventDefault()
+  if (event.shiftKey) {
+    const nextIndex = currentIndex <= 0 ? items.length - 1 : currentIndex - 1
+    items[nextIndex]?.focus()
+    return
+  }
+  const nextIndex = currentIndex === -1 || currentIndex >= items.length - 1 ? 0 : currentIndex + 1
+  items[nextIndex]?.focus()
 }
 
 watch(() => props.open, async (isOpen) => {
