@@ -109,7 +109,7 @@ class ScheduleDispatcherTest extends TestCase
             ],
             headers: [
                 'Accept' => 'application/json',
-                'Authorization' => 'Bearer dev-token-12345',
+                'Authorization' => 'Bearer unit-test-service-token',
                 'X-Trace-Id' => 'test-trace-id',
             ],
             traceId: 'test-trace-id',
@@ -181,7 +181,7 @@ class ScheduleDispatcherTest extends TestCase
             ],
             headers: [
                 'Accept' => 'application/json',
-                'Authorization' => 'Bearer dev-token-12345',
+                'Authorization' => 'Bearer unit-test-service-token',
                 'X-Trace-Id' => 'test-trace-id',
             ],
             traceId: 'test-trace-id',
@@ -269,7 +269,7 @@ class ScheduleDispatcherTest extends TestCase
             ],
             headers: [
                 'Accept' => 'application/json',
-                'Authorization' => 'Bearer dev-token-12345',
+                'Authorization' => 'Bearer unit-test-service-token',
                 'X-Trace-Id' => 'test-trace-id',
             ],
             traceId: 'test-trace-id',
@@ -365,7 +365,7 @@ class ScheduleDispatcherTest extends TestCase
             ],
             headers: [
                 'Accept' => 'application/json',
-                'Authorization' => 'Bearer dev-token-12345',
+                'Authorization' => 'Bearer unit-test-service-token',
                 'X-Trace-Id' => 'test-trace-id',
             ],
             traceId: 'test-trace-id',
@@ -445,7 +445,7 @@ class ScheduleDispatcherTest extends TestCase
             ],
             headers: [
                 'Accept' => 'application/json',
-                'Authorization' => 'Bearer dev-token-12345',
+                'Authorization' => 'Bearer unit-test-service-token',
                 'X-Trace-Id' => 'test-trace-id',
             ],
             traceId: 'test-trace-id',
@@ -517,7 +517,7 @@ class ScheduleDispatcherTest extends TestCase
             ],
             headers: [
                 'Accept' => 'application/json',
-                'Authorization' => 'Bearer dev-token-12345',
+                'Authorization' => 'Bearer unit-test-service-token',
                 'X-Trace-Id' => 'test-trace-id',
             ],
             traceId: 'test-trace-id',
@@ -590,7 +590,7 @@ class ScheduleDispatcherTest extends TestCase
             ],
             headers: [
                 'Accept' => 'application/json',
-                'Authorization' => 'Bearer dev-token-12345',
+                'Authorization' => 'Bearer unit-test-service-token',
                 'X-Trace-Id' => 'test-trace-id',
             ],
             traceId: 'test-trace-id',
@@ -654,7 +654,7 @@ class ScheduleDispatcherTest extends TestCase
             ],
             headers: [
                 'Accept' => 'application/json',
-                'Authorization' => 'Bearer dev-token-12345',
+                'Authorization' => 'Bearer unit-test-service-token',
                 'X-Trace-Id' => 'test-trace-id',
             ],
             traceId: 'test-trace-id',
@@ -732,7 +732,7 @@ class ScheduleDispatcherTest extends TestCase
             ],
             headers: [
                 'Accept' => 'application/json',
-                'Authorization' => 'Bearer dev-token-12345',
+                'Authorization' => 'Bearer unit-test-service-token',
                 'X-Trace-Id' => 'test-trace-id',
             ],
             traceId: 'test-trace-id',
@@ -795,7 +795,7 @@ class ScheduleDispatcherTest extends TestCase
             ],
             headers: [
                 'Accept' => 'application/json',
-                'Authorization' => 'Bearer dev-token-12345',
+                'Authorization' => 'Bearer unit-test-service-token',
                 'X-Trace-Id' => 'test-trace-id',
             ],
             traceId: 'test-trace-id',
@@ -1292,7 +1292,7 @@ class ScheduleDispatcherTest extends TestCase
             ],
             headers: [
                 'Accept' => 'application/json',
-                'Authorization' => 'Bearer dev-token-12345',
+                'Authorization' => 'Bearer unit-test-service-token',
                 'X-Trace-Id' => 'test-trace-id',
             ],
             traceId: 'test-trace-id',

@@ -63,7 +63,8 @@ extern "C" {
 #define EC_NODE_PUMP_CURRENT_MAX_MA 500.0f
 
 // Setup portal defaults
-#define EC_NODE_SETUP_AP_PASSWORD    "hydro2025"
+/* NULL: setup_portal генерирует пароль AP на сессию и пишет его в serial. */
+#define EC_NODE_SETUP_AP_PASSWORD    NULL
 
 // Factory reset (long-press) defaults
 #define EC_NODE_FACTORY_RESET_GPIO           GPIO_NUM_0  // BOOT button on most devkits

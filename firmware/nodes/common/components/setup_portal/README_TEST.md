@@ -22,7 +22,8 @@ python3 test_setup_portal.py \
   --wifi-ssid "MyHomeWiFi" \
   --wifi-password "mypassword123" \
   --mqtt-host "192.168.1.4" \
-  --mqtt-port 1883
+  --mqtt-port 1883 \
+  --ap-password "пароль из serial (WiFi Pass)"
 ```
 
 #### Только тестирование валидации payload
@@ -42,7 +43,7 @@ python3 test_setup_portal.py \
 | `--wifi-password` | Пароль целевой WiFi сети | Да (кроме `--test-validation-only`) |
 | `--mqtt-host` | IP адрес MQTT брокера | Да (кроме `--test-validation-only`) |
 | `--mqtt-port` | Порт MQTT брокера (1-65535) | Да (кроме `--test-validation-only`) |
-| `--ap-password` | Пароль WiFi AP (по умолчанию: `hydro2025`) | Нет |
+| `--ap-password` | Пароль WiFi AP из serial-лога узла | Да (кроме `--test-validation-only`) |
 | `--test-validation-only` | Только тестировать валидацию payload | Нет |
 | `--timeout` | Таймаут запросов в секундах (по умолчанию: 10) | Нет |
 
@@ -96,7 +97,7 @@ HTTP 400 Bad Request с текстовым сообщением об ошибк�
 #### Тест с реальным узлом
 
 1. Запустите узел в режиме setup (WiFi AP должен быть активен)
-2. Подключитесь к WiFi AP узла (SSID: `PH_SETUP_123456`, пароль: `hydro2025`)
+2. Подключитесь к WiFi AP узла (SSID: `PH_SETUP_123456`, пароль — строка `WiFi Pass` в serial)
 3. Запустите скрипт:
 
 ```bash
@@ -105,7 +106,8 @@ python3 test_setup_portal.py \
   --wifi-ssid "MyHomeWiFi" \
   --wifi-password "mypassword123" \
   --mqtt-host "192.168.1.4" \
-  --mqtt-port 1883
+  --mqtt-port 1883 \
+  --ap-password "пароль из serial (WiFi Pass)"
 ```
 
 4. Узел должен перезагрузиться и подключиться к указанному WiFi

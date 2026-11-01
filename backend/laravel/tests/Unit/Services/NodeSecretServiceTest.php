@@ -120,7 +120,7 @@ class NodeSecretServiceTest extends TestCase
     {
         $this->app['env'] = 'local';
         config([
-            'app.node_default_secret' => 'hydro-default-secret-key-2025',
+            'app.node_default_secret' => 'local-node-secret-fixture',
             'app.key' => 'base64:local-key',
         ]);
 
@@ -133,6 +133,6 @@ class NodeSecretServiceTest extends TestCase
         /** @var NodeSecretService $service */
         $service = $this->app->make(NodeSecretService::class);
 
-        $this->assertSame('hydro-default-secret-key-2025', $service->resolve($node));
+        $this->assertSame('local-node-secret-fixture', $service->resolve($node));
     }
 }

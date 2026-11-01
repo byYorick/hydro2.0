@@ -54,13 +54,22 @@ fi
 : "${SERVICE_LOG_INCLUDE_REGEX:= - (ERROR|CRITICAL) - |testing\\.ERROR:|Traceback|Exception}"
 : "${SERVICE_LOG_EXCLUDE_REGEX:=connect_tcp.started| 0 failed|GET /api/health |SQLSTATE\\[40001\\].*nodes_register_hwid_zone_unique|Scheduler task execution finished|testing\\.ERROR: SQLSTATE\\[40001\\]: Serialization failure|url\":\"http://laravel/api/nodes/register\".*SQLSTATE\\[40001\\]}"
 
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/../backend/scripts/ensure-dev-secrets.sh"
+ensure_dev_secrets "$SCRIPT_DIR/.env"
+load_env_defaults "$SCRIPT_DIR/.env"
+
 export E2E_REAL_HARDWARE=1
 export REAL_HW_USE_NODE_SIM_SESSION=0
 export TEST_NODE_GH_UID TEST_NODE_ZONE_UID TEST_NODE_UID TEST_WORKFLOW_NODE_UID TEST_PH_NODE_UID TEST_EC_NODE_UID TEST_SOIL_NODE_UID TEST_NODE_HW_ID
 LARAVEL_URL="${LARAVEL_URL:-http://localhost:8081}"
 AUTOMATION_ENGINE_URL="${AUTOMATION_ENGINE_URL:-http://localhost:9505}"
 HISTORY_LOGGER_URL="${HISTORY_LOGGER_URL:-http://localhost:${HISTORY_LOGGER_PORT:-9302}}"
-HISTORY_LOGGER_TOKEN="${HISTORY_LOGGER_API_TOKEN:-${PY_INGEST_TOKEN:-dev-token-12345}}"
+HISTORY_LOGGER_TOKEN="${HISTORY_LOGGER_API_TOKEN:-${PY_INGEST_TOKEN:-}}"
+if [ -z "$HISTORY_LOGGER_TOKEN" ]; then
+  echo "HISTORY_LOGGER_API_TOKEN or PY_INGEST_TOKEN is required. Run: bash backend/scripts/ensure-dev-secrets.sh tests/e2e/.env" >&2
+  exit 1
+fi
 SCENARIO_SET="${SCENARIO_SET:-full}"
 LIST_ONLY=0
 SCENARIOS=()

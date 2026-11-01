@@ -244,7 +244,7 @@ hydro/{gh_uid}/{zone_uid}/{node_id}/{channel}/command
 - **I2C SCL**: `22` (ESP32), `5` (ESP32C3)
 - **OLED Address**: `0x3C`
 - **OLED Update Interval**: `1500` мс
-- **Setup AP Password**: `hydro2025`
+- **Setup AP Password**: генерируется на сессию setup и печатается в serial (`WiFi Pass`)
 
 ## Требования
 

@@ -394,8 +394,8 @@ docker compose logs history-logger | grep "config-report-observed"
 **Решение:** Проверьте ingest-токен и namespace `gh_uid/zone_uid`:
 ```yaml
 environment:
-  - PY_INGEST_TOKEN=dev-token-12345
-  - HISTORY_LOGGER_API_TOKEN=dev-token-12345
+  - PY_INGEST_TOKEN=${PY_INGEST_TOKEN}  # make ensure-dev-secrets
+  - HISTORY_LOGGER_API_TOKEN=${HISTORY_LOGGER_API_TOKEN}
 ```
 
 ### Config_report пришёл до регистрации

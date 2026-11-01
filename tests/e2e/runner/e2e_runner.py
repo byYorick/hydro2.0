@@ -87,6 +87,33 @@ class _ConditionEvalContext(dict):
         raise KeyError(key)
 
 
+def _load_env_defaults(path: str) -> None:
+    """Подхватывает ключи из env-файла, не затирая уже заданное окружение."""
+    if not os.path.isfile(path):
+        return
+    with open(path, "r", encoding="utf-8") as handle:
+        for raw in handle:
+            line = raw.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            key = key.strip()
+            if key and key not in os.environ:
+                os.environ[key] = value
+
+
+def _ensure_e2e_service_secrets() -> None:
+    """Генерирует tests/e2e/.env, если сервисные токены ещё не заданы."""
+    runner_dir = os.path.dirname(os.path.abspath(__file__))
+    e2e_dir = os.path.dirname(runner_dir)
+    repo_root = os.path.dirname(e2e_dir)
+    script = os.path.join(repo_root, "backend", "scripts", "ensure-dev-secrets.sh")
+    env_file = os.path.join(e2e_dir, ".env")
+    if os.path.isfile(script):
+        subprocess.run(["bash", script, env_file], check=True)
+    _load_env_defaults(env_file)
+
+
 class E2ERunner:
     """Раннер для выполнения E2E тестов из YAML сценариев."""
     
@@ -98,7 +125,8 @@ class E2ERunner:
             config: Конфигурация (API URL, WS URL, DB path, MQTT settings)
         """
         config = config or {}
-        
+        _ensure_e2e_service_secrets()
+
         # Конфигурация из переменных окружения или значений по умолчанию
         self.api_url = config.get("api_url") or os.getenv("LARAVEL_URL", "http://localhost:8081")
         self.automation_engine_url = (
@@ -1130,11 +1158,14 @@ class E2ERunner:
             cfg.get("history_logger_token")
             or os.getenv("HISTORY_LOGGER_API_TOKEN")
             or os.getenv("PY_INGEST_TOKEN")
-            or "dev-token-12345"
+            or ""
         ).strip()
-        headers: Dict[str, str] = {}
-        if history_logger_token:
-            headers["Authorization"] = f"Bearer {history_logger_token}"
+        if not history_logger_token:
+            raise RuntimeError(
+                "HISTORY_LOGGER_API_TOKEN or PY_INGEST_TOKEN must be set. "
+                "Run: bash backend/scripts/ensure-dev-secrets.sh tests/e2e/.env"
+            )
+        headers: Dict[str, str] = {"Authorization": f"Bearer {history_logger_token}"}
 
         retries = max(0, int(cfg.get("retries", 0) or 0))
         retry_delay = float(cfg.get("retry_delay_seconds", cfg.get("retry_delay", 1.0)) or 1.0)
