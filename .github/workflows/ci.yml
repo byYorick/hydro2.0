@@ -133,7 +133,7 @@ jobs:
           PG_PASS: hydro
           PG_DB: hydro_test
           DB_DATABASE: hydro_test
-        run: pytest -q -ra
+        run: pytest -q -ra --timeout=120 --maxfail=1
 
   build-and-test:
     runs-on: ubuntu-latest
