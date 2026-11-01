@@ -132,7 +132,7 @@
               <div class="text-xs text-[color:var(--text-muted)] uppercase tracking-wide mb-1">
                 Оптовая цена
               </div>
-              <div class="text-lg font-semibold text-[color:var(--accent-green)]">
+              <div class="text-lg font-semibold text-[color:var(--status-ok)]">
                 {{ formatCurrency(plant.profitability.wholesale_price, plant.profitability.currency) }}
               </div>
               <div class="text-xs text-[color:var(--text-dim)] mt-1">
@@ -143,7 +143,7 @@
               <div class="text-xs text-[color:var(--text-muted)] uppercase tracking-wide mb-1">
                 Розничная цена
               </div>
-              <div class="text-lg font-semibold text-[color:var(--accent-cyan)]">
+              <div class="text-lg font-semibold text-[color:var(--status-info)]">
                 {{ formatCurrency(plant.profitability.retail_price, plant.profitability.currency) }}
               </div>
               <div class="text-xs text-[color:var(--text-dim)] mt-1">
@@ -208,7 +208,7 @@
                 <div class="flex items-center gap-2 mb-2">
                   <Link
                     :href="`/recipes/${recipe.id}`"
-                    class="text-base font-semibold text-[color:var(--accent-cyan)] hover:underline"
+                    class="text-base font-semibold text-[color:var(--status-info)] hover:underline"
                   >
                     {{ recipe.name }}
                   </Link>
@@ -363,8 +363,8 @@
         :open="showEditModal"
         title="Редактирование растения"
         size="large"
-        @close="closeEditModal"
         hide-default-cancel
+        @close="closeEditModal"
       >
         <form
           class="space-y-4"
@@ -373,10 +373,9 @@
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div class="md:col-span-2">
               <label class="block text-xs text-[color:var(--text-muted)] mb-1">Название</label>
-              <input
+              <TextField
                 v-model="form.name"
                 type="text"
-                class="input-field"
               />
               <p
                 v-if="form.errors.name"
@@ -387,26 +386,21 @@
             </div>
             <div>
               <label class="block text-xs text-[color:var(--text-muted)] mb-1">Вид</label>
-              <input
+              <TextField
                 v-model="form.species"
                 type="text"
-                class="input-field"
               />
             </div>
             <div>
               <label class="block text-xs text-[color:var(--text-muted)] mb-1">Сорт</label>
-              <input
+              <TextField
                 v-model="form.variety"
                 type="text"
-                class="input-field"
               />
             </div>
             <div>
               <label class="block text-xs text-[color:var(--text-muted)] mb-1">Субстрат</label>
-              <select
-                v-model="form.substrate_type"
-                class="input-select"
-              >
+              <SelectField v-model="form.substrate_type">
                 <option value="">
                   Не выбрано
                 </option>
@@ -417,14 +411,11 @@
                 >
                   {{ option.label }}
                 </option>
-              </select>
+              </SelectField>
             </div>
             <div>
               <label class="block text-xs text-[color:var(--text-muted)] mb-1">Система</label>
-              <select
-                v-model="form.growing_system"
-                class="input-select"
-              >
+              <SelectField v-model="form.growing_system">
                 <option value="">
                   Не выбрано
                 </option>
@@ -435,14 +426,11 @@
                 >
                   {{ option.label }}
                 </option>
-              </select>
+              </SelectField>
             </div>
             <div>
               <label class="block text-xs text-[color:var(--text-muted)] mb-1">Фотопериод</label>
-              <select
-                v-model="form.photoperiod_preset"
-                class="input-select"
-              >
+              <SelectField v-model="form.photoperiod_preset">
                 <option value="">
                   Не выбрано
                 </option>
@@ -453,14 +441,11 @@
                 >
                   {{ option.label }}
                 </option>
-              </select>
+              </SelectField>
             </div>
             <div>
               <label class="block text-xs text-[color:var(--text-muted)] mb-1">Сезонность</label>
-              <select
-                v-model="form.seasonality"
-                class="input-select"
-              >
+              <SelectField v-model="form.seasonality">
                 <option value="">
                   Не выбрано
                 </option>
@@ -471,15 +456,16 @@
                 >
                   {{ option.label }}
                 </option>
-              </select>
+              </SelectField>
             </div>
             <div class="md:col-span-2">
               <label class="block text-xs text-[color:var(--text-muted)] mb-1">Описание</label>
-              <textarea
+              <TextField
                 v-model="form.description"
+                multiline
                 rows="4"
-                class="input-field h-auto"
-              ></textarea>
+                input-class="h-auto"
+              />
             </div>
             <div class="md:col-span-2">
               <p class="text-sm font-semibold text-[color:var(--text-primary)] mb-2">
@@ -491,19 +477,19 @@
                 class="grid grid-cols-2 gap-3"
               >
                 <label class="text-xs text-[color:var(--text-muted)] col-span-2">{{ metric.label }}</label>
-                <input
+                <TextField
                   v-model="form.environment_requirements[metric.key].min"
                   type="number"
                   step="0.1"
-                  class="input-field h-8 text-xs"
                   placeholder="Мин"
+                  input-class="h-8 text-xs"
                 />
-                <input
+                <TextField
                   v-model="form.environment_requirements[metric.key].max"
                   type="number"
                   step="0.1"
-                  class="input-field h-8 text-xs"
                   placeholder="Макс"
+                  input-class="h-8 text-xs"
                 />
               </div>
             </div>
@@ -541,6 +527,10 @@
   </AppLayout>
 </template>
 <script setup lang="ts">
+import SelectField from '@/Components/SelectField.vue'
+
+import TextField from '@/Components/TextField.vue'
+
 import { Head, Link } from "@inertiajs/vue3";
 import AppLayout from "@/Layouts/AppLayout.vue";
 import Card from "@/Components/Card.vue";

@@ -38,9 +38,9 @@ from commands.resolution import (
     resolve_effective_gh_uid,
     resolve_zone_uid_for_command_publish,
 )
+from commands.node_secret_wire import prepare_node_config_for_mqtt
 from commands.validation import (
     apply_trace_id,
-    ensure_node_secret,
     validate_command_request_contract,
 )
 from live_status_probe import probe_node_status
@@ -90,13 +90,17 @@ def _log_config_publish_context(
     import json as json_lib
 
     has_secret = isinstance(config_payload.get("node_secret"), str) and bool(config_payload.get("node_secret"))
+    has_wrapped = isinstance(config_payload.get("node_secret_enc"), str) and bool(
+        config_payload.get("node_secret_enc")
+    )
     payload_size = len(json_lib.dumps(config_payload, separators=(",", ":")))
     logger.info(
-        "[CONFIG_PUBLISH] node_uid=%s topic=%s temp=%s node_secret_present=%s payload_size=%s",
+        "[CONFIG_PUBLISH] node_uid=%s topic=%s temp=%s node_secret_present=%s node_secret_enc_present=%s payload_size=%s",
         node_uid,
         topic,
         is_temp,
         has_secret,
+        has_wrapped,
         payload_size,
     )
 
@@ -126,7 +130,8 @@ async def publish_node_config(
 
     node_rows = await fetch(
         """
-        SELECT id, zone_id, pending_zone_id, hardware_id
+        SELECT id, zone_id, pending_zone_id, hardware_id,
+               config->>'node_secret' AS node_secret
         FROM nodes
         WHERE uid = $1
         """,
@@ -157,7 +162,12 @@ async def publish_node_config(
     gh_uid = await resolve_effective_gh_uid(req.zone_id, req.greenhouse_uid)
 
     mqtt = await get_mqtt_client()
-    config_payload = ensure_node_secret(dict(req.config))
+    stored_secret = node.get("node_secret")
+    config_payload = prepare_node_config_for_mqtt(
+        dict(req.config),
+        node_uid=node_uid,
+        node_secret=stored_secret if isinstance(stored_secret, str) else None,
+    )
     use_temp_topic = pending_zone_id == req.zone_id and not node_zone_id
     if pending_zone_id == req.zone_id and node_zone_id:
         raise HTTPException(

@@ -39,7 +39,7 @@
           <div class="ui-kpi-label">
             NPK
           </div>
-          <div class="ui-kpi-value text-[color:var(--accent-cyan)]">
+          <div class="ui-kpi-value text-[color:var(--status-info)]">
             {{ npkCount }}
           </div>
           <div class="ui-kpi-hint">
@@ -50,7 +50,7 @@
           <div class="ui-kpi-label">
             Кальций
           </div>
-          <div class="ui-kpi-value text-[color:var(--accent-green)]">
+          <div class="ui-kpi-value text-[color:var(--status-ok)]">
             {{ calciumCount }}
           </div>
           <div class="ui-kpi-hint">
@@ -61,7 +61,7 @@
           <div class="ui-kpi-label">
             Магний
           </div>
-          <div class="ui-kpi-value text-[color:var(--accent-orange)]">
+          <div class="ui-kpi-value text-[color:var(--series-orange)]">
             {{ magnesiumCount }}
           </div>
           <div class="ui-kpi-hint">
@@ -93,15 +93,15 @@
     </Card>
 
     <div class="mb-3 flex flex-col sm:flex-row gap-2 sm:items-center">
-      <input
+      <TextField
         v-model="query"
         type="text"
-        class="input-field sm:w-64"
+        class="sm:w-64"
         placeholder="Поиск по производителю/названию"
       />
-      <select
+      <SelectField
         v-model="componentFilter"
-        class="input-select sm:w-52"
+        class="sm:w-52"
       >
         <option value="all">
           Все компоненты
@@ -118,7 +118,7 @@
         <option value="micro">
           Микроэлементы
         </option>
-      </select>
+      </SelectField>
     </div>
 
     <div class="rounded-xl border border-[color:var(--border-muted)] overflow-hidden max-h-[720px] flex flex-col">
@@ -159,7 +159,7 @@
               <td class="px-3 py-2">
                 {{ product.manufacturer }}
               </td>
-              <td class="px-3 py-2 text-[color:var(--accent-cyan)]">
+              <td class="px-3 py-2 text-[color:var(--status-info)]">
                 {{ product.name }}
               </td>
               <td class="px-3 py-2">
@@ -179,7 +179,7 @@
                   :href="sourceUrl(product)"
                   target="_blank"
                   rel="noopener noreferrer"
-                  class="text-[color:var(--accent-cyan)] hover:underline"
+                  class="text-[color:var(--status-info)] hover:underline"
                 >
                   ссылка
                 </a>
@@ -220,6 +220,10 @@
 </template>
 
 <script setup lang="ts">
+import SelectField from '@/Components/SelectField.vue'
+
+import TextField from '@/Components/TextField.vue'
+
 import { computed, ref, watch } from 'vue'
 import { Link, usePage } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'

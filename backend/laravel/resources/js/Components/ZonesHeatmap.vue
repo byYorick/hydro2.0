@@ -93,9 +93,9 @@ const hoveredStatus = ref<StatusKey | null>(null)
 const statusPalette: Record<StatusKey, { label: string; cardClass: string; dotClass: string; textClass: string }> = {
   RUNNING: {
     label: 'Запущено',
-    cardClass: 'bg-[color:var(--badge-success-bg)] border-[color:var(--badge-success-border)] hover:border-[color:var(--accent-green)] hover:bg-[color:var(--badge-success-bg)]',
-    dotClass: 'bg-[color:var(--accent-green)] animate-pulse',
-    textClass: 'text-[color:var(--accent-green)]',
+    cardClass: 'bg-[color:var(--badge-success-bg)] border-[color:var(--badge-success-border)] hover:border-[color:var(--status-ok)] hover:bg-[color:var(--badge-success-bg)]',
+    dotClass: 'bg-[color:var(--status-ok)] animate-pulse',
+    textClass: 'text-[color:var(--status-ok)]',
   },
   PAUSED: {
     label: 'Приостановлено',
@@ -105,15 +105,15 @@ const statusPalette: Record<StatusKey, { label: string; cardClass: string; dotCl
   },
   WARNING: {
     label: 'Предупреждение',
-    cardClass: 'bg-[color:var(--badge-warning-bg)] border-[color:var(--badge-warning-border)] hover:border-[color:var(--accent-amber)] hover:bg-[color:var(--badge-warning-bg)]',
-    dotClass: 'bg-[color:var(--accent-amber)]',
-    textClass: 'text-[color:var(--accent-amber)]',
+    cardClass: 'bg-[color:var(--badge-warning-bg)] border-[color:var(--badge-warning-border)] hover:border-[color:var(--status-warning)] hover:bg-[color:var(--badge-warning-bg)]',
+    dotClass: 'bg-[color:var(--status-warning)]',
+    textClass: 'text-[color:var(--status-warning)]',
   },
   ALARM: {
     label: 'Тревога',
-    cardClass: 'bg-[color:var(--badge-danger-bg)] border-[color:var(--badge-danger-border)] hover:border-[color:var(--accent-red)] hover:bg-[color:var(--badge-danger-bg)]',
-    dotClass: 'bg-[color:var(--accent-red)]',
-    textClass: 'text-[color:var(--accent-red)]',
+    cardClass: 'bg-[color:var(--badge-danger-bg)] border-[color:var(--badge-danger-border)] hover:border-[color:var(--status-critical)] hover:bg-[color:var(--badge-danger-bg)]',
+    dotClass: 'bg-[color:var(--status-critical)]',
+    textClass: 'text-[color:var(--status-critical)]',
   },
 }
 
@@ -165,10 +165,10 @@ const statusEntries = computed(() => {
 })
 
 const legendItems = [
-  { text: 'Запущено', dot: 'bg-[color:var(--accent-green)]' },
+  { text: 'Запущено', dot: 'bg-[color:var(--status-ok)]' },
   { text: 'Приостановлено', dot: 'bg-[color:var(--text-dim)]' },
-  { text: 'Предупреждение', dot: 'bg-[color:var(--accent-amber)]' },
-  { text: 'Тревога', dot: 'bg-[color:var(--accent-red)]' },
+  { text: 'Предупреждение', dot: 'bg-[color:var(--status-warning)]' },
+  { text: 'Тревога', dot: 'bg-[color:var(--status-critical)]' },
 ]
 
 const isRouterAvailable = typeof router !== 'undefined' && typeof router.visit === 'function'

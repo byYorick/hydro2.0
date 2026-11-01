@@ -14,7 +14,7 @@
       <!-- Линия прогресса -->
       <div class="absolute top-6 left-0 right-0 h-0.5 bg-[color:var(--border-muted)]"></div>
       <div
-        class="absolute top-6 left-0 h-0.5 bg-[linear-gradient(90deg,var(--accent-cyan),var(--accent-green))] transition-all duration-500"
+        class="absolute top-6 left-0 h-0.5 bg-[linear-gradient(90deg,var(--status-info),var(--status-ok))] transition-all duration-500"
         :style="{ width: `${progressLineWidth}%` }"
       ></div>
       
@@ -95,10 +95,10 @@ function getStageCircleClass(index: number): string {
   const isPast = index < currentIndex
   
   if (isCurrent) {
-    return 'bg-[linear-gradient(135deg,var(--accent-cyan),var(--accent-green))] scale-110 shadow-[var(--shadow-card)] ring-1 ring-[color:var(--badge-info-border)]'
+    return 'bg-[linear-gradient(135deg,var(--status-info),var(--status-ok))] scale-110 shadow-[var(--shadow-card)] ring-1 ring-[color:var(--badge-info-border)]'
   }
   if (isPast) {
-    return 'bg-[color:var(--accent-green)]'
+    return 'bg-[color:var(--status-ok)]'
   }
   return 'bg-[color:var(--bg-elevated)] border-2 border-[color:var(--border-strong)]'
 }
@@ -126,10 +126,10 @@ function getStageLabelClass(index: number): string {
   const isPast = index < currentIndex
   
   if (isCurrent) {
-    return 'text-[color:var(--accent-cyan)] font-semibold'
+    return 'text-[color:var(--status-info)] font-semibold'
   }
   if (isPast) {
-    return 'text-[color:var(--accent-green)]'
+    return 'text-[color:var(--status-ok)]'
   }
   return 'text-[color:var(--text-muted)]'
 }

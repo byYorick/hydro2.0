@@ -148,9 +148,14 @@ class PublishNodeConfigJob implements ShouldQueue
                             ]);
                         }
 
-                        // Генерируем конфиг с включением credentials для публикации через MQTT
-                        // Передаём флаг привязки, чтобы релейные ноды получили временный конфиг (ACTUATOR) на этапе binding
-                        $config = $configService->generateNodeConfig($node, null, true, $isNodeBinding);
+                        // MQTT payload без credentials: wifi/mqtt — placeholder, node_secret не уходит
+                        // открытым текстом. Прошивка сохраняет уже записанный секрет в NVS;
+                        // ротация/первичная доставка — node_secret_enc на стороне history-logger.
+                        $config = $configService->generateNodeConfig($node, null, false, $isNodeBinding);
+                        unset($config['node_secret'], $config['node_secret_enc']);
+                        if (! isset($config['mqtt']) || ! is_array($config['mqtt'])) {
+                            $config['mqtt'] = ['configured' => true];
+                        }
 
                         if (empty($config)) {
                             Log::warning('PublishNodeConfigJob: Cannot publish empty config', [

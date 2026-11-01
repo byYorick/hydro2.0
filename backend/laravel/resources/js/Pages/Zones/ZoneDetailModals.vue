@@ -60,21 +60,21 @@
         <div>Зафиксировать сбор урожая и завершить цикл?</div>
         <div>
           <label class="text-xs text-[color:var(--text-dim)]">Метка партии (опционально)</label>
-          <input
+          <TextField
             v-model="harvestBatchLabel"
-            class="input-field mt-1 w-full"
+            class="mt-1 w-full"
             placeholder="Например: Batch-042"
           />
         </div>
         <div>
           <label class="text-xs text-[color:var(--text-dim)]">Урожай, кг</label>
-          <input
+          <TextField
             v-model="harvestYieldKg"
             type="number"
             min="0"
             step="0.01"
             inputmode="decimal"
-            class="input-field mt-1 w-full"
+            class="mt-1 w-full"
             placeholder="Необязательно"
             data-testid="harvest-yield-kg"
           />
@@ -96,11 +96,13 @@
         <div>Остановить цикл? Это действие нельзя отменить.</div>
         <div>
           <label class="text-xs text-[color:var(--text-dim)]">Причина (опционально)</label>
-          <textarea
+          <TextField
             v-model="abortNotes"
-            class="input-field mt-1 w-full h-20 resize-none"
+            multiline
+            class="mt-1 w-full resize-none"
             placeholder="Короткое описание причины"
-          ></textarea>
+            input-class="h-20"
+          />
         </div>
       </div>
     </ConfirmModal>
@@ -119,9 +121,9 @@
         <div>Введите ID ревизии рецепта и выберите режим применения.</div>
         <div>
           <label class="text-xs text-[color:var(--text-dim)]">ID ревизии рецепта</label>
-          <input
+          <TextField
             v-model="changeRecipeRevisionId"
-            class="input-field mt-1 w-full"
+            class="mt-1 w-full"
             placeholder="Например: 42"
           />
         </div>
@@ -129,7 +131,7 @@
           <button
             type="button"
             class="btn btn-outline h-9 px-3 text-xs"
-            :class="changeRecipeApplyMode === 'now' ? 'border-[color:var(--accent-green)]' : ''"
+            :class="changeRecipeApplyMode === 'now' ? 'border-[color:var(--status-ok)]' : ''"
             @click="changeRecipeApplyMode = 'now'"
           >
             Применить сейчас
@@ -137,7 +139,7 @@
           <button
             type="button"
             class="btn btn-outline h-9 px-3 text-xs"
-            :class="changeRecipeApplyMode === 'next_phase' ? 'border-[color:var(--accent-green)]' : ''"
+            :class="changeRecipeApplyMode === 'next_phase' ? 'border-[color:var(--status-ok)]' : ''"
             @click="changeRecipeApplyMode = 'next_phase'"
           >
             Со следующей фазы
@@ -149,6 +151,8 @@
 </template>
 
 <script setup lang="ts">
+import TextField from '@/Components/TextField.vue'
+
 import { computed } from 'vue'
 import type { CommandType, Device, IrrigationCorrectionSummary } from '@/types'
 import ZoneActionModal from '@/Components/ZoneActionModal.vue'

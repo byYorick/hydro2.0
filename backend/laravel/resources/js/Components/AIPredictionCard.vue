@@ -45,7 +45,7 @@
       <div class="text-4xl mb-2">
         ⚠️
       </div>
-      <div class="text-sm font-medium text-[color:var(--accent-red)] mb-1">
+      <div class="text-sm font-medium text-[color:var(--status-critical)] mb-1">
         Ошибка загрузки прогноза
       </div>
       <div class="text-xs text-[color:var(--text-muted)] mb-3">
@@ -97,7 +97,7 @@
         <div 
           v-if="isOutOfRange" 
           class="text-xs mt-1"
-          :class="isAboveRange ? 'text-[color:var(--accent-red)]' : 'text-[color:var(--accent-amber)]'"
+          :class="isAboveRange ? 'text-[color:var(--status-critical)]' : 'text-[color:var(--status-warning)]'"
         >
           ⚠️ Прогноз {{ isAboveRange ? 'выше' : 'ниже' }} целевого диапазона
         </div>
@@ -214,10 +214,10 @@ const metricUnit = computed(() => {
 
 const metricColor = computed(() => {
   const colors: Record<string, string> = {
-    PH: 'var(--accent-cyan)',
-    EC: 'var(--accent-green)',
-    TEMPERATURE: 'var(--accent-amber)',
-    HUMIDITY: 'var(--accent-blue)',
+    PH: 'var(--status-info)',
+    EC: 'var(--status-ok)',
+    TEMPERATURE: 'var(--status-warning)',
+    HUMIDITY: 'var(--series-blue)',
   }
   return colors[props.metricType] || 'var(--text-primary)'
 })

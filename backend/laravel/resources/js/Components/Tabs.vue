@@ -68,7 +68,7 @@ const emit = defineEmits<{ (e: 'update:modelValue', value: string): void }>()
 
 const tabRefs = ref<HTMLButtonElement[]>([])
 
-const baseClass = 'inline-flex items-center gap-1.5 px-3 py-1.5 text-[13px] font-semibold rounded-lg border transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-cyan)]/40'
+const baseClass = 'inline-flex items-center gap-1.5 px-3 py-1.5 text-[13px] font-semibold rounded-lg border transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--status-info)]/40'
 const activeClass = 'bg-[color:var(--bg-surface-strong)] text-[color:var(--text-primary)] border-[color:var(--border-strong)]'
 const inactiveClass = 'text-[color:var(--text-dim)] border-transparent hover:text-[color:var(--text-primary)] hover:bg-[color:var(--bg-elevated)]'
 const disabledClass = 'opacity-50 cursor-not-allowed'

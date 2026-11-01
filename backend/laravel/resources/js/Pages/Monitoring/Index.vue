@@ -53,7 +53,7 @@
           <span
             class="w-3 h-3 rounded-full shrink-0"
             :class="summaryDotClass"
-          />
+          ></span>
           <span class="text-sm font-medium text-[color:var(--text-primary)]">
             {{ healthyCount }} из {{ totalCount }} в норме
           </span>
@@ -283,12 +283,12 @@ const totalCount = computed(() => allServices.value.length)
 
 const summaryDotClass = computed(() => {
   if (allServices.value.some((service) => isFailStatus(service.status))) {
-    return 'bg-[color:var(--accent-red)]'
+    return 'bg-[color:var(--status-critical)]'
   }
   if (healthyCount.value === totalCount.value) {
-    return 'bg-[color:var(--accent-green)]'
+    return 'bg-[color:var(--status-ok)]'
   }
-  return 'bg-[color:var(--accent-amber)]'
+  return 'bg-[color:var(--status-warning)]'
 })
 
 function extraText(healthKey: string): string {

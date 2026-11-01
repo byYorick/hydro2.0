@@ -18,10 +18,9 @@ class RecipeRevisionFactory extends Factory
      */
     public function definition(): array
     {
-        $recipe = Recipe::factory()->create();
-
         return [
-            'recipe_id' => $recipe->id,
+            // Связь, а не create(): явный recipe_id в create() не должен плодить лишний рецепт.
+            'recipe_id' => Recipe::factory(),
             'revision_number' => 1,
             'status' => 'DRAFT',
             'description' => $this->faker->sentence(),

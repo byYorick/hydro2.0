@@ -67,7 +67,7 @@ NodeConfig — это JSON-конфигурация узла ESP32, котора
 | `channels` | array | Да | Массив каналов ноды (сенсоры/актуаторы) из текущего NodeConfig устройства; отправляется нодой на сервер в `config_report`. |
 | `wifi` | object | Да* | Параметры Wi-Fi; server-push может прислать `{"configured": true}` или опустить (см. §3.7) |
 | `mqtt` | object | Да* | Параметры MQTT; firmware **требует** секцию `mqtt` (полный объект или `{"configured": true}`) |
-| `node_secret` | string | Нет | 32-байтный secret (hex/base) — **только server-push** из Laravel; не эхоить в `config_report` |
+| `node_secret` | string | Нет | 32-байтный HMAC secret. **Не публикуется** в MQTT plaintext. Прошивка хранит его в NVS и сохраняет при server-push без поля. Первичная доставка и ротация — `node_secret_enc` (AES-256-GCM, ключ = SHA-256(`hydro.node_secret.wrap.v1` \|\| `mqtt.password` узла), AAD = `node_uid`). Не эхоить ни `node_secret`, ни `node_secret_enc` в `config_report` |
 | `limits` | object | Нет | Безопасные лимиты (ток, время работы и т.д.) |
 | `calibration` | object | Нет | Параметры калибровки (pH, EC) |
 | `fail_safe_guards` | object | Нет | Локальные fail-safe guard-параметры узла; для `irrig` используются как mirror от `zone.logic_profile` |

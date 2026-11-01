@@ -73,6 +73,7 @@ firmware/nodes/common/components/  # Общие компоненты для вс
 │  ├─ ccs811/        # CO2 sensor
 │  └─ ina209/        # Pump current sensor
 ├─ pump_driver/      # Driver: pump on/off + current monitoring
+├─ actuator_failsafe/ # Общий аппаратный E-STOP (защёлка, safe-OFF) для ph/ec/pump
 ├─ relay_driver/     # Driver: relay control с interlock
 ├─ climate_node/main/pwm_driver.c  # PWM для climate_node (локально, не common)
 └─ ws2811_driver/    # Planned: только WS2811_GUIDE.md, без .c драйвера

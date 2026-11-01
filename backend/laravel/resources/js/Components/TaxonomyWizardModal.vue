@@ -12,32 +12,35 @@
       >
         <div>
           <label class="block text-xs text-[color:var(--text-muted)] mb-1">Название</label>
-          <input
+          <TextField
             v-model="newItem.label"
             type="text"
-            class="input-field h-9 w-full"
+            class="w-full"
             placeholder="Например: Кокосовый субстрат"
             :disabled="loading"
             autocomplete="off"
+            input-class="h-9"
           />
         </div>
         <div>
           <label class="block text-xs text-[color:var(--text-muted)] mb-1">ID</label>
-          <input
+          <TextField
             v-model="newItem.id"
             type="text"
-            class="input-field h-9 w-full"
+            class="w-full"
             placeholder="Например: coco"
             :disabled="loading"
             autocomplete="off"
+            input-class="h-9"
           />
         </div>
         <div v-if="isGrowingSystem">
           <label class="block text-xs text-[color:var(--text-muted)] mb-1">Субстрат</label>
-          <select
+          <SelectField
             v-model="newItem.uses_substrate"
-            class="input-field h-9 w-full"
+            class="w-full"
             :disabled="loading"
+            input-class="h-9"
           >
             <option :value="true">
               С субстратом
@@ -45,7 +48,7 @@
             <option :value="false">
               Без субстрата
             </option>
-          </select>
+          </SelectField>
         </div>
         <Button
           type="button"
@@ -72,23 +75,26 @@
           class="grid grid-cols-1 gap-2 items-center"
           :class="isGrowingSystem ? 'md:grid-cols-[1fr_160px_170px_auto]' : 'md:grid-cols-[1fr_160px_auto]'"
         >
-          <input
+          <TextField
             v-model="item.label"
             type="text"
-            class="input-field h-9 w-full"
+            class="w-full"
             :disabled="loading"
+            input-class="h-9"
           />
-          <input
+          <TextField
             v-model="item.id"
             type="text"
-            class="input-field h-9 w-full"
+            class="w-full"
             :disabled="loading || item.locked"
+            input-class="h-9"
           />
-          <select
+          <SelectField
             v-if="isGrowingSystem"
             v-model="item.uses_substrate"
-            class="input-field h-9 w-full"
+            class="w-full"
             :disabled="loading"
+            input-class="h-9"
           >
             <option :value="true">
               С субстратом
@@ -96,7 +102,7 @@
             <option :value="false">
               Без субстрата
             </option>
-          </select>
+          </SelectField>
           <Button
             type="button"
             size="sm"
@@ -112,7 +118,7 @@
 
       <div
         v-if="error"
-        class="text-xs text-[color:var(--accent-red)]"
+        class="text-xs text-[color:var(--status-critical)]"
       >
         {{ error }}
       </div>
@@ -131,6 +137,10 @@
 </template>
 
 <script setup lang="ts">
+import SelectField from '@/Components/SelectField.vue'
+
+import TextField from '@/Components/TextField.vue'
+
 import { computed, reactive, ref, watch } from 'vue'
 import Modal from '@/Components/Modal.vue'
 import Button from '@/Components/Button.vue'

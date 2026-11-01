@@ -42,7 +42,7 @@
               <div class="ui-kpi-label">
                 Зон
               </div>
-              <div class="ui-kpi-value text-[color:var(--accent-cyan)]">
+              <div class="ui-kpi-value text-status-info">
                 {{ totalZones }}
               </div>
               <div class="ui-kpi-hint">
@@ -53,7 +53,7 @@
               <div class="ui-kpi-label">
                 Активных зон
               </div>
-              <div class="ui-kpi-value text-[color:var(--accent-green)]">
+              <div class="ui-kpi-value text-status-ok">
                 {{ totalRunningZones }}
               </div>
               <div class="ui-kpi-hint">
@@ -74,6 +74,14 @@
           </div>
         </section>
 
+        <TextField
+          v-if="greenhouses.length > 0"
+          v-model="query"
+          label="Поиск"
+          placeholder="Название, UID или тип теплицы"
+          aria-label="Поиск теплицы"
+        />
+
         <div
           v-if="greenhouses.length === 0"
           class="text-center py-12"
@@ -92,11 +100,18 @@
         </div>
 
         <div
+          v-else-if="visibleGreenhouses.length === 0"
+          class="text-center py-12 text-sm text-[color:var(--text-muted)]"
+        >
+          Нет теплиц по текущему поиску.
+        </div>
+
+        <div
           v-else
           class="grid gap-4 grid-cols-1 md:grid-cols-2"
         >
           <Card
-            v-for="greenhouse in greenhouses"
+            v-for="greenhouse in visibleGreenhouses"
             :key="greenhouse.id"
             class="surface-card-hover hover:border-[color:var(--border-strong)] transition-all duration-200 cursor-pointer"
             @click="router.visit(`/greenhouses/${greenhouse.id}`)"
@@ -125,7 +140,7 @@
               <div class="text-right text-xs text-[color:var(--text-muted)] flex-shrink-0">
                 <div>Зон: <span class="font-semibold text-[color:var(--text-primary)]">{{ greenhouse.zones_count || 0 }}</span></div>
                 <div class="mt-1">
-                  Активных: <span class="font-semibold text-[color:var(--accent-green)]">{{ greenhouse.zones_running || 0 }}</span>
+                  Активных: <span class="font-semibold text-status-ok">{{ greenhouse.zones_running || 0 }}</span>
                 </div>
               </div>
             </div>
@@ -159,11 +174,12 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { Link, router, usePage } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
 import Button from '@/Components/Button.vue'
+import TextField from '@/Components/TextField.vue'
 import GreenhouseCreateModal from '@/Components/GreenhouseCreateModal.vue'
 import { useSimpleModal } from '@/composables/useModal'
 
@@ -184,6 +200,21 @@ interface Props {
 }
 
 const props = defineProps<Props>()
+const query = ref('')
+
+const visibleGreenhouses = computed(() => {
+  const needle = query.value.trim().toLowerCase()
+  if (!needle) {
+    return props.greenhouses
+  }
+  return props.greenhouses.filter((greenhouse) => {
+    const haystack = [greenhouse.name, greenhouse.uid, greenhouse.type, greenhouse.description]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase()
+    return haystack.includes(needle)
+  })
+})
 
 const page = usePage<{ auth?: { user?: { role?: string } } }>()
 const role = computed(() => page.props.auth?.user?.role ?? 'viewer')

@@ -271,7 +271,7 @@ describe('Devices/Show.vue', () => {
     expect(wrapper.text()).toContain('Онлайн')
     const badge = wrapper.findComponent({ name: 'Badge' })
     expect(badge.exists()).toBe(true)
-    expect(badge.props('variant')).toBe('success')
+    expect(badge.props('variant')).toBe('ok')
   })
 
   it('отображает тип устройства', () => {
@@ -384,7 +384,7 @@ describe('Devices/Show.vue', () => {
     expect(pre.classes()).toContain('node-config-json')
     expect(pre.text()).toContain('ph')
     expect(pre.text()).toContain('online')
-    expect(pre.html()).toContain('json-key')
+    expect(pre.html()).not.toContain('json-key')
   })
 
   it('отображает кнопку Restart', () => {
@@ -487,7 +487,7 @@ describe('Devices/Show.vue', () => {
 
     expect(wrapper.text()).toContain('Офлайн')
     const badge = wrapper.findComponent({ name: 'Badge' })
-    expect(badge.props('variant')).toBe('danger')
+    expect(badge.props('variant')).toBe('offline')
   })
 
   it('показывает неизвестный статус устройства на русском', () => {
@@ -516,7 +516,7 @@ describe('Devices/Show.vue', () => {
     expect(configText).toContain('online')
     // id может быть в конфиге
     expect(configText).toMatch(/"id"|"name"|"type"/)
-    expect(nodeConfig.html()).toContain('json-string')
+    expect(nodeConfig.html()).not.toContain('<span')
   })
 
   it('использует uid или name или id для отображения названия', () => {

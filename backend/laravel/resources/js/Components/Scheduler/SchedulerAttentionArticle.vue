@@ -46,20 +46,20 @@ defineProps<{
 }>()
 
 function cardClass(tone: AttentionTone): string {
-  if (tone === 'danger') return 'border-red-200/60 bg-red-50/40 dark:border-red-900/40 dark:bg-red-950/20'
-  if (tone === 'warning') return 'border-amber-200/60 bg-amber-50/40 dark:border-amber-900/40 dark:bg-amber-950/20'
-  return 'border-sky-200/60 bg-sky-50/40 dark:border-sky-900/40 dark:bg-sky-950/20'
+  if (tone === 'danger') return 'border-[color:var(--status-critical)] bg-[color:var(--status-critical-soft)]'
+  if (tone === 'warning') return 'border-[color:var(--status-warning)] bg-[color:var(--status-warning-soft)]'
+  return 'border-[color:var(--status-info)] bg-[color:var(--status-info-soft)]'
 }
 
 function railClass(tone: AttentionTone): string {
-  if (tone === 'danger') return 'bg-[color:var(--accent-red)]'
-  if (tone === 'warning') return 'bg-[color:var(--accent-amber)]'
-  return 'bg-[color:var(--accent-cyan)]'
+  if (tone === 'danger') return 'bg-status-critical'
+  if (tone === 'warning') return 'bg-status-warning'
+  return 'bg-status-info'
 }
 
 function iconClass(tone: AttentionTone): string {
-  if (tone === 'danger') return 'text-[color:var(--accent-red)]'
-  if (tone === 'warning') return 'text-[color:var(--accent-amber)]'
-  return 'text-[color:var(--accent-cyan)]'
+  if (tone === 'danger') return 'text-status-critical'
+  if (tone === 'warning') return 'text-status-warning'
+  return 'text-status-info'
 }
 </script>

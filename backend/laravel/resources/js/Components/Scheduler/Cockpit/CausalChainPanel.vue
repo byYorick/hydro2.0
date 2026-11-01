@@ -2,7 +2,7 @@
   <section
     class="causal-chain-panel flex min-h-0 flex-1 flex-col rounded-2xl border p-3.5"
     :class="isFailed
-      ? 'border-[color:var(--accent-red)]/40 bg-[color:var(--accent-red)]/5'
+      ? 'border-[color:var(--status-critical)]/40 bg-[color:var(--status-critical)]/5'
       : 'border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]/70'"
     data-testid="scheduler-causal-chain"
   >
@@ -42,7 +42,7 @@
 
     <div
       v-if="run.error_code || errorText"
-      class="mt-3 rounded-xl border border-[color:var(--accent-red)]/40 bg-[color:var(--accent-red)]/10 px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
+      class="mt-3 rounded-xl border border-[color:var(--status-critical)]/40 bg-[color:var(--status-critical)]/10 px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
       data-testid="scheduler-chain-error"
     >
       <div
@@ -53,7 +53,7 @@
       </div>
       <div
         v-if="run.error_code"
-        class="mt-0.5 font-mono text-[10px] text-[color:var(--accent-red)]"
+        class="mt-0.5 font-mono text-[10px] text-[color:var(--status-critical)]"
       >
         {{ run.error_code }}
       </div>
@@ -61,7 +61,7 @@
 
     <div
       v-if="hasChemistryWarning"
-      class="mt-3 rounded-xl border border-[color:var(--accent-amber)]/45 bg-[color:var(--accent-amber)]/10 px-3 py-2.5"
+      class="mt-3 rounded-xl border border-[color:var(--status-warning)]/45 bg-[color:var(--status-warning)]/10 px-3 py-2.5"
       data-testid="scheduler-chain-chemistry-warning"
     >
       <div class="text-[11px] font-semibold text-[color:var(--text-primary)]">
@@ -129,7 +129,7 @@
           <div
             class="mt-0.5 text-[11px]"
             :class="step.status === 'run'
-              ? 'font-semibold text-[color:var(--accent-cyan)]'
+              ? 'font-semibold text-[color:var(--status-info)]'
               : 'text-[color:var(--text-primary)]'"
           >
             {{ step.detail }}
@@ -142,7 +142,7 @@
       <button
         v-if="canRetry"
         type="button"
-        class="flex-1 rounded-lg border border-[color:var(--accent-red)]/35 bg-[color:var(--accent-red)]/10 px-2 py-1.5 text-[11px] font-semibold text-[color:var(--text-primary)] hover:bg-[color:var(--accent-red)]/15"
+        class="flex-1 rounded-lg border border-[color:var(--status-critical)]/35 bg-[color:var(--status-critical)]/10 px-2 py-1.5 text-[11px] font-semibold text-[color:var(--text-primary)] hover:bg-[color:var(--status-critical)]/15"
         data-testid="scheduler-chain-retry"
         @click="$emit('retry', run.execution_id)"
       >
@@ -199,11 +199,11 @@ defineEmits<{
 }>()
 
 const STATUS_COLOR: Record<ChainStepStatus, string> = {
-  ok: 'var(--accent-green)',
-  err: 'var(--accent-red)',
+  ok: 'var(--status-ok)',
+  err: 'var(--status-critical)',
   skip: 'var(--text-dim)',
-  run: 'var(--accent-cyan)',
-  warn: 'var(--accent-amber)',
+  run: 'var(--status-info)',
+  warn: 'var(--status-warning)',
 }
 
 const steps = computed<ChainStep[]>(() => props.run.chain ?? [])
@@ -298,19 +298,19 @@ function copyCorrelation(): void {
 }
 
 .chain-dot-live {
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent-cyan) 20%, transparent);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--status-info) 20%, transparent);
   animation: chain-dot-ping 1.6s ease-out infinite;
 }
 
 @keyframes chain-dot-ping {
   0% {
-    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent-cyan) 45%, transparent);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--status-info) 45%, transparent);
   }
   70% {
-    box-shadow: 0 0 0 10px color-mix(in srgb, var(--accent-cyan) 0%, transparent);
+    box-shadow: 0 0 0 10px color-mix(in srgb, var(--status-info) 0%, transparent);
   }
   100% {
-    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent-cyan) 0%, transparent);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--status-info) 0%, transparent);
   }
 }
 </style>

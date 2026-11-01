@@ -2,9 +2,18 @@
 services:
   mqtt:
     image: eclipse-mosquitto:2
+    entrypoint: ["/bin/sh", "/mosquitto-entrypoint.sh"]
+    environment:
+      MQTT_PYTHON_SERVICE_PASS: ${MQTT_PYTHON_SERVICE_PASS:-python_service_pass}
+      MQTT_AUTOMATION_ENGINE_PASS: ${MQTT_AUTOMATION_ENGINE_PASS:-automation_pass}
+      MQTT_HISTORY_LOGGER_PASS: ${MQTT_HISTORY_LOGGER_PASS:-logger_pass}
+      MQTT_MQTT_BRIDGE_PASS: ${MQTT_MQTT_BRIDGE_PASS:-bridge_pass}
+      MQTT_ESP32_NODE_PASS: ${MQTT_ESP32_NODE_PASS:-esp32_pass}
     ports:
-      - "1883:1883"
+      # Только loopback. Для ESP32 в LAN: MQTT_BIND_ADDR=0.0.0.0
+      - "${MQTT_BIND_ADDR:-127.0.0.1}:1883:1883"
     volumes:
+      - ./services/mqtt-bridge/mosquitto-entrypoint.sh:/mosquitto-entrypoint.sh:ro
       - ./services/mqtt-bridge/mosquitto.dev.conf:/mosquitto/config/mosquitto.conf:ro
       - ./services/mqtt-bridge/passwords.txt:/mosquitto/config/passwords:ro
       - ./services/mqtt-bridge/acl:/mosquitto/config/acl:ro
@@ -37,7 +46,8 @@ services:
       POSTGRES_USER: hydro
       POSTGRES_DB: hydro_dev
     ports:
-      - "5432:5432"
+      # Только loopback. С хоста: psql -h 127.0.0.1. Для LAN: POSTGRES_BIND_ADDR=0.0.0.0
+      - "${POSTGRES_BIND_ADDR:-127.0.0.1}:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - wal_archive:/wal_archive
@@ -54,7 +64,8 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      # Только loopback. Для LAN: REDIS_BIND_ADDR=0.0.0.0
+      - "${REDIS_BIND_ADDR:-127.0.0.1}:6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -153,18 +164,16 @@ services:
       - VITE_WS_TLS=false
       # Python services token (must be set via environment variable or .env file)
       # Never commit actual tokens to version control
-      # ⚠️ ВАЖНО: dev-token-12345 - это известный dev-токен для разработки
-      # ⚠️ ОБЯЗАТЕЛЬНО переопределите все токены в production!
-      # ⚠️ Использование этого токена в production создает критическую уязвимость безопасности
-      - PY_API_TOKEN=${PY_API_TOKEN:-dev-token-12345}
-      - PY_INGEST_TOKEN=${PY_INGEST_TOKEN:-dev-token-12345}
-      - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:-dev-token-12345}
-      - ALERTMANAGER_WEBHOOK_SECRET=${ALERTMANAGER_WEBHOOK_SECRET:-dev-alertmanager-webhook-secret}
+      # Сервисные токены только из env (make ensure-dev-secrets). Один Bearer на Laravel/AE/history-logger.
+      - PY_API_TOKEN=${PY_API_TOKEN:?PY_API_TOKEN is required (run: make ensure-dev-secrets)}
+      - PY_INGEST_TOKEN=${PY_INGEST_TOKEN:?PY_INGEST_TOKEN is required (run: make ensure-dev-secrets)}
+      - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:?LARAVEL_API_TOKEN is required (run: make ensure-dev-secrets)}
+      - ALERTMANAGER_WEBHOOK_SECRET=${ALERTMANAGER_WEBHOOK_SECRET:?ALERTMANAGER_WEBHOOK_SECRET is required (run: make ensure-dev-secrets)}
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
       - TELEGRAM_CHAT_IDS=${TELEGRAM_CHAT_IDS:-}
       # Laravel scheduler owner flags
       - AUTOMATION_LARAVEL_SCHEDULER_ENABLED=${AUTOMATION_LARAVEL_SCHEDULER_ENABLED:-1}
-      - AUTOMATION_LARAVEL_SCHEDULER_API_TOKEN=${AUTOMATION_LARAVEL_SCHEDULER_API_TOKEN:-${PY_INGEST_TOKEN:-dev-token-12345}}
+      - AUTOMATION_LARAVEL_SCHEDULER_API_TOKEN=${AUTOMATION_LARAVEL_SCHEDULER_API_TOKEN:-${PY_INGEST_TOKEN:?PY_INGEST_TOKEN is required (run: make ensure-dev-secrets)}}
       # Tick dispatch и HTTP-параллелизм (см. doc_ai/06_DOMAIN_ZONES_RECIPES/SCHEDULER_ENGINE.md)
       - AUTOMATION_LARAVEL_SCHEDULER_DISPATCH_INTERVAL_SEC=${AUTOMATION_LARAVEL_SCHEDULER_DISPATCH_INTERVAL_SEC:-60}
       - AUTOMATION_LARAVEL_SCHEDULER_DISPATCH_PARALLELISM=${AUTOMATION_LARAVEL_SCHEDULER_DISPATCH_PARALLELISM:-8}
@@ -233,16 +242,15 @@ services:
       - MQTT_PORT=1883
       - MQTT_TLS=0
       - MQTT_USER=mqtt_bridge
-      - MQTT_PASS=bridge_pass
+      - MQTT_PASS=${MQTT_MQTT_BRIDGE_PASS:-bridge_pass}
       - PG_HOST=db
       - PG_DB=hydro_dev
       - PG_USER=hydro
       - PG_PASS=hydro
       - LARAVEL_API_URL=http://laravel
-      # ⚠️ ВАЖНО: dev-token-12345 - это известный dev-токен для разработки
-      # ⚠️ ОБЯЗАТЕЛЬНО переопределите в production!
-      - PY_API_TOKEN=${PY_API_TOKEN:-dev-token-12345}
-      - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:-dev-token-12345}
+      # Сервисные токены только из env (make ensure-dev-secrets). Один Bearer на Laravel/AE/history-logger.
+      - PY_API_TOKEN=${PY_API_TOKEN:?PY_API_TOKEN is required (run: make ensure-dev-secrets)}
+      - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:?LARAVEL_API_TOKEN is required (run: make ensure-dev-secrets)}
       # Сегмент зоны в MQTT (uid vs zn-id) — должен совпадать с Laravel/history-logger
       - MQTT_ZONE_FORMAT=${MQTT_ZONE_FORMAT:-uid}
     depends_on:
@@ -283,7 +291,9 @@ services:
       - MQTT_PORT=1883
       - MQTT_TLS=0
       - MQTT_USER=history_logger
-      - MQTT_PASS=logger_pass
+      - MQTT_PASS=${MQTT_HISTORY_LOGGER_PASS:-logger_pass}
+      # Совпадает с mqtt.password узла (user esp32_node). Пусто — секрет не кладётся в MQTT.
+      - NODE_SECRET_WRAP_PASSPHRASE=${NODE_SECRET_WRAP_PASSPHRASE:-esp32_pass}
       - PG_HOST=db
       - PG_DB=hydro_dev
       - PG_USER=hydro
@@ -291,11 +301,11 @@ services:
       - AE_DB_DSN=postgresql://hydro:hydro@db:5432/hydro_dev
       - LARAVEL_API_URL=http://laravel
       - MQTT_ZONE_FORMAT=uid
-      # ⚠️ ВАЖНО: dev-токены для разработки, ОБЯЗАТЕЛЬНО переопределите в production!
-      - PY_API_TOKEN=${PY_API_TOKEN:-dev-token-12345}
-      - PY_INGEST_TOKEN=${PY_INGEST_TOKEN:-dev-token-12345}
-      - HISTORY_LOGGER_API_TOKEN=${HISTORY_LOGGER_API_TOKEN:-${PY_INGEST_TOKEN:-dev-token-12345}}
-      - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:-dev-token-12345}
+      # Сервисные токены только из env (make ensure-dev-secrets). Один Bearer на Laravel/AE/history-logger.
+      - PY_API_TOKEN=${PY_API_TOKEN:?PY_API_TOKEN is required (run: make ensure-dev-secrets)}
+      - PY_INGEST_TOKEN=${PY_INGEST_TOKEN:?PY_INGEST_TOKEN is required (run: make ensure-dev-secrets)}
+      - HISTORY_LOGGER_API_TOKEN=${HISTORY_LOGGER_API_TOKEN:-${PY_INGEST_TOKEN:?PY_INGEST_TOKEN is required (run: make ensure-dev-secrets)}}
+      - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:?LARAVEL_API_TOKEN is required (run: make ensure-dev-secrets)}
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - SIMULATION_TELEMETRY_EVENTS=1
@@ -345,7 +355,7 @@ services:
       - MQTT_PORT=1883
       - MQTT_TLS=0
       - MQTT_USER=automation_engine
-      - MQTT_PASS=automation_pass
+      - MQTT_PASS=${MQTT_AUTOMATION_ENGINE_PASS:-automation_pass}
       - PG_HOST=db
       - PG_DB=hydro_dev
       - PG_USER=hydro
@@ -354,11 +364,11 @@ services:
       - AE_WORKER_OWNER=ae3-${HOSTNAME:-dev}
       - PG_POOL_MAX_SIZE=10
       - LARAVEL_API_URL=http://laravel
-      # ⚠️ ВАЖНО: dev-токены для разработки, ОБЯЗАТЕЛЬНО переопределите в production!
-      - PY_API_TOKEN=${PY_API_TOKEN:-dev-token-12345}
-      - PY_INGEST_TOKEN=${PY_INGEST_TOKEN:-dev-token-12345}
-      - HISTORY_LOGGER_API_TOKEN=${HISTORY_LOGGER_API_TOKEN:-${PY_INGEST_TOKEN:-dev-token-12345}}
-      - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:-dev-token-12345}
+      # Сервисные токены только из env (make ensure-dev-secrets). Один Bearer на Laravel/AE/history-logger.
+      - PY_API_TOKEN=${PY_API_TOKEN:?PY_API_TOKEN is required (run: make ensure-dev-secrets)}
+      - PY_INGEST_TOKEN=${PY_INGEST_TOKEN:?PY_INGEST_TOKEN is required (run: make ensure-dev-secrets)}
+      - HISTORY_LOGGER_API_TOKEN=${HISTORY_LOGGER_API_TOKEN:-${PY_INGEST_TOKEN:?PY_INGEST_TOKEN is required (run: make ensure-dev-secrets)}}
+      - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:?LARAVEL_API_TOKEN is required (run: make ensure-dev-secrets)}
       - CONFIG_FETCH_MIN_INTERVAL_SECONDS=60
       - HYDRO_CONFIGS_DIR=/hydro-configs
     depends_on:
@@ -507,7 +517,7 @@ services:
     container_name: alertmanager
     entrypoint: ["/bin/sh", "/etc/alertmanager/entrypoint.sh"]
     environment:
-      - ALERTMANAGER_WEBHOOK_SECRET=${ALERTMANAGER_WEBHOOK_SECRET:-dev-alertmanager-webhook-secret}
+      - ALERTMANAGER_WEBHOOK_SECRET=${ALERTMANAGER_WEBHOOK_SECRET:?ALERTMANAGER_WEBHOOK_SECRET is required (run: make ensure-dev-secrets)}
     command:
       - '--config.file=/etc/alertmanager/config.yml'
       - '--storage.path=/alertmanager'
@@ -736,7 +746,7 @@ services:
       - MQTT_USER=node_emulator
       - MQTT_PASS=node_emulator_pass
       - LARAVEL_URL=http://laravel
-      - LARAVEL_API_TOKEN=dev-token-12345
+      - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:?LARAVEL_API_TOKEN is required (run: make ensure-dev-secrets)}
       - PROMETHEUS_URL=http://prometheus:9090
       - HISTORY_LOGGER_URL=http://history-logger:9300
       - PYTHONPATH=/app

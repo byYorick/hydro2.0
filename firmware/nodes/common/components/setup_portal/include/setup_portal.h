@@ -65,6 +65,16 @@ bool setup_portal_is_running(void);
 esp_err_t setup_portal_generate_pin(char *pin_out, size_t pin_size);
 
 /**
+ * @brief Случайный пароль Wi-Fi AP для сессии setup (12 символов, WPA2).
+ *
+ * Вызывается, когда ap_password не задан. Пароль не хранится в прошивке.
+ *
+ * @param out Буфер (минимум 13 байт)
+ * @param out_size Размер буфера
+ */
+esp_err_t setup_portal_generate_ap_password(char *out, size_t out_size);
+
+/**
  * @brief Полный цикл настройки узла
  * 
  * Эта функция:

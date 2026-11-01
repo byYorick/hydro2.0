@@ -9,7 +9,7 @@ Smoke-тест для setup_portal компонента ESP32 узлов.
 4. Проверку формата payload
 
 Использование:
-    python3 test_setup_portal.py --ap-ssid "PH_SETUP_123456" --wifi-ssid "MyWiFi" --wifi-password "password123" --mqtt-host "192.168.1.4" --mqtt-port 1883
+    python3 test_setup_portal.py --ap-ssid "PH_SETUP_123456" --wifi-ssid "MyWiFi" --wifi-password "password123" --mqtt-host "192.168.1.4" --mqtt-port 1883 --ap-password "из serial"
 """
 
 __test__ = False
@@ -40,14 +40,16 @@ def test_setup_portal(
         wifi_password: Пароль целевой WiFi сети
         mqtt_host: IP адрес MQTT брокера
         mqtt_port: Порт MQTT брокера
-        ap_password: Пароль WiFi AP (опционально, по умолчанию "hydro2025")
+        ap_password: Пароль WiFi AP (из serial лога узла; обязателен для реального AP)
         timeout: Таймаут запросов в секундах
     
     Returns:
         True если тест пройден успешно, False иначе
     """
-    if ap_password is None:
-        ap_password = "hydro2025"
+    if not ap_password:
+        raise ValueError(
+            "ap_password is required. Read the setup AP password from the node serial log."
+        )
     
     base_url = "http://192.168.4.1"
     endpoint = f"{base_url}/wifi/connect"
@@ -279,8 +281,8 @@ def main():
     )
     parser.add_argument(
         "--ap-password",
-        default="hydro2025",
-        help="Пароль WiFi AP (по умолчанию: hydro2025)"
+        default=None,
+        help="Пароль WiFi AP из serial-лога узла (обязателен без --test-validation-only)"
     )
     parser.add_argument(
         "--test-validation-only",
@@ -305,6 +307,10 @@ def main():
         # Только тестирование валидации
         success = test_payload_validation(timeout=args.timeout)
     else:
+        if not args.ap_password:
+            parser.error(
+                "--ap-password is required. Read WiFi Pass from the node serial log."
+            )
         # Полный тест provisioning
         success = test_setup_portal(
             ap_ssid=args.ap_ssid,

@@ -44,13 +44,13 @@
           <div class="flex flex-wrap gap-2">
             <Link
               :href="item.openHref"
-              class="text-xs text-[color:var(--accent-cyan)] hover:underline"
+              class="text-xs text-[color:var(--status-info)] hover:underline"
             >
               Открыть зону
             </Link>
             <Link
               :href="item.alertsHref"
-              class="text-xs text-[color:var(--accent-cyan)] hover:underline"
+              class="text-xs text-[color:var(--status-info)] hover:underline"
             >
               Тревоги
             </Link>

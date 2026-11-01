@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Установка и проверка Cursor Agent Skills для hydro2.0
 # Внешние skills: npx skills add → .agents/skills/ + skills-lock.json
-# Проектные skills: .claude/skills/ (Cursor подхватывает автоматически)
+# Проектные skills: .claude/skills/ (Cursor) и .grok/skills/ (Grok)
 set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -10,6 +10,7 @@ cd "$PROJECT_ROOT"
 SKILLS_LOCK="$PROJECT_ROOT/skills-lock.json"
 AGENTS_SKILLS_DIR="$PROJECT_ROOT/.agents/skills"
 CLAUDE_SKILLS_DIR="$PROJECT_ROOT/.claude/skills"
+GROK_SKILLS_DIR="$PROJECT_ROOT/.grok/skills"
 
 # --- Манифест внешних skills (репозиторий:имена через пробел) ---
 AWESOME_REPO="thienanblog/awesome-ai-agent-skills"
@@ -53,6 +54,12 @@ MCP_MANIFEST=(
 # Проектные skills (директории относительно PROJECT_ROOT)
 PROJECT_SKILL_DIRS=(
   .claude/skills/two-tank-debug
+  .grok/skills/hydro2-command-flow
+  .grok/skills/hydro2-mqtt-security
+  .grok/skills/hydro2-ae3-automation
+  .grok/skills/hydro2-firmware-nodes
+  .grok/skills/hydro2-frontend-dashboard
+  .grok/skills/hydro2-doc-sot
 )
 
 log() { printf '==> %s\n' "$*"; }
@@ -92,10 +99,35 @@ validate_skill_md() {
   return 0
 }
 
+validate_project_skill_scaffold() {
+  local dir="$1"
+  local label="$2"
+  local skill_md="$dir/SKILL.md"
+  local failed=0
+
+  validate_skill_md "$skill_md" "$label" || return 1
+
+  grep -qE '^type:[[:space:]]*.+' "$skill_md" || { warn "нет type: в $skill_md"; failed=1; }
+  grep -qE '^lifecycle:[[:space:]]*.+' "$skill_md" || { warn "нет lifecycle: в $skill_md"; failed=1; }
+  [[ -f "$dir/CHANGELOG.md" ]] || { warn "нет CHANGELOG.md: $label"; failed=1; }
+  [[ -f "$dir/evals/evals.json" ]] || { warn "нет evals/evals.json: $label"; failed=1; }
+
+  if [[ -f "$dir/evals/evals.json" ]] && command -v jq >/dev/null 2>&1; then
+    jq empty "$dir/evals/evals.json" 2>/dev/null || { warn "невалидный JSON: $label/evals/evals.json"; failed=1; }
+  fi
+
+  return "$failed"
+}
+
 check_skill_dir() {
   local dir="$1"
   local label="$2"
-  validate_skill_md "$dir/SKILL.md" "$label"
+  local mode="${3:-external}"
+  if [[ "$mode" == "project" ]]; then
+    validate_project_skill_scaffold "$dir" "$label"
+  else
+    validate_skill_md "$dir/SKILL.md" "$label"
+  fi
 }
 
 cmd_list() {
@@ -113,7 +145,7 @@ cmd_list() {
   echo "Внешние ($EMBEDDED_REPO):"
   for s in "${EMBEDDED_SKILLS[@]}"; do echo "  - $s"; done
   echo ""
-  echo "Проектные (.claude/skills/):"
+  echo "Проектные (.claude/skills/ + .grok/skills/):"
   for d in "${PROJECT_SKILL_DIRS[@]}"; do echo "  - $d"; done
   echo ""
 
@@ -377,10 +409,10 @@ cmd_check() {
   echo "Проверка Cursor skills..."
   echo ""
 
-  # Проектные skills
+  # Проектные skills (.claude/skills + .grok/skills)
   echo "[project]"
   for rel in "${PROJECT_SKILL_DIRS[@]}"; do
-    if check_skill_dir "$PROJECT_ROOT/$rel" "$rel"; then
+    if check_skill_dir "$PROJECT_ROOT/$rel" "$rel" project; then
       echo "  OK  $rel"
     else
       echo "  FAIL $rel"

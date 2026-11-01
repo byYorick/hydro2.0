@@ -8,12 +8,12 @@
         <div class="inline-flex items-center gap-1.5 rounded-md border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)] px-2 py-1 shrink-0">
           <span
             class="inline-block w-1.5 h-1.5 rounded-full"
-            :class="irrigNodeOnline ? 'bg-[color:var(--accent-green)]' : 'bg-[color:var(--accent-red)]'"
+            :class="irrigNodeOnline ? 'bg-[color:var(--status-ok)]' : 'bg-[color:var(--status-critical)]'"
           ></span>
           <span class="text-[10px] font-medium text-[color:var(--text-primary)]">IRR</span>
           <span
             class="text-[10px]"
-            :class="irrigNodeOnline ? 'text-[color:var(--accent-green)]' : 'text-[color:var(--accent-red)]'"
+            :class="irrigNodeOnline ? 'text-[color:var(--status-ok)]' : 'text-[color:var(--status-critical)]'"
           >
             {{ irrigNodeOnline ? 'online' : 'offline' }}
           </span>
@@ -28,7 +28,7 @@
           ></span>
           <span
             class="text-sm font-medium truncate"
-            :class="(offline || automationBlocked) ? 'text-[color:var(--accent-red)]' : 'text-[color:var(--text-primary)]'"
+            :class="(offline || automationBlocked) ? 'text-[color:var(--status-critical)]' : 'text-[color:var(--text-primary)]'"
             :title="automationBlocked ? (automationBlockReason || 'Автоматика остановлена') : undefined"
           >
             {{ phaseLabel }}
@@ -42,7 +42,7 @@
         </span>
         <span
           v-if="offline && !automationBlocked"
-          class="text-[9px] uppercase tracking-wide text-[color:var(--accent-red)] shrink-0"
+          class="text-[9px] uppercase tracking-wide text-[color:var(--status-critical)] shrink-0"
         >
           нет связи
         </span>
@@ -130,13 +130,13 @@ const phaseLabel = computed(() => {
 })
 
 const phaseDotClass = computed(() => {
-  if (props.automationBlocked) return 'bg-[color:var(--accent-red)] animate-pulse'
-  if (props.offline) return 'bg-[color:var(--accent-red)]'
+  if (props.automationBlocked) return 'bg-[color:var(--status-critical)] animate-pulse'
+  if (props.offline) return 'bg-[color:var(--status-critical)]'
   if (!hasPhaseData.value) return 'bg-[color:var(--text-dim)]'
   const code = (props.phaseCode ?? '').toLowerCase()
   // Активные фазы (running)
   if (['irrigating', 'irrig_recirc', 'recirculation', 'preparing', 'clean_fill', 'solution_fill'].includes(code)) {
-    return 'bg-[color:var(--accent-cyan)] animate-pulse'
+    return 'bg-[color:var(--status-info)] animate-pulse'
   }
   // Ожидание — нейтрально
   if (['idle', 'waiting', 'ready'].includes(code)) {
@@ -144,9 +144,9 @@ const phaseDotClass = computed(() => {
   }
   // Проблемные
   if (['error', 'failed', 'degraded'].includes(code)) {
-    return 'bg-[color:var(--accent-red)]'
+    return 'bg-[color:var(--status-critical)]'
   }
-  return 'bg-[color:var(--accent-green)]'
+  return 'bg-[color:var(--status-ok)]'
 })
 
 const irrigNodeOnline = computed(() => Boolean(props.irrigNodeOnline))
@@ -287,12 +287,12 @@ const processStateLabel = computed(() => {
 
 const processStateClass = computed(() => {
   if (props.automationBlocked || processStateLabel.value === 'ошибка') {
-    return 'text-[color:var(--accent-red)]'
+    return 'text-[color:var(--status-critical)]'
   }
   if (processStateLabel.value === 'ожидание' || processStateLabel.value === 'нет данных') {
     return 'text-[color:var(--text-dim)]'
   }
 
-  return 'text-[color:var(--accent-cyan)]'
+  return 'text-[color:var(--status-info)]'
 })
 </script>

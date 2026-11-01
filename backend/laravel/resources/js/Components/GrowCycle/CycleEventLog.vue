@@ -29,7 +29,7 @@
         <button
           type="button"
           :disabled="loadingMore"
-          class="text-xs text-[color:var(--accent-cyan)] hover:underline disabled:opacity-50"
+          class="text-xs text-[color:var(--status-info)] hover:underline disabled:opacity-50"
           @click="loadMore"
         >
           {{ loadingMore ? 'Загрузка...' : 'Загрузить ещё' }}

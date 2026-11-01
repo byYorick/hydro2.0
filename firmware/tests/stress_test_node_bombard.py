@@ -25,7 +25,7 @@ from typing import Callable, Dict, List, Optional, Tuple
 
 import paho.mqtt.client as mqtt
 
-DEFAULT_SECRET = os.getenv("NODE_DEFAULT_SECRET", "hydro-default-secret-key-2025")
+DEFAULT_SECRET = os.environ["NODE_DEFAULT_SECRET"]
 DEFAULT_GH = "gh-test-1"
 DEFAULT_ZONE = "zn-test-1"
 

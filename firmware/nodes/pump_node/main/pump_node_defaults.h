@@ -13,6 +13,13 @@
 extern "C" {
 #endif
 
+#include "driver/gpio.h"
+
+/* E-STOP: GPIO32, active-low, внутренний pull-up. Не назначать этот GPIO каналу насоса. */
+#define PUMP_NODE_ESTOP_GPIO GPIO_NUM_32
+#define PUMP_NODE_ESTOP_ACTIVE_LOW 1
+#define PUMP_NODE_ESTOP_DEBOUNCE_MS 80U
+
 // Node identification defaults
 #define PUMP_NODE_DEFAULT_NODE_ID      "nd-pump-1"
 #define PUMP_NODE_DEFAULT_GH_UID       "gh-1"
@@ -29,7 +36,8 @@ extern "C" {
 #define PUMP_NODE_I2C_CLOCK_SPEED      100000
 
 // Setup portal defaults
-#define PUMP_NODE_SETUP_AP_PASSWORD    "hydro2025"
+/* NULL: setup_portal генерирует пароль AP на сессию и пишет его в serial. */
+#define PUMP_NODE_SETUP_AP_PASSWORD    NULL
 
 #ifdef __cplusplus
 }

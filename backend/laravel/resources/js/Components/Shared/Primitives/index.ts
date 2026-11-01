@@ -1,10 +1,11 @@
 /**
  * Hydroflow UI primitives — atomic building blocks для launch wizard и cockpit-страниц.
  *
- * Эти примитивы НЕ заменяют существующие Button/Card/Badge/TextInput, а дополняют
- * их под Hydroflow-палитру (--brand/--growth/--warn/--alert) и tone-based composition.
+ * Тона статуса живут в `@/theme/statusTones` (ok/warning/critical/offline/info).
+ * Chip по-прежнему принимает Hydroflow-имена growth/warn/alert/brand и рисует их
+ * прежними классами. Badge и StatusPill берут классы из того же словаря.
  *
- *   Chip ≠ Badge: Chip = tone+icon (статусы), Badge = success/warning/danger (счётчики).
+ *   Chip = тон + иконка. Badge = компактная метка счётчиков и статусов.
  *   Stat ≠ Card:  Stat = label + value pair, Card = container.
  */
 export { default as Field } from './Field.vue'

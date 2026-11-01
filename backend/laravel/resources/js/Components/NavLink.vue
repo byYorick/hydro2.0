@@ -15,9 +15,8 @@
       @mouseenter="onTipEnter"
       @mouseleave="showTip = false"
     >
-      <!-- eslint-disable vue/no-v-html -->
       <svg
-        v-if="icon"
+        v-if="icon?.length"
         class="h-5 w-5 shrink-0"
         viewBox="0 0 24 24"
         fill="none"
@@ -25,9 +24,9 @@
         stroke-width="1.5"
         stroke-linecap="round"
         stroke-linejoin="round"
-        v-html="icon"
-      />
-      <!-- eslint-enable vue/no-v-html -->
+      >
+        <SvgNodes :nodes="icon" />
+      </svg>
     </Link>
     <Teleport to="body">
       <div
@@ -55,9 +54,8 @@
         : isActive ? 'nav-link--active' : ''
     ]"
   >
-    <!-- eslint-disable vue/no-v-html -->
     <svg
-      v-if="icon && !mobile"
+      v-if="icon?.length && !mobile"
       class="h-4 w-4 shrink-0"
       viewBox="0 0 24 24"
       fill="none"
@@ -65,9 +63,9 @@
       stroke-width="1.5"
       stroke-linecap="round"
       stroke-linejoin="round"
-      v-html="icon"
-    />
-    <!-- eslint-enable vue/no-v-html -->
+    >
+      <SvgNodes :nodes="icon" />
+    </svg>
     <slot><span class="truncate">{{ label }}</span></slot>
   </Link>
 </template>
@@ -75,11 +73,13 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { Link, usePage } from '@inertiajs/vue3'
+import SvgNodes from '@/Components/Icons/SvgNodes.vue'
+import type { SvgNode } from '@/Components/Icons/svgNode'
 
 const props = defineProps<{
   href: string
   label: string
-  icon?: string
+  icon?: SvgNode[]
   collapsed?: boolean
   mobile?: boolean
 }>()

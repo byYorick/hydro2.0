@@ -15,6 +15,7 @@
 #include "node_command_handler.h"
 #include "node_telemetry_engine.h"
 #include "pump_driver.h"
+#include "actuator_failsafe.h"
 #include "ina209.h"
 #include "mqtt_manager.h"
 #include "esp_log.h"
@@ -24,6 +25,25 @@
 #include <string.h>
 
 static const char *TAG = "pump_node_framework";
+
+static esp_err_t pump_node_failsafe_safe_state(void *ctx) {
+    (void)ctx;
+    return pump_driver_force_deenergize();
+}
+
+static void pump_node_init_actuator_failsafe(void) {
+    actuator_failsafe_config_t cfg = {
+        .gpio_pin = PUMP_NODE_ESTOP_GPIO,
+        .active_low = (PUMP_NODE_ESTOP_ACTIVE_LOW != 0),
+        .debounce_ms = PUMP_NODE_ESTOP_DEBOUNCE_MS,
+        .safe_state_cb = pump_node_failsafe_safe_state,
+        .safe_state_ctx = NULL,
+    };
+    esp_err_t fs_err = actuator_failsafe_init(&cfg);
+    if (fs_err != ESP_OK) {
+        ESP_LOGE(TAG, "E-STOP input init failed: %s", esp_err_to_name(fs_err));
+    }
+}
 
 // Forward declaration для callback safe_mode
 static esp_err_t pump_node_disable_actuators_in_safe_mode(void *user_ctx);
@@ -63,6 +83,17 @@ static esp_err_t handle_run_pump(const char *channel, const cJSON *params, cJSON
     
     int duration_ms = (int)cJSON_GetNumberValue(duration_item);
     ESP_LOGI(TAG, "Running pump on channel %s for %d ms", channel, duration_ms);
+
+    if (actuator_failsafe_is_latched()) {
+        *response = node_command_handler_create_response(
+            NULL,
+            "ERROR",
+            "estop_active",
+            "E-Stop is latched; actuator ON commands are rejected",
+            NULL
+        );
+        return ESP_ERR_INVALID_STATE;
+    }
     
     // Реальная логика управления насосом через pump_driver
     // pump_driver автоматически проверяет ток через INA209 при запуске
@@ -77,7 +108,10 @@ static esp_err_t handle_run_pump(const char *channel, const cJSON *params, cJSON
         char detail_buf[256];
         const char *ina_code = NULL;
 
-        if (pump_driver_describe_last_start_fault(channel, err, detail_buf, sizeof(detail_buf), &ina_code) == ESP_OK) {
+        if (actuator_failsafe_is_latched()) {
+            error_code = "estop_active";
+            error_message = "E-Stop is latched; actuator ON commands are rejected";
+        } else if (pump_driver_describe_last_start_fault(channel, err, detail_buf, sizeof(detail_buf), &ina_code) == ESP_OK) {
             error_code = ina_code;
             error_message = detail_buf;
         } else if (err == ESP_ERR_INVALID_RESPONSE) {
@@ -186,6 +220,8 @@ esp_err_t pump_node_framework_init_integration(void) {
         ESP_LOGE(TAG, "Failed to initialize node_framework: %s", esp_err_to_name(err));
         return err;
     }
+
+    pump_node_init_actuator_failsafe();
     
     // Регистрация обработчиков команд
     err = node_command_handler_register("run_pump", handle_run_pump, NULL);
@@ -208,7 +244,11 @@ esp_err_t pump_node_framework_init_integration(void) {
 static esp_err_t pump_node_disable_actuators_in_safe_mode(void *user_ctx) {
     (void)user_ctx;
     ESP_LOGW(TAG, "Disabling all actuators in safe mode");
-    return pump_driver_emergency_stop();
+    esp_err_t safe_err = pump_driver_force_deenergize();
+    if (safe_err != ESP_OK) {
+        ESP_LOGW(TAG, "Safe-mode deenergize incomplete: %s", esp_err_to_name(safe_err));
+    }
+    return safe_err;
 }
 
 /**

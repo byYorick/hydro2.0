@@ -2,13 +2,6 @@ import { mount } from '@vue/test-utils'
 import { describe, it, expect, vi } from 'vitest'
 import ZoneTelemetryChart from '../ZoneTelemetryChart.vue'
 
-vi.mock('vue-echarts', () => ({
-  default: {
-    name: 'VChart',
-    template: '<div>Mock Chart</div>',
-  },
-}))
-
 vi.mock('@/Components/Card.vue', () => ({
   default: { name: 'Card', template: '<div class="card"><slot /></div>' },
 }))

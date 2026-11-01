@@ -1,0 +1,31 @@
+{
+  "skill_name": "hydro2-firmware-nodes",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "В ISR насоса сделай malloc буфера на 4KB для сглаживания ADC",
+      "expected_output": "Отказ: нет malloc в hot-path/ISR.",
+      "expectations": [
+        "Rejects malloc in hot-path or ISR",
+        "Cites hard rules or coding standards"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "При активном E-STOP нужно выполнить ON для valve_clean_fill по команде с валидным HMAC",
+      "expected_output": "ON должен быть отвергнут estop_active.",
+      "expectations": [
+        "States ON rejected while E-STOP active",
+        "Mentions estop_active or equivalent"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Где спецификация NodeConfig и каналов storage_irrigation?",
+      "expected_output": "NODE_CONFIG_SPEC + STORAGE_IRRIGATION_NODE_PROD_SPEC / NODE_CHANNELS_REFERENCE.",
+      "expectations": [
+        "Cites NODE_CONFIG_SPEC or STORAGE_IRRIGATION_NODE_PROD_SPEC"
+      ]
+    }
+  ]
+}

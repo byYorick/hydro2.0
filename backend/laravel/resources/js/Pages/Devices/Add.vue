@@ -57,7 +57,7 @@
             <div class="ui-kpi-label">
               Онлайн
             </div>
-            <div class="ui-kpi-value text-[color:var(--accent-green)]">
+            <div class="ui-kpi-value text-[color:var(--status-ok)]">
               {{ onlineNodesCount }}
             </div>
             <div class="ui-kpi-hint">
@@ -68,7 +68,7 @@
             <div class="ui-kpi-label">
               С lifecycle
             </div>
-            <div class="ui-kpi-value text-[color:var(--accent-cyan)]">
+            <div class="ui-kpi-value text-[color:var(--status-info)]">
               {{ lifecycleNodesCount }}
             </div>
             <div class="ui-kpi-hint">
@@ -97,7 +97,7 @@
         <ol class="text-xs text-[color:var(--text-muted)] space-y-1 list-decimal list-inside">
           <li>Включите новую ноду. Она поднимет точку доступа Wi-Fi.</li>
           <li>Подключитесь с телефона к точке доступа ноды.</li>
-          <li>Откройте в браузере <code class="text-[color:var(--accent-cyan)]">192.168.4.1</code></li>
+          <li>Откройте в браузере <code class="text-[color:var(--status-info)]">192.168.4.1</code></li>
           <li>Введите SSID и пароль вашей Wi-Fi сети.</li>
           <li>Нода перезагрузится и отправит discovery сообщение.</li>
           <li>Нажмите "Обновить список" или нода появится автоматически.</li>
@@ -156,7 +156,7 @@
                     v-if="node.lifecycle_state"
                     class="ml-2"
                   >
-                    · Lifecycle: <span class="text-[color:var(--accent-cyan)]">{{ getStateLabel(node.lifecycle_state) }}</span>
+                    · Lifecycle: <span class="text-[color:var(--status-info)]">{{ getStateLabel(node.lifecycle_state) }}</span>
                   </span>
                 </div>
                 <div
@@ -208,11 +208,10 @@
                   :for="`node-${node.id}-greenhouse`"
                   class="sr-only"
                 >Теплица</label>
-                <select
+                <SelectField
                   :id="`node-${node.id}-greenhouse`"
                   v-model="assignmentForms[node.id].greenhouse_id"
                   :name="`node_${node.id}_greenhouse_id`"
-                  class="input-select"
                   required
                   @change="onGreenhouseChange(node.id)"
                 >
@@ -226,16 +225,15 @@
                   >
                     {{ gh.name }}
                   </option>
-                </select>
+                </SelectField>
                 <label
                   :for="`node-${node.id}-zone`"
                   class="sr-only"
                 >Зона</label>
-                <select
+                <SelectField
                   :id="`node-${node.id}-zone`"
                   v-model="assignmentForms[node.id].zone_id"
                   :name="`node_${node.id}_zone_id`"
-                  class="input-select"
                   :disabled="!assignmentForms[node.id].greenhouse_id"
                   required
                 >
@@ -249,17 +247,16 @@
                   >
                     {{ zone.name }}
                   </option>
-                </select>
+                </SelectField>
                 <label
                   :for="`node-${node.id}-name`"
                   class="sr-only"
                 >Имя ноды</label>
-                <input
+                <TextField
                   :id="`node-${node.id}-name`"
                   v-model="assignmentForms[node.id].name"
                   :name="`node_${node.id}_name`"
                   placeholder="Имя ноды (опционально)"
-                  class="input-field"
                 />
                 <Button
                   type="submit"
@@ -287,6 +284,10 @@
 </template>
 
 <script setup lang="ts">
+import SelectField from '@/Components/SelectField.vue'
+
+import TextField from '@/Components/TextField.vue'
+
 import { ref, reactive, onMounted, onUnmounted, computed } from 'vue'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'

@@ -4,6 +4,7 @@
  */
 
 #include "storage_irrigation_fw_internal.h"
+#include "estop_lock_policy.h"
 #include "storage_irrigation_node_framework_integration.h"
 #include "storage_irrigation_node_config.h"
 #include "storage_irrigation_node_init.h"
@@ -482,46 +483,54 @@ bool storage_irrigation_node_restore_estop_snapshot_locked(void) {
     return all_ok;
 }
 
-void storage_irrigation_node_handle_estop_transition(bool pressed) {
-    if (pressed == g_estop_active) {
-        if (pressed && g_actuator_mutex && xSemaphoreTake(g_actuator_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-            (void)storage_irrigation_node_stop_all_paths_locked();
-            xSemaphoreGive(g_actuator_mutex);
+/**
+ * Прямой safe-OFF всех актуаторов без g_actuator_mutex.
+ * MOSFET-путь pump_driver: OFF = GPIO level 0 (fail_safe_nc не инвертирует direct GPIO).
+ * Затем best-effort sync через pump_driver; таймаут его мьютекса не отменяет GPIO.
+ */
+static void storage_irrigation_node_force_actuators_off_unlocked(void) {
+    for (size_t i = 0; i < STORAGE_IRRIGATION_NODE_ACTUATOR_CHANNELS_COUNT; i++) {
+        const storage_irrigation_node_actuator_channel_t *cfg = &STORAGE_IRRIGATION_NODE_ACTUATOR_CHANNELS[i];
+        if (cfg == NULL || cfg->gpio < 0 || cfg->gpio >= GPIO_NUM_MAX) {
+            continue;
         }
-        return;
+        (void)gpio_set_level((gpio_num_t)cfg->gpio, 0);
     }
 
-    if (!g_actuator_mutex || xSemaphoreTake(g_actuator_mutex, pdMS_TO_TICKS(1000)) != pdTRUE) {
-        ESP_LOGW(TAG, "Failed to acquire actuator lock for e-stop transition");
-        return;
+    esp_err_t drv_err = pump_driver_emergency_stop();
+    if (drv_err != ESP_OK) {
+        ESP_LOGW(TAG,
+                 "E-STOP pump_driver_emergency_stop failed: %s; GPIO already forced OFF",
+                 esp_err_to_name(drv_err));
     }
+}
 
-    if (pressed) {
-        memset(g_estop_restore_states, 0, sizeof(g_estop_restore_states));
-        for (size_t i = 0; i < g_actuator_runtime_count; i++) {
-            const storage_irrigation_node_actuator_channel_t *cfg = g_actuator_runtime[i].cfg;
-            bool state = false;
-            if (cfg && storage_irrigation_node_get_actuator_state_locked(cfg->name, &state)) {
-                g_estop_restore_states[i] = state;
-            }
+static void storage_irrigation_node_estop_activate_bookkeeping_locked(void) {
+    memset(g_estop_restore_states, 0, sizeof(g_estop_restore_states));
+    for (size_t i = 0; i < g_actuator_runtime_count; i++) {
+        const storage_irrigation_node_actuator_channel_t *cfg = g_actuator_runtime[i].cfg;
+        bool state = false;
+        if (cfg && storage_irrigation_node_get_actuator_state_locked(cfg->name, &state)) {
+            g_estop_restore_states[i] = state;
         }
-        g_estop_restore_valid = true;
-        storage_irrigation_node_pause_stage_guards_locked();
-        storage_irrigation_node_update_clean_fill_guard_state(storage_irrigation_node_is_clean_fill_active_locked(), true);
-        storage_irrigation_node_update_solution_fill_guard_state(storage_irrigation_node_is_solution_fill_active_locked(), true);
-        storage_irrigation_node_update_binary_guard_state(&g_recirculation_guard, storage_irrigation_node_is_prepare_recirculation_active_locked(), true);
-        storage_irrigation_node_update_binary_guard_state(&g_irrigation_guard, storage_irrigation_node_is_irrigation_active_locked(), true);
-        (void)storage_irrigation_node_stop_all_paths_locked();
-        g_estop_active = true;
-        xSemaphoreGive(g_actuator_mutex);
-        storage_irrigation_node_update_oled_runtime();
-        (void)storage_irrigation_node_publish_storage_event("emergency_stop_activated", NULL);
-        return;
     }
+    g_estop_restore_valid = true;
+    storage_irrigation_node_pause_stage_guards_locked();
+    storage_irrigation_node_update_clean_fill_guard_state(storage_irrigation_node_is_clean_fill_active_locked(), true);
+    storage_irrigation_node_update_solution_fill_guard_state(storage_irrigation_node_is_solution_fill_active_locked(), true);
+    storage_irrigation_node_update_binary_guard_state(&g_recirculation_guard, storage_irrigation_node_is_prepare_recirculation_active_locked(), true);
+    storage_irrigation_node_update_binary_guard_state(&g_irrigation_guard, storage_irrigation_node_is_irrigation_active_locked(), true);
+    (void)storage_irrigation_node_stop_all_paths_locked();
+    g_estop_active = true;
+    g_estop_sync_pending = false;
+}
 
+static void storage_irrigation_node_estop_release_bookkeeping_locked(void) {
     /* Release: keep actuators OFF. Restoring the pre-press snapshot would
      * re-energize pumps/valves under an operator who just cleared E-Stop. */
     g_estop_active = false;
+    g_estop_sync_pending = false;
+    g_estop_event_published = false;
     (void)storage_irrigation_node_stop_all_paths_locked();
     storage_irrigation_node_disarm_all_stage_guards_locked();
     g_clean_fill_guard.paused_by_estop = false;
@@ -534,6 +543,61 @@ void storage_irrigation_node_handle_estop_transition(bool pressed) {
     storage_irrigation_node_update_binary_guard_state(&g_irrigation_guard, false, false);
     g_estop_restore_valid = false;
     memset(g_estop_restore_states, 0, sizeof(g_estop_restore_states));
+}
+
+static void storage_irrigation_node_publish_estop_event_if_needed(void) {
+    if (g_estop_event_published) {
+        return;
+    }
+    esp_err_t pub_err = storage_irrigation_node_publish_storage_event("emergency_stop_activated", NULL);
+    if (pub_err == ESP_OK) {
+        g_estop_event_published = true;
+        return;
+    }
+    ESP_LOGW(TAG, "emergency_stop_activated publish deferred: %s", esp_err_to_name(pub_err));
+}
+
+void storage_irrigation_node_handle_estop_transition(bool pressed) {
+    /*
+     * SAF-01: обесточивание не зависит от g_actuator_mutex. Ранний return при
+     * таймауте снимал стоп целиком (защёлка не ставилась, GPIO оставались ON).
+     */
+    if (!estop_transition_requires_deenergize(pressed, g_estop_active, g_estop_sync_pending)
+        || estop_lock_failure_may_skip_deenergize()) {
+        return;
+    }
+
+    storage_irrigation_node_force_actuators_off_unlocked();
+
+    const bool lock_ok = g_actuator_mutex != NULL
+        && xSemaphoreTake(g_actuator_mutex, pdMS_TO_TICKS(100)) == pdTRUE;
+    if (!lock_ok) {
+        if (pressed) {
+            g_estop_active = true;
+        }
+        g_estop_sync_pending = true;
+        ESP_LOGW(TAG, "E-STOP actuator lock unavailable; outputs forced OFF, bookkeeping deferred");
+        if (pressed) {
+            storage_irrigation_node_update_oled_runtime();
+            storage_irrigation_node_publish_estop_event_if_needed();
+        }
+        return;
+    }
+
+    if (pressed) {
+        if (!g_estop_active || g_estop_sync_pending) {
+            storage_irrigation_node_estop_activate_bookkeeping_locked();
+            xSemaphoreGive(g_actuator_mutex);
+            storage_irrigation_node_update_oled_runtime();
+            storage_irrigation_node_publish_estop_event_if_needed();
+            return;
+        }
+        (void)storage_irrigation_node_stop_all_paths_locked();
+        xSemaphoreGive(g_actuator_mutex);
+        return;
+    }
+
+    storage_irrigation_node_estop_release_bookkeeping_locked();
     xSemaphoreGive(g_actuator_mutex);
     storage_irrigation_node_update_oled_runtime();
 }

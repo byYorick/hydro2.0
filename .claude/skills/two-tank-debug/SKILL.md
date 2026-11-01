@@ -1,6 +1,8 @@
 ---
 name: two-tank-debug
 description: Диагностика застрявшего two-tank startup workflow зоны. Используй когда зона не проходит idle/startup → tank_filling → tank_recirc → ready → irrigating → ready, зависла в промежуточной фазе, или корректировки pH/EC не запускаются.
+type: workflow
+lifecycle: active
 ---
 
 # Two-Tank Startup Workflow — Диагностика

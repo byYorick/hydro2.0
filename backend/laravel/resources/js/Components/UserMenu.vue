@@ -9,8 +9,8 @@
       class="relative group/user flex justify-center"
     >
       <button
-        class="w-10 h-10 rounded-full flex items-center justify-center text-xs font-medium text-[color:var(--text-muted)] bg-[color:var(--bg-elevated)] hover:ring-2 hover:ring-[color:var(--accent-green)]/40 transition-all"
-        :class="{ 'ring-2 ring-[color:var(--accent-green)]/40': open }"
+        class="w-10 h-10 rounded-full flex items-center justify-center text-xs font-medium text-[color:var(--text-muted)] bg-[color:var(--bg-elevated)] hover:ring-2 hover:ring-[color:var(--status-ok)]/40 transition-all"
+        :class="{ 'ring-2 ring-[color:var(--status-ok)]/40': open }"
         @click="open = !open"
       >
         {{ userInitials }}
@@ -157,7 +157,7 @@
             <div class="border-t border-[color:var(--border-muted)] my-1"></div>
 
             <button
-              class="w-full flex items-center gap-3 px-4 py-2 text-sm text-[color:var(--accent-red)] hover:bg-[color:var(--badge-danger-bg)] transition-colors"
+              class="w-full flex items-center gap-3 px-4 py-2 text-sm text-[color:var(--status-critical)] hover:bg-[color:var(--badge-danger-bg)] transition-colors"
               @click="handleLogout"
             >
               <svg

@@ -58,13 +58,19 @@ extern "C" {
 #define PH_NODE_OLED_UPDATE_INTERVAL_MS 1500
 
 // Setup portal defaults
-#define PH_NODE_SETUP_AP_PASSWORD    "hydro2025"
+/* NULL: setup_portal генерирует пароль AP на сессию и пишет его в serial. */
+#define PH_NODE_SETUP_AP_PASSWORD    NULL
 
 // Factory reset (long-press) defaults
 #define PH_NODE_FACTORY_RESET_GPIO           GPIO_NUM_0  // BOOT button on most devkits
 #define PH_NODE_FACTORY_RESET_ACTIVE_LOW     1
 #define PH_NODE_FACTORY_RESET_HOLD_MS        20000U
 #define PH_NODE_FACTORY_RESET_POLL_INTERVAL  50U
+
+/* E-STOP: GPIO32, active-low, внутренний pull-up. Не занимать этот GPIO насосом. */
+#define PH_NODE_ESTOP_GPIO                  GPIO_NUM_32
+#define PH_NODE_ESTOP_ACTIVE_LOW            1
+#define PH_NODE_ESTOP_DEBOUNCE_MS           80U
 
 // pH pump actuator defaults
 #define PH_NODE_PH_DOSER_UP_GPIO            GPIO_NUM_12

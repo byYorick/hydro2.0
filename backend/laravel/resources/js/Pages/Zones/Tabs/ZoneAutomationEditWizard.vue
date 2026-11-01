@@ -38,14 +38,14 @@
       </div>
       <p
         v-else
-        class="text-xs text-red-500"
+        class="text-xs text-status-critical"
       >
         Не задан идентификатор зоны.
       </p>
 
       <p
         v-if="stepError"
-        class="text-xs text-red-500"
+        class="text-xs text-status-critical"
       >
         {{ stepError }}
       </p>

@@ -45,7 +45,7 @@
               <div class="ui-kpi-label">
                 Зоны
               </div>
-              <div class="ui-kpi-value text-[color:var(--accent-green)]">
+              <div class="ui-kpi-value text-status-ok">
                 {{ summary.zones_total }}<span class="text-base font-semibold text-[color:var(--text-muted)]"> / {{ summary.zones_running }}</span>
               </div>
               <div class="ui-kpi-hint">
@@ -58,7 +58,7 @@
               </div>
               <div
                 class="ui-kpi-value"
-                :class="summary.zones_warning > 0 ? 'text-[color:var(--accent-amber)]' : ''"
+                :class="summary.zones_warning > 0 ? 'text-status-warning' : ''"
               >
                 {{ summary.zones_warning }}
               </div>
@@ -69,7 +69,7 @@
               </div>
               <div
                 class="ui-kpi-value"
-                :class="summary.zones_alarm > 0 ? 'text-[color:var(--accent-red)]' : ''"
+                :class="summary.zones_alarm > 0 ? 'text-status-critical' : ''"
               >
                 {{ summary.zones_alarm }}
               </div>
@@ -78,7 +78,7 @@
               <div class="ui-kpi-label">
                 Устройства
               </div>
-              <div class="ui-kpi-value text-[color:var(--accent-cyan)]">
+              <div class="ui-kpi-value text-status-info">
                 {{ summary.devices_online }}<span class="text-base font-semibold text-[color:var(--text-muted)]">/{{ summary.devices_total }}</span>
               </div>
               <div class="ui-kpi-hint">
@@ -88,27 +88,27 @@
             <div
               class="ui-kpi-card"
               data-testid="dashboard-alerts-count"
-              :class="summary.alerts_active > 0 ? 'border-[color:var(--accent-red)]/40' : ''"
+              :class="summary.alerts_active > 0 ? 'border-[color:var(--status-critical)]' : ''"
             >
               <div class="ui-kpi-label">
                 Алерты
               </div>
               <div
                 class="ui-kpi-value"
-                :class="summary.alerts_active > 0 ? 'text-[color:var(--accent-red)]' : ''"
+                :class="summary.alerts_active > 0 ? 'text-status-critical' : ''"
               >
                 {{ summary.alerts_active }}
               </div>
             </div>
             <div
               v-if="(summary.zones_blocked ?? 0) > 0"
-              class="ui-kpi-card border border-[color:var(--badge-danger-border)]"
+              class="ui-kpi-card border border-[color:var(--status-critical)]"
               data-testid="dashboard-zones-blocked"
             >
-              <div class="ui-kpi-label text-[color:var(--accent-red)]">
+              <div class="ui-kpi-label text-status-critical">
                 Авто остановлено
               </div>
-              <div class="ui-kpi-value text-[color:var(--accent-red)] animate-pulse">
+              <div class="ui-kpi-value text-status-critical animate-pulse">
                 {{ summary.zones_blocked }}
               </div>
             </div>
@@ -136,14 +136,16 @@
         <section class="surface-card rounded-2xl border border-[color:var(--border-muted)] p-3 md:p-4">
           <div class="flex flex-col gap-3 lg:flex-row lg:items-center">
             <div class="flex flex-1 flex-col gap-2 sm:flex-row sm:items-center">
-              <input
+              <TextField
                 v-model="query"
-                class="input-field flex-1"
+                class="flex-1"
                 placeholder="Поиск зоны, культуры или теплицы"
-              >
-              <select
+                aria-label="Поиск зоны, культуры или теплицы"
+              />
+              <SelectField
                 v-model="statusFilter"
-                class="input-select w-full sm:w-44"
+                class="w-full sm:w-44"
+                aria-label="Статус зоны"
               >
                 <option value="">
                   Все статусы зоны
@@ -163,10 +165,11 @@
                 <option value="NONE">
                   Без цикла
                 </option>
-              </select>
-              <select
+              </SelectField>
+              <SelectField
                 v-model="greenhouseFilter"
-                class="input-select w-full sm:w-48"
+                class="w-full sm:w-48"
+                aria-label="Теплица"
               >
                 <option value="">
                   Все теплицы
@@ -178,7 +181,7 @@
                 >
                   {{ gh.name }}
                 </option>
-              </select>
+              </SelectField>
             </div>
             <div class="flex flex-wrap items-center gap-2">
               <button
@@ -222,12 +225,12 @@
           </div>
         </div>
 
-        <div
+        <EmptyState
           v-else-if="!filteredZones.length"
-          class="surface-card border border-[color:var(--border-muted)] rounded-2xl p-6 text-sm text-[color:var(--text-muted)] text-center"
-        >
-          Нет зон по текущим фильтрам.
-        </div>
+          title="Нет зон по текущим фильтрам"
+          description="Сбросьте статус, теплицу или поиск, чтобы снова увидеть зоны."
+          container-class="surface-card rounded-card border border-line py-8"
+        />
 
         <div
           v-else-if="dashboardView === 'agronomy'"
@@ -286,7 +289,7 @@
             {{ contextTitle }}
           </div>
           <div class="flex items-center gap-1.5 text-xs text-[color:var(--text-dim)]">
-            <div class="w-1.5 h-1.5 rounded-full bg-[color:var(--accent-green)] animate-pulse"></div>
+            <div class="w-1.5 h-1.5 rounded-full bg-[color:var(--status-ok)] animate-pulse"></div>
             <span>Live</span>
           </div>
         </div>
@@ -296,13 +299,13 @@
         >
           <Link
             href="/audit"
-            class="text-[color:var(--accent-cyan)] hover:underline"
+            class="text-[color:var(--status-info)] hover:underline"
           >
             Аудит
           </Link>
           <Link
             href="/monitoring"
-            class="text-[color:var(--accent-cyan)] hover:underline"
+            class="text-[color:var(--status-info)] hover:underline"
           >
             Здоровье системы
           </Link>
@@ -355,7 +358,7 @@
             >
               <Link
                 :href="`/zones/${e.zone_id}`"
-                class="text-[color:var(--accent-cyan)] hover:underline transition-colors"
+                class="text-[color:var(--status-info)] hover:underline transition-colors"
               >
                 Зона #{{ e.zone_id }} →
               </Link>
@@ -382,6 +385,9 @@ import { Link, router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Badge from '@/Components/Badge.vue'
 import Button from '@/Components/Button.vue'
+import EmptyState from '@/Components/EmptyState.vue'
+import SelectField from '@/Components/SelectField.vue'
+import TextField from '@/Components/TextField.vue'
 import Pagination from '@/Components/Pagination.vue'
 import ZoneDashboardCard from '@/Components/ZoneDashboardCard.vue'
 import { formatTime } from '@/utils/formatTime'

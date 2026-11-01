@@ -33,7 +33,7 @@ defineProps({
       ></div>
     </div>
     <div
-      class="relative flex min-h-screen flex-col items-center justify-center selection:bg-[color:var(--accent-green)] selection:text-[color:var(--btn-primary-text)]"
+      class="relative flex min-h-screen flex-col items-center justify-center selection:bg-[color:var(--status-ok)] selection:text-[color:var(--btn-primary-text)]"
     >
       <div class="relative w-full max-w-2xl px-6 lg:max-w-7xl">
         <header
@@ -41,7 +41,7 @@ defineProps({
         >
           <div class="flex lg:col-start-2 lg:justify-center">
             <svg
-              class="h-12 w-auto text-[color:var(--accent-green)] lg:h-16"
+              class="h-12 w-auto text-[color:var(--status-ok)] lg:h-16"
               viewBox="0 0 62 65"
               fill="none"
               xmlns="http://www.w3.org/2000/svg"
@@ -96,7 +96,7 @@ defineProps({
                   class="flex aspect-video h-full w-full flex-1 flex-col items-center justify-center gap-4 rounded-[10px] bg-gradient-to-br from-[color:var(--bg-elevated)] via-[color:var(--bg-surface-strong)] to-[color:var(--badge-success-bg)] p-8 ring-1 ring-[color:var(--border-muted)] drop-shadow-[0px_4px_34px_rgba(0,0,0,0.06)] dark:drop-shadow-[0px_4px_34px_rgba(0,0,0,0.25)]"
                 >
                   <svg
-                    class="h-16 w-16 shrink-0 text-[color:var(--accent-green)] opacity-90 sm:h-20 sm:w-20"
+                    class="h-16 w-16 shrink-0 text-[color:var(--status-ok)] opacity-90 sm:h-20 sm:w-20"
                     xmlns="http://www.w3.org/2000/svg"
                     fill="none"
                     viewBox="0 0 24 24"
@@ -126,7 +126,7 @@ defineProps({
                   class="flex items-start gap-6 lg:flex-col"
                 >
                   <div
-                    class="flex size-12 shrink-0 items-center justify-center rounded-full bg-[color:var(--badge-success-bg)] text-[color:var(--accent-green)] sm:size-16"
+                    class="flex size-12 shrink-0 items-center justify-center rounded-full bg-[color:var(--badge-success-bg)] text-[color:var(--status-ok)] sm:size-16"
                   >
                     <svg
                       class="size-5 sm:size-6"
@@ -165,7 +165,7 @@ defineProps({
                 </div>
 
                 <svg
-                  class="size-6 shrink-0 stroke-[color:var(--accent-green)]"
+                  class="size-6 shrink-0 stroke-[color:var(--status-ok)]"
                   xmlns="http://www.w3.org/2000/svg"
                   fill="none"
                   viewBox="0 0 24 24"
@@ -185,7 +185,7 @@ defineProps({
               class="flex items-start gap-4 rounded-lg bg-[color:var(--bg-surface)] p-6 shadow-[var(--shadow-card)] ring-1 ring-[color:var(--border-muted)] transition duration-300 text-[color:var(--text-muted)] hover:text-[color:var(--text-primary)] hover:ring-[color:var(--border-strong)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--focus-ring)] lg:pb-10"
             >
               <div
-                class="flex size-12 shrink-0 items-center justify-center rounded-full bg-[color:var(--badge-success-bg)] text-[color:var(--accent-green)] sm:size-16"
+                class="flex size-12 shrink-0 items-center justify-center rounded-full bg-[color:var(--badge-success-bg)] text-[color:var(--status-ok)] sm:size-16"
               >
                 <svg
                   class="size-5 sm:size-6"
@@ -218,7 +218,7 @@ defineProps({
               </div>
 
               <svg
-                class="size-6 shrink-0 self-center stroke-[color:var(--accent-green)]"
+                class="size-6 shrink-0 self-center stroke-[color:var(--status-ok)]"
                 xmlns="http://www.w3.org/2000/svg"
                 fill="none"
                 viewBox="0 0 24 24"
@@ -237,7 +237,7 @@ defineProps({
               class="flex items-start gap-4 rounded-lg bg-[color:var(--bg-surface)] p-6 shadow-[var(--shadow-card)] ring-1 ring-[color:var(--border-muted)] transition duration-300 text-[color:var(--text-muted)] hover:text-[color:var(--text-primary)] hover:ring-[color:var(--border-strong)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--focus-ring)] lg:pb-10"
             >
               <div
-                class="flex size-12 shrink-0 items-center justify-center rounded-full bg-[color:var(--badge-success-bg)] text-[color:var(--accent-green)] sm:size-16"
+                class="flex size-12 shrink-0 items-center justify-center rounded-full bg-[color:var(--badge-success-bg)] text-[color:var(--status-ok)] sm:size-16"
               >
                 <svg
                   class="size-5 sm:size-6"
@@ -276,7 +276,7 @@ defineProps({
               </div>
 
               <svg
-                class="size-6 shrink-0 self-center stroke-[color:var(--accent-green)]"
+                class="size-6 shrink-0 self-center stroke-[color:var(--status-ok)]"
                 xmlns="http://www.w3.org/2000/svg"
                 fill="none"
                 viewBox="0 0 24 24"
@@ -294,7 +294,7 @@ defineProps({
               class="flex items-start gap-4 rounded-lg bg-[color:var(--bg-surface)] p-6 shadow-[var(--shadow-card)] ring-1 ring-[color:var(--border-muted)] text-[color:var(--text-muted)] lg:pb-10"
             >
               <div
-                class="flex size-12 shrink-0 items-center justify-center rounded-full bg-[color:var(--badge-success-bg)] text-[color:var(--accent-green)] sm:size-16"
+                class="flex size-12 shrink-0 items-center justify-center rounded-full bg-[color:var(--badge-success-bg)] text-[color:var(--status-ok)] sm:size-16"
               >
                 <svg
                   class="size-5 sm:size-6"
@@ -320,20 +320,20 @@ defineProps({
                 <p class="mt-4 text-sm/relaxed">
                   Laravel's robust library of first-party
                   tools and libraries, such as
-                  <span class="font-medium text-[color:var(--accent-cyan)]">Forge</span>,
-                  <span class="font-medium text-[color:var(--accent-cyan)]">Vapor</span>,
-                  <span class="font-medium text-[color:var(--accent-cyan)]">Nova</span>,
-                  <span class="font-medium text-[color:var(--accent-cyan)]">Envoyer</span>, and
-                  <span class="font-medium text-[color:var(--accent-cyan)]">Herd</span>
+                  <span class="font-medium text-[color:var(--status-info)]">Forge</span>,
+                  <span class="font-medium text-[color:var(--status-info)]">Vapor</span>,
+                  <span class="font-medium text-[color:var(--status-info)]">Nova</span>,
+                  <span class="font-medium text-[color:var(--status-info)]">Envoyer</span>, and
+                  <span class="font-medium text-[color:var(--status-info)]">Herd</span>
                   help you take your projects to the next
                   level. Pair them with powerful open source
                   libraries like
-                  <span class="font-medium text-[color:var(--accent-cyan)]">Cashier</span>,
-                  <span class="font-medium text-[color:var(--accent-cyan)]">Dusk</span>,
-                  <span class="font-medium text-[color:var(--accent-cyan)]">Echo</span>,
-                  <span class="font-medium text-[color:var(--accent-cyan)]">Horizon</span>,
-                  <span class="font-medium text-[color:var(--accent-cyan)]">Sanctum</span>,
-                  <span class="font-medium text-[color:var(--accent-cyan)]">Telescope</span>, and more.
+                  <span class="font-medium text-[color:var(--status-info)]">Cashier</span>,
+                  <span class="font-medium text-[color:var(--status-info)]">Dusk</span>,
+                  <span class="font-medium text-[color:var(--status-info)]">Echo</span>,
+                  <span class="font-medium text-[color:var(--status-info)]">Horizon</span>,
+                  <span class="font-medium text-[color:var(--status-info)]">Sanctum</span>,
+                  <span class="font-medium text-[color:var(--status-info)]">Telescope</span>, and more.
                 </p>
               </div>
             </div>

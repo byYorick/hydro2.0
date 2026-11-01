@@ -103,7 +103,7 @@
         class="px-0.5"
       >
         <Link
-          class="inline-flex text-xs font-semibold text-[color:var(--accent-cyan)] hover:underline"
+          class="inline-flex text-xs font-semibold text-[color:var(--status-info)] hover:underline"
           :href="zoneHref"
           data-testid="alert-open-zone-btn"
         >
@@ -163,11 +163,11 @@
           <div class="ml-auto flex items-center gap-1.5">
             <span
               v-if="copyState === 'copied'"
-              class="text-[11px] text-[color:var(--accent-green)]"
+              class="text-[11px] text-[color:var(--status-ok)]"
             >Скопировано</span>
             <span
               v-else-if="copyState === 'failed'"
-              class="text-[11px] text-[color:var(--accent-red)]"
+              class="text-[11px] text-[color:var(--status-critical)]"
             >Ошибка</span>
             <span
               class="h-5 px-2 text-[11px] rounded border border-[color:var(--border-muted)] text-[color:var(--text-dim)] hover:text-[color:var(--text-primary)] transition-colors"
@@ -241,11 +241,13 @@ defineEmits<{
 }>()
 
 const { canResolveAlerts } = useRole()
-const canResolve = computed(() => (
-  Boolean(props.alert)
-  && normalizeAlertStatus(props.alert!.status) !== 'RESOLVED'
-  && canResolveAlerts.value
-))
+const canResolve = computed(() => {
+  const alert = props.alert
+  if (!alert) {
+    return false
+  }
+  return normalizeAlertStatus(alert.status) !== 'RESOLVED' && canResolveAlerts.value
+})
 const processStoppingKind = computed<ProcessStoppingKind | null>(() => (
   props.alert ? alertProcessStoppingKind(props.alert.code) : null
 ))

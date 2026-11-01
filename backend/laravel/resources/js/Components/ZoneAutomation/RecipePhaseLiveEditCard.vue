@@ -1,6 +1,6 @@
 <template>
   <section
-    class="surface-card surface-card--elevated border border-amber-300/50 dark:border-amber-700/60 rounded-2xl p-4 space-y-3 bg-amber-50/30 dark:bg-amber-950/10"
+    class="surface-card surface-card--elevated border border-status-warning dark:border-status-warning rounded-2xl p-4 space-y-3 bg-status-warning-soft dark:bg-status-warning-soft"
     data-testid="recipe-phase-live-edit"
   >
     <header class="flex items-center justify-between gap-2">
@@ -62,7 +62,7 @@
       <div class="col-span-2 md:col-span-3 flex items-center justify-between gap-2">
         <p
           v-if="errorMessage"
-          class="text-xs text-rose-500 dark:text-rose-400"
+          class="text-xs text-status-critical text-status-critical"
           data-testid="recipe-phase-error"
         >
           {{ errorMessage }}

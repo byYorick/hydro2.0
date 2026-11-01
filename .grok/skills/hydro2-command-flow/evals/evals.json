@@ -1,0 +1,42 @@
+{
+  "skill_name": "hydro2-command-flow",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Нужно из Laravel Controllers сразу публиковать команду насоса в MQTT topic hydro/.../command",
+      "expected_output": "Отказ: publish только через history-logger; предложить путь scheduler/AE → HL POST /commands.",
+      "expectations": [
+        "Mentions history-logger as sole MQTT publisher",
+        "Rejects direct Laravel MQTT publish",
+        "Cites hard rules or AGENTS.md"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "AE3 не может достучаться до history-logger (HTTP 503). Можно ли временно слать команду в брокер из automation-engine?",
+      "expected_output": "Нет; fail-closed / retry policy AE→HL, без MQTT из AE.",
+      "expectations": [
+        "Forbids MQTT from automation-engine",
+        "Mentions fail-closed or retry to HL"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Где смотреть контракт POST /commands и статусы команд?",
+      "expected_output": "Указывает HISTORY_LOGGER_API.md и COMMAND_VALIDATION_ENGINE.md / HL code.",
+      "expectations": [
+        "Cites doc_ai/04_BACKEND_CORE/HISTORY_LOGGER_API.md",
+        "Mentions command statuses or validation"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "Команда ушла в AE, но узел молчит. Как трассировать поток?",
+      "expected_output": "Проверить intent/task AE, запись commands в БД, MQTT publish HL, response узла.",
+      "expectations": [
+        "Traces Laravel/AE → HL → MQTT → ESP32",
+        "Does not invent alternate publish path"
+      ]
+    }
+  ]
+}

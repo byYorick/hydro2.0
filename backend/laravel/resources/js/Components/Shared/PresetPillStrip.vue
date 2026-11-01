@@ -11,7 +11,7 @@
         v-if="$slots.actions"
         class="flex items-center gap-1.5 flex-wrap"
       >
-        <slot name="actions" />
+        <slot name="actions"></slot>
       </div>
     </div>
 
@@ -43,7 +43,7 @@
         </span>
       </button>
 
-      <slot name="extra" />
+      <slot name="extra"></slot>
     </div>
 
     <p

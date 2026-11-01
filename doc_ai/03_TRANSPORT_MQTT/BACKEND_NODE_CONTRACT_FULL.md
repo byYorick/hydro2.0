@@ -127,12 +127,11 @@ NodeConfig хранится на ноде (прошивка/NVS), публику
  "host": "192.168.1.50",
  "port": 1883,
  "keepalive": 30
- },
- "node_secret": "CHANGE_ME_32_PLUS_CHARS_XXXXXXXXX"
+ }
 }
 ```
 
-**Примечание:** Поле `node_secret` обязательно для всех узлов (длина ≥ 32).
+**Примечание:** `node_secret` обязателен на узле (NVS) и в `nodes.config` (длина ≥ 32), но **не передаётся** в MQTT plaintext. Server-push либо опускает поле (прошивка сохраняет NVS), либо присылает `node_secret_enc`.
 Обязательные поля v3: `node_id`, `version`, `type`, `gh_uid`, `zone_uid`, `channels`, `wifi`, `mqtt`.
 
 ## 5.2. Требования

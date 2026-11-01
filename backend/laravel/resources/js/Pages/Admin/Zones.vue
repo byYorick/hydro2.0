@@ -11,20 +11,15 @@
         class="grid grid-cols-1 md:grid-cols-4 gap-2"
         @submit.prevent="onCreate"
       >
-        <input
+        <TextField
           v-model="form.name"
           placeholder="Name"
-          class="input-field"
         />
-        <input
+        <TextField
           v-model="form.description"
           placeholder="Description"
-          class="input-field"
         />
-        <select
-          v-model="form.status"
-          class="input-select"
-        >
+        <SelectField v-model="form.status">
           <option value="RUNNING">
             RUNNING
           </option>
@@ -37,11 +32,8 @@
           <option value="ALARM">
             ALARM
           </option>
-        </select>
-        <select
-          v-model="form.greenhouse_id"
-          class="input-select"
-        >
+        </SelectField>
+        <SelectField v-model="form.greenhouse_id">
           <option :value="null">
             Выберите теплицу
           </option>
@@ -52,7 +44,7 @@
           >
             {{ gh.name }}
           </option>
-        </select>
+        </SelectField>
         <div class="md:col-span-4">
           <Button
             size="sm"
@@ -83,6 +75,10 @@
 </template>
 
 <script setup lang="ts">
+import SelectField from '@/Components/SelectField.vue'
+
+import TextField from '@/Components/TextField.vue'
+
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
 import Button from '@/Components/Button.vue'

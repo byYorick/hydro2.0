@@ -3,12 +3,12 @@
     <!-- Активные -->
     <div
       class="ui-kpi-card transition-shadow"
-      :class="active > 0 ? 'ring-1 ring-[color:var(--accent-cyan)]/30' : ''"
+      :class="active > 0 ? 'ring-1 ring-[color:var(--status-info)]/30' : ''"
     >
       <div class="flex items-center gap-1 text-[10px] text-[color:var(--text-dim)]">
         <svg
           class="h-3 w-3 shrink-0"
-          :class="active > 0 ? 'text-[color:var(--accent-cyan)]' : ''"
+          :class="active > 0 ? 'text-[color:var(--status-info)]' : ''"
           viewBox="0 0 16 16"
           fill="none"
           stroke="currentColor"
@@ -28,7 +28,7 @@
       </div>
       <div
         class="mt-0.5 text-xl font-bold tabular-nums"
-        :class="active > 0 ? 'text-[color:var(--accent-cyan)]' : 'text-[color:var(--text-primary)]'"
+        :class="active > 0 ? 'text-[color:var(--status-info)]' : 'text-[color:var(--text-primary)]'"
       >
         {{ active }}
       </div>
@@ -41,7 +41,7 @@
     <div class="ui-kpi-card">
       <div class="flex items-center gap-1 text-[10px] text-[color:var(--text-dim)]">
         <svg
-          class="h-3 w-3 shrink-0 text-[color:var(--accent-green)]"
+          class="h-3 w-3 shrink-0 text-[color:var(--status-ok)]"
           viewBox="0 0 16 16"
           fill="none"
           stroke="currentColor"
@@ -71,12 +71,12 @@
     <!-- Ошибки -->
     <div
       class="ui-kpi-card transition-shadow"
-      :class="failed24h > 0 ? 'ring-1 ring-[color:var(--accent-red)]/30' : ''"
+      :class="failed24h > 0 ? 'ring-1 ring-[color:var(--status-critical)]/30' : ''"
     >
       <div class="flex items-center gap-1 text-[10px] text-[color:var(--text-dim)]">
         <svg
           class="h-3 w-3 shrink-0"
-          :class="failed24h > 0 ? 'text-[color:var(--accent-red)]' : ''"
+          :class="failed24h > 0 ? 'text-[color:var(--status-critical)]' : ''"
           viewBox="0 0 16 16"
           fill="none"
           stroke="currentColor"
@@ -96,7 +96,7 @@
       </div>
       <div
         class="mt-0.5 text-xl font-bold tabular-nums"
-        :class="failed24h > 0 ? 'text-[color:var(--accent-red)]' : 'text-[color:var(--text-primary)]'"
+        :class="failed24h > 0 ? 'text-[color:var(--status-critical)]' : 'text-[color:var(--text-primary)]'"
       >
         {{ failed24h }}
       </div>
@@ -109,7 +109,7 @@
     <div class="ui-kpi-card">
       <div class="flex items-center gap-1 text-[10px] text-[color:var(--text-dim)]">
         <svg
-          class="h-3 w-3 shrink-0 text-[color:var(--accent-amber)]"
+          class="h-3 w-3 shrink-0 text-[color:var(--status-warning)]"
           viewBox="0 0 16 16"
           fill="none"
           stroke="currentColor"

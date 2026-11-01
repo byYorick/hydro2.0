@@ -97,7 +97,9 @@ static bool mask_sensitive_json_fields(const char *json_str, char *masked_buf, s
     }
     
     // Маскируем секретные поля
-    const char *sensitive_fields[] = {"password", "pass", "pin", "token", "secret"};
+    const char *sensitive_fields[] = {
+        "password", "pass", "pin", "token", "secret", "node_secret", "node_secret_enc"
+    };
     const size_t num_fields = sizeof(sensitive_fields) / sizeof(sensitive_fields[0]);
     
     for (size_t i = 0; i < num_fields; i++) {
@@ -165,8 +167,12 @@ static bool configs_equal_ignoring_connectivity(const cJSON *a, const cJSON *b) 
 
     cJSON_DeleteItemFromObject(a_copy, "wifi");
     cJSON_DeleteItemFromObject(a_copy, "mqtt");
+    cJSON_DeleteItemFromObject(a_copy, "node_secret");
+    cJSON_DeleteItemFromObject(a_copy, "node_secret_enc");
     cJSON_DeleteItemFromObject(b_copy, "wifi");
     cJSON_DeleteItemFromObject(b_copy, "mqtt");
+    cJSON_DeleteItemFromObject(b_copy, "node_secret");
+    cJSON_DeleteItemFromObject(b_copy, "node_secret_enc");
 
     bool equal = cJSON_Compare(a_copy, b_copy, true);
     cJSON_Delete(a_copy);
@@ -383,7 +389,9 @@ static void node_config_handler_process_internal(
     cJSON *previous_config = config_apply_load_previous_config();
 
     // Если новый конфиг идентичен старому (без учета wifi/mqtt), не применяем его, чтобы избежать лишних рестартов
-    if (previous_config && configs_equal_ignoring_connectivity(config, previous_config)) {
+    if (previous_config &&
+        configs_equal_ignoring_connectivity(config, previous_config) &&
+        !config_storage_node_secret_changed(config, previous_config)) {
         ESP_LOGI(TAG, "Config identical to current (ignoring wifi/mqtt), skipping apply");
         node_config_handler_publish_response("ACK", "Config unchanged", NULL, 0);
         cJSON_Delete(config);

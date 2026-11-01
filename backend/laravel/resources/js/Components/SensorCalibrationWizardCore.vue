@@ -161,11 +161,11 @@
           :title="fieldHelp('point_1_reference')"
         >
           {{ point1FieldLabel }}
-          <input
+          <TextField
             v-model.number="point1Value"
             type="number"
             step="0.01"
-            class="input-field mt-1 w-full"
+            class="mt-1 w-full"
           />
         </label>
         <div class="text-xs text-[color:var(--text-dim)]">
@@ -173,7 +173,7 @@
         </div>
         <div
           v-if="calibration.point_1_error"
-          class="text-xs text-[color:var(--accent-red)] space-y-1"
+          class="text-xs text-[color:var(--status-critical)] space-y-1"
         >
           <p class="leading-snug">
             {{ point1ErrorHuman }}
@@ -206,11 +206,11 @@
           :title="fieldHelp('point_2_reference')"
         >
           {{ point2FieldLabel }}
-          <input
+          <TextField
             v-model.number="point2Value"
             type="number"
             step="0.01"
-            class="input-field mt-1 w-full"
+            class="mt-1 w-full"
           />
         </label>
         <div class="text-xs text-[color:var(--text-dim)]">
@@ -218,7 +218,7 @@
         </div>
         <div
           v-if="calibration.point_2_error"
-          class="text-xs text-[color:var(--accent-red)] space-y-1"
+          class="text-xs text-[color:var(--status-critical)] space-y-1"
         >
           <p class="leading-snug">
             {{ point2ErrorHuman }}
@@ -287,6 +287,8 @@
 </template>
 
 <script setup lang="ts">
+import TextField from '@/Components/TextField.vue'
+
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import Button from '@/Components/Button.vue'
 import { useSensorCalibration } from '@/composables/useSensorCalibration'

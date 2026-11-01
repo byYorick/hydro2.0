@@ -11,7 +11,7 @@
             type="button"
             class="h-9 px-3 rounded-lg border text-xs font-semibold transition-colors"
             :class="showSeparateCharts
-              ? 'border-[color:var(--accent-amber)] text-[color:var(--accent-amber)] bg-[color:var(--bg-elevated)]'
+              ? 'border-[color:var(--status-warning)] text-[color:var(--status-warning)] bg-[color:var(--bg-elevated)]'
               : 'border-[color:var(--border-muted)] text-[color:var(--text-dim)] hover:border-[color:var(--border-strong)]'"
             @click="showSeparateCharts = !showSeparateCharts"
           >
@@ -100,7 +100,7 @@
           <div class="text-sm font-semibold text-[color:var(--text-primary)]">
             Влажность почвы
           </div>
-          <span class="text-xs px-2 py-0.5 rounded-full bg-[color:var(--bg-elevated)] border border-[color:var(--border-muted)] text-[color:var(--accent-amber)] font-medium">
+          <span class="text-xs px-2 py-0.5 rounded-full bg-[color:var(--bg-elevated)] border border-[color:var(--border-muted)] text-[color:var(--status-warning)] font-medium">
             Умный полив
           </span>
         </div>
@@ -190,18 +190,18 @@ const { theme } = useTheme()
 const { resolveCssColor } = useChartColors(theme)
 
 const SOIL_MOISTURE_COLORS = [
-  { cssVar: '--accent-amber', fallback: '#f59e0b' },
-  { cssVar: '--accent-orange', fallback: '#f97316' },
-  { cssVar: '--accent-purple', fallback: '#a855f7' },
-  { cssVar: '--accent-pink', fallback: '#ec4899' },
-  { cssVar: '--accent-teal', fallback: '#14b8a6' },
+  { cssVar: '--status-warning', fallback: '#f59e0b' },
+  { cssVar: '--series-orange', fallback: '#f97316' },
+  { cssVar: '--series-purple', fallback: '#a855f7' },
+  { cssVar: '--series-pink', fallback: '#ec4899' },
+  { cssVar: '--series-teal', fallback: '#14b8a6' },
 ]
 
 const chartPalette = computed(() => {
   theme.value
   return {
-    ph: resolveCssColor('--accent-cyan', '#3b82f6'),
-    ec: resolveCssColor('--accent-green', '#10b981'),
+    ph: resolveCssColor('--status-info', '#3b82f6'),
+    ec: resolveCssColor('--status-ok', '#10b981'),
   }
 })
 

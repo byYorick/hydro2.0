@@ -8,7 +8,7 @@
         <div class="text-6xl mb-4">
           ⚠️
         </div>
-        <h2 class="text-xl font-bold mb-2 text-[color:var(--accent-red)]">
+        <h2 class="text-xl font-bold mb-2 text-[color:var(--status-critical)]">
           Произошла ошибка
         </h2>
         <p class="text-sm text-[color:var(--text-muted)] mb-4">

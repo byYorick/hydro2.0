@@ -425,7 +425,7 @@ actions:
       Accept: application/json
       Content-Type: application/json
       X-Trace-Id: ${trace_id}
-      Authorization: Bearer dev-token-12345
+      Authorization: Bearer ${PY_API_TOKEN}
     body:
       manual_step: solution_drain_confirm
     retries: 2

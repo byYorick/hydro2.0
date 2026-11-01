@@ -80,9 +80,9 @@ function dotClass(sev: AlertPreviewItem['severity']): string {
   switch (sev) {
     case 'critical':
     case 'error':
-      return 'bg-[color:var(--accent-red)]'
+      return 'bg-[color:var(--status-critical)]'
     case 'warning':
-      return 'bg-[color:var(--accent-amber)]'
+      return 'bg-[color:var(--status-warning)]'
     default:
       return 'bg-[color:var(--text-dim)]'
   }

@@ -48,10 +48,10 @@ export function formatReportValue(value: unknown): string {
 export function simulationLevelClass(level?: string | null): string {
   switch (level) {
     case 'error':
-      return 'bg-[color:var(--accent-red)]'
+      return 'bg-[color:var(--status-critical)]'
     case 'warning':
-      return 'bg-[color:var(--accent-amber)]'
+      return 'bg-[color:var(--status-warning)]'
     default:
-      return 'bg-[color:var(--accent-green)]'
+      return 'bg-[color:var(--status-ok)]'
   }
 }

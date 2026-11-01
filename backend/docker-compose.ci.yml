@@ -1,7 +1,15 @@
 services:
   mqtt:
     image: eclipse-mosquitto:2
+    entrypoint: ["/bin/sh", "/mosquitto-entrypoint.sh"]
+    environment:
+      MQTT_PYTHON_SERVICE_PASS: ${MQTT_PYTHON_SERVICE_PASS:-python_service_pass}
+      MQTT_AUTOMATION_ENGINE_PASS: ${MQTT_AUTOMATION_ENGINE_PASS:-automation_pass}
+      MQTT_HISTORY_LOGGER_PASS: ${MQTT_HISTORY_LOGGER_PASS:-logger_pass}
+      MQTT_MQTT_BRIDGE_PASS: ${MQTT_MQTT_BRIDGE_PASS:-bridge_pass}
+      MQTT_ESP32_NODE_PASS: ${MQTT_ESP32_NODE_PASS:-esp32_pass}
     volumes:
+      - ./services/mqtt-bridge/mosquitto-entrypoint.sh:/mosquitto-entrypoint.sh:ro
       - ./services/mqtt-bridge/mosquitto.dev.conf:/mosquitto/config/mosquitto.conf:ro
       - ./services/mqtt-bridge/passwords.txt:/mosquitto/config/passwords:ro
       - ./services/mqtt-bridge/acl:/mosquitto/config/acl:ro
@@ -79,9 +87,9 @@ services:
       - REVERB_DEBUG=false
       - REVERB_AUTO_START=true
       - REVERB_VERBOSE=false
-      - PY_API_TOKEN=test-token-12345
-      - PY_INGEST_TOKEN=test-token-12345
-      - LARAVEL_API_TOKEN=test-token-12345
+      - PY_API_TOKEN=${PY_API_TOKEN:?PY_API_TOKEN is required (run: make ensure-dev-secrets)}
+      - PY_INGEST_TOKEN=${PY_INGEST_TOKEN:?PY_INGEST_TOKEN is required (run: make ensure-dev-secrets)}
+      - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:?LARAVEL_API_TOKEN is required (run: make ensure-dev-secrets)}
       - MQTT_HOST=mqtt
       - MQTT_PORT=1883
     volumes:

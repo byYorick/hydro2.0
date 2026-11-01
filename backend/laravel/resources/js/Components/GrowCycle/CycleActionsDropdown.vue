@@ -49,7 +49,7 @@
         v-if="canManage && cycleStatus === 'PLANNED'"
         type="button"
         :disabled="loading.cycleAbort"
-        class="dropdown-action text-[color:var(--accent-red)]"
+        class="dropdown-action text-[color:var(--status-critical)]"
         @click="$emit('abort')"
       >
         Отменить запланированный
@@ -67,7 +67,7 @@
           <span>Следующая фаза</span>
           <span
             v-if="phaseReadyBadge"
-            class="text-[11px] rounded-full bg-emerald-500/15 text-emerald-500 px-1.5 py-0.5"
+            class="text-[11px] rounded-full bg-status-ok-soft text-status-ok px-1.5 py-0.5"
           >готова</span>
           <span
             v-else-if="controlMode === 'auto'"
@@ -85,7 +85,7 @@
         v-if="canManage && isActive"
         type="button"
         :disabled="loading.cycleHarvest"
-        class="dropdown-action text-[color:var(--accent-green)]"
+        class="dropdown-action text-[color:var(--status-ok)]"
         @click="$emit('harvest')"
       >
         Урожай
@@ -94,7 +94,7 @@
         v-if="canManage && isActive"
         type="button"
         :disabled="loading.cycleAbort"
-        class="dropdown-action text-[color:var(--accent-red)]"
+        class="dropdown-action text-[color:var(--status-critical)]"
         @click="$emit('abort')"
       >
         Прервать цикл
@@ -190,6 +190,6 @@ const isActive = computed(() =>
 }
 
 .dropdown-action--ready {
-  background-color: color-mix(in srgb, var(--accent-green, #10b981) 8%, transparent);
+  background-color: color-mix(in srgb, var(--status-ok, #10b981) 8%, transparent);
 }
 </style>

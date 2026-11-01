@@ -110,7 +110,15 @@
   --accent-cyan: #5dd6ff;
   --accent-amber: #f0b268;
   --accent-red: #ff6c6c;
-  --accent-lime: #92f97a;
+  --series-lime: #92f97a;
+  --series-orange: #fb923c;
+  --series-violet: #a78bfa;
+  --series-primary: #60a5fa;
+  --series-purple: #c084fc;
+  --series-pink: #f472b6;
+  --series-teal: #2dd4bf;
+  --series-yellow: #facc15;
+  --series-blue: #60a5fa;
   --shadow-card: 0 22px 60px rgba(3, 7, 12, 0.65);
   --shadow-elevated: 0 32px 80px rgba(3, 7, 12, 0.75);
   --focus-ring: rgba(73, 224, 138, 0.35);
@@ -165,6 +173,23 @@
   --warn-soft: #3d2e12;
   --alert: #e06b62;
   --alert-soft: #3d1a17;
+
+  /* Семантика состояния для оператора. ok/warning/critical совпадают с акцентами,
+     offline — отдельный нейтральный тон, чтобы не путать с предупреждением. */
+  --status-ok: var(--accent-green);
+  --status-ok-soft: var(--badge-success-bg);
+  --status-warning: var(--accent-amber);
+  --status-warning-soft: var(--badge-warning-bg);
+  --status-critical: var(--accent-red);
+  --status-critical-soft: var(--badge-danger-bg);
+  --status-offline: #9aabbf;
+  --status-offline-soft: rgba(154, 171, 191, 0.18);
+  --status-info: var(--accent-cyan);
+  --status-info-soft: var(--badge-info-bg);
+  --radius-card: 1.2rem;
+  --radius-control: 0.7rem;
+  --space-page: 1rem;
+  --space-section: 1.25rem;
 }
 
 :root[data-theme='light'] {
@@ -179,12 +204,20 @@
   --border-strong: rgba(142, 158, 136, 0.8);
   --text-primary: #1b241b;
   --text-muted: #566456;
-  --text-dim: #7e8a7a;
-  --accent-green: #2f9e5d;
+  --text-dim: #556352;
+  --accent-green: #1b6b3d;
   --accent-cyan: #2b9a9f;
   --accent-amber: #d8923b;
   --accent-red: #d95050;
-  --accent-lime: #6bcf5c;
+  --series-lime: #6bcf5c;
+  --series-orange: #c2410c;
+  --series-violet: #6d28d9;
+  --series-primary: #1d4ed8;
+  --series-purple: #7e22ce;
+  --series-pink: #be185d;
+  --series-teal: #0f766e;
+  --series-yellow: #a16207;
+  --series-blue: #1d4ed8;
   --shadow-card: 0 20px 50px rgba(19, 32, 20, 0.12);
   --shadow-elevated: 0 28px 70px rgba(19, 32, 20, 0.18);
   --focus-ring: rgba(47, 158, 93, 0.35);
@@ -207,10 +240,10 @@
   --btn-outline-border: rgba(120, 140, 118, 0.7);
   --btn-outline-text: var(--text-primary);
   --badge-success-bg: rgba(47, 158, 93, 0.12);
-  --badge-success-text: #2f7c4f;
+  --badge-success-text: #14603a;
   --badge-success-border: rgba(47, 158, 93, 0.35);
   --badge-warning-bg: rgba(216, 146, 59, 0.15);
-  --badge-warning-text: #9b5f1f;
+  --badge-warning-text: #8a5418;
   --badge-warning-border: rgba(216, 146, 59, 0.35);
   --badge-danger-bg: rgba(217, 80, 80, 0.15);
   --badge-danger-text: #9c3a3a;
@@ -232,6 +265,20 @@
   --warn-soft: #faecd1;
   --alert: #c0433b;
   --alert-soft: #fadcd9;
+  --status-ok: var(--accent-green);
+  --status-ok-soft: var(--badge-success-bg);
+  --status-warning: var(--accent-amber);
+  --status-warning-soft: var(--badge-warning-bg);
+  --status-critical: var(--accent-red);
+  --status-critical-soft: var(--badge-danger-bg);
+  --status-offline: #4d5c6e;
+  --status-offline-soft: rgba(77, 92, 110, 0.12);
+  --status-info: var(--accent-cyan);
+  --status-info-soft: var(--badge-info-bg);
+  --radius-card: 1.2rem;
+  --radius-control: 0.7rem;
+  --space-page: 1rem;
+  --space-section: 1.25rem;
   --hero-overlay:
     radial-gradient(120% 110% at 0% 0%, rgba(43, 154, 159, 0.1), transparent 58%),
     radial-gradient(90% 90% at 100% 10%, rgba(47, 158, 93, 0.12), transparent 62%);
@@ -314,14 +361,14 @@ body {
 .nav-link:hover {
   color: var(--text-primary);
   transform: translateX(2px);
-  background: color-mix(in srgb, var(--accent-green) 12%, transparent);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-green) 32%, transparent);
+  background: color-mix(in srgb, var(--status-ok) 12%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--status-ok) 32%, transparent);
 }
 
 .nav-link--active {
   color: var(--nav-active-text);
   background: var(--nav-active-bg);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-green) 45%, transparent), 0 20px 40px color-mix(in srgb, var(--accent-green) 20%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--status-ok) 45%, transparent), 0 20px 40px color-mix(in srgb, var(--status-ok) 20%, transparent);
 }
 
 .status-chip {
@@ -334,27 +381,33 @@ body {
 }
 
 .status-chip--running {
-  background: color-mix(in srgb, var(--accent-green) 18%, transparent);
-  color: var(--accent-green);
-  border: 1px solid color-mix(in srgb, var(--accent-green) 45%, transparent);
+  background: color-mix(in srgb, var(--status-ok) 18%, transparent);
+  color: var(--status-ok);
+  border: 1px solid color-mix(in srgb, var(--status-ok) 45%, transparent);
 }
 
 .status-chip--paused {
-  background: color-mix(in srgb, var(--accent-cyan) 16%, transparent);
-  color: var(--accent-cyan);
-  border: 1px solid color-mix(in srgb, var(--accent-cyan) 40%, transparent);
+  background: color-mix(in srgb, var(--status-info) 16%, transparent);
+  color: var(--status-info);
+  border: 1px solid color-mix(in srgb, var(--status-info) 40%, transparent);
 }
 
 .status-chip--warning {
-  background: color-mix(in srgb, var(--accent-amber) 18%, transparent);
-  color: var(--accent-amber);
-  border: 1px solid color-mix(in srgb, var(--accent-amber) 45%, transparent);
+  background: color-mix(in srgb, var(--status-warning) 18%, transparent);
+  color: var(--status-warning);
+  border: 1px solid color-mix(in srgb, var(--status-warning) 45%, transparent);
 }
 
 .status-chip--alarm {
-  background: color-mix(in srgb, var(--accent-red) 18%, transparent);
-  color: var(--accent-red);
-  border: 1px solid color-mix(in srgb, var(--accent-red) 45%, transparent);
+  background: color-mix(in srgb, var(--status-critical) 18%, transparent);
+  color: var(--status-critical);
+  border: 1px solid color-mix(in srgb, var(--status-critical) 45%, transparent);
+}
+
+.status-chip--offline {
+  background: var(--status-offline-soft);
+  color: var(--status-offline);
+  border: 1px solid color-mix(in srgb, var(--status-offline) 45%, transparent);
 }
 
 .scrollbar-glow::-webkit-scrollbar {
@@ -448,7 +501,7 @@ body {
 }
 
 .btn-outline:hover {
-  border-color: var(--accent-green);
+  border-color: var(--status-ok);
   box-shadow: 0 10px 24px rgba(63, 220, 120, 0.18);
 }
 
@@ -461,6 +514,30 @@ body {
 .btn-ghost:hover {
   color: var(--text-primary);
   background: rgba(63, 220, 120, 0.08);
+}
+
+.btn-warning {
+  background: color-mix(in srgb, var(--status-warning) 88%, #1a1206);
+  color: #1a1206;
+  border-color: color-mix(in srgb, var(--status-warning) 55%, transparent);
+}
+
+.btn-warning:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.btn-default {
+  background: var(--btn-secondary-bg);
+  color: var(--btn-secondary-text);
+  border-color: var(--btn-secondary-border);
+}
+
+.btn:disabled,
+.btn[aria-disabled='true'] {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
 }
 
 .btn-success {
@@ -536,10 +613,30 @@ body {
   border-color: var(--badge-info-border);
 }
 
-.badge--neutral {
+.badge--neutral,
+.badge--secondary {
   background: var(--badge-neutral-bg);
   color: var(--badge-neutral-text);
   border-color: var(--badge-neutral-border);
+}
+
+.badge--critical {
+  background: var(--badge-danger-bg);
+  color: var(--badge-danger-text);
+  border-color: var(--badge-danger-border);
+  font-weight: 700;
+}
+
+.badge--offline {
+  background: var(--status-offline-soft);
+  color: var(--status-offline);
+  border-color: color-mix(in srgb, var(--status-offline) 45%, transparent);
+}
+
+.badge--ok {
+  background: var(--badge-success-bg);
+  color: var(--badge-success-text);
+  border-color: var(--badge-success-border);
 }
 
 .input-field,
@@ -564,7 +661,7 @@ textarea.input-field {
 .input-field:focus,
 .input-select:focus {
   outline: none;
-  border-color: var(--accent-green);
+  border-color: var(--status-ok);
   box-shadow: 0 0 0 2px rgba(63, 220, 120, 0.18);
 }
 
@@ -672,9 +769,12 @@ textarea.input-field {
 .ui-kpi-value {
   margin-top: 0.35rem;
   color: var(--text-primary);
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
   font-size: 1.65rem;
-  font-weight: 700;
-  letter-spacing: 0.01em;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
 }
 
 .ui-kpi-hint {
@@ -787,7 +887,7 @@ textarea.input-field {
   border-radius: 1.15rem;
   background: linear-gradient(
     165deg,
-    color-mix(in srgb, var(--bg-surface-strong) 94%, var(--accent-cyan) 6%),
+    color-mix(in srgb, var(--bg-surface-strong) 94%, var(--status-info) 6%),
     var(--bg-surface)
   );
   box-shadow: var(--shadow-card);
@@ -798,7 +898,7 @@ textarea.input-field {
   position: absolute;
   inset: 0 auto 0 0;
   width: 3px;
-  background: linear-gradient(180deg, var(--accent-green), color-mix(in srgb, var(--accent-cyan) 70%, transparent));
+  background: linear-gradient(180deg, var(--status-ok), color-mix(in srgb, var(--status-info) 70%, transparent));
   pointer-events: none;
 }
 
@@ -967,7 +1067,7 @@ textarea.input-field {
 }
 
 .settings-row__changed {
-  color: var(--accent-green);
+  color: var(--status-ok);
   font-size: 0.62rem;
   font-weight: 600;
   letter-spacing: 0.06em;
@@ -1070,8 +1170,8 @@ textarea.input-field {
 }
 
 .settings-nav-item--active .settings-nav-item__icon {
-  border-color: color-mix(in srgb, var(--accent-green) 45%, var(--border-muted));
-  background: color-mix(in srgb, var(--accent-green) 12%, var(--bg-elevated));
+  border-color: color-mix(in srgb, var(--status-ok) 45%, var(--border-muted));
+  background: color-mix(in srgb, var(--status-ok) 12%, var(--bg-elevated));
 }
 
 .settings-sticky-footer {
@@ -1082,4 +1182,94 @@ textarea.input-field {
   margin-top: 1rem;
   padding-top: 1rem;
   background: color-mix(in srgb, var(--bg-elevated) 40%, transparent);
+}
+
+.tone-ok,
+.tone-warning,
+.tone-critical,
+.tone-offline,
+.tone-info,
+.tone-neutral {
+  border-style: solid;
+  border-width: 1px;
+}
+
+.tone-ok {
+  background: var(--status-ok-soft);
+  color: var(--status-ok);
+  border-color: color-mix(in srgb, var(--status-ok) 45%, transparent);
+}
+
+.tone-warning {
+  background: var(--status-warning-soft);
+  color: var(--status-warning);
+  border-color: color-mix(in srgb, var(--status-warning) 45%, transparent);
+}
+
+.tone-critical {
+  background: var(--status-critical-soft);
+  color: var(--status-critical);
+  border-color: color-mix(in srgb, var(--status-critical) 45%, transparent);
+}
+
+.tone-offline {
+  background: var(--status-offline-soft);
+  color: var(--status-offline);
+  border-color: color-mix(in srgb, var(--status-offline) 45%, transparent);
+}
+
+.tone-info {
+  background: var(--status-info-soft);
+  color: var(--status-info);
+  border-color: color-mix(in srgb, var(--status-info) 45%, transparent);
+}
+
+.tone-neutral {
+  background: var(--badge-neutral-bg);
+  color: var(--badge-neutral-text);
+  border-color: var(--badge-neutral-border);
+}
+
+.telemetry-value {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+  letter-spacing: -0.02em;
+  line-height: 1.05;
+}
+
+.field-label {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.field-error {
+  color: var(--status-critical);
+  font-size: 0.75rem;
+}
+
+.field-hint {
+  color: var(--text-dim);
+  font-size: 0.72rem;
+}
+
+.input-field[aria-invalid='true'],
+.input-select[aria-invalid='true'] {
+  border-color: var(--status-critical);
+  background: var(--status-critical-soft);
+}
+
+a:focus-visible,
+button:focus-visible,
+summary:focus-visible,
+[role='link']:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.nav-link:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
 }
