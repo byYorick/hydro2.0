@@ -38,13 +38,24 @@ ensure_dev_secrets() {
     NODE_SIM_MANAGER_TOKEN
   )
 
-  local shared current key
-  current="$(_dev_secret_get "$env_file" PY_API_TOKEN)"
-  if _dev_secret_is_bad_token "$current"; then
+  # Один Bearer на всю цепочку. Берём уже заданное хорошее значение
+  # (не только PY_API_TOKEN): иначе пустой PY_API_TOKEN затирается новым
+  # токеном, а заранее заданный HISTORY_LOGGER_API_TOKEN остаётся другим.
+  local shared="" current key
+  for key in "${service_keys[@]}"; do
+    current="$(_dev_secret_get "$env_file" "$key")"
+    if _dev_secret_is_bad_token "$current"; then
+      continue
+    fi
+    if [[ -z "$shared" ]]; then
+      shared="$current"
+    elif [[ "$shared" != "$current" ]]; then
+      echo "ensure-dev-secrets: warning: ${key} отличается от общего Bearer, значение не перезаписано" >&2
+    fi
+  done
+  if [[ -z "$shared" ]]; then
     shared="$(_dev_secret_generate_token)"
-    echo "ensure-dev-secrets: PY_API_TOKEN сгенерирован (пустое или скомпрометированное значение заменено)" >&2
-  else
-    shared="$current"
+    echo "ensure-dev-secrets: общий Bearer сгенерирован (пустые или скомпрометированные токены заменены)" >&2
   fi
 
   for key in "${service_keys[@]}"; do
