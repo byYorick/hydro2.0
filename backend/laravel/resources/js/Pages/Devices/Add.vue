@@ -57,7 +57,7 @@
             <div class="ui-kpi-label">
               Онлайн
             </div>
-            <div class="ui-kpi-value text-[color:var(--accent-green)]">
+            <div class="ui-kpi-value text-[color:var(--status-ok)]">
               {{ onlineNodesCount }}
             </div>
             <div class="ui-kpi-hint">
@@ -68,7 +68,7 @@
             <div class="ui-kpi-label">
               С lifecycle
             </div>
-            <div class="ui-kpi-value text-[color:var(--accent-cyan)]">
+            <div class="ui-kpi-value text-[color:var(--status-info)]">
               {{ lifecycleNodesCount }}
             </div>
             <div class="ui-kpi-hint">
@@ -97,7 +97,7 @@
         <ol class="text-xs text-[color:var(--text-muted)] space-y-1 list-decimal list-inside">
           <li>Включите новую ноду. Она поднимет точку доступа Wi-Fi.</li>
           <li>Подключитесь с телефона к точке доступа ноды.</li>
-          <li>Откройте в браузере <code class="text-[color:var(--accent-cyan)]">192.168.4.1</code></li>
+          <li>Откройте в браузере <code class="text-[color:var(--status-info)]">192.168.4.1</code></li>
           <li>Введите SSID и пароль вашей Wi-Fi сети.</li>
           <li>Нода перезагрузится и отправит discovery сообщение.</li>
           <li>Нажмите "Обновить список" или нода появится автоматически.</li>
@@ -156,7 +156,7 @@
                     v-if="node.lifecycle_state"
                     class="ml-2"
                   >
-                    · Lifecycle: <span class="text-[color:var(--accent-cyan)]">{{ getStateLabel(node.lifecycle_state) }}</span>
+                    · Lifecycle: <span class="text-[color:var(--status-info)]">{{ getStateLabel(node.lifecycle_state) }}</span>
                   </span>
                 </div>
                 <div

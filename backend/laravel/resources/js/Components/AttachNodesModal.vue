@@ -50,7 +50,7 @@
             :name="`node_${node.id}`"
             type="checkbox"
             :value="node.id"
-            class="h-4 w-4 rounded border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] text-[color:var(--accent-green)] focus:outline-none focus:ring-2 focus:ring-[color:var(--focus-ring)]"
+            class="h-4 w-4 rounded border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] text-[color:var(--status-ok)] focus:outline-none focus:ring-2 focus:ring-[color:var(--focus-ring)]"
           />
           <div class="flex-1">
             <div class="text-sm font-semibold">{{ node.uid || node.name || `Node ${node.id}` }}</div>

@@ -268,7 +268,7 @@
                   v-for="item in currentPathStatuses"
                   :key="item.component"
                   class="inline-flex items-center rounded-full border px-2 py-1"
-                  :class="item.calibrated ? 'border-[color:var(--accent-green)] text-[color:var(--accent-green)]' : (item.current ? 'border-[color:var(--accent-yellow)] text-[color:var(--accent-yellow)]' : 'border-[color:var(--border-muted)] text-[color:var(--text-dim)]')"
+                  :class="item.calibrated ? 'border-[color:var(--status-ok)] text-[color:var(--status-ok)]' : (item.current ? 'border-[color:var(--accent-yellow)] text-[color:var(--accent-yellow)]' : 'border-[color:var(--border-muted)] text-[color:var(--text-dim)]')"
                 >
                   {{ item.label }}: {{ item.stateLabel }}
                 </span>
@@ -312,10 +312,10 @@
 
             <div
               v-if="allRequiredComponentsCalibrated"
-              class="rounded-xl border border-[color:var(--accent-green)] bg-[color:var(--bg-surface)] p-3 text-xs text-[color:var(--text-muted)]"
+              class="rounded-xl border border-[color:var(--status-ok)] bg-[color:var(--bg-surface)] p-3 text-xs text-[color:var(--text-muted)]"
               data-testid="pump-calibration-complete"
             >
-              <div class="text-sm font-semibold text-[color:var(--accent-green)]">
+              <div class="text-sm font-semibold text-[color:var(--status-ok)]">
                 Насосы откалиброваны
               </div>
               <div class="mt-1">

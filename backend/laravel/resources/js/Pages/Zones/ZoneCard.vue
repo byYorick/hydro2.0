@@ -21,7 +21,7 @@
             >
               <svg
                 class="h-4 w-4 transition-colors"
-                :class="isFavorite ? 'fill-[color:var(--accent-amber)] text-[color:var(--accent-amber)]' : 'text-[color:var(--text-dim)]'"
+                :class="isFavorite ? 'fill-[color:var(--status-warning)] text-[color:var(--status-warning)]' : 'text-[color:var(--text-dim)]'"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -116,7 +116,7 @@
 
           <span
             v-if="alertsCount !== null && alertsCount > 0"
-            class="inline-flex items-center gap-1 rounded-full border border-[color:var(--accent-red)]/35 bg-[color:var(--accent-red)]/10 px-2 py-1 text-[color:var(--accent-red)]"
+            class="inline-flex items-center gap-1 rounded-full border border-[color:var(--status-critical)]/35 bg-[color:var(--status-critical)]/10 px-2 py-1 text-[color:var(--status-critical)]"
           >
             <svg
               class="h-3 w-3"
@@ -210,32 +210,32 @@ const hasAlerts = computed(() => props.alertsCount !== null && props.alertsCount
 
 const cardBorderClass = computed(() => {
   if (props.zone.status === 'ALARM' || hasAlerts.value) {
-    return 'border-[color:var(--accent-red)]/35 hover:border-[color:var(--accent-red)]/55'
+    return 'border-[color:var(--status-critical)]/35 hover:border-[color:var(--status-critical)]/55'
   }
   if (props.zone.status === 'WARNING') {
-    return 'border-[color:var(--accent-amber)]/35 hover:border-[color:var(--accent-amber)]/55'
+    return 'border-[color:var(--status-warning)]/35 hover:border-[color:var(--status-warning)]/55'
   }
   if (props.zone.status === 'RUNNING') {
-    return 'border-[color:var(--border-muted)] hover:border-[color:var(--accent-green)]/40'
+    return 'border-[color:var(--border-muted)] hover:border-[color:var(--status-ok)]/40'
   }
   return 'border-[color:var(--border-muted)] hover:border-[color:var(--border-strong)]'
 })
 
 const accentBarClass = computed(() => {
-  if (props.zone.status === 'ALARM' || hasAlerts.value) return 'bg-[color:var(--accent-red)]'
-  if (props.zone.status === 'WARNING') return 'bg-[color:var(--accent-amber)]'
-  if (props.zone.status === 'RUNNING') return 'bg-[color:var(--accent-green)]'
+  if (props.zone.status === 'ALARM' || hasAlerts.value) return 'bg-[color:var(--status-critical)]'
+  if (props.zone.status === 'WARNING') return 'bg-[color:var(--status-warning)]'
+  if (props.zone.status === 'RUNNING') return 'bg-[color:var(--status-ok)]'
   if (props.zone.status === 'PAUSED') return 'bg-[color:var(--text-dim)]'
-  return 'bg-[color:var(--accent-cyan)]'
+  return 'bg-[color:var(--status-info)]'
 })
 
 const nodesHealthClass = computed(() => {
   const online = props.nodesOnline || 0
   const total = props.nodesTotal || 0
   if (total === 0) return 'bg-[color:var(--text-dim)]'
-  if (online === 0) return 'bg-[color:var(--accent-red)]'
-  if (online < total) return 'bg-[color:var(--accent-amber)]'
-  return 'bg-[color:var(--accent-green)]'
+  if (online === 0) return 'bg-[color:var(--status-critical)]'
+  if (online < total) return 'bg-[color:var(--status-warning)]'
+  return 'bg-[color:var(--status-ok)]'
 })
 
 const activeGrowCycle = computed(() => {

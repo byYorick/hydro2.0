@@ -203,12 +203,12 @@ export function useUnifiedDashboard(options: {
 
   function sparklineColor(zone: UnifiedZone): string {
     if (zone.status === 'ALARM') {
-      return 'var(--accent-red)'
+      return 'var(--status-critical)'
     }
     if (zone.status === 'WARNING') {
-      return 'var(--accent-amber)'
+      return 'var(--status-warning)'
     }
-    return 'var(--accent-cyan)'
+    return 'var(--status-info)'
   }
 
   const { schedule: scheduleZonesReload, cancel: cancelZonesReload } = createThrottledTask(

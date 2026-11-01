@@ -11,7 +11,7 @@
         <!-- Индикатор аномалий -->
         <div 
           v-if="hasAnomalies && !loading"
-          class="w-2 h-2 rounded-full bg-[color:var(--accent-red)] animate-pulse"
+          class="w-2 h-2 rounded-full bg-[color:var(--status-critical)] animate-pulse"
           title="Обнаружены аномалии"
         ></div>
         <!-- Индикатор активности -->
@@ -103,7 +103,7 @@ const props = withDefaults(defineProps<Props>(), {
   currentValue: null,
   unit: '',
   loading: false,
-  color: 'var(--accent-cyan)'
+  color: 'var(--status-info)'
 })
 
 const { theme } = useTheme()
@@ -119,7 +119,7 @@ const chartPalette = computed(() => {
 
 const resolveColorFromProp = (value?: string): string => {
   if (!value) {
-    return readCssVar('--accent-cyan', '#3b82f6')
+    return readCssVar('--status-info', '#3b82f6')
   }
   if (value.startsWith('var(')) {
     const variable = value.slice(4, -1).trim()

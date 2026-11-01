@@ -469,11 +469,11 @@ function getProgressBarClass(value: number | null | undefined, min: number | nul
   const variant = getIndicatorVariant(value, min, max)
   switch (variant) {
     case 'success':
-      return 'bg-[color:var(--accent-green)]'
+      return 'bg-[color:var(--status-ok)]'
     case 'warning':
-      return 'bg-[color:var(--accent-amber)]'
+      return 'bg-[color:var(--status-warning)]'
     case 'danger':
-      return 'bg-[color:var(--accent-red)]'
+      return 'bg-[color:var(--status-critical)]'
     default:
       return 'bg-[color:var(--text-dim)]'
   }
@@ -484,11 +484,11 @@ function getValueColorClass(value: number | null | undefined, min: number | null
   const variant = getIndicatorVariant(value, min, max)
   switch (variant) {
     case 'success':
-      return 'text-[color:var(--accent-green)]'
+      return 'text-[color:var(--status-ok)]'
     case 'warning':
-      return 'text-[color:var(--accent-amber)]'
+      return 'text-[color:var(--status-warning)]'
     case 'danger':
-      return 'text-[color:var(--accent-red)]'
+      return 'text-[color:var(--status-critical)]'
     default:
       return 'text-[color:var(--text-muted)]'
   }
@@ -499,11 +499,11 @@ function getDeviationColorClass(value: number | null | undefined, min: number | 
   const variant = getIndicatorVariant(value, min, max)
   switch (variant) {
     case 'success':
-      return 'text-[color:var(--accent-green)]'
+      return 'text-[color:var(--status-ok)]'
     case 'warning':
-      return 'text-[color:var(--accent-amber)]'
+      return 'text-[color:var(--status-warning)]'
     case 'danger':
-      return 'text-[color:var(--accent-red)]'
+      return 'text-[color:var(--status-critical)]'
     default:
       return 'text-[color:var(--text-muted)]'
   }
@@ -529,11 +529,11 @@ function getPulseClass(value: number | null | undefined, min: number | null | un
   const variant = getIndicatorVariant(value, min, max)
   switch (variant) {
     case 'success':
-      return 'bg-[color:var(--accent-green)] animate-pulse'
+      return 'bg-[color:var(--status-ok)] animate-pulse'
     case 'warning':
-      return 'bg-[color:var(--accent-amber)] animate-pulse'
+      return 'bg-[color:var(--status-warning)] animate-pulse'
     case 'danger':
-      return 'bg-[color:var(--accent-red)] animate-pulse'
+      return 'bg-[color:var(--status-critical)] animate-pulse'
     default:
       return 'bg-[color:var(--text-dim)]'
   }

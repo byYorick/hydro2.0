@@ -16,7 +16,7 @@
           type="button"
           class="rounded-lg px-3 py-1.5 text-xs font-medium transition-colors border"
           :class="activeTab === 'library'
-            ? 'bg-[color:var(--bg-elevated)] border-[color:var(--accent-green)] text-[color:var(--text-primary)]'
+            ? 'bg-[color:var(--bg-elevated)] border-[color:var(--status-ok)] text-[color:var(--text-primary)]'
             : 'border-[color:var(--border-muted)] text-[color:var(--text-muted)] hover:text-[color:var(--text-primary)]'"
           @click="activeTab = 'library'"
         >
@@ -26,7 +26,7 @@
           type="button"
           class="rounded-lg px-3 py-1.5 text-xs font-medium transition-colors border"
           :class="activeTab === 'fertigation'
-            ? 'bg-[color:var(--bg-elevated)] border-[color:var(--accent-green)] text-[color:var(--text-primary)]'
+            ? 'bg-[color:var(--bg-elevated)] border-[color:var(--status-ok)] text-[color:var(--text-primary)]'
             : 'border-[color:var(--border-muted)] text-[color:var(--text-muted)] hover:text-[color:var(--text-primary)]'"
           @click="activeTab = 'fertigation'"
         >
@@ -63,7 +63,7 @@
                 type="button"
                 class="w-full rounded-lg px-2.5 py-2 text-left transition-colors border border-transparent"
                 :class="librarySection === sec.id
-                  ? 'bg-[color:var(--bg-elevated)] border-[color:var(--accent-green)] text-[color:var(--text-primary)] shadow-[inset_3px_0_0_var(--accent-green)]'
+                  ? 'bg-[color:var(--bg-elevated)] border-[color:var(--status-ok)] text-[color:var(--text-primary)] shadow-[inset_3px_0_0_var(--status-ok)]'
                   : 'text-[color:var(--text-muted)] hover:bg-[color:var(--bg-elevated)]/60 hover:text-[color:var(--text-primary)]'"
                 @click="librarySection = sec.id"
               >
@@ -89,7 +89,7 @@
               v-model="query"
               type="search"
               placeholder="Например: EC, дренаж, КиберЛенинка…"
-              class="w-full rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] px-3 py-2 text-sm text-[color:var(--text-primary)] placeholder:text-[color:var(--text-dim)] focus:outline-none focus:ring-1 focus:ring-[color:var(--accent-green)]"
+              class="w-full rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] px-3 py-2 text-sm text-[color:var(--text-primary)] placeholder:text-[color:var(--text-dim)] focus:outline-none focus:ring-1 focus:ring-[color:var(--status-ok)]"
             />
           </Card>
 
@@ -146,7 +146,7 @@
                 v-model="cropQuery"
                 type="search"
                 placeholder="Начните вводить название…"
-                class="w-full max-w-md rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] px-3 py-2 text-sm text-[color:var(--text-primary)] placeholder:text-[color:var(--text-dim)] focus:outline-none focus:ring-1 focus:ring-[color:var(--accent-green)]"
+                class="w-full max-w-md rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] px-3 py-2 text-sm text-[color:var(--text-primary)] placeholder:text-[color:var(--text-dim)] focus:outline-none focus:ring-1 focus:ring-[color:var(--status-ok)]"
               />
             </Card>
 
@@ -202,7 +202,7 @@
                 Первоисточник:
                 <a
                   :href="CROP_TABLE_SOURCE.url"
-                  class="text-[color:var(--accent-cyan)] hover:underline"
+                  class="text-[color:var(--status-info)] hover:underline"
                   target="_blank"
                   rel="noopener noreferrer"
                 >{{ CROP_TABLE_SOURCE.label }}</a>
@@ -223,7 +223,7 @@
                     :href="g.url"
                     target="_blank"
                     rel="noopener noreferrer"
-                    class="font-medium text-[color:var(--accent-cyan)] hover:underline"
+                    class="font-medium text-[color:var(--status-info)] hover:underline"
                   >{{ g.title }}</a>
                   <span class="text-[color:var(--text-dim)]"> — {{ g.organization }}</span>
                   <p class="mt-1 leading-relaxed">
@@ -247,7 +247,7 @@
                     :href="g.url"
                     target="_blank"
                     rel="noopener noreferrer"
-                    class="font-medium text-[color:var(--accent-cyan)] hover:underline"
+                    class="font-medium text-[color:var(--status-info)] hover:underline"
                   >{{ g.title }}</a>
                   <span class="text-[color:var(--text-dim)]"> — {{ g.organization }}</span>
                   <p class="mt-1 leading-relaxed">

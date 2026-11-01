@@ -40,7 +40,7 @@
             <div class="ui-kpi-label">
               С системой
             </div>
-            <div class="ui-kpi-value text-[color:var(--accent-cyan)]">
+            <div class="ui-kpi-value text-[color:var(--status-info)]">
               {{ plantsWithGrowingSystem }}
             </div>
             <div class="ui-kpi-hint">
@@ -51,7 +51,7 @@
             <div class="ui-kpi-label">
               С фотопериодом
             </div>
-            <div class="ui-kpi-value text-[color:var(--accent-green)]">
+            <div class="ui-kpi-value text-[color:var(--status-ok)]">
               {{ plantsWithPhotoperiod }}
             </div>
             <div class="ui-kpi-hint">
@@ -109,7 +109,7 @@
                 <td class="px-3 py-2">
                   <Link
                     :href="`/plants/${plant.id}`"
-                    class="font-semibold text-[color:var(--accent-cyan)] hover:underline"
+                    class="font-semibold text-[color:var(--status-info)] hover:underline"
                   >
                     {{ plant.name }}
                   </Link>

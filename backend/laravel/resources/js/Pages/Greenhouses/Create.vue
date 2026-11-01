@@ -13,7 +13,7 @@
             <label
               for="greenhouse-name"
               class="block text-xs text-[color:var(--text-muted)] mb-1"
-            >Название <span class="text-[color:var(--accent-red)]">*</span></label>
+            >Название <span class="text-[color:var(--status-critical)]">*</span></label>
             <input
               id="greenhouse-name"
               v-model="form.name"
@@ -22,7 +22,7 @@
               required
               placeholder="Main Greenhouse"
               class="input-field"
-              :class="errors.name ? 'border-[color:var(--accent-red)] bg-[color:var(--badge-danger-bg)]' : ''"
+              :class="errors.name ? 'border-[color:var(--status-critical)] bg-[color:var(--badge-danger-bg)]' : ''"
             />
             <div
               v-if="errors.name"
@@ -85,7 +85,7 @@
               name="description"
               rows="3"
               placeholder="Описание теплицы..."
-              class="w-full rounded-md border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] px-2 py-1 text-sm text-[color:var(--text-primary)] focus:border-[color:var(--accent-green)] focus:outline-none"
+              class="w-full rounded-md border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] px-2 py-1 text-sm text-[color:var(--text-primary)] focus:border-[color:var(--status-ok)] focus:outline-none"
             ></textarea>
           </div>
         </div>

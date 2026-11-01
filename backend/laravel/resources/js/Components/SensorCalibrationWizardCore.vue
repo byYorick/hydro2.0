@@ -173,7 +173,7 @@
         </div>
         <div
           v-if="calibration.point_1_error"
-          class="text-xs text-[color:var(--accent-red)] space-y-1"
+          class="text-xs text-[color:var(--status-critical)] space-y-1"
         >
           <p class="leading-snug">
             {{ point1ErrorHuman }}
@@ -218,7 +218,7 @@
         </div>
         <div
           v-if="calibration.point_2_error"
-          class="text-xs text-[color:var(--accent-red)] space-y-1"
+          class="text-xs text-[color:var(--status-critical)] space-y-1"
         >
           <p class="leading-snug">
             {{ point2ErrorHuman }}

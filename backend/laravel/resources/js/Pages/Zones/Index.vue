@@ -106,14 +106,14 @@
             <button
               class="h-10 px-3 rounded-lg border text-sm transition-colors flex items-center gap-1.5 bg-[color:var(--bg-surface-strong)]"
               :class="showOnlyFavorites
-                ? 'border-[color:var(--badge-warning-border)] text-[color:var(--accent-amber)] shadow-[0_0_0_1px_var(--badge-warning-border)]'
+                ? 'border-[color:var(--badge-warning-border)] text-[color:var(--status-warning)] shadow-[0_0_0_1px_var(--badge-warning-border)]'
                 : 'border-[color:var(--border-muted)] text-[color:var(--text-primary)] hover:border-[color:var(--border-strong)]'"
               data-testid="zones-filter-favorites"
               @click="showOnlyFavorites = !showOnlyFavorites"
             >
               <svg
                 class="w-4 h-4"
-                :class="showOnlyFavorites ? 'fill-[color:var(--accent-amber)]' : ''"
+                :class="showOnlyFavorites ? 'fill-[color:var(--status-warning)]' : ''"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -148,7 +148,7 @@
               >
                 <svg
                   class="w-4 h-4 transition-colors"
-                  :class="isZoneFavorite(row.id) ? 'text-[color:var(--accent-amber)] fill-[color:var(--accent-amber)]' : 'text-[color:var(--text-dim)]'"
+                  :class="isZoneFavorite(row.id) ? 'text-[color:var(--status-warning)] fill-[color:var(--status-warning)]' : 'text-[color:var(--text-dim)]'"
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
@@ -163,7 +163,7 @@
               </button>
               <Link
                 :href="`/zones/${row.id}`"
-                class="text-[color:var(--accent-cyan)] hover:underline truncate min-w-0 font-semibold"
+                class="text-[color:var(--status-info)] hover:underline truncate min-w-0 font-semibold"
               >
                 {{ row.name || '-' }}
               </Link>

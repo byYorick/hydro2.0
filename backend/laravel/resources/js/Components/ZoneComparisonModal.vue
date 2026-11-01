@@ -41,7 +41,7 @@
               :key="zone.id"
               class="px-3 py-1.5 rounded border text-sm transition-colors"
               :class="selectedZoneIds.includes(zone.id)
-                ? 'border-[color:var(--accent-cyan)] bg-[color:var(--badge-info-bg)] text-[color:var(--badge-info-text)]'
+                ? 'border-[color:var(--status-info)] bg-[color:var(--badge-info-bg)] text-[color:var(--badge-info-text)]'
                 : 'border-[color:var(--border-muted)] bg-[color:var(--bg-surface)] text-[color:var(--text-muted)] hover:border-[color:var(--border-strong)]'"
               @click="toggleZone(zone.id)"
             >
@@ -54,7 +54,7 @@
           </div>
           <div
             v-if="selectedZoneIds.length < 2"
-            class="text-xs text-[color:var(--accent-amber)] mt-2"
+            class="text-xs text-[color:var(--status-warning)] mt-2"
           >
             Выберите минимум 2 зоны для сравнения
           </div>
@@ -232,11 +232,11 @@ const resolveCssColor = (variable: string, fallback: string): string => {
 const chartPalette = computed(() => {
   theme.value
   return [
-    resolveCssColor('--accent-cyan', '#3b82f6'),
-    resolveCssColor('--accent-green', '#10b981'),
-    resolveCssColor('--accent-amber', '#f59e0b'),
-    resolveCssColor('--accent-red', '#ef4444'),
-    resolveCssColor('--accent-lime', '#8b5cf6'),
+    resolveCssColor('--status-info', '#3b82f6'),
+    resolveCssColor('--status-ok', '#10b981'),
+    resolveCssColor('--status-warning', '#f59e0b'),
+    resolveCssColor('--status-critical', '#ef4444'),
+    resolveCssColor('--series-lime', '#8b5cf6'),
   ]
 })
 

@@ -43,7 +43,7 @@
           <div class="flex items-center gap-3">
             <div
               class="text-sm font-bold"
-              :class="Math.abs(ratioSum - 100) <= 0.01 ? 'text-[color:var(--accent-green)]' : 'text-[color:var(--badge-warning-text)]'"
+              :class="Math.abs(ratioSum - 100) <= 0.01 ? 'text-[color:var(--status-ok)]' : 'text-[color:var(--badge-warning-text)]'"
             >
               {{ ratioSum.toFixed(1) }}%
             </div>
@@ -153,7 +153,7 @@
             v-for="sys in SYSTEM_OPTIONS"
             :key="sys.value"
             class="flex items-center gap-1.5 rounded-md border border-[color:var(--border-muted)] px-2 py-1 cursor-pointer text-xs hover:bg-[color:var(--bg-muted)]"
-            :class="{ 'bg-emerald-50 dark:bg-emerald-900/20 border-[color:var(--accent-green)]': form.applicable_systems.includes(sys.value) }"
+            :class="{ 'bg-emerald-50 dark:bg-emerald-900/20 border-[color:var(--status-ok)]': form.applicable_systems.includes(sys.value) }"
           >
             <input
               type="checkbox"
@@ -326,8 +326,8 @@ async function submit(): Promise<void> {
   gap: 0.35rem;
   padding: 0.35rem 0.75rem;
   border-radius: 0.55rem;
-  background: color-mix(in srgb, var(--accent-green) 10%, transparent);
-  color: var(--accent-green);
+  background: color-mix(in srgb, var(--status-ok) 10%, transparent);
+  color: var(--status-ok);
   font-size: 0.72rem;
   font-weight: 600;
   border: 1px solid transparent;
@@ -335,7 +335,7 @@ async function submit(): Promise<void> {
   transition: background 0.15s, transform 0.08s;
 }
 .soft-btn:hover {
-  background: color-mix(in srgb, var(--accent-green) 18%, transparent);
+  background: color-mix(in srgb, var(--status-ok) 18%, transparent);
 }
 .soft-btn:active {
   transform: scale(0.97);

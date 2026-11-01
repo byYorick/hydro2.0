@@ -16,7 +16,7 @@
           <span v-if="linkedZoneId">
             <Link
               :href="`/zones/${linkedZoneId}`"
-              class="text-[color:var(--accent-cyan)] hover:underline"
+              class="text-[color:var(--status-info)] hover:underline"
             >Зона: {{ linkedZoneName }}</Link>
           </span>
           <span v-else>Зона: -</span>
@@ -82,7 +82,7 @@
             <template v-if="linkedZoneId">
               <Link
                 :href="`/zones/${linkedZoneId}`"
-                class="text-[color:var(--accent-cyan)] hover:underline text-sm"
+                class="text-[color:var(--status-info)] hover:underline text-sm"
               >
                 {{ linkedZoneName }}
               </Link>
@@ -168,7 +168,7 @@
         <Link
           v-if="linkedZoneId"
           :href="`/zones/${linkedZoneId}`"
-          class="w-fit rounded-full border border-[color:var(--badge-info-border)] bg-[color:var(--badge-info-bg)] px-2 py-1 text-xs text-[color:var(--badge-info-text)] hover:border-[color:var(--accent-cyan)]"
+          class="w-fit rounded-full border border-[color:var(--badge-info-border)] bg-[color:var(--badge-info-bg)] px-2 py-1 text-xs text-[color:var(--badge-info-text)] hover:border-[color:var(--status-info)]"
         >
           <span class="opacity-80">Привязка:</span>
           <span class="font-medium"> {{ linkedZoneName }}</span>
@@ -210,7 +210,7 @@
             <span v-else>Текущий конфиг ноды (read-only)</span>
             <span
               v-if="configError"
-              class="text-[color:var(--accent-amber)] ml-2"
+              class="text-[color:var(--status-warning)] ml-2"
             >{{ configError }}</span>
           </div>
         </div>
@@ -250,7 +250,7 @@
             Двухточечная калибровка буферами; offset/slope хранятся в AE3. Тот же поток, что в
             <Link
               :href="`/launch/${linkedZoneId}`"
-              class="text-[color:var(--accent-cyan)] hover:underline"
+              class="text-[color:var(--status-info)] hover:underline"
             >
               мастере запуска
             </Link>
@@ -406,12 +406,13 @@
       >
         JSON скрыт, чтобы не занимать экран.
       </div>
-      <!-- eslint-disable-next-line vue/no-v-html -- highlightJson sanitizes input via escapeHtml() (см. функцию ниже) -->
+      <!-- eslint-disable vue/no-v-html -- highlightJson экранирует текст через escapeHtml() -->
       <pre
         v-else
         class="node-config-json max-h-[32rem] overflow-auto rounded-md border border-[color:var(--border-muted)] bg-[color:var(--bg-muted)] p-3 text-xs leading-relaxed text-[color:var(--text-muted)]"
         v-html="highlightedNodeConfig"
       ></pre>
+      <!-- eslint-enable vue/no-v-html -->
     </Card>
 
     <ConfirmModal
@@ -823,23 +824,23 @@ const resolveCssColor = (variable: string, fallback: string): string => {
 const METRIC_COLORS = computed<Record<string, string>>(() => {
   theme.value
   return {
-    TEMPERATURE: resolveCssColor('--accent-amber', '#f59e0b'),
-    HUMIDITY: resolveCssColor('--accent-cyan', '#3b82f6'),
-    CO2: resolveCssColor('--accent-green', '#10b981'),
-    PH: resolveCssColor('--accent-lime', '#8b5cf6'),
-    EC: resolveCssColor('--accent-cyan', '#06b6d4'),
-    DEFAULT: resolveCssColor('--accent-cyan', '#3b82f6'),
+    TEMPERATURE: resolveCssColor('--status-warning', '#f59e0b'),
+    HUMIDITY: resolveCssColor('--status-info', '#3b82f6'),
+    CO2: resolveCssColor('--status-ok', '#10b981'),
+    PH: resolveCssColor('--series-lime', '#8b5cf6'),
+    EC: resolveCssColor('--status-info', '#06b6d4'),
+    DEFAULT: resolveCssColor('--status-info', '#3b82f6'),
   }
 })
 
 /** Разные оттенки для нескольких датчиков уровня на одном графике (контраст в light/dark) */
 const WATER_LEVEL_SERIES_COLORS = computed(() => [
-  resolveCssColor('--accent-amber', '#f59e0b'),
-  resolveCssColor('--accent-cyan', '#22d3ee'),
+  resolveCssColor('--status-warning', '#f59e0b'),
+  resolveCssColor('--status-info', '#22d3ee'),
   resolveCssColor('--chart-series-magenta', '#e879f9'),
-  resolveCssColor('--accent-green', '#34d399'),
-  resolveCssColor('--accent-red', '#f87171'),
-  resolveCssColor('--accent-lime', '#a3e635'),
+  resolveCssColor('--status-ok', '#34d399'),
+  resolveCssColor('--status-critical', '#f87171'),
+  resolveCssColor('--series-lime', '#a3e635'),
 ])
 
 const METRIC_LABELS: Record<string, string> = {
@@ -1026,18 +1027,18 @@ function highlightJson(json: string): string {
   return json.replace(JSON_TOKEN_RE, (token) => {
     const escaped = escapeHtml(token)
     if (/^".*"\s*:$/.test(token)) {
-      return `<span class="json-key" style="color: var(--accent-cyan)">${escaped}</span>`
+      return `<span class="json-key" style="color: var(--status-info)">${escaped}</span>`
     }
     if (token.startsWith('"')) {
-      return `<span class="json-string" style="color: var(--accent-green)">${escaped}</span>`
+      return `<span class="json-string" style="color: var(--status-ok)">${escaped}</span>`
     }
     if (token === 'true' || token === 'false') {
-      return `<span class="json-boolean" style="color: var(--accent-amber)">${escaped}</span>`
+      return `<span class="json-boolean" style="color: var(--status-warning)">${escaped}</span>`
     }
     if (token === 'null') {
       return `<span class="json-null" style="color: var(--text-dim)">${escaped}</span>`
     }
-    return `<span class="json-number" style="color: var(--accent-lime)">${escaped}</span>`
+    return `<span class="json-number" style="color: var(--series-lime)">${escaped}</span>`
   })
 }
 

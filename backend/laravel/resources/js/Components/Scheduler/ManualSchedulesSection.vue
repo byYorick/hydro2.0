@@ -91,7 +91,7 @@
                   :aria-checked="schedule.enabled"
                   :aria-label="schedule.label ? `Активно: ${schedule.label}` : `Активно: ${laneLabel(schedule.task_type)}`"
                   class="relative inline-flex h-5 w-9 shrink-0 rounded-full transition motion-reduce:transition-none"
-                  :class="schedule.enabled ? 'bg-[color:var(--accent-green)]' : 'bg-[color:var(--border-muted)]'"
+                  :class="schedule.enabled ? 'bg-[color:var(--status-ok)]' : 'bg-[color:var(--border-muted)]'"
                   :disabled="togglingId === schedule.id"
                   @click="toggleEnabled(schedule)"
                 >

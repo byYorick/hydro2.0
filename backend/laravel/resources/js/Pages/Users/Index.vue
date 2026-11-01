@@ -152,7 +152,7 @@
           <input
             v-model="userForm.name"
             class="input-field mt-1"
-            :class="formErrors.name ? 'border-[color:var(--accent-red)] bg-[color:var(--bg-elevated)]' : ''"
+            :class="formErrors.name ? 'border-[color:var(--status-critical)] bg-[color:var(--bg-elevated)]' : ''"
           />
           <div
             v-if="formErrors.name"
@@ -167,7 +167,7 @@
             v-model="userForm.email"
             type="email"
             class="input-field mt-1"
-            :class="formErrors.email ? 'border-[color:var(--accent-red)] bg-[color:var(--bg-elevated)]' : ''"
+            :class="formErrors.email ? 'border-[color:var(--status-critical)] bg-[color:var(--bg-elevated)]' : ''"
           />
           <div
             v-if="formErrors.email"
@@ -182,7 +182,7 @@
             v-model="userForm.password"
             type="password"
             class="input-field mt-1"
-            :class="formErrors.password ? 'border-[color:var(--accent-red)] bg-[color:var(--bg-elevated)]' : ''"
+            :class="formErrors.password ? 'border-[color:var(--status-critical)] bg-[color:var(--bg-elevated)]' : ''"
             :placeholder="editingUser ? 'Оставьте пустым, чтобы не менять' : 'Минимум 8 символов'"
           />
           <div
@@ -197,7 +197,7 @@
           <select
             v-model="userForm.role"
             class="input-select mt-1"
-            :class="formErrors.role ? 'border-[color:var(--accent-red)] bg-[color:var(--bg-elevated)]' : ''"
+            :class="formErrors.role ? 'border-[color:var(--status-critical)] bg-[color:var(--bg-elevated)]' : ''"
           >
             <option value="viewer">
               Наблюдатель

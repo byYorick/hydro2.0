@@ -7,7 +7,7 @@
       type="button"
       class="h-9 px-3 rounded-lg border text-xs font-semibold transition-colors"
       :class="range === modelValue
-        ? 'border-[color:var(--accent-cyan)] text-[color:var(--accent-cyan)] bg-[color:var(--bg-elevated)]'
+        ? 'border-[color:var(--status-info)] text-[color:var(--status-info)] bg-[color:var(--bg-elevated)]'
         : 'border-[color:var(--border-muted)] text-[color:var(--text-dim)] hover:border-[color:var(--border-strong)]'"
       @click="emit('update:modelValue', range)"
     >

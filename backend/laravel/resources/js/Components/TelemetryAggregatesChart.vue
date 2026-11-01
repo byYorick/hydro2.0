@@ -28,7 +28,7 @@
     </div>
     <div
       v-else-if="error"
-      class="text-sm text-[color:var(--accent-red)] py-6 text-center"
+      class="text-sm text-[color:var(--status-critical)] py-6 text-center"
     >
       {{ error }}
     </div>

@@ -91,11 +91,11 @@
           <!-- Статистика устройств -->
           <div class="mt-2 flex items-center gap-2 text-[10px]">
             <div class="flex items-center gap-1">
-              <div class="w-1.5 h-1.5 rounded-full bg-[color:var(--accent-green)]"></div>
+              <div class="w-1.5 h-1.5 rounded-full bg-[color:var(--status-ok)]"></div>
               <span>{{ getOnlineDevicesCount() }}</span>
             </div>
             <div class="flex items-center gap-1">
-              <div class="w-1.5 h-1.5 rounded-full bg-[color:var(--accent-red)]"></div>
+              <div class="w-1.5 h-1.5 rounded-full bg-[color:var(--status-critical)]"></div>
               <span>{{ getOfflineDevicesCount() }}</span>
             </div>
           </div>
@@ -121,7 +121,7 @@
               stroke="currentColor"
               stroke-width="2"
               stroke-dasharray="6,4"
-              :class="resolveEffectiveDeviceStatus(device) === 'online' ? 'text-[color:var(--accent-green)] opacity-60' : 'text-[color:var(--text-dim)] opacity-40'"
+              :class="resolveEffectiveDeviceStatus(device) === 'online' ? 'text-[color:var(--status-ok)] opacity-60' : 'text-[color:var(--text-dim)] opacity-40'"
             />
           </svg>
 
@@ -415,11 +415,11 @@ function getDeviceCardClass(device: Device): string {
   const base = 'bg-[color:var(--bg-surface-strong)]'
   const status = resolveEffectiveDeviceStatus(device)
   if (status === 'online') {
-    return `${base} border-[color:var(--badge-success-border)] hover:border-[color:var(--accent-green)]`
+    return `${base} border-[color:var(--badge-success-border)] hover:border-[color:var(--status-ok)]`
   } else if (status === 'offline') {
-    return `${base} border-[color:var(--badge-danger-border)] hover:border-[color:var(--accent-red)]`
+    return `${base} border-[color:var(--badge-danger-border)] hover:border-[color:var(--status-critical)]`
   } else if (status === 'degraded' || status === 'pending') {
-    return `${base} border-[color:var(--badge-warning-border)] hover:border-[color:var(--accent-amber)]`
+    return `${base} border-[color:var(--badge-warning-border)] hover:border-[color:var(--status-warning)]`
   }
   return `${base} border-[color:var(--border-muted)] hover:border-[color:var(--border-strong)]`
 }
@@ -520,9 +520,9 @@ function formatLastSeen(timestamp: string | undefined): string {
 }
 
 function rssiClass(rssi: number): string {
-  if (rssi >= -60) return 'text-[color:var(--accent-green)]'
-  if (rssi >= -75) return 'text-[color:var(--accent-amber)]'
-  return 'text-[color:var(--accent-red)]'
+  if (rssi >= -60) return 'text-[color:var(--status-ok)]'
+  if (rssi >= -75) return 'text-[color:var(--status-warning)]'
+  return 'text-[color:var(--status-critical)]'
 }
 
 function formatHeap(bytes: number): string {

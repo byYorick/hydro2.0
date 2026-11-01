@@ -95,7 +95,7 @@
       <select
         id="pagination-per-page"
         :value="perPageModel"
-        class="h-7 px-2 text-xs rounded-md border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)] text-[color:var(--text-muted)] focus:border-[color:var(--accent-green)] focus:outline-none focus:ring-2 focus:ring-[color:var(--focus-ring)] focus:ring-offset-2 focus:ring-offset-[color:var(--bg-main)]"
+        class="h-7 px-2 text-xs rounded-md border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)] text-[color:var(--text-muted)] focus:border-[color:var(--status-ok)] focus:outline-none focus:ring-2 focus:ring-[color:var(--focus-ring)] focus:ring-offset-2 focus:ring-offset-[color:var(--bg-main)]"
         aria-label="Количество элементов на странице"
         @change="onPerPageChange(Number(($event.target as HTMLSelectElement).value))"
       >

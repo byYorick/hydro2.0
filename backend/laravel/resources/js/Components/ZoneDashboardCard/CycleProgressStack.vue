@@ -14,7 +14,7 @@
       </div>
       <div class="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-[color:var(--border-muted)]">
         <div
-          class="h-full rounded-full bg-[linear-gradient(90deg,var(--accent-green),var(--accent-cyan))] transition-all duration-500"
+          class="h-full rounded-full bg-[linear-gradient(90deg,var(--status-ok),var(--status-info))] transition-all duration-500"
           :style="{ width: `${overallPct}%` }"
         ></div>
       </div>
@@ -31,7 +31,7 @@
       </div>
       <div class="mt-1 h-1 w-full overflow-hidden rounded-full bg-[color:var(--border-muted)]">
         <div
-          class="h-full rounded-full bg-[color:var(--accent-cyan)] transition-all duration-500"
+          class="h-full rounded-full bg-[color:var(--status-info)] transition-all duration-500"
           :style="{ width: `${phase.progress}%` }"
         ></div>
       </div>

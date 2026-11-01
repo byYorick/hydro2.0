@@ -6,7 +6,7 @@
     <div class="flex items-center justify-between mb-3">
       <h3 class="text-sm font-semibold flex items-center gap-2">
         <svg
-          class="w-4 h-4 text-[color:var(--accent-amber)]"
+          class="w-4 h-4 text-[color:var(--status-warning)]"
           fill="currentColor"
           viewBox="0 0 24 24"
         >

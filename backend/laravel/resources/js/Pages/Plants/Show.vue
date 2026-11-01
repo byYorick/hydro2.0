@@ -132,7 +132,7 @@
               <div class="text-xs text-[color:var(--text-muted)] uppercase tracking-wide mb-1">
                 Оптовая цена
               </div>
-              <div class="text-lg font-semibold text-[color:var(--accent-green)]">
+              <div class="text-lg font-semibold text-[color:var(--status-ok)]">
                 {{ formatCurrency(plant.profitability.wholesale_price, plant.profitability.currency) }}
               </div>
               <div class="text-xs text-[color:var(--text-dim)] mt-1">
@@ -143,7 +143,7 @@
               <div class="text-xs text-[color:var(--text-muted)] uppercase tracking-wide mb-1">
                 Розничная цена
               </div>
-              <div class="text-lg font-semibold text-[color:var(--accent-cyan)]">
+              <div class="text-lg font-semibold text-[color:var(--status-info)]">
                 {{ formatCurrency(plant.profitability.retail_price, plant.profitability.currency) }}
               </div>
               <div class="text-xs text-[color:var(--text-dim)] mt-1">
@@ -208,7 +208,7 @@
                 <div class="flex items-center gap-2 mb-2">
                   <Link
                     :href="`/recipes/${recipe.id}`"
-                    class="text-base font-semibold text-[color:var(--accent-cyan)] hover:underline"
+                    class="text-base font-semibold text-[color:var(--status-info)] hover:underline"
                   >
                     {{ recipe.name }}
                   </Link>

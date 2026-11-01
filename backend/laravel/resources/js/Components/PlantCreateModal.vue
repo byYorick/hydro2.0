@@ -32,18 +32,18 @@
             for="plant-name"
             class="block text-xs text-[color:var(--text-muted)] mb-1"
           >
-            Название <span class="text-[color:var(--accent-red)]">*</span>
+            Название <span class="text-[color:var(--status-critical)]">*</span>
           </label>
           <input
             id="plant-name"
             v-model="form.name"
             type="text"
             class="input-field h-9 w-full"
-            :class="errors.name ? 'border-[color:var(--accent-red)] bg-[color:var(--badge-danger-bg)]' : ''"
+            :class="errors.name ? 'border-[color:var(--status-critical)] bg-[color:var(--badge-danger-bg)]' : ''"
           />
           <div
             v-if="errors.name"
-            class="text-xs text-[color:var(--accent-red)] mt-1"
+            class="text-xs text-[color:var(--status-critical)] mt-1"
           >
             {{ errors.name }}
           </div>
@@ -105,7 +105,7 @@
           </div>
           <div
             v-if="errors.growing_system"
-            class="text-xs text-[color:var(--accent-red)] mt-1"
+            class="text-xs text-[color:var(--status-critical)] mt-1"
           >
             {{ errors.growing_system }}
           </div>
@@ -208,7 +208,7 @@
 
       <div
         v-if="errors.general"
-        class="text-sm text-[color:var(--accent-red)]"
+        class="text-sm text-[color:var(--status-critical)]"
       >
         {{ errors.general }}
       </div>

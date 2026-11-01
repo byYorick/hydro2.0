@@ -209,8 +209,8 @@ let pollInterval: ReturnType<typeof setInterval> | null = null
 
 function getErrorClass(error: number): string {
   const absError = Math.abs(error)
-  if (absError > 1.0) return 'text-[color:var(--accent-red)]'
-  if (absError > 0.5) return 'text-[color:var(--accent-amber)]'
+  if (absError > 1.0) return 'text-[color:var(--status-critical)]'
+  if (absError > 0.5) return 'text-[color:var(--status-warning)]'
   return 'text-[color:var(--text-primary)]'
 }
 

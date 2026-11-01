@@ -575,7 +575,6 @@ const {
   waterForm,
   lightingForm,
   zoneClimateForm,
-  quickActions,
   isApplyingProfile,
   isSyncingAutomationLogicProfile,
   lastAppliedAt,

@@ -87,9 +87,9 @@
             class="h-9 px-3 rounded-lg border text-xs font-semibold transition-colors"
             data-testid="alerts-filter-process-stopping"
             :class="processStoppingOnly
-              ? 'border-[color:var(--accent-red)] text-[color:var(--accent-red)] bg-[color:var(--bg-elevated)]'
+              ? 'border-[color:var(--status-critical)] text-[color:var(--status-critical)] bg-[color:var(--bg-elevated)]'
               : isOperator
-                ? 'border-[color:var(--accent-red)]/60 text-[color:var(--accent-red)] bg-[color:var(--bg-elevated)] hover:border-[color:var(--accent-red)]'
+                ? 'border-[color:var(--status-critical)]/60 text-[color:var(--status-critical)] bg-[color:var(--bg-elevated)] hover:border-[color:var(--status-critical)]'
                 : 'border-[color:var(--border-muted)] text-[color:var(--text-dim)] hover:border-[color:var(--border-strong)]'"
             @click="processStoppingOnly = !processStoppingOnly"
           >
@@ -101,7 +101,7 @@
             class="h-9 px-3 rounded-lg border text-xs font-semibold transition-colors"
             data-testid="alerts-preset-agronomy-domain"
             :class="agronomyDomainPreset
-              ? 'border-[color:var(--accent-cyan)] text-[color:var(--accent-cyan)] bg-[color:var(--bg-elevated)]'
+              ? 'border-[color:var(--status-info)] text-[color:var(--status-info)] bg-[color:var(--bg-elevated)]'
               : 'border-[color:var(--border-muted)] text-[color:var(--text-dim)] hover:border-[color:var(--border-strong)]'"
             @click="agronomyDomainPreset = !agronomyDomainPreset"
           >
@@ -111,7 +111,7 @@
             type="button"
             class="h-9 px-3 rounded-lg border text-xs font-semibold transition-colors"
             :class="recentOnly
-              ? 'border-[color:var(--accent-cyan)] text-[color:var(--accent-cyan)] bg-[color:var(--bg-elevated)]'
+              ? 'border-[color:var(--status-info)] text-[color:var(--status-info)] bg-[color:var(--bg-elevated)]'
               : 'border-[color:var(--border-muted)] text-[color:var(--text-dim)] hover:border-[color:var(--border-strong)]'"
             @click="recentOnly = !recentOnly"
           >
@@ -121,7 +121,7 @@
             type="button"
             class="h-9 px-3 rounded-lg border text-xs font-semibold transition-colors"
             :class="alarmsOnly
-              ? 'border-[color:var(--accent-amber)] text-[color:var(--accent-amber)] bg-[color:var(--bg-elevated)]'
+              ? 'border-[color:var(--status-warning)] text-[color:var(--status-warning)] bg-[color:var(--bg-elevated)]'
               : 'border-[color:var(--border-muted)] text-[color:var(--text-dim)] hover:border-[color:var(--border-strong)]'"
             @click="alarmsOnly = !alarmsOnly"
           >
@@ -133,7 +133,7 @@
             class="h-9 px-3 rounded-lg border text-xs font-semibold transition-colors"
             data-testid="alerts-extra-filters-toggle"
             :class="extraFiltersOpen
-              ? 'border-[color:var(--accent-cyan)] text-[color:var(--accent-cyan)] bg-[color:var(--bg-elevated)]'
+              ? 'border-[color:var(--status-info)] text-[color:var(--status-info)] bg-[color:var(--bg-elevated)]'
               : 'border-[color:var(--border-muted)] text-[color:var(--text-dim)] hover:border-[color:var(--border-strong)]'"
             @click="extraFiltersOpen = !extraFiltersOpen"
           >
@@ -230,7 +230,7 @@
           >
             <input
               type="checkbox"
-              class="h-4 w-4 accent-[color:var(--accent-cyan)]"
+              class="h-4 w-4 accent-[color:var(--status-info)]"
               :checked="allVisibleSelected"
               @change="toggleSelectAll"
             />
@@ -308,7 +308,7 @@
         <button
           v-if="displayedAlertSectionCounts.activeTotal > 0"
           type="button"
-          class="inline-flex items-center gap-1.5 rounded-full border border-[color:var(--accent-cyan)] bg-[color:var(--bg-elevated)] px-2.5 py-1 text-xs font-semibold text-[color:var(--accent-cyan)] transition-opacity hover:opacity-90"
+          class="inline-flex items-center gap-1.5 rounded-full border border-[color:var(--status-info)] bg-[color:var(--bg-elevated)] px-2.5 py-1 text-xs font-semibold text-[color:var(--status-info)] transition-opacity hover:opacity-90"
           data-testid="alerts-count-active-total"
           @click="scrollToFirstActiveSection"
         >
@@ -412,7 +412,7 @@
                 <template #cell-select="{ row }">
                   <input
                     type="checkbox"
-                    class="h-4 w-4 accent-[color:var(--accent-cyan)]"
+                    class="h-4 w-4 accent-[color:var(--status-info)]"
                     :checked="selectedIds.has(row.id)"
                     :disabled="isResolved(row)"
                     @change="toggleSelection(row)"
@@ -474,7 +474,7 @@
                 <template #cell-zone="{ row }">
                   <Link
                     v-if="row.zone_id"
-                    class="truncate block max-w-[220px] text-[color:var(--accent-cyan)] font-medium hover:underline"
+                    class="truncate block max-w-[220px] text-[color:var(--status-info)] font-medium hover:underline"
                     :href="zoneAlertsTabUrl(row.zone_id)"
                     :data-testid="`alert-zone-link-${row.id}`"
                     @click.stop

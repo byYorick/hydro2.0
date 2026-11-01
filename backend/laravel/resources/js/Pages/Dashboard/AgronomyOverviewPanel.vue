@@ -9,7 +9,7 @@
           <div class="text-xs text-[color:var(--text-muted)]">
             В норме
           </div>
-          <div class="text-xl font-semibold text-[color:var(--accent-green)]">
+          <div class="text-xl font-semibold text-[color:var(--status-ok)]">
             {{ corridor.inRange }}
           </div>
           <div class="text-xs text-[color:var(--text-dim)]">
@@ -22,7 +22,7 @@
           </div>
           <div
             class="text-xl font-semibold"
-            :class="corridor.outOfRange > 0 ? 'text-[color:var(--accent-amber)]' : ''"
+            :class="corridor.outOfRange > 0 ? 'text-[color:var(--status-warning)]' : ''"
           >
             {{ corridor.outOfRange }}
           </div>
@@ -55,7 +55,7 @@
           >
             <Link
               :href="`/zones/${item.zoneId}`"
-              class="text-[color:var(--accent-cyan)] hover:underline"
+              class="text-[color:var(--status-info)] hover:underline"
             >
               {{ item.zoneName }}
             </Link>

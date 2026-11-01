@@ -15,7 +15,7 @@
             for="greenhouse-name"
             class="block text-xs text-[color:var(--text-muted)] mb-1"
           >
-            Название <span class="text-[color:var(--accent-red)]">*</span>
+            Название <span class="text-[color:var(--status-critical)]">*</span>
           </label>
           <input
             id="greenhouse-name"
@@ -25,12 +25,12 @@
             required
             placeholder="Main Greenhouse"
             class="input-field h-9 w-full"
-            :class="errors.name ? 'border-[color:var(--accent-red)] bg-[color:var(--badge-danger-bg)]' : ''"
+            :class="errors.name ? 'border-[color:var(--status-critical)] bg-[color:var(--badge-danger-bg)]' : ''"
             autocomplete="off"
           />
           <div
             v-if="errors.name"
-            class="text-xs text-[color:var(--accent-red)] mt-1"
+            class="text-xs text-[color:var(--status-critical)] mt-1"
           >
             {{ errors.name }}
           </div>
@@ -154,7 +154,7 @@
 
       <div
         v-if="errors.general"
-        class="text-sm text-[color:var(--accent-red)]"
+        class="text-sm text-[color:var(--status-critical)]"
       >
         {{ errors.general }}
       </div>

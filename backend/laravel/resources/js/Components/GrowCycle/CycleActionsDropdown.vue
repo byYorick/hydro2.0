@@ -49,7 +49,7 @@
         v-if="canManage && cycleStatus === 'PLANNED'"
         type="button"
         :disabled="loading.cycleAbort"
-        class="dropdown-action text-[color:var(--accent-red)]"
+        class="dropdown-action text-[color:var(--status-critical)]"
         @click="$emit('abort')"
       >
         Отменить запланированный
@@ -85,7 +85,7 @@
         v-if="canManage && isActive"
         type="button"
         :disabled="loading.cycleHarvest"
-        class="dropdown-action text-[color:var(--accent-green)]"
+        class="dropdown-action text-[color:var(--status-ok)]"
         @click="$emit('harvest')"
       >
         Урожай
@@ -94,7 +94,7 @@
         v-if="canManage && isActive"
         type="button"
         :disabled="loading.cycleAbort"
-        class="dropdown-action text-[color:var(--accent-red)]"
+        class="dropdown-action text-[color:var(--status-critical)]"
         @click="$emit('abort')"
       >
         Прервать цикл
@@ -190,6 +190,6 @@ const isActive = computed(() =>
 }
 
 .dropdown-action--ready {
-  background-color: color-mix(in srgb, var(--accent-green, #10b981) 8%, transparent);
+  background-color: color-mix(in srgb, var(--status-ok, #10b981) 8%, transparent);
 }
 </style>

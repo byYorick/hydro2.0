@@ -129,7 +129,7 @@
           <button
             type="button"
             class="btn btn-outline h-9 px-3 text-xs"
-            :class="changeRecipeApplyMode === 'now' ? 'border-[color:var(--accent-green)]' : ''"
+            :class="changeRecipeApplyMode === 'now' ? 'border-[color:var(--status-ok)]' : ''"
             @click="changeRecipeApplyMode = 'now'"
           >
             Применить сейчас
@@ -137,7 +137,7 @@
           <button
             type="button"
             class="btn btn-outline h-9 px-3 text-xs"
-            :class="changeRecipeApplyMode === 'next_phase' ? 'border-[color:var(--accent-green)]' : ''"
+            :class="changeRecipeApplyMode === 'next_phase' ? 'border-[color:var(--status-ok)]' : ''"
             @click="changeRecipeApplyMode = 'next_phase'"
           >
             Со следующей фазы

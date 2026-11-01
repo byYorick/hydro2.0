@@ -187,7 +187,7 @@
         </div>
         <button
           type="button"
-          class="text-[11px] text-[color:var(--accent-cyan)] hover:underline"
+          class="text-[11px] text-[color:var(--status-info)] hover:underline"
           data-testid="recipe-editor-preview-toggle"
           @click="previewOpen = !previewOpen"
         >
@@ -787,7 +787,7 @@
             <div class="text-right">
               <div
                 class="text-sm font-bold"
-                :class="Math.abs(nutrientRatioSum(phase) - 100) <= 0.01 ? 'text-[color:var(--accent-green)]' : 'text-[color:var(--badge-warning-text)]'"
+                :class="Math.abs(nutrientRatioSum(phase) - 100) <= 0.01 ? 'text-[color:var(--status-ok)]' : 'text-[color:var(--badge-warning-text)]'"
               >
                 {{ nutrientRatioSum(phase).toFixed(1) }}%
               </div>
@@ -1570,7 +1570,7 @@ const previewSummary = computed(() => summarizeRecipePhases(previewPhases.value)
   justify-content: center;
   border-left: 1px solid var(--border-muted);
   border-right: 1px solid var(--border-muted);
-  background: color-mix(in srgb, var(--accent-green) 6%, var(--bg-elevated));
+  background: color-mix(in srgb, var(--status-ok) 6%, var(--bg-elevated));
 }
 .target-row__input {
   width: 100%;
@@ -1602,15 +1602,15 @@ const previewSummary = computed(() => summarizeRecipePhases(previewPhases.value)
   width: 2.6rem;
   height: 2.6rem;
   border-radius: 0.85rem;
-  background: color-mix(in srgb, var(--accent-green) 12%, transparent);
-  color: var(--accent-green);
-  border: 1px solid color-mix(in srgb, var(--accent-green) 25%, transparent);
+  background: color-mix(in srgb, var(--status-ok) 12%, transparent);
+  color: var(--status-ok);
+  border: 1px solid color-mix(in srgb, var(--status-ok) 25%, transparent);
   cursor: pointer;
   transition: background 0.15s, border-color 0.15s, transform 0.08s;
 }
 .pill-btn:hover {
-  background: color-mix(in srgb, var(--accent-green) 20%, transparent);
-  border-color: color-mix(in srgb, var(--accent-green) 45%, transparent);
+  background: color-mix(in srgb, var(--status-ok) 20%, transparent);
+  border-color: color-mix(in srgb, var(--status-ok) 45%, transparent);
 }
 .pill-btn:active {
   transform: scale(0.94);
@@ -1623,8 +1623,8 @@ const previewSummary = computed(() => summarizeRecipePhases(previewPhases.value)
   gap: 0.4rem;
   padding: 0.4rem 0.85rem;
   border-radius: 0.6rem;
-  background: color-mix(in srgb, var(--accent-green) 8%, transparent);
-  color: var(--accent-green);
+  background: color-mix(in srgb, var(--status-ok) 8%, transparent);
+  color: var(--status-ok);
   font-size: 0.75rem;
   font-weight: 600;
   border: 1px solid transparent;
@@ -1632,7 +1632,7 @@ const previewSummary = computed(() => summarizeRecipePhases(previewPhases.value)
   transition: background 0.15s, color 0.15s, transform 0.08s;
 }
 .soft-btn:hover {
-  background: color-mix(in srgb, var(--accent-green) 16%, transparent);
+  background: color-mix(in srgb, var(--status-ok) 16%, transparent);
 }
 .soft-btn:active {
   transform: scale(0.97);
@@ -1675,15 +1675,15 @@ const previewSummary = computed(() => summarizeRecipePhases(previewPhases.value)
   transition: left 0.2s ease, background 0.2s ease;
 }
 .md-switch input:checked + .md-switch__track {
-  background: color-mix(in srgb, var(--accent-green) 45%, transparent);
+  background: color-mix(in srgb, var(--status-ok) 45%, transparent);
 }
 .md-switch input:checked + .md-switch__track .md-switch__thumb {
   left: calc(100% - 1.15rem);
-  background: var(--accent-green);
-  box-shadow: 0 1px 4px color-mix(in srgb, var(--accent-green) 40%, transparent);
+  background: var(--status-ok);
+  box-shadow: 0 1px 4px color-mix(in srgb, var(--status-ok) 40%, transparent);
 }
 .md-switch input:focus-visible + .md-switch__track {
-  outline: 2px solid color-mix(in srgb, var(--accent-green) 40%, transparent);
+  outline: 2px solid color-mix(in srgb, var(--status-ok) 40%, transparent);
   outline-offset: 2px;
 }
 .md-switch__label {
@@ -1693,7 +1693,7 @@ const previewSummary = computed(() => summarizeRecipePhases(previewPhases.value)
   min-width: 2rem;
 }
 .md-switch input:checked ~ .md-switch__label {
-  color: var(--accent-green);
+  color: var(--status-ok);
 }
 
 /* EC breakdown — карточка */
@@ -1701,7 +1701,7 @@ const previewSummary = computed(() => summarizeRecipePhases(previewPhases.value)
   border: 1px solid var(--border-muted);
   border-radius: 0.75rem;
   padding: 0.75rem;
-  background: color-mix(in srgb, var(--accent-green) 3%, var(--bg-elevated));
+  background: color-mix(in srgb, var(--status-ok) 3%, var(--bg-elevated));
   display: flex;
   flex-direction: column;
   gap: 0.6rem;
@@ -1725,8 +1725,8 @@ const previewSummary = computed(() => summarizeRecipePhases(previewPhases.value)
 .ec-breakdown-card__total {
   font-size: 0.85rem;
   font-weight: 700;
-  color: var(--accent-green);
-  background: color-mix(in srgb, var(--accent-green) 12%, transparent);
+  color: var(--status-ok);
+  background: color-mix(in srgb, var(--status-ok) 12%, transparent);
   padding: 0.15rem 0.55rem;
   border-radius: 0.35rem;
 }
@@ -1781,7 +1781,7 @@ const previewSummary = computed(() => summarizeRecipePhases(previewPhases.value)
   color: var(--text-muted);
 }
 .ec-flow-stage__icon {
-  color: var(--accent-green);
+  color: var(--status-ok);
   font-size: 0.7rem;
 }
 .ec-flow-stage__label {
@@ -1816,15 +1816,15 @@ const previewSummary = computed(() => summarizeRecipePhases(previewPhases.value)
   justify-content: center;
   font-size: 1rem;
   font-weight: 700;
-  color: var(--accent-green);
-  background: color-mix(in srgb, var(--accent-green) 6%, transparent);
+  color: var(--status-ok);
+  background: color-mix(in srgb, var(--status-ok) 6%, transparent);
   border: none;
   cursor: pointer;
   transition: background 0.15s, transform 0.08s;
   user-select: none;
 }
 .stepper__btn:hover {
-  background: color-mix(in srgb, var(--accent-green) 15%, transparent);
+  background: color-mix(in srgb, var(--status-ok) 15%, transparent);
 }
 .stepper__btn:active {
   transform: scale(0.92);
@@ -1866,8 +1866,8 @@ const previewSummary = computed(() => summarizeRecipePhases(previewPhases.value)
   justify-content: center;
   font-size: 1.1rem;
   font-weight: 700;
-  color: var(--accent-green);
-  background: color-mix(in srgb, var(--accent-green) 10%, transparent);
+  color: var(--status-ok);
+  background: color-mix(in srgb, var(--status-ok) 10%, transparent);
   border: none;
   border-radius: 50%;
   margin: 0 0.15rem;
@@ -1876,7 +1876,7 @@ const previewSummary = computed(() => summarizeRecipePhases(previewPhases.value)
   transition: background 0.15s, transform 0.1s;
 }
 .target-row__btn:hover {
-  background: color-mix(in srgb, var(--accent-green) 20%, transparent);
+  background: color-mix(in srgb, var(--status-ok) 20%, transparent);
 }
 .target-row__btn:active {
   transform: scale(0.9);

@@ -12,6 +12,7 @@
         class="flex flex-col items-center justify-center flex-1 h-full"
         :mobile="true"
       >
+        <!-- eslint-disable vue/no-v-html -- статические SVG-пути из RoleBasedNavigation, не пользовательский ввод -->
         <svg
           class="w-6 h-6 mb-1"
           fill="none"
@@ -22,6 +23,7 @@
           stroke-linejoin="round"
           v-html="item.icon"
         />
+        <!-- eslint-enable vue/no-v-html -->
         <span>{{ item.label }}</span>
       </NavLink>
     </div>

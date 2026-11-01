@@ -9,12 +9,12 @@
           <span
             class="inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px]"
             :class="enabled
-              ? 'border-[color:var(--accent-green)]/35 bg-[color:var(--accent-green)]/10 text-[color:var(--accent-green)]'
+              ? 'border-[color:var(--status-ok)]/35 bg-[color:var(--status-ok)]/10 text-[color:var(--status-ok)]'
               : 'border-[color:var(--border-muted)] bg-[color:var(--bg-surface)] text-[color:var(--text-muted)]'"
           >
             <span
               class="h-1.5 w-1.5 rounded-full"
-              :class="enabled ? 'bg-[color:var(--accent-green)]' : 'bg-[color:var(--text-dim)]'"
+              :class="enabled ? 'bg-[color:var(--status-ok)]' : 'bg-[color:var(--text-dim)]'"
             ></span>
             {{ enabled ? 'Активен' : 'Выключен' }}
           </span>
@@ -48,7 +48,7 @@
       v-if="!enabled"
       class="flex flex-col items-center justify-center px-6 py-12 text-center"
     >
-      <div class="mb-3 flex h-11 w-11 items-center justify-center rounded-2xl border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] text-[color:var(--accent-cyan)]">
+      <div class="mb-3 flex h-11 w-11 items-center justify-center rounded-2xl border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] text-[color:var(--status-info)]">
         <svg
           class="h-5 w-5"
           fill="none"
@@ -82,7 +82,7 @@
           type="button"
           class="shrink-0 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors"
           :class="activePanel === panel.id
-            ? 'bg-[color:var(--accent-cyan)]/15 text-[color:var(--accent-cyan)]'
+            ? 'bg-[color:var(--status-info)]/15 text-[color:var(--status-info)]'
             : 'text-[color:var(--text-muted)] hover:bg-[color:var(--bg-elevated)] hover:text-[color:var(--text-primary)]'"
           @click="activePanel = panel.id"
         >
@@ -167,7 +167,7 @@
                   :key="`${group.key}-${node.id}`"
                   class="flex cursor-pointer items-center gap-2.5 rounded-lg border px-2.5 py-2 text-sm transition-colors"
                   :class="bindings[group.key].includes(node.id)
-                    ? 'border-[color:var(--accent-cyan)]/40 bg-[color:var(--accent-cyan)]/8 text-[color:var(--text-primary)]'
+                    ? 'border-[color:var(--status-info)]/40 bg-[color:var(--status-info)]/8 text-[color:var(--text-primary)]'
                     : 'border-transparent bg-[color:var(--bg-surface)]/60 text-[color:var(--text-primary)] hover:border-[color:var(--border-muted)]'"
                 >
                   <input

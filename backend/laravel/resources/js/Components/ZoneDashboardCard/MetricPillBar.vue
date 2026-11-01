@@ -31,7 +31,7 @@
       <!-- Target zone (green) -->
       <div
         v-if="targetZoneStyle"
-        class="absolute inset-y-0 rounded bg-[color:var(--accent-green)]/35"
+        class="absolute inset-y-0 rounded bg-[color:var(--status-ok)]/35"
         :style="targetZoneStyle"
       ></div>
       <!-- Visual center divider -->

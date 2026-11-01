@@ -6,7 +6,7 @@
     <template v-if="run">
       <div class="flex items-start justify-between gap-3">
         <div class="min-w-0">
-          <div class="flex items-center gap-1.5 text-[10px] font-bold tracking-[0.15em] text-[color:var(--accent-cyan)]">
+          <div class="flex items-center gap-1.5 text-[10px] font-bold tracking-[0.15em] text-[color:var(--status-info)]">
             <span class="hero-dot"></span>
             <span>ИСПОЛНЯЕТСЯ</span>
             <span
@@ -18,7 +18,7 @@
           </div>
           <div
             class="mt-2 tabular-nums text-[46px] font-bold leading-none tracking-[-0.04em]"
-            :class="isExpired ? 'text-[color:var(--accent-amber)]' : 'text-[color:var(--text-primary)]'"
+            :class="isExpired ? 'text-[color:var(--status-warning)]' : 'text-[color:var(--text-primary)]'"
             data-testid="scheduler-hero-countdown-value"
           >
             {{ displayLabel }}
@@ -34,7 +34,7 @@
       </div>
       <div
         v-if="isExpired && expectedDeadlineLabel"
-        class="mt-1 text-[11px] font-medium text-[color:var(--accent-amber)]"
+        class="mt-1 text-[11px] font-medium text-[color:var(--status-warning)]"
         data-testid="scheduler-hero-expected-deadline"
       >
         Ожидалось до {{ expectedDeadlineLabel }}
@@ -68,7 +68,7 @@
             v-for="(step, index) in progressSteps"
             :key="step"
             class="h-1 flex-1 rounded-sm transition-colors"
-            :class="index <= currentStep ? 'bg-[color:var(--accent-cyan)]' : 'bg-[color:var(--border-muted)]'"
+            :class="index <= currentStep ? 'bg-[color:var(--status-info)]' : 'bg-[color:var(--border-muted)]'"
           ></div>
         </div>
 
@@ -80,7 +80,7 @@
             v-for="(step, index) in progressSteps"
             :key="`label-${step}`"
             class="flex-1 truncate"
-            :class="index === currentStep ? 'text-[color:var(--accent-cyan)] font-semibold' : ''"
+            :class="index === currentStep ? 'text-[color:var(--status-info)] font-semibold' : ''"
           >{{ step }}</span>
         </div>
 
@@ -230,13 +230,13 @@ const currentStep = computed<number>(() => {
 
 <style scoped>
 .hero-countdown {
-  border-color: color-mix(in srgb, var(--accent-cyan) 30%, transparent);
+  border-color: color-mix(in srgb, var(--status-info) 30%, transparent);
   background:
-    radial-gradient(90% 70% at 18% 0%, color-mix(in srgb, var(--accent-cyan) 17%, transparent), transparent 62%),
-    linear-gradient(180deg, color-mix(in srgb, var(--accent-cyan) 8%, transparent), color-mix(in srgb, var(--bg-elevated) 72%, transparent));
+    radial-gradient(90% 70% at 18% 0%, color-mix(in srgb, var(--status-info) 17%, transparent), transparent 62%),
+    linear-gradient(180deg, color-mix(in srgb, var(--status-info) 8%, transparent), color-mix(in srgb, var(--bg-elevated) 72%, transparent));
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.06),
-    0 20px 44px color-mix(in srgb, var(--accent-cyan) 8%, transparent);
+    0 20px 44px color-mix(in srgb, var(--status-info) 8%, transparent);
 }
 
 .hero-dot {
@@ -244,8 +244,8 @@ const currentStep = computed<number>(() => {
   width: 6px;
   height: 6px;
   border-radius: 999px;
-  background: var(--accent-cyan);
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent-cyan) 18%, transparent);
+  background: var(--status-info);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--status-info) 18%, transparent);
   animation: hero-countdown-ping 1.6s ease-out infinite;
 }
 
@@ -254,13 +254,13 @@ const currentStep = computed<number>(() => {
   width: 2.7rem;
   height: 2.7rem;
   flex: 0 0 auto;
-  border: 1px solid color-mix(in srgb, var(--accent-cyan) 34%, transparent);
+  border: 1px solid color-mix(in srgb, var(--status-info) 34%, transparent);
   border-radius: 999px;
   background:
-    radial-gradient(circle at 50% 50%, var(--accent-cyan) 0 2px, transparent 3px),
-    repeating-radial-gradient(circle at 50% 50%, transparent 0 8px, color-mix(in srgb, var(--accent-cyan) 20%, transparent) 9px 10px),
-    conic-gradient(from 180deg, color-mix(in srgb, var(--accent-cyan) 42%, transparent), transparent 45%);
-  box-shadow: 0 0 34px color-mix(in srgb, var(--accent-cyan) 18%, transparent);
+    radial-gradient(circle at 50% 50%, var(--status-info) 0 2px, transparent 3px),
+    repeating-radial-gradient(circle at 50% 50%, transparent 0 8px, color-mix(in srgb, var(--status-info) 20%, transparent) 9px 10px),
+    conic-gradient(from 180deg, color-mix(in srgb, var(--status-info) 42%, transparent), transparent 45%);
+  box-shadow: 0 0 34px color-mix(in srgb, var(--status-info) 18%, transparent);
 }
 
 .hero-radar--idle {
@@ -270,13 +270,13 @@ const currentStep = computed<number>(() => {
 
 @keyframes hero-countdown-ping {
   0% {
-    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent-cyan) 50%, transparent);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--status-info) 50%, transparent);
   }
   70% {
-    box-shadow: 0 0 0 10px color-mix(in srgb, var(--accent-cyan) 0%, transparent);
+    box-shadow: 0 0 0 10px color-mix(in srgb, var(--status-info) 0%, transparent);
   }
   100% {
-    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent-cyan) 0%, transparent);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--status-info) 0%, transparent);
   }
 }
 </style>

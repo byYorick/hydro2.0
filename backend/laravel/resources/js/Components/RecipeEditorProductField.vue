@@ -164,15 +164,15 @@ function onCreated(product: NutrientProduct): void {
   width: 2.6rem;
   height: 2.6rem;
   border-radius: 0.85rem;
-  background: color-mix(in srgb, var(--accent-green) 12%, transparent);
-  color: var(--accent-green);
-  border: 1px solid color-mix(in srgb, var(--accent-green) 25%, transparent);
+  background: color-mix(in srgb, var(--status-ok) 12%, transparent);
+  color: var(--status-ok);
+  border: 1px solid color-mix(in srgb, var(--status-ok) 25%, transparent);
   cursor: pointer;
   transition: background 0.15s, border-color 0.15s, transform 0.08s;
 }
 .pill-btn:hover {
-  background: color-mix(in srgb, var(--accent-green) 20%, transparent);
-  border-color: color-mix(in srgb, var(--accent-green) 45%, transparent);
+  background: color-mix(in srgb, var(--status-ok) 20%, transparent);
+  border-color: color-mix(in srgb, var(--status-ok) 45%, transparent);
 }
 .pill-btn:active {
   transform: scale(0.94);

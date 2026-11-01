@@ -65,7 +65,7 @@
       name="full_simulation"
       type="checkbox"
       :disabled="form.sim_duration_minutes === null"
-      class="mt-1 h-4 w-4 rounded border-[color:var(--border-muted)] bg-transparent text-[color:var(--accent-cyan)] disabled:opacity-40"
+      class="mt-1 h-4 w-4 rounded border-[color:var(--border-muted)] bg-transparent text-[color:var(--status-info)] disabled:opacity-40"
     />
     <label
       for="simulation-full-mode"
@@ -116,7 +116,7 @@
     </div>
     <div
       v-else-if="recipesError"
-      class="text-xs text-[color:var(--accent-red)] mt-1"
+      class="text-xs text-[color:var(--status-critical)] mt-1"
     >
       {{ recipesError }}
     </div>

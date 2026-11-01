@@ -199,7 +199,7 @@
 
       <div
         v-if="error"
-        class="text-sm text-[color:var(--accent-red)]"
+        class="text-sm text-[color:var(--status-critical)]"
       >
         {{ error }}
       </div>

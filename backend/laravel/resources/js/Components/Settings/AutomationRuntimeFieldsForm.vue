@@ -15,7 +15,7 @@
       <button
         v-if="advancedCount > 0"
         type="button"
-        class="text-xs text-[color:var(--text-muted)] hover:text-[color:var(--accent-green)] transition-colors"
+        class="text-xs text-[color:var(--text-muted)] hover:text-[color:var(--status-ok)] transition-colors"
         data-testid="automation-runtime-advanced-toggle"
         @click="showAdvanced = !showAdvanced"
       >
@@ -71,7 +71,7 @@
                   :id="fieldInputId(item.key)"
                   :checked="Boolean(draft[item.key])"
                   type="checkbox"
-                  class="accent-[color:var(--accent-green)]"
+                  class="accent-[color:var(--status-ok)]"
                   :data-testid="`settings-automation-engine-input-${item.key}`"
                   @change="draft[item.key] = ($event.target as HTMLInputElement).checked"
                 />

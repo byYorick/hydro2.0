@@ -16,7 +16,7 @@
           </div>
           <div class="flex items-center gap-2.5 rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)]/80 px-3 py-2 shrink-0">
             <div
-              class="flex h-9 w-9 items-center justify-center rounded-full bg-[color:var(--accent-green)]/15 text-sm font-semibold text-[color:var(--accent-green)]"
+              class="flex h-9 w-9 items-center justify-center rounded-full bg-[color:var(--status-ok)]/15 text-sm font-semibold text-[color:var(--status-ok)]"
               aria-hidden="true"
             >
               {{ profileInitial }}

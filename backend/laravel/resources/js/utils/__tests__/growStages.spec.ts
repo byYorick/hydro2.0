@@ -83,7 +83,7 @@ describe('growStages', () => {
       expect(info).toBeDefined()
       expect(info?.id).toBe('planting')
       expect(info?.label).toBe('Посадка')
-      expect(info?.color).toBe('var(--accent-lime)')
+      expect(info?.color).toBe('var(--series-lime)')
     })
 
     it('should return undefined for invalid stage', () => {
@@ -93,10 +93,10 @@ describe('growStages', () => {
 
   describe('getStageColor', () => {
     it('should return correct color for stages', () => {
-      expect(getStageColor('planting')).toBe('var(--accent-lime)')
-      expect(getStageColor('veg')).toBe('var(--accent-green)')
-      expect(getStageColor('flowering')).toBe('var(--accent-amber)')
-      expect(getStageColor('harvest')).toBe('var(--accent-red)')
+      expect(getStageColor('planting')).toBe('var(--series-lime)')
+      expect(getStageColor('veg')).toBe('var(--status-ok)')
+      expect(getStageColor('flowering')).toBe('var(--status-warning)')
+      expect(getStageColor('harvest')).toBe('var(--status-critical)')
     })
 
     it('should return undefined for invalid stage', () => {

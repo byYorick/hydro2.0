@@ -39,7 +39,7 @@
           <div class="ui-kpi-label">
             NPK
           </div>
-          <div class="ui-kpi-value text-[color:var(--accent-cyan)]">
+          <div class="ui-kpi-value text-[color:var(--status-info)]">
             {{ npkCount }}
           </div>
           <div class="ui-kpi-hint">
@@ -50,7 +50,7 @@
           <div class="ui-kpi-label">
             Кальций
           </div>
-          <div class="ui-kpi-value text-[color:var(--accent-green)]">
+          <div class="ui-kpi-value text-[color:var(--status-ok)]">
             {{ calciumCount }}
           </div>
           <div class="ui-kpi-hint">
@@ -159,7 +159,7 @@
               <td class="px-3 py-2">
                 {{ product.manufacturer }}
               </td>
-              <td class="px-3 py-2 text-[color:var(--accent-cyan)]">
+              <td class="px-3 py-2 text-[color:var(--status-info)]">
                 {{ product.name }}
               </td>
               <td class="px-3 py-2">
@@ -179,7 +179,7 @@
                   :href="sourceUrl(product)"
                   target="_blank"
                   rel="noopener noreferrer"
-                  class="text-[color:var(--accent-cyan)] hover:underline"
+                  class="text-[color:var(--status-info)] hover:underline"
                 >
                   ссылка
                 </a>

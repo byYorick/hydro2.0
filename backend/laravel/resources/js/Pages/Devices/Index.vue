@@ -191,14 +191,14 @@
           <button
             class="h-9 px-3 rounded-md border text-sm transition-colors flex items-center gap-1.5 bg-[color:var(--bg-elevated)]"
             :class="showOnlyFavorites
-              ? 'border-[color:var(--badge-warning-border)] text-[color:var(--accent-amber)]'
+              ? 'border-[color:var(--badge-warning-border)] text-[color:var(--status-warning)]'
               : 'border-[color:var(--border-muted)] text-[color:var(--text-muted)] hover:border-[color:var(--border-strong)]'"
             data-testid="devices-filter-favorites"
             @click="showOnlyFavorites = !showOnlyFavorites"
           >
             <svg
               class="w-4 h-4"
-              :class="showOnlyFavorites ? 'fill-[color:var(--accent-amber)]' : ''"
+              :class="showOnlyFavorites ? 'fill-[color:var(--status-warning)]' : ''"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -217,7 +217,7 @@
           <button
             class="h-9 px-3 rounded-md border text-sm transition-colors flex items-center gap-1.5 bg-[color:var(--bg-elevated)]"
             :class="showOnlyProblematic
-              ? 'border-[color:var(--badge-danger-border)] text-[color:var(--accent-red)]'
+              ? 'border-[color:var(--badge-danger-border)] text-[color:var(--status-critical)]'
               : 'border-[color:var(--border-muted)] text-[color:var(--text-muted)] hover:border-[color:var(--border-strong)]'"
             data-testid="devices-filter-problematic"
             @click="showOnlyProblematic = !showOnlyProblematic"
@@ -244,7 +244,7 @@
               >
                 <svg
                   class="w-3.5 h-3.5 transition-colors"
-                  :class="isDeviceFavorite(row.id) ? 'text-[color:var(--accent-amber)] fill-[color:var(--accent-amber)]' : 'text-[color:var(--text-dim)]'"
+                  :class="isDeviceFavorite(row.id) ? 'text-[color:var(--status-warning)] fill-[color:var(--status-warning)]' : 'text-[color:var(--text-dim)]'"
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
@@ -259,7 +259,7 @@
               </button>
               <Link
                 :href="`/devices/${row.uid || row.id}`"
-                class="text-[color:var(--accent-cyan)] hover:underline truncate min-w-0"
+                class="text-[color:var(--status-info)] hover:underline truncate min-w-0"
               >
                 {{ row.uid || row.id }}
               </Link>

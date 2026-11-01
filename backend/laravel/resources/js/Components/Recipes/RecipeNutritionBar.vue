@@ -90,8 +90,8 @@ const segments = computed(() => {
 
 const ratioSumClass = computed(() =>
   Math.abs(props.nutrition.ratioSum - 100) <= 0.01
-    ? 'text-[color:var(--accent-green)] font-semibold'
-    : 'text-[color:var(--accent-amber)] font-semibold',
+    ? 'text-[color:var(--status-ok)] font-semibold'
+    : 'text-[color:var(--status-warning)] font-semibold',
 )
 
 const dosingLabel = computed(() =>

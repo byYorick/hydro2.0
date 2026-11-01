@@ -9,7 +9,7 @@
           Zones
         </div><Link
           href="/admin/zones"
-          class="text-[color:var(--accent-cyan)]"
+          class="text-[color:var(--status-info)]"
         >
           Manage Zones
         </Link>
@@ -19,7 +19,7 @@
           Recipes
         </div><Link
           href="/admin/recipes"
-          class="text-[color:var(--accent-cyan)]"
+          class="text-[color:var(--status-info)]"
         >
           Manage Recipes
         </Link>

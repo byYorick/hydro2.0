@@ -22,7 +22,7 @@
             variant="info"
             size="sm"
           >
-            <span class="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-[color:var(--accent-cyan)] shadow-[0_0_0_3px_color-mix(in_srgb,var(--accent-cyan)_20%,transparent)]"></span>
+            <span class="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-[color:var(--status-info)] shadow-[0_0_0_3px_color-mix(in_srgb,var(--status-info)_20%,transparent)]"></span>
             Live sync
           </Badge>
           <Badge
@@ -128,11 +128,11 @@ defineEmits<{
   width: 2.15rem;
   height: 2.15rem;
   flex: 0 0 auto;
-  border: 1px solid color-mix(in srgb, var(--accent-cyan) 46%, transparent);
+  border: 1px solid color-mix(in srgb, var(--status-info) 46%, transparent);
   border-radius: 0.95rem;
   background:
-    radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--accent-green) 72%, transparent) 0 2px, transparent 3px),
-    conic-gradient(from 90deg, color-mix(in srgb, var(--accent-cyan) 65%, transparent), color-mix(in srgb, var(--accent-green) 50%, transparent), transparent, color-mix(in srgb, var(--accent-cyan) 65%, transparent));
-  box-shadow: 0 14px 32px color-mix(in srgb, var(--accent-cyan) 18%, transparent);
+    radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--status-ok) 72%, transparent) 0 2px, transparent 3px),
+    conic-gradient(from 90deg, color-mix(in srgb, var(--status-info) 65%, transparent), color-mix(in srgb, var(--status-ok) 50%, transparent), transparent, color-mix(in srgb, var(--status-info) 65%, transparent));
+  box-shadow: 0 14px 32px color-mix(in srgb, var(--status-info) 18%, transparent);
 }
 </style>

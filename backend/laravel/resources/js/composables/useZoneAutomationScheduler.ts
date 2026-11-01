@@ -62,7 +62,7 @@ function parseControlModePayload(raw: unknown): {
 
 export function useZoneAutomationScheduler(props: ZoneAutomationTabProps, deps: ZoneAutomationSchedulerDeps) {
   const { showToast, onControlModeChanged } = deps
-  const { subscribeToZoneCommands, unsubscribeAll } = useWebSocket(
+  const { unsubscribeAll } = useWebSocket(
     showToast,
     'zone-automation-runtime'
   )

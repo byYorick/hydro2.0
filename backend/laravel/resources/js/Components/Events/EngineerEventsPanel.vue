@@ -18,7 +18,7 @@
         type="button"
         class="h-5 px-2 rounded text-[10px] font-semibold uppercase tracking-wide border transition-colors"
         :class="selectedKind === kind.value
-          ? 'border-[color:var(--accent-cyan)] text-[color:var(--accent-cyan)] bg-[color:var(--bg-elevated)]'
+          ? 'border-[color:var(--status-info)] text-[color:var(--status-info)] bg-[color:var(--bg-elevated)]'
           : 'border-transparent text-[color:var(--text-dim)] hover:border-[color:var(--border-strong)] hover:text-[color:var(--text-muted)]'"
         @click="$emit('update:selectedKind', kind.value)"
       >
@@ -57,7 +57,7 @@
         :key="group.id"
         class="rounded-lg border"
         :class="group.isCorrelated
-          ? 'border-[color:var(--accent-cyan)]/25 bg-[color:var(--accent-cyan)]/3'
+          ? 'border-[color:var(--status-info)]/25 bg-[color:var(--status-info)]/3'
           : 'border-[color:var(--border-muted)]'"
       >
         <div

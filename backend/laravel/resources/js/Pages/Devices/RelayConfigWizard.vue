@@ -49,7 +49,7 @@
             <button
               v-if="editableChannels.length > 1"
               type="button"
-              class="text-xs text-[color:var(--accent-red)] hover:opacity-80"
+              class="text-xs text-[color:var(--status-critical)] hover:opacity-80"
               @click="removeChannel(index)"
             >
               Удалить

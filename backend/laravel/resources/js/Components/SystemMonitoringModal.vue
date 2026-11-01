@@ -106,21 +106,21 @@
           <div class="mt-3 text-xs">
             <div 
               v-if="chainStatus.type === 'success'" 
-              class="text-[color:var(--accent-green)] flex items-center gap-2"
+              class="text-[color:var(--status-ok)] flex items-center gap-2"
             >
               <span class="text-base">✓</span>
               <span>{{ chainStatus.message }}</span>
             </div>
             <div 
               v-else-if="chainStatus.type === 'warning'" 
-              class="text-[color:var(--accent-amber)] flex items-center gap-2"
+              class="text-[color:var(--status-warning)] flex items-center gap-2"
             >
               <span class="text-base">⚠</span>
               <span>{{ chainStatus.message }}</span>
             </div>
             <div 
               v-else 
-              class="text-[color:var(--accent-red)] flex items-center gap-2"
+              class="text-[color:var(--status-critical)] flex items-center gap-2"
             >
               <span class="text-base">❌</span>
               <span>{{ chainStatus.message }}</span>
@@ -148,11 +148,11 @@
           <div class="mt-3 pt-3 border-t border-[color:var(--border-muted)] text-xs text-[color:var(--text-dim)]">
             <div class="flex items-center gap-4 flex-wrap">
               <div class="flex items-center gap-1">
-                <div class="w-2 h-2 rounded-full bg-[color:var(--accent-green)]"></div>
+                <div class="w-2 h-2 rounded-full bg-[color:var(--status-ok)]"></div>
                 <span>Работает</span>
               </div>
               <div class="flex items-center gap-1">
-                <div class="w-2 h-2 rounded-full bg-[color:var(--accent-amber)]"></div>
+                <div class="w-2 h-2 rounded-full bg-[color:var(--status-warning)]"></div>
                 <span>Деградировано</span>
               </div>
               <div class="flex items-center gap-1">
@@ -160,7 +160,7 @@
                 <span>Проверяется</span>
               </div>
               <div class="flex items-center gap-1">
-                <div class="w-2 h-2 rounded-full bg-[color:var(--accent-red)]"></div>
+                <div class="w-2 h-2 rounded-full bg-[color:var(--status-critical)]"></div>
                 <span>Недоступно</span>
               </div>
             </div>
@@ -296,21 +296,21 @@ const chainStatus = computed(() => {
 function getChainStatusClass(component: 'db' | 'mqtt' | 'ws' | 'ui'): string {
   switch (component) {
     case 'db':
-      if (dbStatus.value === 'ok') return 'bg-[color:var(--accent-green)]'
+      if (dbStatus.value === 'ok') return 'bg-[color:var(--status-ok)]'
       if (dbStatus.value === 'unknown') return 'bg-[color:var(--text-dim)]'
-      return 'bg-[color:var(--accent-red)]'
+      return 'bg-[color:var(--status-critical)]'
     case 'mqtt':
-      if (mqttStatus.value === 'online') return 'bg-[color:var(--accent-green)]'
-      if (mqttStatus.value === 'degraded') return 'bg-[color:var(--accent-amber)]'
+      if (mqttStatus.value === 'online') return 'bg-[color:var(--status-ok)]'
+      if (mqttStatus.value === 'degraded') return 'bg-[color:var(--status-warning)]'
       if (mqttStatus.value === 'unknown') return 'bg-[color:var(--text-dim)]'
-      return 'bg-[color:var(--accent-red)]'
+      return 'bg-[color:var(--status-critical)]'
     case 'ws':
-      if (wsStatus.value === 'connected') return 'bg-[color:var(--accent-green)]'
+      if (wsStatus.value === 'connected') return 'bg-[color:var(--status-ok)]'
       if (wsStatus.value === 'unknown') return 'bg-[color:var(--text-dim)]'
-      return 'bg-[color:var(--accent-red)]'
+      return 'bg-[color:var(--status-critical)]'
     case 'ui':
       // UI всегда доступен, если модальное окно открыто
-      return 'bg-[color:var(--accent-green)]'
+      return 'bg-[color:var(--status-ok)]'
     default:
       return 'bg-[color:var(--text-dim)]'
   }

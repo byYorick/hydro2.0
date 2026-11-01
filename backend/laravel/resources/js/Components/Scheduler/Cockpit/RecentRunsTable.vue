@@ -42,7 +42,7 @@
         :key="run.execution_id"
         type="button"
         class="row-hover grid min-w-[650px] w-full items-center gap-0 border-0 bg-transparent px-2 py-2 text-left text-[color:var(--text-primary)] transition-colors"
-        :class="run.execution_id === selectedId ? 'bg-[color:var(--accent-cyan)]/10' : ''"
+        :class="run.execution_id === selectedId ? 'bg-[color:var(--status-info)]/10' : ''"
         :style="{
           ...gridStyle,
           borderLeft: `3px solid ${railColor(run)}`,
@@ -72,7 +72,7 @@
         </span>
         <span
           class="text-[12px]"
-          :class="run.execution_id === selectedId ? 'text-[color:var(--accent-cyan)]' : 'text-[color:var(--text-muted)]'"
+          :class="run.execution_id === selectedId ? 'text-[color:var(--status-info)]' : 'text-[color:var(--text-muted)]'"
         >{{ run.execution_id === selectedId ? '◉' : '→' }}</span>
       </button>
     </div>

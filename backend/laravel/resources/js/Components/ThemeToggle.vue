@@ -9,7 +9,7 @@
     <span class="flex items-center gap-2">
       <span
         class="h-2.5 w-2.5 rounded-full"
-        :class="isDark ? 'bg-[color:var(--accent-cyan)]' : 'bg-[color:var(--accent-green)]'"
+        :class="isDark ? 'bg-[color:var(--status-info)]' : 'bg-[color:var(--status-ok)]'"
       ></span>
       <span>{{ isDark ? 'Темная' : 'Светлая' }}</span>
     </span>

@@ -112,7 +112,7 @@
 
       <div
         v-if="error"
-        class="text-xs text-[color:var(--accent-red)]"
+        class="text-xs text-[color:var(--status-critical)]"
       >
         {{ error }}
       </div>

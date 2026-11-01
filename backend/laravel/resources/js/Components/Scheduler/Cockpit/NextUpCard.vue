@@ -31,7 +31,7 @@
         :key="window.plan_window_id"
         class="next-up-card__row grid items-center gap-2 rounded-xl border px-2.5 py-2"
         :class="index === 0
-          ? 'border-[color:var(--accent-green)]/40 bg-[color:var(--accent-green)]/10'
+          ? 'border-[color:var(--status-ok)]/40 bg-[color:var(--status-ok)]/10'
           : 'border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]/40'"
         :style="{ gridTemplateColumns: '24px minmax(0,1fr) auto' }"
         :data-testid="`scheduler-next-up-row-${window.plan_window_id}`"
@@ -54,7 +54,7 @@
         </div>
         <span
           class="rounded-full px-2 py-1 tabular-nums text-[12px] font-semibold"
-          :class="index === 0 ? 'text-[color:var(--accent-green)]' : 'text-[color:var(--text-dim)]'"
+          :class="index === 0 ? 'text-[color:var(--status-ok)]' : 'text-[color:var(--text-dim)]'"
         >{{ formatRelative?.(window.trigger_at) ?? relativeFallback(window.trigger_at) }}</span>
       </div>
     </div>

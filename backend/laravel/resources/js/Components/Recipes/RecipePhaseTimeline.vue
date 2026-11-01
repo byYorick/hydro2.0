@@ -6,7 +6,7 @@
       </span>
       <span
         v-if="hasUnknownDuration"
-        class="text-[color:var(--accent-amber)]"
+        class="text-[color:var(--status-warning)]"
       >
         У части фаз не задана длительность
       </span>

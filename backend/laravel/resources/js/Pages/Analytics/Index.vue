@@ -128,7 +128,7 @@
                   type="button"
                   class="h-9 px-3 rounded-lg border text-xs font-semibold transition-colors"
                   :class="showMedian
-                    ? 'border-[color:var(--accent-amber)] text-[color:var(--accent-amber)] bg-[color:var(--bg-elevated)]'
+                    ? 'border-[color:var(--status-warning)] text-[color:var(--status-warning)] bg-[color:var(--bg-elevated)]'
                     : 'border-[color:var(--border-muted)] text-[color:var(--text-dim)] hover:border-[color:var(--border-strong)]'"
                   data-testid="analytics-filter-median"
                   @click="showMedian = !showMedian"
@@ -208,7 +208,7 @@
               <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
                 Средняя эффективность
               </div>
-              <div class="text-2xl font-semibold text-[color:var(--accent-cyan)] mt-1">
+              <div class="text-2xl font-semibold text-[color:var(--status-info)] mt-1">
                 {{ formatNumber(recipeStats?.avg_efficiency, 2) }}
               </div>
             </div>
@@ -216,7 +216,7 @@
               <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
                 Отклонение pH
               </div>
-              <div class="text-2xl font-semibold text-[color:var(--accent-amber)] mt-1">
+              <div class="text-2xl font-semibold text-[color:var(--status-warning)] mt-1">
                 {{ formatNumber(recipeStats?.avg_ph_deviation_overall, 2) }}
               </div>
             </div>
@@ -224,7 +224,7 @@
               <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
                 Отклонение EC
               </div>
-              <div class="text-2xl font-semibold text-[color:var(--accent-amber)] mt-1">
+              <div class="text-2xl font-semibold text-[color:var(--status-warning)] mt-1">
                 {{ formatNumber(recipeStats?.avg_ec_deviation_overall, 2) }}
               </div>
             </div>
@@ -232,7 +232,7 @@
               <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
                 Средняя длительность
               </div>
-              <div class="text-2xl font-semibold text-[color:var(--accent-green)] mt-1">
+              <div class="text-2xl font-semibold text-[color:var(--status-ok)] mt-1">
                 {{ formatDuration(recipeStats?.avg_duration_hours) }}
               </div>
             </div>
@@ -300,7 +300,7 @@
                     <input
                       v-model="compareRecipeIds"
                       type="checkbox"
-                      class="h-4 w-4 accent-[color:var(--accent-cyan)]"
+                      class="h-4 w-4 accent-[color:var(--status-info)]"
                       :value="String(recipe.id)"
                     />
                     <span class="text-[color:var(--text-muted)]">{{ recipe.name }}</span>

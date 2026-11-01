@@ -65,9 +65,9 @@ const iconValue = computed(() => {
 const iconClass = computed(() => {
   switch (props.variant) {
     case 'error':
-      return 'text-[color:var(--accent-red)]'
+      return 'text-[color:var(--status-critical)]'
     case 'loading':
-      return 'text-[color:var(--accent-cyan)]'
+      return 'text-[color:var(--status-info)]'
     default:
       return 'text-[color:var(--text-dim)]'
   }

@@ -119,7 +119,7 @@
             </div>
             <div
               v-if="wsStatus === 'connected'"
-              class="text-[10px] text-[color:var(--accent-green)] mt-1"
+              class="text-[10px] text-[color:var(--status-ok)] mt-1"
             >
               ✓ Соединение активно
               <div
@@ -131,12 +131,12 @@
             </div>
             <div
               v-else-if="wsStatus === 'disconnected' || wsStatus === 'connecting'"
-              class="text-[10px] text-[color:var(--accent-red)] mt-1"
+              class="text-[10px] text-[color:var(--status-critical)] mt-1"
             >
               <div>✗ Соединение разорвано</div>
               <div
                 v-if="wsReconnectAttempts > 0"
-                class="text-[color:var(--accent-amber)] mt-1 text-[9px]"
+                class="text-[color:var(--status-warning)] mt-1 text-[9px]"
               >
                 Попыток переподключения: {{ wsReconnectAttempts }}
               </div>
@@ -177,13 +177,13 @@
               </div>
               <div
                 v-if="wsStatus === 'unknown'"
-                class="text-[9px] text-[color:var(--accent-amber)] mt-1"
+                class="text-[9px] text-[color:var(--status-warning)] mt-1"
               >
                 WebSocket клиент не инициализирован
               </div>
               <div
                 v-if="wsStatus === 'unknown' && wsConnectionDetails?.reconnectAttempts > 0"
-                class="text-[9px] text-[color:var(--accent-amber)] mt-1"
+                class="text-[9px] text-[color:var(--status-warning)] mt-1"
               >
                 Попыток переподключения: {{ wsConnectionDetails.reconnectAttempts }}
               </div>
@@ -224,19 +224,19 @@
             </div>
             <div
               v-if="mqttStatus === 'online'"
-              class="text-[10px] text-[color:var(--accent-green)] mt-1"
+              class="text-[10px] text-[color:var(--status-ok)] mt-1"
             >
               ✓ Брокер доступен
             </div>
             <div
               v-else-if="mqttStatus === 'offline'"
-              class="text-[10px] text-[color:var(--accent-red)] mt-1"
+              class="text-[10px] text-[color:var(--status-critical)] mt-1"
             >
               ✗ Брокер недоступен
             </div>
             <div
               v-else-if="mqttStatus === 'degraded'"
-              class="text-[10px] text-[color:var(--accent-amber)] mt-1"
+              class="text-[10px] text-[color:var(--status-warning)] mt-1"
             >
               ⚠ Частичная доступность
             </div>
@@ -270,7 +270,7 @@
               </div>
               <div
                 v-if="metrics.zonesRunning !== null"
-                class="text-[10px] text-[color:var(--accent-green)] mt-1"
+                class="text-[10px] text-[color:var(--status-ok)] mt-1"
               >
                 Запущено: {{ metrics.zonesRunning }}
               </div>
@@ -296,13 +296,13 @@
               </div>
               <div
                 v-if="metrics.devicesOnline !== null"
-                class="text-[10px] text-[color:var(--accent-green)] mt-1"
+                class="text-[10px] text-[color:var(--status-ok)] mt-1"
               >
                 Онлайн: {{ metrics.devicesOnline }}
               </div>
               <div
                 v-if="metrics.devicesOffline !== null && metrics.devicesOffline > 0"
-                class="text-[10px] text-[color:var(--accent-red)] mt-1"
+                class="text-[10px] text-[color:var(--status-critical)] mt-1"
               >
                 Офлайн: {{ metrics.devicesOffline }}
               </div>
@@ -318,10 +318,10 @@
               ? 'bg-[color:var(--badge-danger-bg)] hover:bg-[color:var(--badge-danger-bg)] border border-[color:var(--badge-danger-border)]' 
               : 'bg-[color:var(--bg-elevated)] hover:bg-[color:var(--bg-surface-strong)]'"
           >
-            <span :class="metrics.alertsCount > 0 ? 'text-[color:var(--accent-red)]' : 'text-[color:var(--text-dim)]'">⚠️</span>
+            <span :class="metrics.alertsCount > 0 ? 'text-[color:var(--status-critical)]' : 'text-[color:var(--text-dim)]'">⚠️</span>
             <span 
               class="font-medium transition-colors"
-              :class="metrics.alertsCount > 0 ? 'text-[color:var(--accent-red)]' : 'text-[color:var(--text-primary)]'"
+              :class="metrics.alertsCount > 0 ? 'text-[color:var(--status-critical)]' : 'text-[color:var(--text-primary)]'"
             >
               {{ metrics.alertsCount }}
             </span>
@@ -337,13 +337,13 @@
               </div>
               <div
                 v-if="metrics.alertsCount > 0"
-                class="text-[10px] text-[color:var(--accent-red)] mt-1"
+                class="text-[10px] text-[color:var(--status-critical)] mt-1"
               >
                 ⚠️ Требуют внимания
               </div>
               <div
                 v-else
-                class="text-[10px] text-[color:var(--accent-green)] mt-1"
+                class="text-[10px] text-[color:var(--status-ok)] mt-1"
               >
                 ✓ Нет активных алертов
               </div>
@@ -599,9 +599,9 @@ onUnmounted(() => {
 function getStatusDotClass(status: string | undefined) {
   switch (status) {
     case 'ok':
-      return 'bg-[color:var(--accent-green)]'
+      return 'bg-[color:var(--status-ok)]'
     case 'fail':
-      return 'bg-[color:var(--accent-red)]'
+      return 'bg-[color:var(--status-critical)]'
     default:
       return 'bg-[color:var(--text-dim)]'
   }
@@ -621,9 +621,9 @@ function getStatusText(status: string | undefined) {
 function getStatusTextClass(status: string | undefined) {
   switch (status) {
     case 'ok':
-      return 'text-[color:var(--accent-green)]'
+      return 'text-[color:var(--status-ok)]'
     case 'fail':
-      return 'text-[color:var(--accent-red)]'
+      return 'text-[color:var(--status-critical)]'
     default:
       return 'text-[color:var(--text-dim)]'
   }
@@ -632,9 +632,9 @@ function getStatusTextClass(status: string | undefined) {
 function getWsStatusDotClass(status: string | undefined) {
   switch (status) {
     case 'connected':
-      return 'bg-[color:var(--accent-green)]'
+      return 'bg-[color:var(--status-ok)]'
     case 'disconnected':
-      return 'bg-[color:var(--accent-red)]'
+      return 'bg-[color:var(--status-critical)]'
     default:
       return 'bg-[color:var(--text-dim)]'
   }
@@ -654,9 +654,9 @@ function getWsStatusText(status: string | undefined) {
 function getWsStatusTextClass(status: string | undefined) {
   switch (status) {
     case 'connected':
-      return 'text-[color:var(--accent-green)]'
+      return 'text-[color:var(--status-ok)]'
     case 'disconnected':
-      return 'text-[color:var(--accent-red)]'
+      return 'text-[color:var(--status-critical)]'
     default:
       return 'text-[color:var(--text-dim)]'
   }
@@ -665,11 +665,11 @@ function getWsStatusTextClass(status: string | undefined) {
 function getMqttStatusDotClass(status: string | undefined) {
   switch (status) {
     case 'online':
-      return 'bg-[color:var(--accent-green)]'
+      return 'bg-[color:var(--status-ok)]'
     case 'offline':
-      return 'bg-[color:var(--accent-red)]'
+      return 'bg-[color:var(--status-critical)]'
     case 'degraded':
-      return 'bg-[color:var(--accent-amber)]'
+      return 'bg-[color:var(--status-warning)]'
     default:
       return 'bg-[color:var(--text-dim)]'
   }
@@ -695,11 +695,11 @@ function getMqttStatusText(status: string | undefined) {
 function getMqttStatusTextClass(status: string | undefined) {
   switch (status) {
     case 'online':
-      return 'text-[color:var(--accent-green)]'
+      return 'text-[color:var(--status-ok)]'
     case 'offline':
-      return 'text-[color:var(--accent-red)]'
+      return 'text-[color:var(--status-critical)]'
     case 'degraded':
-      return 'text-[color:var(--accent-amber)]'
+      return 'text-[color:var(--status-warning)]'
     default:
       return 'text-[color:var(--text-dim)]'
   }

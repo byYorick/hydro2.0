@@ -13,7 +13,7 @@
               class="h-14 flex items-center border-b border-[color:var(--border-muted)] shrink-0 transition-all duration-300"
               :class="collapsed ? 'justify-center px-2' : 'px-4 gap-3'"
             >
-              <div class="h-7 w-7 shrink-0 rounded-lg bg-[linear-gradient(135deg,var(--accent-green),var(--accent-cyan))] shadow-[0_0_0_1px_var(--badge-success-border)]"></div>
+              <div class="h-7 w-7 shrink-0 rounded-lg bg-[linear-gradient(135deg,var(--status-ok),var(--status-info))] shadow-[0_0_0_1px_var(--badge-success-border)]"></div>
               <Transition name="fade-slide">
                 <div
                   v-if="!collapsed"

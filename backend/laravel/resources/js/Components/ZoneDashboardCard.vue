@@ -80,7 +80,7 @@
           </button>
           <Link
             :href="alertsTabHref"
-            class="rounded-lg px-2 py-0.5 text-[11px] font-medium text-[color:var(--accent-cyan)] no-underline hover:underline"
+            class="rounded-lg px-2 py-0.5 text-[11px] font-medium text-[color:var(--status-info)] no-underline hover:underline"
             data-testid="zone-card-alerts-link"
             @click.stop
           >
@@ -152,7 +152,7 @@
 
     <div
       v-if="automationBlock"
-      class="rounded-xl border border-[color:var(--badge-danger-border)] bg-[color:var(--badge-danger-bg)]/15 px-3 py-2 text-[11px] leading-snug text-[color:var(--accent-red)]"
+      class="rounded-xl border border-[color:var(--badge-danger-border)] bg-[color:var(--badge-danger-bg)]/15 px-3 py-2 text-[11px] leading-snug text-[color:var(--status-critical)]"
       data-testid="zone-card-automation-block-reason"
     >
       <div class="font-medium">
@@ -329,7 +329,7 @@
       >
         Нет свежей телеметрии
       </span>
-      <span class="font-medium text-[color:var(--accent-cyan)] opacity-0 transition-opacity group-hover:opacity-100">
+      <span class="font-medium text-[color:var(--status-info)] opacity-0 transition-opacity group-hover:opacity-100">
         Открыть →
       </span>
     </footer>
@@ -435,16 +435,16 @@ const metricOptions: Array<{ key: MetricKey; label: string }> = [
 ]
 
 const metricColorVar: Record<MetricKey, string> = {
-  ph: 'var(--accent-green)',
-  ec: 'var(--accent-amber)',
-  temperature: 'var(--accent-cyan)',
+  ph: 'var(--status-ok)',
+  ec: 'var(--status-warning)',
+  temperature: 'var(--status-info)',
 }
 
 function activeMetricClass(key: MetricKey): string {
   const colorVarMap: Record<MetricKey, string> = {
-    ph: 'text-[color:var(--accent-green)] bg-[color:var(--accent-green)]/10 border border-[color:var(--accent-green)]/30',
-    ec: 'text-[color:var(--accent-amber)] bg-[color:var(--accent-amber)]/10 border border-[color:var(--accent-amber)]/30',
-    temperature: 'text-[color:var(--accent-cyan)] bg-[color:var(--accent-cyan)]/10 border border-[color:var(--accent-cyan)]/30',
+    ph: 'text-[color:var(--status-ok)] bg-[color:var(--status-ok)]/10 border border-[color:var(--status-ok)]/30',
+    ec: 'text-[color:var(--status-warning)] bg-[color:var(--status-warning)]/10 border border-[color:var(--status-warning)]/30',
+    temperature: 'text-[color:var(--status-info)] bg-[color:var(--status-info)]/10 border border-[color:var(--status-info)]/30',
   }
   return colorVarMap[key]
 }
@@ -709,26 +709,26 @@ function extractAlertMessage(details: unknown): string | null {
 // ── Визуальные классы ─────────────────────────────────────────────────────────
 
 const cardBorderClass = computed(() => {
-  if (automationBlock.value) return 'border-[color:var(--accent-red)]/40 hover:border-[color:var(--accent-red)]/55'
-  if (props.zone.status === 'ALARM') return 'border-[color:var(--accent-red)]/35 hover:border-[color:var(--accent-red)]/50'
-  if (props.zone.status === 'WARNING') return 'border-[color:var(--accent-amber)]/35 hover:border-[color:var(--accent-amber)]/50'
-  if (props.zone.status === 'RUNNING') return 'border-[color:var(--border-muted)] hover:border-[color:var(--accent-green)]/40'
+  if (automationBlock.value) return 'border-[color:var(--status-critical)]/40 hover:border-[color:var(--status-critical)]/55'
+  if (props.zone.status === 'ALARM') return 'border-[color:var(--status-critical)]/35 hover:border-[color:var(--status-critical)]/50'
+  if (props.zone.status === 'WARNING') return 'border-[color:var(--status-warning)]/35 hover:border-[color:var(--status-warning)]/50'
+  if (props.zone.status === 'RUNNING') return 'border-[color:var(--border-muted)] hover:border-[color:var(--status-ok)]/40'
   return 'border-[color:var(--border-muted)] hover:border-[color:var(--border-strong)]'
 })
 
 const accentBarClass = computed(() => {
-  if (automationBlock.value || props.zone.status === 'ALARM') return 'bg-[color:var(--accent-red)]'
-  if (props.zone.status === 'WARNING' || telemetryHealth.value === 'warn') return 'bg-[color:var(--accent-amber)]'
-  if (props.zone.status === 'RUNNING') return 'bg-[color:var(--accent-green)]'
+  if (automationBlock.value || props.zone.status === 'ALARM') return 'bg-[color:var(--status-critical)]'
+  if (props.zone.status === 'WARNING' || telemetryHealth.value === 'warn') return 'bg-[color:var(--status-warning)]'
+  if (props.zone.status === 'RUNNING') return 'bg-[color:var(--status-ok)]'
   if (props.zone.status === 'PAUSED') return 'bg-[color:var(--text-dim)]'
-  return 'bg-[color:var(--accent-cyan)]'
+  return 'bg-[color:var(--status-info)]'
 })
 
 const dotClass = computed(() => {
   const map: Record<string, string> = {
-    RUNNING: 'bg-[color:var(--accent-green)] shadow-[0_0_6px_var(--accent-green)]',
-    WARNING: 'bg-[color:var(--accent-amber)]',
-    ALARM: 'bg-[color:var(--accent-red)] animate-pulse',
+    RUNNING: 'bg-[color:var(--status-ok)] shadow-[0_0_6px_var(--status-ok)]',
+    WARNING: 'bg-[color:var(--status-warning)]',
+    ALARM: 'bg-[color:var(--status-critical)] animate-pulse',
     PAUSED: 'bg-[color:var(--text-dim)]',
     IDLE: 'bg-[color:var(--text-dim)]',
     NEW: 'bg-[color:var(--text-dim)]',
@@ -751,7 +751,7 @@ function formatTime(value: string | null | undefined): string {
 
 <style scoped>
 .zone-dashboard-card:focus-visible {
-  outline: 2px solid var(--accent-cyan);
+  outline: 2px solid var(--status-info);
   outline-offset: 2px;
 }
 

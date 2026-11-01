@@ -13,7 +13,7 @@
     
     <div
       v-else-if="error"
-      class="text-xs text-[color:var(--accent-red)]"
+      class="text-xs text-[color:var(--status-critical)]"
     >
       {{ error }}
     </div>
@@ -45,7 +45,7 @@
           {{ state.label }}
           <span
             v-if="state.is_active"
-            class="text-[color:var(--accent-green)]"
+            class="text-[color:var(--status-ok)]"
           >(Активно)</span>
         </option>
       </select>

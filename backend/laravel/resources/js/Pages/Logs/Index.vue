@@ -32,7 +32,7 @@
             <div class="ui-kpi-label">
               Ошибки
             </div>
-            <div class="ui-kpi-value text-[color:var(--accent-red)]">
+            <div class="ui-kpi-value text-[color:var(--status-critical)]">
               {{ errorLogsCount }}
             </div>
             <div class="ui-kpi-hint">
@@ -43,7 +43,7 @@
             <div class="ui-kpi-label">
               Предупреждения
             </div>
-            <div class="ui-kpi-value text-[color:var(--accent-amber)]">
+            <div class="ui-kpi-value text-[color:var(--status-warning)]">
               {{ warningLogsCount }}
             </div>
             <div class="ui-kpi-hint">
@@ -140,7 +140,7 @@
 
         <div
           v-if="error"
-          class="text-sm text-[color:var(--accent-red)]"
+          class="text-sm text-[color:var(--status-critical)]"
         >
           {{ error }}
         </div>

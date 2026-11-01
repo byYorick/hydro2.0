@@ -6,14 +6,14 @@
     role="alert"
   >
     <div
-      class="mt-0.5 inline-flex items-center justify-center w-6 h-6 rounded-full bg-[color:var(--accent-red)]/20 text-[color:var(--accent-red)] shrink-0"
+      class="mt-0.5 inline-flex items-center justify-center w-6 h-6 rounded-full bg-[color:var(--status-critical)]/20 text-[color:var(--status-critical)] shrink-0"
       aria-hidden="true"
     >
       <span class="text-sm font-semibold">!</span>
     </div>
     <div class="min-w-0 flex-1">
       <div class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-        <h3 class="text-sm font-semibold text-[color:var(--accent-red)]">
+        <h3 class="text-sm font-semibold text-[color:var(--status-critical)]">
           Автоматика остановлена ошибкой
         </h3>
         <span
@@ -45,7 +45,7 @@
         <button
           v-if="canUnblock"
           type="button"
-          class="inline-flex items-center gap-1 rounded-md border border-[color:var(--accent-red)] bg-[color:var(--bg-surface)] px-2.5 py-1 text-xs font-medium text-[color:var(--accent-red)] hover:bg-[color:var(--accent-red)]/10"
+          class="inline-flex items-center gap-1 rounded-md border border-[color:var(--status-critical)] bg-[color:var(--bg-surface)] px-2.5 py-1 text-xs font-medium text-[color:var(--status-critical)] hover:bg-[color:var(--status-critical)]/10"
           data-testid="zone-automation-block-unblock"
           :disabled="unblocking"
           @click="modalOpen = true"
@@ -54,7 +54,7 @@
         </button>
         <button
           type="button"
-          class="inline-flex items-center gap-1 rounded-md border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)] px-2.5 py-1 text-xs font-medium text-[color:var(--text-primary)] hover:border-[color:var(--accent-red)]"
+          class="inline-flex items-center gap-1 rounded-md border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)] px-2.5 py-1 text-xs font-medium text-[color:var(--text-primary)] hover:border-[color:var(--status-critical)]"
           data-testid="zone-automation-block-open-alerts"
           @click="$emit('open-alerts')"
         >
@@ -102,7 +102,7 @@
         </label>
         <p
           v-if="errorText"
-          class="mt-2 text-xs text-[color:var(--accent-red)]"
+          class="mt-2 text-xs text-[color:var(--status-critical)]"
           data-testid="zone-operator-unblock-error"
         >
           {{ errorText }}
@@ -118,7 +118,7 @@
           </button>
           <button
             type="button"
-            class="rounded-md bg-[color:var(--accent-red)] px-2.5 py-1 text-xs font-medium text-white disabled:opacity-50"
+            class="rounded-md bg-[color:var(--status-critical)] px-2.5 py-1 text-xs font-medium text-white disabled:opacity-50"
             data-testid="zone-operator-unblock-submit"
             :disabled="unblocking || !canSubmit"
             @click="submit"

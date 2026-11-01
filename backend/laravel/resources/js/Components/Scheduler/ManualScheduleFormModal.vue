@@ -93,8 +93,8 @@
               type="button"
               class="rounded-full border px-2.5 py-1 text-xs transition motion-reduce:transition-none"
               :class="selectedDays.includes(day.value)
-                ? 'border-[color:var(--accent-cyan)] bg-[color-mix(in_srgb,var(--accent-cyan)_18%,transparent)] text-[color:var(--text-primary)]'
-                : 'border-[color:var(--border-muted)] text-[color:var(--text-dim)] hover:border-[color-mix(in_srgb,var(--accent-cyan)_40%,transparent)]'"
+                ? 'border-[color:var(--status-info)] bg-[color-mix(in_srgb,var(--status-info)_18%,transparent)] text-[color:var(--text-primary)]'
+                : 'border-[color:var(--border-muted)] text-[color:var(--text-dim)] hover:border-[color-mix(in_srgb,var(--status-info)_40%,transparent)]'"
               :data-testid="`manual-schedule-weekday-${day.value}`"
               @click="toggleDay(day.value)"
             >
@@ -281,7 +281,7 @@
             role="switch"
             :aria-checked="form.enabled"
             class="relative h-5 w-9 rounded-full transition motion-reduce:transition-none"
-            :class="form.enabled ? 'bg-[color:var(--accent-green)]' : 'bg-[color:var(--border-muted)]'"
+            :class="form.enabled ? 'bg-[color:var(--status-ok)]' : 'bg-[color:var(--border-muted)]'"
             data-testid="manual-schedule-enabled-toggle"
             @click="form.enabled = !form.enabled"
           >
@@ -523,7 +523,7 @@ function taskCardClass(option: (typeof taskOptions)[number]): string {
     slate: 'border-slate-500/50 bg-slate-500/10',
   }
   return selected
-    ? `${accentMap[option.accent] ?? 'border-[color:var(--accent-cyan)]'} ring-1 ring-[color:var(--accent-cyan)]/30`
+    ? `${accentMap[option.accent] ?? 'border-[color:var(--status-info)]'} ring-1 ring-[color:var(--status-info)]/30`
     : 'border-[color:var(--border-muted)] hover:border-[color:var(--border-muted)]/80'
 }
 

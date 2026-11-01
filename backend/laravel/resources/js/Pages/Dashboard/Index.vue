@@ -289,7 +289,7 @@
             {{ contextTitle }}
           </div>
           <div class="flex items-center gap-1.5 text-xs text-[color:var(--text-dim)]">
-            <div class="w-1.5 h-1.5 rounded-full bg-[color:var(--accent-green)] animate-pulse"></div>
+            <div class="w-1.5 h-1.5 rounded-full bg-[color:var(--status-ok)] animate-pulse"></div>
             <span>Live</span>
           </div>
         </div>
@@ -299,13 +299,13 @@
         >
           <Link
             href="/audit"
-            class="text-[color:var(--accent-cyan)] hover:underline"
+            class="text-[color:var(--status-info)] hover:underline"
           >
             Аудит
           </Link>
           <Link
             href="/monitoring"
-            class="text-[color:var(--accent-cyan)] hover:underline"
+            class="text-[color:var(--status-info)] hover:underline"
           >
             Здоровье системы
           </Link>
@@ -358,7 +358,7 @@
             >
               <Link
                 :href="`/zones/${e.zone_id}`"
-                class="text-[color:var(--accent-cyan)] hover:underline transition-colors"
+                class="text-[color:var(--status-info)] hover:underline transition-colors"
               >
                 Зона #{{ e.zone_id }} →
               </Link>

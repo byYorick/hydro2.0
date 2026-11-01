@@ -18,13 +18,13 @@
             </span>
             <Link
               href="/plants"
-              class="text-[color:var(--accent-cyan)] hover:underline"
+              class="text-[color:var(--status-info)] hover:underline"
             >
               Культуры
             </Link>
             <Link
               href="/nutrients"
-              class="text-[color:var(--accent-cyan)] hover:underline"
+              class="text-[color:var(--status-info)] hover:underline"
             >
               Удобрения
             </Link>
@@ -106,7 +106,7 @@
               <td class="px-3 py-2">
                 <Link
                   :href="`/recipes/${row.id}`"
-                  class="text-[color:var(--accent-cyan)] hover:underline truncate block"
+                  class="text-[color:var(--status-info)] hover:underline truncate block"
                 >
                   {{ row.name }}
                 </Link>

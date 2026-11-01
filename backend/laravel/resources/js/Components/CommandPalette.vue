@@ -57,7 +57,7 @@
                   :data-index="getItemIndex(groupIndex, itemIndex)"
                   class="px-3 py-2.5 text-sm hover:bg-[color:var(--bg-elevated)] cursor-pointer rounded-md flex items-center gap-3 transition-all duration-150"
                   :class="{ 
-                    'bg-[color:var(--bg-elevated)] border-l-2 border-[color:var(--accent-cyan)]': getItemIndex(groupIndex, itemIndex) === selectedIndex 
+                    'bg-[color:var(--bg-elevated)] border-l-2 border-[color:var(--status-info)]': getItemIndex(groupIndex, itemIndex) === selectedIndex 
                   }"
                   @click="run(item)"
                   @mouseenter="selectedIndex = getItemIndex(groupIndex, itemIndex)"
