@@ -125,7 +125,7 @@ DB_PASSWORD=hydro_e2e
 
 ```bash
 # Legacy/optional auth
-LARAVEL_API_TOKEN=dev-token-12345  # Опционально: AuthClient используется по умолчанию
+# LARAVEL_API_TOKEN задаётся make ensure-dev-secrets; UI-шаги по умолчанию идут через AuthClient
 
 # MQTT
 MQTT_HOST=localhost
@@ -151,7 +151,7 @@ E2E_RETRIES=3
 ```bash
 # .env
 LARAVEL_URL=http://localhost:8081
-# LARAVEL_API_TOKEN=dev-token-12345  # Опционально (legacy); по умолчанию AuthClient
+# LARAVEL_API_TOKEN=  # make ensure-dev-secrets; для UI-шагов по умолчанию AuthClient
 MQTT_HOST=localhost
 MQTT_PORT=1884
 WS_URL=ws://localhost:6002

@@ -14,7 +14,11 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-WEBHOOK_SECRET="${ALERTMANAGER_WEBHOOK_SECRET:-dev-alertmanager-webhook-secret}"
+WEBHOOK_SECRET="${ALERTMANAGER_WEBHOOK_SECRET:-}"
+if [ -z "$WEBHOOK_SECRET" ]; then
+    echo -e "${RED}ALERTMANAGER_WEBHOOK_SECRET is required. Run: make ensure-dev-secrets${NC}" >&2
+    exit 1
+fi
 
 # Функция проверки HTTP endpoint
 check_endpoint() {

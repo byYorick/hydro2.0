@@ -40,6 +40,11 @@ else
   exit 1
 fi
 
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/../backend/scripts/ensure-dev-secrets.sh"
+ensure_dev_secrets "$SCRIPT_DIR/.env"
+load_env_defaults "$SCRIPT_DIR/.env"
+
 ensure_laravel_ready() {
   echo "🔎 Проверка готовности Laravel..."
 

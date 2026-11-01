@@ -22,6 +22,7 @@ DOCKER_COMPOSE ?= $(shell if command -v docker-compose >/dev/null 2>&1; then ech
 .PHONY: help
 help:
 	@echo "hydro2.0 - targets:"
+	@echo "  ensure-dev-secrets - generate backend/.env service tokens if missing"
 	@echo "  up             - start default (combat) dev stack (no sim/ml/obs profiles)"
 	@echo "  up-sim         - start default stack + digital-twin + node-sim-manager (profile sim)"
 	@echo "  up-ml          - start default stack + feature-builder (profile ml)"
@@ -116,34 +117,38 @@ prod-ps:
 prod-logs:
 	@$(PROD_COMPOSE) logs -f --tail=$(or $(TAIL),200) $(SERVICE)
 
+.PHONY: ensure-dev-secrets
+ensure-dev-secrets:
+	@bash backend/scripts/ensure-dev-secrets.sh backend/.env
+
 .PHONY: up
 # Код Laravel/Python уже bind-mount — пересборка образа не нужна.
 # --pull missing: не дёргать :latest в registry, если образ уже есть.
 # digital-twin/node-sim-manager — profile sim; feature-builder — profile ml;
 # Grafana/Prometheus/alertmanager/exporters — profile obs.
-up:
+up: ensure-dev-secrets
 	@$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) up -d --pull missing
 
 .PHONY: up-sim
-up-sim:
+up-sim: ensure-dev-secrets
 	@COMPOSE_PROFILES=sim $(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) up -d --pull missing
 
 .PHONY: up-ml
-up-ml:
+up-ml: ensure-dev-secrets
 	@COMPOSE_PROFILES=ml $(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) up -d --pull missing
 
 .PHONY: up-obs
-up-obs:
+up-obs: ensure-dev-secrets
 	@COMPOSE_PROFILES=obs $(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) up -d --pull missing
 
 .PHONY: up-build
-up-build:
+up-build: ensure-dev-secrets
 	@$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) up -d --build
 
 # Без интернета: не ходим в Docker Hub и не пересобираем Dockerfile
 # (apt/pip/npm/composer). Нужен ранее собранный стек (`make up-build`).
 .PHONY: up-offline
-up-offline:
+up-offline: ensure-dev-secrets
 	@$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) up -d --pull never --no-build
 
 .PHONY: down
@@ -151,7 +156,7 @@ down:
 	@$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) down
 
 .PHONY: refresh
-refresh:
+refresh: ensure-dev-secrets
 	@$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) down -v --remove-orphans --rmi all
 	@$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) pull --ignore-pull-failures
 	@$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) build --pull --no-cache

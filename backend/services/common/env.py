@@ -4,21 +4,13 @@ from typing import Optional
 
 
 def _resolve_node_default_secret_env() -> Optional[str]:
-    """Возвращает дефолтный node_secret для publish команд через HMAC.
+    """Общий HMAC-секрет только из ``NODE_DEFAULT_SECRET``.
 
-    S1.5 (AUDIT_2026_05_28_BUGFIX_PLAN):
-    в production без явно заданного `NODE_DEFAULT_SECRET` возвращается ``None``;
-    consumers (`ensure_node_secret`, `mqtt-bridge`, `command_service`) должны
-    fail-closed отказывать в публикации. В dev/testing/ci сохраняется legacy
-    default, чтобы локальные стенды/тесты не сломались.
+    Встроенного значения нет: пустая переменная даёт ``None``, и публикация
+    команд для узла без ``nodes.config.node_secret`` завершается fail-closed.
     """
     explicit = os.getenv("NODE_DEFAULT_SECRET", "").strip()
-    if explicit:
-        return explicit
-    app_env = os.getenv("APP_ENV", "").lower().strip()
-    if app_env in ("production", "prod"):
-        return None
-    return "hydro-default-secret-key-2025"
+    return explicit or None
 
 
 @dataclass(frozen=True)
@@ -68,18 +60,8 @@ class Settings:
     command_timeout_sec: int = int(os.getenv("COMMAND_TIMEOUT_SEC", "30"))
     mqtt_zone_format: str = os.getenv("MQTT_ZONE_FORMAT", "id")  # id | uid
     service_port: int = int(os.getenv("SERVICE_PORT", "9300"))  # Порт для history-logger
-    # S1.5 (AUDIT_2026_05_28_BUGFIX_PLAN): убран hardcoded дефолт
-    # `"hydro-default-secret-key-2025"`. Логика:
-    #
-    #   * production (APP_ENV ∈ {production, prod}): требуется явный
-    #     NODE_DEFAULT_SECRET; если не задан — `None`, и `ensure_node_secret`
-    #     отказывает в публикации команды (fail-closed).
-    #   * dev/testing/ci: сохраняется legacy-дефолт `hydro-default-secret-key-2025`,
-    #     чтобы локальный compose, firmware-тесты и e2e продолжили работать без
-    #     явной конфигурации ENV.
-    #
-    # Полностью убрать дефолт планируется отдельной миграцией всех dev-стендов
-    # (см. backlog B5 «secrets → docker secrets / env file»).
+    # Нет встроенного секрета. Пустой NODE_DEFAULT_SECRET => None (fail-closed,
+    # если у узла нет своего nodes.config.node_secret).
     node_default_secret: Optional[str] = _resolve_node_default_secret_env()
     
     # History Logger specific settings
