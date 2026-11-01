@@ -23,7 +23,7 @@ class CommandTimeoutDiagnosticsBuilder
             ? (int) max(0, $nodeLastSeenAt->diffInSeconds(now()))
             : null;
         $nodeStatus = $node?->status ? strtolower((string) $node->status) : null;
-        $nodeOfflineTimeoutSec = max(1, (int) env('NODE_OFFLINE_TIMEOUT_SEC', 120));
+        $nodeOfflineTimeoutSec = max(1, (int) config('commands.node_offline_timeout_sec', 120));
         $timeoutMinutes = (int) config('commands.timeout_minutes', 5);
 
         return [
