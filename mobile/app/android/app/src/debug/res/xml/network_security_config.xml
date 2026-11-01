@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Только buildType debug (devDebug/stagingDebug/prodDebug).
+    Release-варианты этот файл не видят и наследуют запрет cleartext из main.
+    Нужен для локального backend (эмулятор 10.0.2.2, localhost, LAN) и
+    HTTP setup-портала узла (192.168.4.1) во время разработки.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

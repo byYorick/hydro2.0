@@ -5,6 +5,8 @@ plugins {
     kotlin("kapt")
 }
 
+val allowCleartext = providers.gradleProperty("hydro.allowCleartext").orNull == "true"
+
 android {
     namespace = "com.hydro.app"
     compileSdk = 34
@@ -17,6 +19,7 @@ android {
         versionName = "0.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField("boolean", "ALLOW_CLEARTEXT", allowCleartext.toString())
         vectorDrawables {
             useSupportLibrary = true
         }
@@ -90,6 +93,7 @@ dependencies {
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3:1.2.1")
+    implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.navigation:navigation-compose:2.7.7")
 
     // Hilt DI
@@ -104,7 +108,7 @@ dependencies {
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
     implementation("com.squareup.moshi:moshi-kotlin:1.15.1")
 
-    // DataStore (for settings/tokens)
+    // DataStore: адрес сервера открытым текстом, токен — ciphertext AES-GCM (Android Keystore).
     implementation("androidx.datastore:datastore-preferences:1.1.1")
 
     // Room for caching
@@ -126,6 +130,7 @@ dependencies {
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.0")
     testImplementation("app.cash.turbine:turbine:1.1.0")
     testImplementation("androidx.arch.core:core-testing:2.2.0")
+    testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
     
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")

@@ -55,7 +55,7 @@ class GreenhousesRepository @Inject constructor(
         try {
             val response = api.list()
             if (response.status == "ok" && response.data != null) {
-                val entities = response.data.map { it.toEntity() }
+                val entities = response.data.data.map { it.toEntity() }
                 db.greenhouseDao().insertAll(entities)
             } else {
                 android.util.Log.w("GreenhousesRepository", "API returned error: ${response.message}")
@@ -106,7 +106,7 @@ class ZonesRepository @Inject constructor(
         try {
             val response = api.list(greenhouseId)
             if (response.status == "ok" && response.data != null) {
-                val entities = response.data.map { it.toEntity() }
+                val entities = response.data.data.map { it.toEntity() }
                 db.zoneDao().insertAll(entities)
             } else {
                 android.util.Log.w("ZonesRepository", "API returned error: ${response.message}")
@@ -142,7 +142,7 @@ class NodesRepository @Inject constructor(
         try {
             val response = api.list(zoneId)
             if (response.status == "ok" && response.data != null) {
-                val entities = response.data.map { it.toEntity() }
+                val entities = response.data.data.map { it.toEntity() }
                 db.nodeDao().insertAll(entities)
             } else {
                 android.util.Log.w("NodesRepository", "API returned error: ${response.message}")
@@ -175,7 +175,7 @@ class TelemetryRepository @Inject constructor(
 
     fun getHistory(zoneId: Int, metric: String): Flow<List<TelemetryHistoryPoint>> {
         return db.telemetryDao().getHistory(zoneId, metric).map { entities ->
-            entities.map { TelemetryHistoryPoint(it.timestamp, it.value) }
+            entities.map { TelemetryHistoryPoint(timestamp = it.timestamp, value = it.value) }
         }
     }
 
@@ -183,12 +183,13 @@ class TelemetryRepository @Inject constructor(
         try {
             val response = api.getTelemetryHistory(zoneId, metric, from, to)
             if (response.status == "ok" && response.data != null) {
-                val entities = response.data.map { point ->
+                val entities = response.data.mapNotNull { point ->
+                    val value = point.value ?: return@mapNotNull null
                     TelemetryEntity(
                         zoneId = zoneId,
                         metric = metric,
-                        value = point.value,
-                        timestamp = point.timestamp
+                        value = value,
+                        timestamp = point.whenText
                     )
                 }
                 db.telemetryDao().insertAll(entities)
@@ -230,9 +231,9 @@ class AlertsRepository @Inject constructor(
         try {
             val response = api.list(zoneId, status)
             if (response.status == "ok" && response.data != null) {
-                val entities = response.data.map { alert ->
+                val entities = response.data.data.map { alert ->
                     alert.copy(
-                        message = alertCatalog.resolveMessage(alert.code, alert.message),
+                        message = alertCatalog.resolveMessage(alert.code, alert.displayMessage),
                     ).toEntity()
                 }
                 db.alertDao().insertAll(entities)
@@ -251,8 +252,8 @@ class AlertsRepository @Inject constructor(
                 val alert = response.data
                 db.alertDao().acknowledge(
                     id = alert.id,
-                    status = alert.status ?: "acknowledged",
-                    acknowledgedAt = alert.acknowledgedAt ?: ""
+                    status = alert.status ?: "RESOLVED",
+                    acknowledgedAt = alert.resolvedAt ?: alert.acknowledgedAt ?: ""
                 )
                 Result.success(alert)
             } else {
@@ -277,9 +278,9 @@ class AlertsRepository @Inject constructor(
 private fun Greenhouse.toEntity(): GreenhouseEntity {
     return GreenhouseEntity(
         id = id,
-        uid = uid,
-        name = name,
-        location = location,
+        uid = uid.ifBlank { "gh-$id" },
+        name = name.ifBlank { "Теплица $id" },
+        location = location ?: timezone,
         status = status,
         zonesCount = zonesCount
     )
@@ -299,8 +300,8 @@ private fun GreenhouseEntity.toDomain(): Greenhouse {
 private fun Zone.toEntity(): ZoneEntity {
     return ZoneEntity(
         id = id,
-        uid = uid,
-        name = name,
+        uid = uid.ifBlank { "zone-$id" },
+        name = name.ifBlank { "Зона $id" },
         greenhouseId = greenhouseId,
         greenhouseUid = greenhouseUid,
         status = status,
@@ -327,9 +328,9 @@ private fun ZoneEntity.toDomain(): Zone {
 private fun Node.toEntity(): NodeEntity {
     return NodeEntity(
         id = id,
-        uid = uid,
-        name = name,
-        type = type,
+        uid = uid.ifBlank { "node-$id" },
+        name = name.ifBlank { uid.ifBlank { "Узел $id" } },
+        type = type.ifBlank { "unknown" },
         status = status,
         zoneId = zoneId,
         zoneUid = zoneUid,
@@ -357,16 +358,16 @@ private fun NodeEntity.toDomain(): Node {
 private fun Alert.toEntity(): AlertEntity {
     return AlertEntity(
         id = id,
-        level = level,
-        type = type,
+        level = displayLevel,
+        type = type.ifBlank { code ?: "alert" },
         zoneId = zoneId,
-        zoneName = zoneName,
+        zoneName = displayZone,
         nodeId = nodeId,
-        nodeName = nodeName,
-        message = message,
-        timestamp = timestamp,
+        nodeName = nodeName ?: nodeUid,
+        message = displayMessage,
+        timestamp = displayTime.ifBlank { "" },
         status = status,
-        acknowledgedAt = acknowledgedAt
+        acknowledgedAt = resolvedAt ?: acknowledgedAt
     )
 }
 

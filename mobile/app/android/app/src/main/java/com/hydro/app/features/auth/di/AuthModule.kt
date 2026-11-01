@@ -1,30 +1,12 @@
 package com.hydro.app.features.auth.di
 
-import com.hydro.app.core.prefs.PreferencesDataSource
-import com.hydro.app.core.network.ApiErrorParser
-import com.hydro.app.features.auth.data.AuthApi
-import com.hydro.app.features.auth.data.AuthRepository
 import dagger.Module
-import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
-import javax.inject.Singleton
 
 /**
- * Модуль для авторизации.
- * 
- * AuthApi предоставляется через BackendApisModule.
+ * AuthRepository и AuthApi связываются через constructor injection и BackendApisModule.
  */
 @Module
 @InstallIn(SingletonComponent::class)
-object AuthModule {
-	@Provides
-	@Singleton
-	fun provideAuthRepository(
-		api: AuthApi,
-		prefs: PreferencesDataSource,
-		apiErrorParser: ApiErrorParser,
-	): AuthRepository {
-		return AuthRepository(api, prefs, apiErrorParser)
-	}
-}
+object AuthModule

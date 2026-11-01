@@ -3,12 +3,17 @@ package com.hydro.app.features.auth.presentation
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hydro.app.core.auth.SessionManager
+import com.hydro.app.core.config.ServerEndpoint
 import com.hydro.app.core.domain.AppError
 import com.hydro.app.core.domain.User
 import com.hydro.app.core.domain.usecase.LoginUseCase
+import com.hydro.app.core.prefs.PreferencesDataSource
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -37,7 +42,8 @@ sealed interface LoginState {
 @HiltViewModel
 class LoginViewModel @Inject constructor(
 	private val loginUseCase: LoginUseCase,
-	private val sessionManager: SessionManager
+	private val sessionManager: SessionManager,
+	preferences: PreferencesDataSource,
 ) : ViewModel() {
 	private val _state = MutableStateFlow<LoginState>(LoginState.Idle)
 	
@@ -45,6 +51,10 @@ class LoginViewModel @Inject constructor(
 	 * Текущее состояние экрана входа.
 	 */
 	val state: StateFlow<LoginState> = _state
+
+	val serverLabel: StateFlow<String> = preferences.serverEndpointFlow
+		.map { it.label() }
+		.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ServerEndpoint.emulatorDefault.label())
 
 	/**
 	 * Выполняет вход пользователя.

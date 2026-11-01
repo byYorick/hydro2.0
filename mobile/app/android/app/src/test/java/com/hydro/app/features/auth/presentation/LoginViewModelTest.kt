@@ -1,9 +1,13 @@
 package com.hydro.app.features.auth.presentation
 
 import app.cash.turbine.test
+import com.hydro.app.core.config.ServerEndpoint
 import com.hydro.app.core.domain.AppError
 import com.hydro.app.core.domain.User
 import com.hydro.app.core.domain.usecase.LoginUseCase
+import com.hydro.app.core.prefs.PreferencesDataSource
+import kotlinx.coroutines.flow.flowOf
+import io.mockk.every
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -31,7 +35,9 @@ class LoginViewModelTest {
     fun setup() {
         Dispatchers.setMain(mainDispatcher)
         loginUseCase = mockk()
-        viewModel = LoginViewModel(loginUseCase, mockk(relaxed = true))
+        val preferences = mockk<PreferencesDataSource>()
+        every { preferences.serverEndpointFlow } returns flowOf(ServerEndpoint.emulatorDefault)
+        viewModel = LoginViewModel(loginUseCase, mockk(relaxed = true), preferences)
     }
 
     @After

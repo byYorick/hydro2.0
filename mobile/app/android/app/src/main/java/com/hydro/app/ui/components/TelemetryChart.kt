@@ -86,8 +86,9 @@ fun TelemetryChart(
             val stepX = chartWidth / max(data.size - 1, 1)
 
             data.forEachIndexed { index, point ->
+                val numeric = point.value ?: return@forEachIndexed
                 val x = padding + stepX * index
-                val normalizedValue = (point.value - minValue) / valueRange
+                val normalizedValue = (numeric - minValue) / valueRange
                 val y = padding + chartHeight - (normalizedValue.toFloat() * chartHeight)
 
                 if (index == 0) {
