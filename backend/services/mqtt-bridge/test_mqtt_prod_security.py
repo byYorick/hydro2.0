@@ -35,8 +35,23 @@ def test_service_accounts_are_not_broad_except_history_logger():
 
 def test_esp32_acl_is_per_client_id():
     text = (ROOT / "acl").read_text(encoding="utf-8")
-    assert "pattern readwrite hydro/+/+/%c/#" in text
-    assert "topic readwrite hydro/#" not in text.split("user esp32_node", 1)[-1]
+    assert "pattern read hydro/+/+/%c/config" in text
+    assert "pattern read hydro/+/+/%c/+/command" in text
+    assert "pattern write hydro/+/+/%c/+/telemetry" in text
+    assert "pattern readwrite hydro/+/+/%c/#" not in text
+    assert "topic write hydro/gh-temp/zn-temp/#" not in text
+    assert "topic read hydro/time/response" in text
+    assert "topic write hydro/time/request" in text
+    node_section = text.split("user esp32_node", 1)[-1]
+    assert "topic readwrite hydro/#" not in node_section
+    for line in node_section.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("pattern "):
+            continue
+        if "/command" in stripped and "command_response" not in stripped:
+            assert stripped.startswith("pattern read ")
+        if stripped.endswith("/config"):
+            assert stripped.startswith("pattern read ")
 
 
 def test_prod_compose_publishes_tls_port_and_wires_clients():

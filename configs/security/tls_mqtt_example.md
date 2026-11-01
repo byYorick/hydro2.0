@@ -39,7 +39,7 @@ MQTT_CA_FILE=/etc/mqtt/certs/ca.crt
 1. Скопируйте `ca.crt` в `firmware/nodes/common/components/mqtt_manager/ca.pem`.
 2. Пересоберите прошивку. Без этого файла `use_tls=true` клиент не подключается (fail-closed).
 3. В NodeConfig узла: `mqtt.port=8883`, `mqtt.use_tls=true`, `mqtt.username=esp32_node`, пароль из `MQTT_ESP32_NODE_PASS`.
-4. MQTT client id прошивки равен `node_uid`. ACL пускает узел только в `hydro/{gh}/{zone}/{свой node_uid}/#`, плюс `node_hello`, `time/*` и общий pre-bind `hydro/gh-temp/zn-temp/#`.
+4. MQTT client id прошивки равен `node_uid`. ACL пускает узел писать телеметрию и статусы только в `hydro/{gh}/{zone}/{свой node_uid}/…` и читать свои `config`/`command`, плюс `node_hello`, `time/request`+`time/response` и тот же набор на pre-bind `hydro/gh-temp/zn-temp/…` (command и config узлу на запись не даются).
 
 ## 5. Выключить plaintext
 

@@ -34,7 +34,7 @@ MQTT брокер настроен с обязательной аутентиф�
 ### 5. esp32_node
 - **Назначение:** ESP32 узлы. Client id = `node_uid`
 - **Пароль:** `MQTT_ESP32_NODE_PASS`
-- **Доступ:** `pattern readwrite hydro/+/+/%c/#`, запись `hydro/node_hello` и `hydro/time/request`, чтение `hydro/time/response`, pre-bind `hydro/gh-temp/zn-temp/#`
+- **Доступ:** свой `hydro/{gh}/{zone}/{node_uid}/#` через `%c` (client id = `node_uid`): запись телеметрии/status/heartbeat/lwt/diagnostics/error/config_report/command_response/event, чтение `config` и `command`. Плюс `node_hello`, `hydro/time/request` (запись) и `hydro/time/response` (чтение). Pre-bind `gh-temp` — те же операции явно, без записи `command`/`config`
 
 ## Генерация паролей
 

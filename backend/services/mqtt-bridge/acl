@@ -6,6 +6,8 @@
 # Per-node: прошивка ставит MQTT client id = node_uid.
 # Строки pattern действуют на всех пользователей и подставляют %c (client id).
 # Поэтому client id сервисов не должен совпадать с node_uid.
+# Узел не публикует command и config: эти topic — только чтение.
+# Запись command/config остаётся у history-logger.
 
 user history_logger
 topic readwrite hydro/#
@@ -36,6 +38,27 @@ topic write hydro/time/request
 topic read hydro/time/response
 topic read hydro/gh-temp/zn-temp/+/config
 topic read hydro/gh-temp/zn-temp/+/+/command
-topic write hydro/gh-temp/zn-temp/#
+topic write hydro/gh-temp/zn-temp/+/+/telemetry
+topic write hydro/gh-temp/zn-temp/+/status
+topic write hydro/gh-temp/zn-temp/+/heartbeat
+topic write hydro/gh-temp/zn-temp/+/lwt
+topic write hydro/gh-temp/zn-temp/+/diagnostics
+topic write hydro/gh-temp/zn-temp/+/error
+topic write hydro/gh-temp/zn-temp/+/config_report
+topic write hydro/gh-temp/zn-temp/+/node_hello
+topic write hydro/gh-temp/zn-temp/+/+/command_response
+topic write hydro/gh-temp/zn-temp/+/+/event
 
-pattern readwrite hydro/+/+/%c/#
+# %c = client id = node_uid. Команды и NodeConfig — только чтение.
+pattern read hydro/+/+/%c/config
+pattern read hydro/+/+/%c/+/command
+pattern write hydro/+/+/%c/+/telemetry
+pattern write hydro/+/+/%c/status
+pattern write hydro/+/+/%c/heartbeat
+pattern write hydro/+/+/%c/lwt
+pattern write hydro/+/+/%c/diagnostics
+pattern write hydro/+/+/%c/error
+pattern write hydro/+/+/%c/config_report
+pattern write hydro/+/+/%c/node_hello
+pattern write hydro/+/+/%c/+/command_response
+pattern write hydro/+/+/%c/+/event
