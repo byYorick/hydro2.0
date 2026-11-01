@@ -1,4 +1,6 @@
+FROM docker:28-cli AS dockercli
 FROM python:3.11-slim
+COPY --from=dockercli /usr/local/bin/docker /usr/local/bin/docker
 
 WORKDIR /app
 
@@ -24,7 +26,7 @@ RUN pip install --no-cache-dir -r /app/requirements-test.txt && \
         pytest==8.2.0 \
         pytest-asyncio==0.24.0 \
         pytest-cov==4.1.0 \
-        jsonschema>=4.23.0 && \
+        'jsonschema>=4.23.0' && \
     pip install --upgrade pytest-asyncio==0.24.0
 
 # Копируем код

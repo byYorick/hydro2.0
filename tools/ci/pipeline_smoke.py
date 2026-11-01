@@ -5,6 +5,9 @@ replace its hand-written intent and SQL DONE with the real scheduler and MQTT.
 """
 import asyncio
 import json
+import hashlib
+import hmac
+import secrets
 import os
 from pathlib import Path
 import subprocess
@@ -15,6 +18,8 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'tests/e2e'))
+sys.path.append(str(ROOT / 'backend/services'))
+from common.hmac_utils import canonical_json_payload
 from runner.e2e_runner import E2ERunner
 
 
@@ -26,6 +31,11 @@ class PipelineRunner(E2ERunner):
     async def _execute_action_step(self, step_type, cfg, raw):
         if step_type == 'ci_laravel_dispatch':
             zone_id = int(self.context['zone_id'])
+            self.node_secret = secrets.token_hex(32)
+            self.db.execute(
+                "UPDATE nodes SET config = jsonb_set(COALESCE(config, '{}'::jsonb), "
+                "'{node_secret}', to_jsonb(CAST(:secret AS text))) WHERE id = :node_id",
+                {'secret': self.node_secret, 'node_id': int(self.context['node_id'])})
             script = (ROOT / 'tools/ci/dispatch_schedule.php').read_text()
             result = await asyncio.to_thread(subprocess.run,
                 ['docker', 'exec', '-i', os.environ['CI_LARAVEL_CONTAINER'],
@@ -40,6 +50,12 @@ class PipelineRunner(E2ERunner):
                 isinstance(msg['payload'], dict) and msg['payload'].get('cmd_id') == row['cmd_id'])
             if message is None:
                 raise AssertionError('HL accepted the command but it never reached the broker')
+            signed = dict(message['payload'])
+            signature = signed.pop('sig', '')
+            expected = hmac.new(self.node_secret.encode(),
+                                canonical_json_payload(signed).encode(), hashlib.sha256).hexdigest()
+            if not hmac.compare_digest(signature, expected):
+                raise AssertionError('Device rejected an invalid command HMAC')
             self.mqtt.publish_json(message['topic'].removesuffix('/command') + '/command_response',
                 {'cmd_id': row['cmd_id'], 'status': 'DONE', 'ts': int(time.time())})
             return
@@ -58,6 +74,9 @@ async def main():
         elif name not in ('start_cycle_http', 'set_task_id'):
             actions.append(action)
     scenario['actions'] = actions
+    # The PHP driver validates the real dispatch result; no synthetic HTTP response.
+    scenario['assertions'] = [a for a in scenario['assertions']
+                              if a['name'] not in ('start_cycle_http_200', 'start_cycle_response_active')]
     runner = PipelineRunner({'api_token': os.environ['CI_PIPELINE_API_TOKEN']})
     try:
         await runner.setup()
