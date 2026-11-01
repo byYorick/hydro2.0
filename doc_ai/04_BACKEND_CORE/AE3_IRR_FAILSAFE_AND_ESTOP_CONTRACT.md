@@ -202,7 +202,12 @@ Default AE3 `irrigation_start`: latched `set_relay true` на клапанах +
 
 Семантика:
 - пока кнопка нажата, нода обязана удерживать все 6 актуаторов в `OFF`;
-- пока кнопка нажата, MQTT `set_relay {state:true}` для actuator-каналов отклоняется
+- обесточивание выполняется прямым GPIO safe-OFF и не отменяется таймаутом `g_actuator_mutex`.
+  Если locked-path (snapshot, pause guards, `pump_driver` sync, событие) не успел взять мьютекс,
+  нода логирует сбой, оставляет защёлку и повторяет bookkeeping. Событие `emergency_stop_activated`
+  публикуется на фронт нажатия, даже если bookkeeping отложен;
+- пока защёлка активна (кнопка нажата или bookkeeping отпускания ещё не завершён), MQTT
+  `set_relay {state:true}` для actuator-каналов отклоняется
   immediate terminal response `ERROR` + `error_code=estop_active`;
 - MQTT `set_relay {state:false}` остаётся разрешённым как fail-safe stop-команда;
 - на фронт нажатия нода публикует `emergency_stop_activated`;
