@@ -5,25 +5,25 @@
       "source": "thienanblog/awesome-ai-agent-skills",
       "sourceType": "github",
       "skillPath": "skills/docker-local-dev/SKILL.md",
-      "computedHash": "2d81a4cea16c22c5404fef6f932aa8b22e2fe5cddc0b7ba4650f26b812afa585"
+      "computedHash": "f5610d1171820afe919397cc64adf0a9e07aa0d15f3b29b7f2ee28ca878b5302"
     },
     "documentation-guidelines": {
       "source": "thienanblog/awesome-ai-agent-skills",
       "sourceType": "github",
       "skillPath": "skills/documentation-guidelines/SKILL.md",
-      "computedHash": "af9ad9dc6e7e18ab6896fad8bf23e19037671d2d06461452d7a6052119237334"
+      "computedHash": "60c79ce19ebf722e40e3774e70890583a4ac2381484ee060a493891646127df9"
     },
     "embedded-systems": {
       "source": "jeffallan/claude-skills",
       "sourceType": "github",
       "skillPath": "skills/embedded-systems/SKILL.md",
-      "computedHash": "1631345781a5ed3ba2a780a710b8c23cb1b0abaaf576164c40d15b20683d2f6e"
+      "computedHash": "a40061d2762079c165112fe069be95047d7aaad0efa5dda847b6d911264a366c"
     },
     "esp32-firmware-engineer": {
       "source": "adamlipecz/esp32-firmware-engineer-skill",
       "sourceType": "github",
       "skillPath": "esp32-firmware-engineer/SKILL.md",
-      "computedHash": "3df8fc9d1ba783e4f09c59cf728cfb73cecfca89eece4a3b5b7d7e3e62068b6e"
+      "computedHash": "f262c9b2197f7781c047df2e3ae2bc157b461c9384007771c062dd9a60c15c94"
     },
     "fix-ci": {
       "source": "cursor/plugins",
@@ -41,7 +41,7 @@
       "source": "thienanblog/awesome-ai-agent-skills",
       "sourceType": "github",
       "skillPath": "skills/laravel-11-12-app-guidelines/SKILL.md",
-      "computedHash": "9505833bc35846abbfbb5ab93e1c45a7da179e7cccc3122223a4881afefab7cd"
+      "computedHash": "f195f6e2407faec9994603aaec065a4e041355fc37b05635d628f78baf413199"
     },
     "loop-on-ci": {
       "source": "cursor/plugins",
