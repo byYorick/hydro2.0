@@ -12,13 +12,13 @@
           Сохранённые виды
         </div>
         <FilterBar data-testid="analytics-views-filters">
-          <div class="flex items-center gap-2 flex-1 sm:flex-none">
-            <label class="text-sm text-[color:var(--text-muted)] shrink-0">Вид:</label>
-            <select
-              v-model="activeViewId"
-              class="input-select flex-1 sm:w-auto sm:min-w-[220px]"
-              data-testid="analytics-view-select"
-            >
+          <SelectField
+            v-model="activeViewId"
+            inline
+            label="Вид"
+            class="flex-1 sm:min-w-[260px]"
+            data-testid="analytics-view-select"
+          >
               <option value="">
                 — выбрать —
               </option>
@@ -29,17 +29,15 @@
               >
                 {{ view.name }}
               </option>
-            </select>
-          </div>
-          <div class="flex items-center gap-2 flex-1 sm:flex-none">
-            <label class="text-sm text-[color:var(--text-muted)] shrink-0">Имя:</label>
-            <input
-              v-model="newViewName"
-              placeholder="Название вида"
-              class="input-field flex-1 sm:w-60"
-              data-testid="analytics-view-name"
-            />
-          </div>
+          </SelectField>
+          <TextField
+            v-model="newViewName"
+            inline
+            label="Имя"
+            placeholder="Название вида"
+            class="flex-1 sm:w-72"
+            data-testid="analytics-view-name"
+          />
           <template #actions>
             <Button
               size="sm"
@@ -77,13 +75,13 @@
             Агрегаты телеметрии
           </div>
           <FilterBar data-testid="analytics-telemetry-filters">
-            <div class="flex items-center gap-2 flex-1 sm:flex-none">
-              <label class="text-sm text-[color:var(--text-muted)] shrink-0">Зона:</label>
-              <select
-                v-model="selectedZoneId"
-                class="input-select flex-1 sm:w-auto sm:min-w-[200px]"
-                data-testid="analytics-filter-zone"
-              >
+            <SelectField
+              v-model="selectedZoneId"
+              inline
+              label="Зона"
+              class="flex-1 sm:min-w-[240px]"
+              data-testid="analytics-filter-zone"
+            >
                 <option value="">
                   Выберите зону
                 </option>
@@ -94,15 +92,14 @@
                 >
                   {{ zone.name }}
                 </option>
-              </select>
-            </div>
-            <div class="flex items-center gap-2 flex-1 sm:flex-none">
-              <label class="text-sm text-[color:var(--text-muted)] shrink-0">Метрика:</label>
-              <select
-                v-model="selectedMetric"
-                class="input-select flex-1 sm:w-auto sm:min-w-[160px]"
-                data-testid="analytics-filter-metric"
-              >
+            </SelectField>
+            <SelectField
+              v-model="selectedMetric"
+              inline
+              label="Метрика"
+              class="flex-1 sm:min-w-[200px]"
+              data-testid="analytics-filter-metric"
+            >
                 <option
                   v-for="metric in metricOptions"
                   :key="metric.value"
@@ -110,15 +107,14 @@
                 >
                   {{ metric.label }}
                 </option>
-              </select>
-            </div>
-            <div class="flex items-center gap-2 flex-1 sm:flex-none">
-              <label class="text-sm text-[color:var(--text-muted)] shrink-0">Период:</label>
-              <select
-                v-model="selectedPeriod"
-                class="input-select flex-1 sm:w-auto sm:min-w-[120px]"
-                data-testid="analytics-filter-period"
-              >
+            </SelectField>
+            <SelectField
+              v-model="selectedPeriod"
+              inline
+              label="Период"
+              class="flex-1 sm:min-w-[160px]"
+              data-testid="analytics-filter-period"
+            >
                 <option
                   v-for="period in periodOptions"
                   :key="period.value"
@@ -126,8 +122,7 @@
                 >
                   {{ period.label }}
                 </option>
-              </select>
-            </div>
+            </SelectField>
             <div class="flex items-center gap-2 flex-1 sm:flex-none">
               <button
                 type="button"
@@ -176,13 +171,13 @@
             Эффективность рецептов
           </div>
           <FilterBar data-testid="analytics-recipe-filters">
-            <div class="flex items-center gap-2 flex-1 sm:flex-none">
-              <label class="text-sm text-[color:var(--text-muted)] shrink-0">Рецепт:</label>
-              <select
-                v-model="selectedRecipeId"
-                class="input-select flex-1 sm:w-auto sm:min-w-[220px]"
-                data-testid="analytics-filter-recipe"
-              >
+            <SelectField
+              v-model="selectedRecipeId"
+              inline
+              label="Рецепт"
+              class="flex-1 sm:min-w-[260px]"
+              data-testid="analytics-filter-recipe"
+            >
                 <option value="">
                   Выберите рецепт
                 </option>
@@ -193,8 +188,7 @@
                 >
                   {{ recipe.name }}
                 </option>
-              </select>
-            </div>
+            </SelectField>
             <template #actions>
               <Button
                 size="sm"
@@ -370,6 +364,8 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Button from '@/Components/Button.vue'
+import SelectField from '@/Components/SelectField.vue'
+import TextField from '@/Components/TextField.vue'
 import DataTableV2 from '@/Components/DataTableV2.vue'
 import FilterBar from '@/Components/FilterBar.vue'
 import PageHeader from '@/Components/PageHeader.vue'

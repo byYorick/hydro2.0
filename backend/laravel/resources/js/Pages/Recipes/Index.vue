@@ -57,14 +57,13 @@
       </div>
     </section>
     <div class="mb-3 flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2">
-      <div class="flex items-center gap-2 flex-1 sm:flex-none">
-        <label class="text-sm text-[color:var(--text-muted)] shrink-0">Поиск:</label>
-        <input
-          v-model="query"
-          placeholder="Название или культура..."
-          class="input-field flex-1 sm:w-56"
-        />
-      </div>
+      <TextField
+        v-model="query"
+        inline
+        label="Поиск"
+        placeholder="Название или культура..."
+        class="flex-1 sm:w-80"
+      />
     </div>
     <div class="rounded-xl border border-[color:var(--border-muted)] overflow-hidden max-h-[720px] flex flex-col">
       <div class="overflow-auto flex-1">
@@ -167,6 +166,7 @@ import { computed, ref, watch } from 'vue'
 import { Link, usePage } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Button from '@/Components/Button.vue'
+import TextField from '@/Components/TextField.vue'
 import Pagination from '@/Components/Pagination.vue'
 import RecipeMiniTimeline from '@/Components/Recipes/RecipeMiniTimeline.vue'
 import { useRole } from '@/composables/useRole'
