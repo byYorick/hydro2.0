@@ -41,7 +41,7 @@
     </header>
 
     <div class="settings-field-card__control">
-      <slot />
+      <slot></slot>
     </div>
 
     <p
@@ -55,7 +55,7 @@
       v-if="$slots.meta"
       class="settings-field-card__meta"
     >
-      <slot name="meta" />
+      <slot name="meta"></slot>
     </div>
   </article>
 </template>

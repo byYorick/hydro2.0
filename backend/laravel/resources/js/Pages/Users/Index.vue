@@ -143,8 +143,8 @@
     <Modal
       :open="showCreateModal || editingUser !== null"
       title="Пользователь"
-      @close="closeModal"
       hide-default-cancel
+      @close="closeModal"
     >
       <div class="space-y-3">
         <div>
@@ -240,8 +240,8 @@
     <Modal
       :open="deletingUser !== null"
       title="Удалить пользователя?"
-      @close="deletingUser = null"
       hide-default-cancel
+      @close="deletingUser = null"
     >
       <div class="text-sm text-[color:var(--text-muted)]">
         Вы уверены, что хотите удалить пользователя <strong>{{ deletingUser?.name }}</strong>?

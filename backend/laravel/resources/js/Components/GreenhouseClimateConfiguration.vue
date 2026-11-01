@@ -15,7 +15,7 @@
             <span
               class="h-1.5 w-1.5 rounded-full"
               :class="enabled ? 'bg-[color:var(--accent-green)]' : 'bg-[color:var(--text-dim)]'"
-            />
+            ></span>
             {{ enabled ? 'Активен' : 'Выключен' }}
           </span>
           <span
@@ -104,7 +104,7 @@
               Привязка нод
             </div>
             <p class="mt-1 text-xs text-[color:var(--text-muted)]">
-            Сначала выберите климатические ноды теплицы, затем сохраните профиль.
+              Сначала выберите климатические ноды теплицы, затем сохраните профиль.
             </p>
           </div>
 
@@ -176,7 +176,7 @@
                     class="rounded border-[color:var(--border-strong)]"
                     :disabled="!canConfigure"
                     @change="toggleSelection(group.key, node.id)"
-                  >
+                  />
                   <span class="min-w-0 truncate">{{ nodeLabel(node) }}</span>
                 </label>
               </div>
@@ -199,7 +199,7 @@
               Базовый профиль
             </div>
             <p class="mt-1 text-xs text-[color:var(--text-muted)]">
-            Режим, цели дня/ночи и лимиты форточек.
+              Режим, цели дня/ночи и лимиты форточек.
             </p>
           </div>
           <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
@@ -237,7 +237,7 @@
                 max="1440"
                 class="input-field mt-1 w-full"
                 :disabled="!canConfigure"
-              >
+              />
             </label>
             <label
               class="text-xs text-[color:var(--text-muted)]"
@@ -251,7 +251,7 @@
                 max="120"
                 class="input-field mt-1 w-full"
                 :disabled="!canConfigure"
-              >
+              />
             </label>
             <label
               class="text-xs text-[color:var(--text-muted)]"
@@ -285,7 +285,7 @@
                 step="0.5"
                 class="input-field mt-1 w-full"
                 :disabled="!canConfigure"
-              >
+              />
             </label>
             <label
               class="text-xs text-[color:var(--text-muted)]"
@@ -300,7 +300,7 @@
                 step="0.5"
                 class="input-field mt-1 w-full"
                 :disabled="!canConfigure"
-              >
+              />
             </label>
             <label
               class="text-xs text-[color:var(--text-muted)]"
@@ -314,7 +314,7 @@
                 max="90"
                 class="input-field mt-1 w-full"
                 :disabled="!canConfigure"
-              >
+              />
             </label>
             <label
               class="text-xs text-[color:var(--text-muted)]"
@@ -328,7 +328,7 @@
                 max="90"
                 class="input-field mt-1 w-full"
                 :disabled="!canConfigure"
-              >
+              />
             </label>
             <p
               data-testid="air-vpd-caption"
@@ -351,7 +351,7 @@
                 :value="optionalKpaValue('vpdMinKpa')"
                 :disabled="!canConfigure"
                 @input="setOptionalKpa('vpdMinKpa', $event)"
-              >
+              />
             </label>
             <label
               class="text-xs text-[color:var(--text-muted)]"
@@ -368,7 +368,7 @@
                 :value="optionalKpaValue('vpdMaxKpa')"
                 :disabled="!canConfigure"
                 @input="setOptionalKpa('vpdMaxKpa', $event)"
-              >
+              />
             </label>
             <label
               class="text-xs text-[color:var(--text-muted)]"
@@ -382,7 +382,7 @@
                 max="100"
                 class="input-field mt-1 w-full"
                 :disabled="!canConfigure"
-              >
+              />
             </label>
             <label
               class="text-xs text-[color:var(--text-muted)]"
@@ -396,7 +396,7 @@
                 max="100"
                 class="input-field mt-1 w-full"
                 :disabled="!canConfigure"
-              >
+              />
             </label>
             <label
               class="text-xs text-[color:var(--text-muted)]"
@@ -411,7 +411,7 @@
                 max="100"
                 class="input-field mt-1 w-full"
                 :disabled="!canConfigure"
-              >
+              />
             </label>
             <label
               class="text-xs text-[color:var(--text-muted)]"
@@ -423,7 +423,7 @@
                 type="time"
                 class="input-field mt-1 w-full"
                 :disabled="!canConfigure"
-              >
+              />
             </label>
             <label
               class="text-xs text-[color:var(--text-muted)]"
@@ -435,7 +435,7 @@
                 type="time"
                 class="input-field mt-1 w-full"
                 :disabled="!canConfigure"
-              >
+              />
             </label>
             <label
               class="text-xs text-[color:var(--text-muted)]"
@@ -449,7 +449,7 @@
                 max="45"
                 class="input-field mt-1 w-full"
                 :disabled="!canConfigure"
-              >
+              />
             </label>
             <label
               class="text-xs text-[color:var(--text-muted)]"
@@ -463,7 +463,7 @@
                 max="45"
                 class="input-field mt-1 w-full"
                 :disabled="!canConfigure"
-              >
+              />
             </label>
             <label
               class="text-xs text-[color:var(--text-muted)]"
@@ -477,7 +477,7 @@
                 max="100"
                 class="input-field mt-1 w-full"
                 :disabled="!canConfigure"
-              >
+              />
             </label>
             <label
               class="climate-wide-field text-xs text-[color:var(--text-muted)] md:col-span-2"
@@ -529,7 +529,7 @@
                 class="input-field mt-1 w-full"
                 :disabled="!canConfigure"
                 @input="setNumberField(field.key, $event)"
-              >
+              />
             </label>
           </div>
         </div>
@@ -563,7 +563,7 @@
                 class="input-field mt-1 w-full"
                 :disabled="!canConfigure"
                 @input="setNumberField(field.key, $event)"
-              >
+              />
             </label>
           </div>
         </div>
@@ -597,7 +597,7 @@
                 class="input-field mt-1 w-full"
                 :disabled="!canConfigure"
                 @input="setNumberField(field.key, $event)"
-              >
+              />
             </label>
           </div>
         </div>
@@ -648,7 +648,7 @@
                 class="input-field mt-1 w-full"
                 :disabled="!canConfigure || climateForm.targetPolicy !== 'primary_zone'"
                 @input="setNullableNumberField('primaryZoneId', $event)"
-              >
+              />
             </label>
             <label
               v-for="field in orientationFields"
@@ -666,7 +666,7 @@
                 class="input-field mt-1 w-full"
                 :disabled="!canConfigure"
                 @input="setNullableNumberField(field.key, $event)"
-              >
+              />
             </label>
             <label
               class="text-xs text-[color:var(--text-muted)]"

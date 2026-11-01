@@ -71,8 +71,12 @@
           :value="ecComponentSelectValue"
           @change="onEcComponentChange"
         >
-          <option value="calcium">Кальций (pump_b)</option>
-          <option value="npk">NPK (pump_a)</option>
+          <option value="calcium">
+            Кальций (pump_b)
+          </option>
+          <option value="npk">
+            NPK (pump_a)
+          </option>
         </select>
       </Field>
     </div>

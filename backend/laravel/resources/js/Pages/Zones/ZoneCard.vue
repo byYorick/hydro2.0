@@ -7,7 +7,7 @@
     <div
       class="absolute inset-y-0 left-0 w-1"
       :class="accentBarClass"
-    />
+    ></div>
 
     <div class="flex flex-1 flex-col gap-3 p-4 pl-5">
       <header class="flex items-start justify-between gap-3">
@@ -107,7 +107,7 @@
             <span
               class="h-1.5 w-1.5 rounded-full"
               :class="nodesHealthClass"
-            />
+            ></span>
             Узлы
             <span class="tabular-nums text-[color:var(--text-primary)]">
               {{ nodesOnline || 0 }}/{{ nodesTotal || 0 }}

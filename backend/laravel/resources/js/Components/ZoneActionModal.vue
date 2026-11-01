@@ -2,8 +2,8 @@
   <Modal
     :open="show"
     :title="title"
-    @close="$emit('close')"
     hide-default-cancel
+    @close="$emit('close')"
   >
     <form
       class="space-y-4"

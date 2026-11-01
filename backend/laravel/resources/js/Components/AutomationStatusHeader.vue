@@ -5,9 +5,9 @@
     >
       <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div class="min-w-0 space-y-2">
-        <p class="text-[11px] uppercase tracking-[0.22em] text-[color:var(--text-dim)]">
-          Текущий этап
-        </p>
+          <p class="text-[11px] uppercase tracking-[0.22em] text-[color:var(--text-dim)]">
+            Текущий этап
+          </p>
           <h3 class="text-lg font-semibold leading-snug text-[color:var(--text-primary)] md:text-xl">
             {{ stateLabel }}
           </h3>
@@ -67,7 +67,7 @@
           <div
             class="h-full rounded-full bg-amber-400/90 transition-all duration-500"
             :style="{ width: `${Math.max(progressPercent, isProcessActive ? 8 : 0)}%` }"
-          />
+          ></div>
         </div>
       </div>
     </div>
@@ -128,7 +128,7 @@
             class="pipeline-connector mx-0.5"
             :class="connectorClass(stage.status)"
             aria-hidden="true"
-          />
+          ></span>
         </li>
       </ul>
     </section>

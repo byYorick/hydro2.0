@@ -89,7 +89,7 @@
             rows="3"
             class="mt-1 w-full rounded-md border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] px-2 py-1.5 text-sm text-[color:var(--text-primary)]"
             data-testid="zone-operator-unblock-reason"
-          />
+          ></textarea>
         </label>
         <label class="mt-2 flex items-start gap-2 text-xs text-[color:var(--text-secondary)]">
           <input
@@ -97,7 +97,7 @@
             type="checkbox"
             class="mt-0.5"
             data-testid="zone-operator-unblock-confirm"
-          >
+          />
           Понимаю, что это остановит текущий цикл подготовки/полива.
         </label>
         <p

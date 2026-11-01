@@ -12,191 +12,191 @@
       />
 
       <div v-if="journalSection === 'audit'">
-    <Card class="mb-4">
-      <div class="mb-3 flex flex-wrap items-center gap-2">
-        <label class="text-sm text-[color:var(--text-muted)]">Уровень:</label>
-        <select
-          v-model="levelFilter"
-          class="input-select"
-        >
-          <option value="">
-            Все уровни
-          </option>
-          <option value="error">
-            Error
-          </option>
-          <option value="warning">
-            Warning
-          </option>
-          <option value="info">
-            Info
-          </option>
-          <option value="debug">
-            Debug
-          </option>
-        </select>
-        <label class="ml-4 text-sm text-[color:var(--text-muted)]">Поиск:</label>
-        <input 
-          v-model="searchQuery" 
-          placeholder="Поиск по сообщению..." 
-          class="input-field w-64" 
-        />
-        <div class="ml-auto flex gap-2">
-          <Button
-            size="sm"
-            :disabled="loading"
-            @click="loadLogs"
-          >
-            {{ loading ? 'Загрузка...' : 'Обновить' }}
-          </Button>
-          <Button
-            size="sm"
-            variant="secondary"
-            :disabled="loading || !filtered.length"
-            @click="exportLogs"
-          >
-            Экспорт
-          </Button>
-        </div>
-      </div>
-      
-      <div class="text-xs text-[color:var(--text-dim)] mb-2">
-        Всего: {{ all.length }} | Отфильтровано: {{ filtered.length }}
-      </div>
-    </Card>
-
-    <Card>
-      <div
-        v-if="loading && all.length === 0"
-        class="text-sm text-[color:var(--text-dim)] px-3 py-6 text-center"
-      >
-        Загрузка логов...
-      </div>
-      <div
-        v-else
-        class="rounded-xl border border-[color:var(--border-muted)] overflow-hidden max-h-[720px] flex flex-col"
-      >
-        <!-- Заголовок таблицы -->
-        <div class="flex-shrink-0 grid grid-cols-4 gap-0 bg-[color:var(--bg-elevated)] text-[color:var(--text-muted)] text-sm border-b border-[color:var(--border-muted)]">
-          <div
-            v-for="(h, i) in headers"
-            :key="i"
-            class="px-3 py-2 text-left font-medium"
-          >
-            {{ h }}
-          </div>
-        </div>
-        <!-- Виртуализированный список -->
-        <div class="flex-1 overflow-hidden">
-          <RecycleScroller
-            v-slot="{ item: log, index }"
-            :items="paginatedLogs"
-            :item-size="rowHeight"
-            key-field="id"
-            class="virtual-table-body h-full"
-          >
-            <div 
-              :class="index % 2 === 0 ? 'bg-[color:var(--bg-surface-strong)]' : 'bg-[color:var(--bg-surface)]'" 
-              class="grid grid-cols-4 gap-0 text-sm border-b border-[color:var(--border-muted)]"
-              style="height:44px"
+        <Card class="mb-4">
+          <div class="mb-3 flex flex-wrap items-center gap-2">
+            <label class="text-sm text-[color:var(--text-muted)]">Уровень:</label>
+            <select
+              v-model="levelFilter"
+              class="input-select"
             >
-              <div class="px-3 py-2 flex items-center">
-                <Badge 
-                  :variant="getLevelVariant(log.level)"
-                >
-                  {{ log.level?.toUpperCase() || '-' }}
-                </Badge>
-              </div>
-              <div class="px-3 py-2 flex items-center text-xs text-[color:var(--text-muted)]">
-                {{ formatDateTime(log.created_at) }}
-              </div>
-              <div class="px-3 py-2 flex items-center">
-                <span
-                  class="truncate"
-                  :title="log.message"
-                >{{ log.message || '-' }}</span>
-              </div>
-              <div class="px-3 py-2 flex items-center">
-                <Button 
-                  size="sm" 
-                  variant="secondary" 
-                  :disabled="!log.context || Object.keys(log.context).length === 0"
-                  @click="showLogDetails(log)"
-                >
-                  Детали
-                </Button>
-              </div>
+              <option value="">
+                Все уровни
+              </option>
+              <option value="error">
+                Error
+              </option>
+              <option value="warning">
+                Warning
+              </option>
+              <option value="info">
+                Info
+              </option>
+              <option value="debug">
+                Debug
+              </option>
+            </select>
+            <label class="ml-4 text-sm text-[color:var(--text-muted)]">Поиск:</label>
+            <input 
+              v-model="searchQuery" 
+              placeholder="Поиск по сообщению..." 
+              class="input-field w-64" 
+            />
+            <div class="ml-auto flex gap-2">
+              <Button
+                size="sm"
+                :disabled="loading"
+                @click="loadLogs"
+              >
+                {{ loading ? 'Загрузка...' : 'Обновить' }}
+              </Button>
+              <Button
+                size="sm"
+                variant="secondary"
+                :disabled="loading || !filtered.length"
+                @click="exportLogs"
+              >
+                Экспорт
+              </Button>
             </div>
-          </RecycleScroller>
+          </div>
+      
+          <div class="text-xs text-[color:var(--text-dim)] mb-2">
+            Всего: {{ all.length }} | Отфильтровано: {{ filtered.length }}
+          </div>
+        </Card>
+
+        <Card>
           <div
-            v-if="!paginatedLogs.length"
+            v-if="loading && all.length === 0"
             class="text-sm text-[color:var(--text-dim)] px-3 py-6 text-center"
           >
-            {{ all.length === 0 ? 'Логи не найдены' : 'Нет логов по текущим фильтрам' }}
+            Загрузка логов...
           </div>
-        </div>
-        <Pagination
-          v-model:current-page="currentPage"
-          v-model:per-page="perPage"
-          :total="filtered.length"
-        />
-      </div>
-    </Card>
+          <div
+            v-else
+            class="rounded-xl border border-[color:var(--border-muted)] overflow-hidden max-h-[720px] flex flex-col"
+          >
+            <!-- Заголовок таблицы -->
+            <div class="flex-shrink-0 grid grid-cols-4 gap-0 bg-[color:var(--bg-elevated)] text-[color:var(--text-muted)] text-sm border-b border-[color:var(--border-muted)]">
+              <div
+                v-for="(h, i) in headers"
+                :key="i"
+                class="px-3 py-2 text-left font-medium"
+              >
+                {{ h }}
+              </div>
+            </div>
+            <!-- Виртуализированный список -->
+            <div class="flex-1 overflow-hidden">
+              <RecycleScroller
+                v-slot="{ item: log, index }"
+                :items="paginatedLogs"
+                :item-size="rowHeight"
+                key-field="id"
+                class="virtual-table-body h-full"
+              >
+                <div 
+                  :class="index % 2 === 0 ? 'bg-[color:var(--bg-surface-strong)]' : 'bg-[color:var(--bg-surface)]'" 
+                  class="grid grid-cols-4 gap-0 text-sm border-b border-[color:var(--border-muted)]"
+                  style="height:44px"
+                >
+                  <div class="px-3 py-2 flex items-center">
+                    <Badge 
+                      :variant="getLevelVariant(log.level)"
+                    >
+                      {{ log.level?.toUpperCase() || '-' }}
+                    </Badge>
+                  </div>
+                  <div class="px-3 py-2 flex items-center text-xs text-[color:var(--text-muted)]">
+                    {{ formatDateTime(log.created_at) }}
+                  </div>
+                  <div class="px-3 py-2 flex items-center">
+                    <span
+                      class="truncate"
+                      :title="log.message"
+                    >{{ log.message || '-' }}</span>
+                  </div>
+                  <div class="px-3 py-2 flex items-center">
+                    <Button 
+                      size="sm" 
+                      variant="secondary" 
+                      :disabled="!log.context || Object.keys(log.context).length === 0"
+                      @click="showLogDetails(log)"
+                    >
+                      Детали
+                    </Button>
+                  </div>
+                </div>
+              </RecycleScroller>
+              <div
+                v-if="!paginatedLogs.length"
+                class="text-sm text-[color:var(--text-dim)] px-3 py-6 text-center"
+              >
+                {{ all.length === 0 ? 'Логи не найдены' : 'Нет логов по текущим фильтрам' }}
+              </div>
+            </div>
+            <Pagination
+              v-model:current-page="currentPage"
+              v-model:per-page="perPage"
+              :total="filtered.length"
+            />
+          </div>
+        </Card>
 
-    <!-- Modal для деталей лога -->
-    <Modal
-      :open="selectedLog !== null"
-      :title="`Детали лога #${selectedLog?.id}`"
-      @close="selectedLog = null"
-      hide-default-cancel
-    >
-      <div
-        v-if="selectedLog"
-        class="space-y-3"
-      >
-        <div>
-          <label class="text-xs text-[color:var(--text-muted)]">Уровень</label>
-          <div class="mt-1">
-            <Badge :variant="getLevelVariant(selectedLog.level)">
-              {{ selectedLog.level?.toUpperCase() || '-' }}
-            </Badge>
-          </div>
-        </div>
-        <div>
-          <label class="text-xs text-[color:var(--text-muted)]">Время</label>
-          <div class="mt-1 text-sm text-[color:var(--text-primary)]">
-            {{ formatDateTime(selectedLog.created_at) }}
-          </div>
-        </div>
-        <div>
-          <label class="text-xs text-[color:var(--text-muted)]">Сообщение</label>
-          <div class="mt-1 text-sm text-[color:var(--text-primary)] bg-[color:var(--bg-elevated)] p-2 rounded">
-            {{ selectedLog.message || '-' }}
-          </div>
-        </div>
-        <div v-if="selectedLog.context && Object.keys(selectedLog.context).length > 0">
-          <label class="text-xs text-[color:var(--text-muted)]">Контекст</label>
-          <div class="mt-1 bg-[color:var(--bg-elevated)] p-3 rounded overflow-auto max-h-60">
-            <pre class="text-xs text-[color:var(--text-muted)]">{{ JSON.stringify(selectedLog.context, null, 2) }}</pre>
-          </div>
-        </div>
-        <div
-          v-else
-          class="text-xs text-[color:var(--text-dim)]"
+        <!-- Modal для деталей лога -->
+        <Modal
+          :open="selectedLog !== null"
+          :title="`Детали лога #${selectedLog?.id}`"
+          hide-default-cancel
+          @close="selectedLog = null"
         >
-          Нет дополнительных данных
-        </div>
-      </div>
-      <template #footer>
-        <Button
-          size="sm"
-          variant="secondary"
-          @click="selectedLog = null"
-        >
-          Закрыть
-        </Button>
-      </template>
-    </Modal>
+          <div
+            v-if="selectedLog"
+            class="space-y-3"
+          >
+            <div>
+              <label class="text-xs text-[color:var(--text-muted)]">Уровень</label>
+              <div class="mt-1">
+                <Badge :variant="getLevelVariant(selectedLog.level)">
+                  {{ selectedLog.level?.toUpperCase() || '-' }}
+                </Badge>
+              </div>
+            </div>
+            <div>
+              <label class="text-xs text-[color:var(--text-muted)]">Время</label>
+              <div class="mt-1 text-sm text-[color:var(--text-primary)]">
+                {{ formatDateTime(selectedLog.created_at) }}
+              </div>
+            </div>
+            <div>
+              <label class="text-xs text-[color:var(--text-muted)]">Сообщение</label>
+              <div class="mt-1 text-sm text-[color:var(--text-primary)] bg-[color:var(--bg-elevated)] p-2 rounded">
+                {{ selectedLog.message || '-' }}
+              </div>
+            </div>
+            <div v-if="selectedLog.context && Object.keys(selectedLog.context).length > 0">
+              <label class="text-xs text-[color:var(--text-muted)]">Контекст</label>
+              <div class="mt-1 bg-[color:var(--bg-elevated)] p-3 rounded overflow-auto max-h-60">
+                <pre class="text-xs text-[color:var(--text-muted)]">{{ JSON.stringify(selectedLog.context, null, 2) }}</pre>
+              </div>
+            </div>
+            <div
+              v-else
+              class="text-xs text-[color:var(--text-dim)]"
+            >
+              Нет дополнительных данных
+            </div>
+          </div>
+          <template #footer>
+            <Button
+              size="sm"
+              variant="secondary"
+              @click="selectedLog = null"
+            >
+              Закрыть
+            </Button>
+          </template>
+        </Modal>
       </div>
       <LogsIndex
         v-else

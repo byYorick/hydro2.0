@@ -2,8 +2,8 @@
   <Modal
     :open="show"
     :title="`Редактирование конфига ноды`"
-    @close="handleClose"
     hide-default-cancel
+    @close="handleClose"
   >
     <div
       v-if="loading"

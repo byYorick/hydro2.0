@@ -53,7 +53,7 @@
           <span
             class="w-3 h-3 rounded-full shrink-0"
             :class="summaryDotClass"
-          />
+          ></span>
           <span class="text-sm font-medium text-[color:var(--text-primary)]">
             {{ healthyCount }} из {{ totalCount }} в норме
           </span>

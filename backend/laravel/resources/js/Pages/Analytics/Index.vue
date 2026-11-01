@@ -19,16 +19,16 @@
             class="flex-1 sm:min-w-[260px]"
             data-testid="analytics-view-select"
           >
-              <option value="">
-                — выбрать —
-              </option>
-              <option
-                v-for="view in savedViews"
-                :key="view.id"
-                :value="view.id"
-              >
-                {{ view.name }}
-              </option>
+            <option value="">
+              — выбрать —
+            </option>
+            <option
+              v-for="view in savedViews"
+              :key="view.id"
+              :value="view.id"
+            >
+              {{ view.name }}
+            </option>
           </SelectField>
           <TextField
             v-model="newViewName"
@@ -70,18 +70,18 @@
           class="space-y-4"
           data-testid="analytics-telemetry-block"
         >
-        <div class="surface-card border border-[color:var(--border-muted)] rounded-2xl p-4">
-          <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)] mb-3">
-            Агрегаты телеметрии
-          </div>
-          <FilterBar data-testid="analytics-telemetry-filters">
-            <SelectField
-              v-model="selectedZoneId"
-              inline
-              label="Зона"
-              class="flex-1 sm:min-w-[240px]"
-              data-testid="analytics-filter-zone"
-            >
+          <div class="surface-card border border-[color:var(--border-muted)] rounded-2xl p-4">
+            <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)] mb-3">
+              Агрегаты телеметрии
+            </div>
+            <FilterBar data-testid="analytics-telemetry-filters">
+              <SelectField
+                v-model="selectedZoneId"
+                inline
+                label="Зона"
+                class="flex-1 sm:min-w-[240px]"
+                data-testid="analytics-filter-zone"
+              >
                 <option value="">
                   Выберите зону
                 </option>
@@ -92,14 +92,14 @@
                 >
                   {{ zone.name }}
                 </option>
-            </SelectField>
-            <SelectField
-              v-model="selectedMetric"
-              inline
-              label="Метрика"
-              class="flex-1 sm:min-w-[200px]"
-              data-testid="analytics-filter-metric"
-            >
+              </SelectField>
+              <SelectField
+                v-model="selectedMetric"
+                inline
+                label="Метрика"
+                class="flex-1 sm:min-w-[200px]"
+                data-testid="analytics-filter-metric"
+              >
                 <option
                   v-for="metric in metricOptions"
                   :key="metric.value"
@@ -107,14 +107,14 @@
                 >
                   {{ metric.label }}
                 </option>
-            </SelectField>
-            <SelectField
-              v-model="selectedPeriod"
-              inline
-              label="Период"
-              class="flex-1 sm:min-w-[160px]"
-              data-testid="analytics-filter-period"
-            >
+              </SelectField>
+              <SelectField
+                v-model="selectedPeriod"
+                inline
+                label="Период"
+                class="flex-1 sm:min-w-[160px]"
+                data-testid="analytics-filter-period"
+              >
                 <option
                   v-for="period in periodOptions"
                   :key="period.value"
@@ -122,62 +122,62 @@
                 >
                   {{ period.label }}
                 </option>
-            </SelectField>
-            <div class="flex items-center gap-2 flex-1 sm:flex-none">
-              <button
-                type="button"
-                class="h-9 px-3 rounded-lg border text-xs font-semibold transition-colors"
-                :class="showMedian
-                  ? 'border-[color:var(--accent-amber)] text-[color:var(--accent-amber)] bg-[color:var(--bg-elevated)]'
-                  : 'border-[color:var(--border-muted)] text-[color:var(--text-dim)] hover:border-[color:var(--border-strong)]'"
-                data-testid="analytics-filter-median"
-                @click="showMedian = !showMedian"
-              >
-                Медиана
-              </button>
-            </div>
-            <template #actions>
-              <Button
-                size="sm"
-                variant="outline"
-                :disabled="telemetryLoading || !selectedZoneId"
-                data-testid="analytics-telemetry-refresh"
-                @click="loadTelemetryAggregates"
-              >
-                {{ telemetryLoading ? 'Загрузка...' : 'Обновить' }}
-              </Button>
-            </template>
-          </FilterBar>
-        </div>
+              </SelectField>
+              <div class="flex items-center gap-2 flex-1 sm:flex-none">
+                <button
+                  type="button"
+                  class="h-9 px-3 rounded-lg border text-xs font-semibold transition-colors"
+                  :class="showMedian
+                    ? 'border-[color:var(--accent-amber)] text-[color:var(--accent-amber)] bg-[color:var(--bg-elevated)]'
+                    : 'border-[color:var(--border-muted)] text-[color:var(--text-dim)] hover:border-[color:var(--border-strong)]'"
+                  data-testid="analytics-filter-median"
+                  @click="showMedian = !showMedian"
+                >
+                  Медиана
+                </button>
+              </div>
+              <template #actions>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  :disabled="telemetryLoading || !selectedZoneId"
+                  data-testid="analytics-telemetry-refresh"
+                  @click="loadTelemetryAggregates"
+                >
+                  {{ telemetryLoading ? 'Загрузка...' : 'Обновить' }}
+                </Button>
+              </template>
+            </FilterBar>
+          </div>
 
-        <TelemetryAggregatesChart
-          :data="telemetryData"
-          :loading="telemetryLoading"
-          :error="telemetryError"
-          :metric="selectedMetric"
-          :period="selectedPeriodLabel"
-          :show-median="showMedian"
-          test-id="analytics-telemetry-chart"
-        />
-      </section>
+          <TelemetryAggregatesChart
+            :data="telemetryData"
+            :loading="telemetryLoading"
+            :error="telemetryError"
+            :metric="selectedMetric"
+            :period="selectedPeriodLabel"
+            :show-median="showMedian"
+            test-id="analytics-telemetry-chart"
+          />
+        </section>
 
         <section
           v-else-if="block === 'recipes'"
           class="space-y-4"
           data-testid="analytics-recipes-block"
         >
-        <div class="surface-card border border-[color:var(--border-muted)] rounded-2xl p-4">
-          <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)] mb-3">
-            Эффективность рецептов
-          </div>
-          <FilterBar data-testid="analytics-recipe-filters">
-            <SelectField
-              v-model="selectedRecipeId"
-              inline
-              label="Рецепт"
-              class="flex-1 sm:min-w-[260px]"
-              data-testid="analytics-filter-recipe"
-            >
+          <div class="surface-card border border-[color:var(--border-muted)] rounded-2xl p-4">
+            <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)] mb-3">
+              Эффективность рецептов
+            </div>
+            <FilterBar data-testid="analytics-recipe-filters">
+              <SelectField
+                v-model="selectedRecipeId"
+                inline
+                label="Рецепт"
+                class="flex-1 sm:min-w-[260px]"
+                data-testid="analytics-filter-recipe"
+              >
                 <option value="">
                   Выберите рецепт
                 </option>
@@ -188,173 +188,173 @@
                 >
                   {{ recipe.name }}
                 </option>
-            </SelectField>
-            <template #actions>
-              <Button
-                size="sm"
-                variant="outline"
-                :disabled="recipeLoading || !selectedRecipeId"
-                data-testid="analytics-recipe-refresh"
-                @click="loadRecipeAnalytics"
-              >
-                {{ recipeLoading ? 'Загрузка...' : 'Обновить' }}
-              </Button>
-            </template>
-          </FilterBar>
-        </div>
-
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-          <div class="surface-card border border-[color:var(--border-muted)] rounded-2xl p-4">
-            <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
-              Средняя эффективность
-            </div>
-            <div class="text-2xl font-semibold text-[color:var(--accent-cyan)] mt-1">
-              {{ formatNumber(recipeStats?.avg_efficiency, 2) }}
-            </div>
-          </div>
-          <div class="surface-card border border-[color:var(--border-muted)] rounded-2xl p-4">
-            <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
-              Отклонение pH
-            </div>
-            <div class="text-2xl font-semibold text-[color:var(--accent-amber)] mt-1">
-              {{ formatNumber(recipeStats?.avg_ph_deviation_overall, 2) }}
-            </div>
-          </div>
-          <div class="surface-card border border-[color:var(--border-muted)] rounded-2xl p-4">
-            <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
-              Отклонение EC
-            </div>
-            <div class="text-2xl font-semibold text-[color:var(--accent-amber)] mt-1">
-              {{ formatNumber(recipeStats?.avg_ec_deviation_overall, 2) }}
-            </div>
-          </div>
-          <div class="surface-card border border-[color:var(--border-muted)] rounded-2xl p-4">
-            <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
-              Средняя длительность
-            </div>
-            <div class="text-2xl font-semibold text-[color:var(--accent-green)] mt-1">
-              {{ formatDuration(recipeStats?.avg_duration_hours) }}
-            </div>
-          </div>
-        </div>
-
-        <DataTableV2
-          :columns="recipeColumns"
-          :rows="recipeRuns"
-          :loading="recipeLoading"
-          empty-title="Нет запусков"
-          empty-description="Выберите рецепт и дождитесь данных аналитики."
-          :virtualize="false"
-        >
-          <template #cell-zone="{ row }">
-            {{ row.zone?.name || '—' }}
-          </template>
-          <template #cell-yield_kg="{ row }">
-            {{ formatNumber(recipeYieldKg(row), 2) }}
-          </template>
-          <template #cell-start_date="{ row }">
-            {{ formatDate(row.start_date) }}
-          </template>
-          <template #cell-end_date="{ row }">
-            {{ formatDate(row.end_date) }}
-          </template>
-          <template #cell-efficiency_score="{ row }">
-            {{ formatNumber(row.efficiency_score, 2) }}
-          </template>
-          <template #cell-avg_ph_deviation="{ row }">
-            {{ formatNumber(row.avg_ph_deviation, 2) }}
-          </template>
-          <template #cell-avg_ec_deviation="{ row }">
-            {{ formatNumber(row.avg_ec_deviation, 2) }}
-          </template>
-          <template #cell-alerts_count="{ row }">
-            {{ formatNumber(row.alerts_count, 0) }}
-          </template>
-          <template #cell-total_duration_hours="{ row }">
-            {{ formatDuration(row.total_duration_hours) }}
-          </template>
-        </DataTableV2>
-
-        <Pagination
-          v-if="recipeTotal"
-          v-model:current-page="recipePage"
-          v-model:per-page="recipePerPage"
-          :total="recipeTotal"
-        />
-
-        <div class="surface-card border border-[color:var(--border-muted)] rounded-2xl p-4">
-          <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)] mb-3">
-            Сравнение рецептов
-          </div>
-          <div class="grid grid-cols-1 lg:grid-cols-3 gap-3">
-            <div class="surface-card border border-[color:var(--border-muted)] rounded-xl p-3">
-              <div class="text-sm font-semibold mb-2">
-                Рецепты
-              </div>
-              <div class="space-y-2 max-h-[220px] overflow-y-auto">
-                <label
-                  v-for="recipe in recipeOptions"
-                  :key="recipe.id"
-                  class="flex items-center gap-2 text-sm"
-                >
-                  <input
-                    v-model="compareRecipeIds"
-                    type="checkbox"
-                    class="h-4 w-4 accent-[color:var(--accent-cyan)]"
-                    :value="String(recipe.id)"
-                  />
-                  <span class="text-[color:var(--text-muted)]">{{ recipe.name }}</span>
-                </label>
-              </div>
-            </div>
-            <div class="surface-card border border-[color:var(--border-muted)] rounded-xl p-3 lg:col-span-2">
-              <div class="flex items-center justify-between mb-2">
-                <div class="text-sm font-semibold">
-                  Итоги сравнения
-                </div>
+              </SelectField>
+              <template #actions>
                 <Button
                   size="sm"
-                  variant="secondary"
-                  :disabled="compareRecipeIds.length < 2 || compareLoading"
-                  @click="loadComparison"
+                  variant="outline"
+                  :disabled="recipeLoading || !selectedRecipeId"
+                  data-testid="analytics-recipe-refresh"
+                  @click="loadRecipeAnalytics"
                 >
-                  {{ compareLoading ? 'Сравниваем...' : 'Сравнить' }}
+                  {{ recipeLoading ? 'Загрузка...' : 'Обновить' }}
                 </Button>
+              </template>
+            </FilterBar>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+            <div class="surface-card border border-[color:var(--border-muted)] rounded-2xl p-4">
+              <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
+                Средняя эффективность
               </div>
-              <DataTableV2
-                :columns="compareColumns"
-                :rows="comparisonRows"
-                :loading="compareLoading"
-                empty-title="Нет данных для сравнения"
-                empty-description="Выберите минимум 2 рецепта."
-                :virtualize="false"
-              >
-                <template #cell-recipe_name="{ row }">
-                  {{ row.recipe?.name || `Рецепт #${row.recipe_id}` }}
-                </template>
-                <template #cell-yield_kg="{ row }">
-                  {{ formatNumber(recipeYieldKg(row), 2) }}
-                </template>
-                <template #cell-avg_efficiency="{ row }">
-                  {{ formatNumber(row.avg_efficiency, 2) }}
-                </template>
-                <template #cell-avg_ph_deviation="{ row }">
-                  {{ formatNumber(row.avg_ph_deviation, 2) }}
-                </template>
-                <template #cell-avg_ec_deviation="{ row }">
-                  {{ formatNumber(row.avg_ec_deviation, 2) }}
-                </template>
-                <template #cell-avg_alerts_count="{ row }">
-                  {{ formatNumber(row.avg_alerts_count, 0) }}
-                </template>
-                <template #cell-avg_duration_hours="{ row }">
-                  {{ formatDuration(row.avg_duration_hours) }}
-                </template>
-              </DataTableV2>
+              <div class="text-2xl font-semibold text-[color:var(--accent-cyan)] mt-1">
+                {{ formatNumber(recipeStats?.avg_efficiency, 2) }}
+              </div>
+            </div>
+            <div class="surface-card border border-[color:var(--border-muted)] rounded-2xl p-4">
+              <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
+                Отклонение pH
+              </div>
+              <div class="text-2xl font-semibold text-[color:var(--accent-amber)] mt-1">
+                {{ formatNumber(recipeStats?.avg_ph_deviation_overall, 2) }}
+              </div>
+            </div>
+            <div class="surface-card border border-[color:var(--border-muted)] rounded-2xl p-4">
+              <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
+                Отклонение EC
+              </div>
+              <div class="text-2xl font-semibold text-[color:var(--accent-amber)] mt-1">
+                {{ formatNumber(recipeStats?.avg_ec_deviation_overall, 2) }}
+              </div>
+            </div>
+            <div class="surface-card border border-[color:var(--border-muted)] rounded-2xl p-4">
+              <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
+                Средняя длительность
+              </div>
+              <div class="text-2xl font-semibold text-[color:var(--accent-green)] mt-1">
+                {{ formatDuration(recipeStats?.avg_duration_hours) }}
+              </div>
             </div>
           </div>
-        </div>
-      </section>
+
+          <DataTableV2
+            :columns="recipeColumns"
+            :rows="recipeRuns"
+            :loading="recipeLoading"
+            empty-title="Нет запусков"
+            empty-description="Выберите рецепт и дождитесь данных аналитики."
+            :virtualize="false"
+          >
+            <template #cell-zone="{ row }">
+              {{ row.zone?.name || '—' }}
+            </template>
+            <template #cell-yield_kg="{ row }">
+              {{ formatNumber(recipeYieldKg(row), 2) }}
+            </template>
+            <template #cell-start_date="{ row }">
+              {{ formatDate(row.start_date) }}
+            </template>
+            <template #cell-end_date="{ row }">
+              {{ formatDate(row.end_date) }}
+            </template>
+            <template #cell-efficiency_score="{ row }">
+              {{ formatNumber(row.efficiency_score, 2) }}
+            </template>
+            <template #cell-avg_ph_deviation="{ row }">
+              {{ formatNumber(row.avg_ph_deviation, 2) }}
+            </template>
+            <template #cell-avg_ec_deviation="{ row }">
+              {{ formatNumber(row.avg_ec_deviation, 2) }}
+            </template>
+            <template #cell-alerts_count="{ row }">
+              {{ formatNumber(row.alerts_count, 0) }}
+            </template>
+            <template #cell-total_duration_hours="{ row }">
+              {{ formatDuration(row.total_duration_hours) }}
+            </template>
+          </DataTableV2>
+
+          <Pagination
+            v-if="recipeTotal"
+            v-model:current-page="recipePage"
+            v-model:per-page="recipePerPage"
+            :total="recipeTotal"
+          />
+
+          <div class="surface-card border border-[color:var(--border-muted)] rounded-2xl p-4">
+            <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)] mb-3">
+              Сравнение рецептов
+            </div>
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-3">
+              <div class="surface-card border border-[color:var(--border-muted)] rounded-xl p-3">
+                <div class="text-sm font-semibold mb-2">
+                  Рецепты
+                </div>
+                <div class="space-y-2 max-h-[220px] overflow-y-auto">
+                  <label
+                    v-for="recipe in recipeOptions"
+                    :key="recipe.id"
+                    class="flex items-center gap-2 text-sm"
+                  >
+                    <input
+                      v-model="compareRecipeIds"
+                      type="checkbox"
+                      class="h-4 w-4 accent-[color:var(--accent-cyan)]"
+                      :value="String(recipe.id)"
+                    />
+                    <span class="text-[color:var(--text-muted)]">{{ recipe.name }}</span>
+                  </label>
+                </div>
+              </div>
+              <div class="surface-card border border-[color:var(--border-muted)] rounded-xl p-3 lg:col-span-2">
+                <div class="flex items-center justify-between mb-2">
+                  <div class="text-sm font-semibold">
+                    Итоги сравнения
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    :disabled="compareRecipeIds.length < 2 || compareLoading"
+                    @click="loadComparison"
+                  >
+                    {{ compareLoading ? 'Сравниваем...' : 'Сравнить' }}
+                  </Button>
+                </div>
+                <DataTableV2
+                  :columns="compareColumns"
+                  :rows="comparisonRows"
+                  :loading="compareLoading"
+                  empty-title="Нет данных для сравнения"
+                  empty-description="Выберите минимум 2 рецепта."
+                  :virtualize="false"
+                >
+                  <template #cell-recipe_name="{ row }">
+                    {{ row.recipe?.name || `Рецепт #${row.recipe_id}` }}
+                  </template>
+                  <template #cell-yield_kg="{ row }">
+                    {{ formatNumber(recipeYieldKg(row), 2) }}
+                  </template>
+                  <template #cell-avg_efficiency="{ row }">
+                    {{ formatNumber(row.avg_efficiency, 2) }}
+                  </template>
+                  <template #cell-avg_ph_deviation="{ row }">
+                    {{ formatNumber(row.avg_ph_deviation, 2) }}
+                  </template>
+                  <template #cell-avg_ec_deviation="{ row }">
+                    {{ formatNumber(row.avg_ec_deviation, 2) }}
+                  </template>
+                  <template #cell-avg_alerts_count="{ row }">
+                    {{ formatNumber(row.avg_alerts_count, 0) }}
+                  </template>
+                  <template #cell-avg_duration_hours="{ row }">
+                    {{ formatDuration(row.avg_duration_hours) }}
+                  </template>
+                </DataTableV2>
+              </div>
+            </div>
+          </div>
+        </section>
       </template>
     </div>
   </AppLayout>

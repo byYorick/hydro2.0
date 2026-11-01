@@ -6,267 +6,267 @@
     >
       {{ phaseCaption }}
     </div>
-  <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
-    <!-- pH -->
-    <Card 
-      v-if="targets.ph"
-      :class="[
-        'surface-card-hover transition-all duration-300 hover:border-[color:var(--border-strong)]',
-        getCardBorderClass(telemetry.ph, targets.ph.min, targets.ph.max)
-      ]"
-    >
-      <div class="flex items-center justify-between mb-2">
-        <div class="flex items-center gap-2">
-          <div class="text-sm font-medium">
-            pH
-          </div>
-          <div 
-            v-if="telemetry.ph !== null && telemetry.ph !== undefined"
-            :class="[
-              'w-2 h-2 rounded-full transition-all duration-300',
-              getPulseClass(telemetry.ph, targets.ph.min, targets.ph.max)
-            ]"
-          ></div>
-        </div>
-        <Badge :variant="getIndicatorVariant(telemetry.ph, targets.ph.min, targets.ph.max)">
-          {{ getIndicatorLabel(telemetry.ph, targets.ph.min, targets.ph.max) }}
-        </Badge>
-      </div>
-      <div 
+    <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+      <!-- pH -->
+      <Card 
+        v-if="targets.ph"
         :class="[
-          'text-2xl font-semibold mt-1 transition-all duration-300',
-          getValueColorClass(telemetry.ph, targets.ph.min, targets.ph.max)
+          'surface-card-hover transition-all duration-300 hover:border-[color:var(--border-strong)]',
+          getCardBorderClass(telemetry.ph, targets.ph.min, targets.ph.max)
         ]"
       >
-        {{ formatTelemetryValue(telemetry.ph, 'ph') }}
-      </div>
+        <div class="flex items-center justify-between mb-2">
+          <div class="flex items-center gap-2">
+            <div class="text-sm font-medium">
+              pH
+            </div>
+            <div 
+              v-if="telemetry.ph !== null && telemetry.ph !== undefined"
+              :class="[
+                'w-2 h-2 rounded-full transition-all duration-300',
+                getPulseClass(telemetry.ph, targets.ph.min, targets.ph.max)
+              ]"
+            ></div>
+          </div>
+          <Badge :variant="getIndicatorVariant(telemetry.ph, targets.ph.min, targets.ph.max)">
+            {{ getIndicatorLabel(telemetry.ph, targets.ph.min, targets.ph.max) }}
+          </Badge>
+        </div>
+        <div 
+          :class="[
+            'text-2xl font-semibold mt-1 transition-all duration-300',
+            getValueColorClass(telemetry.ph, targets.ph.min, targets.ph.max)
+          ]"
+        >
+          {{ formatTelemetryValue(telemetry.ph, 'ph') }}
+        </div>
       
-      <!-- Прогресс-бар отклонения -->
-      <div
-        v-if="telemetry.ph !== null && telemetry.ph !== undefined && targets.ph"
-        class="mt-3"
-      >
-        <div class="flex items-center justify-between text-xs mb-1">
-          <span class="text-[color:var(--text-muted)]">Цель: {{ formatTarget(targets.ph) }}</span>
-          <span 
-            v-if="getDeviationPercent(telemetry.ph, targets.ph) !== null"
-            :class="getDeviationColorClass(telemetry.ph, targets.ph.min, targets.ph.max)"
-            class="font-medium"
-          >
-            {{ formatDeviation(telemetry.ph, targets.ph) }}
-          </span>
+        <!-- Прогресс-бар отклонения -->
+        <div
+          v-if="telemetry.ph !== null && telemetry.ph !== undefined && targets.ph"
+          class="mt-3"
+        >
+          <div class="flex items-center justify-between text-xs mb-1">
+            <span class="text-[color:var(--text-muted)]">Цель: {{ formatTarget(targets.ph) }}</span>
+            <span 
+              v-if="getDeviationPercent(telemetry.ph, targets.ph) !== null"
+              :class="getDeviationColorClass(telemetry.ph, targets.ph.min, targets.ph.max)"
+              class="font-medium"
+            >
+              {{ formatDeviation(telemetry.ph, targets.ph) }}
+            </span>
+          </div>
+          <div class="w-full bg-[color:var(--border-muted)] rounded-full h-1.5 overflow-hidden">
+            <div
+              :class="getProgressBarClass(telemetry.ph, targets.ph.min, targets.ph.max)"
+              class="h-full transition-all duration-500 ease-out"
+              :style="{ width: `${getProgressWidth(telemetry.ph, targets.ph)}%` }"
+            ></div>
+          </div>
         </div>
-        <div class="w-full bg-[color:var(--border-muted)] rounded-full h-1.5 overflow-hidden">
-          <div
-            :class="getProgressBarClass(telemetry.ph, targets.ph.min, targets.ph.max)"
-            class="h-full transition-all duration-500 ease-out"
-            :style="{ width: `${getProgressWidth(telemetry.ph, targets.ph)}%` }"
-          ></div>
+        <div
+          v-else
+          class="text-xs text-[color:var(--text-muted)] mt-1"
+        >
+          Цель: {{ formatTarget(targets.ph) }}
         </div>
-      </div>
-      <div
-        v-else
-        class="text-xs text-[color:var(--text-muted)] mt-1"
-      >
-        Цель: {{ formatTarget(targets.ph) }}
-      </div>
-    </Card>
+      </Card>
 
-    <!-- EC -->
-    <Card 
-      v-if="targets.ec"
-      :class="[
-        'surface-card-hover transition-all duration-300 hover:border-[color:var(--border-strong)]',
-        getCardBorderClass(telemetry.ec, targets.ec.min, targets.ec.max)
-      ]"
-    >
-      <div class="flex items-center justify-between mb-2">
-        <div class="flex items-center gap-2">
-          <div class="text-sm font-medium">
-            EC
-          </div>
-          <div 
-            v-if="telemetry.ec !== null && telemetry.ec !== undefined"
-            :class="[
-              'w-2 h-2 rounded-full transition-all duration-300',
-              getPulseClass(telemetry.ec, targets.ec.min, targets.ec.max)
-            ]"
-          ></div>
-        </div>
-        <Badge :variant="getIndicatorVariant(telemetry.ec, targets.ec.min, targets.ec.max)">
-          {{ getIndicatorLabel(telemetry.ec, targets.ec.min, targets.ec.max) }}
-        </Badge>
-      </div>
-      <div 
+      <!-- EC -->
+      <Card 
+        v-if="targets.ec"
         :class="[
-          'text-2xl font-semibold mt-1 transition-all duration-300',
-          getValueColorClass(telemetry.ec, targets.ec.min, targets.ec.max)
+          'surface-card-hover transition-all duration-300 hover:border-[color:var(--border-strong)]',
+          getCardBorderClass(telemetry.ec, targets.ec.min, targets.ec.max)
         ]"
       >
-        {{ formatTelemetryValue(telemetry.ec, 'ec') }}
-      </div>
+        <div class="flex items-center justify-between mb-2">
+          <div class="flex items-center gap-2">
+            <div class="text-sm font-medium">
+              EC
+            </div>
+            <div 
+              v-if="telemetry.ec !== null && telemetry.ec !== undefined"
+              :class="[
+                'w-2 h-2 rounded-full transition-all duration-300',
+                getPulseClass(telemetry.ec, targets.ec.min, targets.ec.max)
+              ]"
+            ></div>
+          </div>
+          <Badge :variant="getIndicatorVariant(telemetry.ec, targets.ec.min, targets.ec.max)">
+            {{ getIndicatorLabel(telemetry.ec, targets.ec.min, targets.ec.max) }}
+          </Badge>
+        </div>
+        <div 
+          :class="[
+            'text-2xl font-semibold mt-1 transition-all duration-300',
+            getValueColorClass(telemetry.ec, targets.ec.min, targets.ec.max)
+          ]"
+        >
+          {{ formatTelemetryValue(telemetry.ec, 'ec') }}
+        </div>
       
-      <!-- Прогресс-бар отклонения -->
-      <div
-        v-if="telemetry.ec !== null && telemetry.ec !== undefined && targets.ec"
-        class="mt-3"
-      >
-        <div class="flex items-center justify-between text-xs mb-1">
-          <span class="text-[color:var(--text-muted)]">Цель: {{ formatTarget(targets.ec) }}</span>
-          <span 
-            v-if="getDeviationPercent(telemetry.ec, targets.ec) !== null"
-            :class="getDeviationColorClass(telemetry.ec, targets.ec.min, targets.ec.max)"
-            class="font-medium"
-          >
-            {{ formatDeviation(telemetry.ec, targets.ec) }}
-          </span>
+        <!-- Прогресс-бар отклонения -->
+        <div
+          v-if="telemetry.ec !== null && telemetry.ec !== undefined && targets.ec"
+          class="mt-3"
+        >
+          <div class="flex items-center justify-between text-xs mb-1">
+            <span class="text-[color:var(--text-muted)]">Цель: {{ formatTarget(targets.ec) }}</span>
+            <span 
+              v-if="getDeviationPercent(telemetry.ec, targets.ec) !== null"
+              :class="getDeviationColorClass(telemetry.ec, targets.ec.min, targets.ec.max)"
+              class="font-medium"
+            >
+              {{ formatDeviation(telemetry.ec, targets.ec) }}
+            </span>
+          </div>
+          <div class="w-full bg-[color:var(--border-muted)] rounded-full h-1.5 overflow-hidden">
+            <div
+              :class="getProgressBarClass(telemetry.ec, targets.ec.min, targets.ec.max)"
+              class="h-full transition-all duration-500 ease-out"
+              :style="{ width: `${getProgressWidth(telemetry.ec, targets.ec)}%` }"
+            ></div>
+          </div>
         </div>
-        <div class="w-full bg-[color:var(--border-muted)] rounded-full h-1.5 overflow-hidden">
-          <div
-            :class="getProgressBarClass(telemetry.ec, targets.ec.min, targets.ec.max)"
-            class="h-full transition-all duration-500 ease-out"
-            :style="{ width: `${getProgressWidth(telemetry.ec, targets.ec)}%` }"
-          ></div>
+        <div
+          v-else
+          class="text-xs text-[color:var(--text-muted)] mt-1"
+        >
+          Цель: {{ formatTarget(targets.ec) }}
         </div>
-      </div>
-      <div
-        v-else
-        class="text-xs text-[color:var(--text-muted)] mt-1"
-      >
-        Цель: {{ formatTarget(targets.ec) }}
-      </div>
-    </Card>
+      </Card>
 
-    <!-- Temperature -->
-    <Card 
-      v-if="targets.temp"
-      :class="[
-        'surface-card-hover transition-all duration-300 hover:border-[color:var(--border-strong)]',
-        getCardBorderClass(telemetry.temperature, targets.temp.min, targets.temp.max)
-      ]"
-    >
-      <div class="flex items-center justify-between mb-2">
-        <div class="flex items-center gap-2">
-          <div class="text-sm font-medium">
-            Температура
-          </div>
-          <div 
-            v-if="telemetry.temperature !== null && telemetry.temperature !== undefined"
-            :class="[
-              'w-2 h-2 rounded-full transition-all duration-300',
-              getPulseClass(telemetry.temperature, targets.temp.min, targets.temp.max)
-            ]"
-          ></div>
-        </div>
-        <Badge :variant="getIndicatorVariant(telemetry.temperature, targets.temp.min, targets.temp.max)">
-          {{ getIndicatorLabel(telemetry.temperature, targets.temp.min, targets.temp.max) }}
-        </Badge>
-      </div>
-      <div 
+      <!-- Temperature -->
+      <Card 
+        v-if="targets.temp"
         :class="[
-          'text-2xl font-semibold mt-1 transition-all duration-300',
-          getValueColorClass(telemetry.temperature, targets.temp.min, targets.temp.max)
+          'surface-card-hover transition-all duration-300 hover:border-[color:var(--border-strong)]',
+          getCardBorderClass(telemetry.temperature, targets.temp.min, targets.temp.max)
         ]"
       >
-        {{ formatTelemetryValue(telemetry.temperature, 'temp', '°C') }}
-      </div>
+        <div class="flex items-center justify-between mb-2">
+          <div class="flex items-center gap-2">
+            <div class="text-sm font-medium">
+              Температура
+            </div>
+            <div 
+              v-if="telemetry.temperature !== null && telemetry.temperature !== undefined"
+              :class="[
+                'w-2 h-2 rounded-full transition-all duration-300',
+                getPulseClass(telemetry.temperature, targets.temp.min, targets.temp.max)
+              ]"
+            ></div>
+          </div>
+          <Badge :variant="getIndicatorVariant(telemetry.temperature, targets.temp.min, targets.temp.max)">
+            {{ getIndicatorLabel(telemetry.temperature, targets.temp.min, targets.temp.max) }}
+          </Badge>
+        </div>
+        <div 
+          :class="[
+            'text-2xl font-semibold mt-1 transition-all duration-300',
+            getValueColorClass(telemetry.temperature, targets.temp.min, targets.temp.max)
+          ]"
+        >
+          {{ formatTelemetryValue(telemetry.temperature, 'temp', '°C') }}
+        </div>
       
-      <!-- Прогресс-бар отклонения -->
-      <div
-        v-if="telemetry.temperature !== null && telemetry.temperature !== undefined && targets.temp"
-        class="mt-3"
-      >
-        <div class="flex items-center justify-between text-xs mb-1">
-          <span class="text-[color:var(--text-muted)]">Цель: {{ formatTarget(targets.temp, '°C') }}</span>
-          <span 
-            v-if="getDeviationPercent(telemetry.temperature, targets.temp) !== null"
-            :class="getDeviationColorClass(telemetry.temperature, targets.temp.min, targets.temp.max)"
-            class="font-medium"
-          >
-            {{ formatDeviation(telemetry.temperature, targets.temp) }}
-          </span>
+        <!-- Прогресс-бар отклонения -->
+        <div
+          v-if="telemetry.temperature !== null && telemetry.temperature !== undefined && targets.temp"
+          class="mt-3"
+        >
+          <div class="flex items-center justify-between text-xs mb-1">
+            <span class="text-[color:var(--text-muted)]">Цель: {{ formatTarget(targets.temp, '°C') }}</span>
+            <span 
+              v-if="getDeviationPercent(telemetry.temperature, targets.temp) !== null"
+              :class="getDeviationColorClass(telemetry.temperature, targets.temp.min, targets.temp.max)"
+              class="font-medium"
+            >
+              {{ formatDeviation(telemetry.temperature, targets.temp) }}
+            </span>
+          </div>
+          <div class="w-full bg-[color:var(--border-muted)] rounded-full h-1.5 overflow-hidden">
+            <div
+              :class="getProgressBarClass(telemetry.temperature, targets.temp.min, targets.temp.max)"
+              class="h-full transition-all duration-500 ease-out"
+              :style="{ width: `${getProgressWidth(telemetry.temperature, targets.temp)}%` }"
+            ></div>
+          </div>
         </div>
-        <div class="w-full bg-[color:var(--border-muted)] rounded-full h-1.5 overflow-hidden">
-          <div
-            :class="getProgressBarClass(telemetry.temperature, targets.temp.min, targets.temp.max)"
-            class="h-full transition-all duration-500 ease-out"
-            :style="{ width: `${getProgressWidth(telemetry.temperature, targets.temp)}%` }"
-          ></div>
+        <div
+          v-else
+          class="text-xs text-[color:var(--text-muted)] mt-1"
+        >
+          Цель: {{ formatTarget(targets.temp, '°C') }}
         </div>
-      </div>
-      <div
-        v-else
-        class="text-xs text-[color:var(--text-muted)] mt-1"
-      >
-        Цель: {{ formatTarget(targets.temp, '°C') }}
-      </div>
-    </Card>
+      </Card>
 
-    <!-- Humidity -->
-    <Card 
-      v-if="targets.humidity"
-      :class="[
-        'surface-card-hover transition-all duration-300 hover:border-[color:var(--border-strong)]',
-        getCardBorderClass(telemetry.humidity, targets.humidity.min, targets.humidity.max)
-      ]"
-    >
-      <div class="flex items-center justify-between mb-2">
-        <div class="flex items-center gap-2">
-          <div class="text-sm font-medium">
-            Влажность
-          </div>
-          <div 
-            v-if="telemetry.humidity !== null && telemetry.humidity !== undefined"
-            :class="[
-              'w-2 h-2 rounded-full transition-all duration-300',
-              getPulseClass(telemetry.humidity, targets.humidity.min, targets.humidity.max)
-            ]"
-          ></div>
-        </div>
-        <Badge :variant="getIndicatorVariant(telemetry.humidity, targets.humidity.min, targets.humidity.max)">
-          {{ getIndicatorLabel(telemetry.humidity, targets.humidity.min, targets.humidity.max) }}
-        </Badge>
-      </div>
-      <div 
+      <!-- Humidity -->
+      <Card 
+        v-if="targets.humidity"
         :class="[
-          'text-2xl font-semibold mt-1 transition-all duration-300',
-          getValueColorClass(telemetry.humidity, targets.humidity.min, targets.humidity.max)
+          'surface-card-hover transition-all duration-300 hover:border-[color:var(--border-strong)]',
+          getCardBorderClass(telemetry.humidity, targets.humidity.min, targets.humidity.max)
         ]"
       >
-        {{ formatTelemetryValue(telemetry.humidity, 'humidity', '%') }}
-      </div>
+        <div class="flex items-center justify-between mb-2">
+          <div class="flex items-center gap-2">
+            <div class="text-sm font-medium">
+              Влажность
+            </div>
+            <div 
+              v-if="telemetry.humidity !== null && telemetry.humidity !== undefined"
+              :class="[
+                'w-2 h-2 rounded-full transition-all duration-300',
+                getPulseClass(telemetry.humidity, targets.humidity.min, targets.humidity.max)
+              ]"
+            ></div>
+          </div>
+          <Badge :variant="getIndicatorVariant(telemetry.humidity, targets.humidity.min, targets.humidity.max)">
+            {{ getIndicatorLabel(telemetry.humidity, targets.humidity.min, targets.humidity.max) }}
+          </Badge>
+        </div>
+        <div 
+          :class="[
+            'text-2xl font-semibold mt-1 transition-all duration-300',
+            getValueColorClass(telemetry.humidity, targets.humidity.min, targets.humidity.max)
+          ]"
+        >
+          {{ formatTelemetryValue(telemetry.humidity, 'humidity', '%') }}
+        </div>
       
-      <!-- Прогресс-бар отклонения -->
-      <div
-        v-if="telemetry.humidity !== null && telemetry.humidity !== undefined && targets.humidity"
-        class="mt-3"
-      >
-        <div class="flex items-center justify-between text-xs mb-1">
-          <span class="text-[color:var(--text-muted)]">Цель: {{ formatTarget(targets.humidity, '%') }}</span>
-          <span 
-            v-if="getDeviationPercent(telemetry.humidity, targets.humidity) !== null"
-            :class="getDeviationColorClass(telemetry.humidity, targets.humidity.min, targets.humidity.max)"
-            class="font-medium"
-          >
-            {{ formatDeviation(telemetry.humidity, targets.humidity) }}
-          </span>
+        <!-- Прогресс-бар отклонения -->
+        <div
+          v-if="telemetry.humidity !== null && telemetry.humidity !== undefined && targets.humidity"
+          class="mt-3"
+        >
+          <div class="flex items-center justify-between text-xs mb-1">
+            <span class="text-[color:var(--text-muted)]">Цель: {{ formatTarget(targets.humidity, '%') }}</span>
+            <span 
+              v-if="getDeviationPercent(telemetry.humidity, targets.humidity) !== null"
+              :class="getDeviationColorClass(telemetry.humidity, targets.humidity.min, targets.humidity.max)"
+              class="font-medium"
+            >
+              {{ formatDeviation(telemetry.humidity, targets.humidity) }}
+            </span>
+          </div>
+          <div class="w-full bg-[color:var(--border-muted)] rounded-full h-1.5 overflow-hidden">
+            <div
+              :class="getProgressBarClass(telemetry.humidity, targets.humidity.min, targets.humidity.max)"
+              class="h-full transition-all duration-500 ease-out"
+              :style="{ width: `${getProgressWidth(telemetry.humidity, targets.humidity)}%` }"
+            ></div>
+          </div>
         </div>
-        <div class="w-full bg-[color:var(--border-muted)] rounded-full h-1.5 overflow-hidden">
-          <div
-            :class="getProgressBarClass(telemetry.humidity, targets.humidity.min, targets.humidity.max)"
-            class="h-full transition-all duration-500 ease-out"
-            :style="{ width: `${getProgressWidth(telemetry.humidity, targets.humidity)}%` }"
-          ></div>
+        <div
+          v-else
+          class="text-xs text-[color:var(--text-muted)] mt-1"
+        >
+          Цель: {{ formatTarget(targets.humidity, '%') }}
         </div>
-      </div>
-      <div
-        v-else
-        class="text-xs text-[color:var(--text-muted)] mt-1"
-      >
-        Цель: {{ formatTarget(targets.humidity, '%') }}
-      </div>
-    </Card>
-  </div>
+      </Card>
+    </div>
   </div>
 </template>
 

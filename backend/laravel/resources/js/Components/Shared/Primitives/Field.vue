@@ -1,7 +1,10 @@
 <template>
   <label class="flex flex-col gap-1 min-w-0">
     <span class="flex items-center justify-between gap-2">
-      <span class="text-xs font-medium text-[var(--text-muted)]" :title="compact ? hint : undefined">
+      <span
+        class="text-xs font-medium text-[var(--text-muted)]"
+        :title="compact ? hint : undefined"
+      >
         {{ label }}<span
           v-if="required"
           class="text-alert"

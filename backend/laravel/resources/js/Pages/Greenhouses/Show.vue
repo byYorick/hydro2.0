@@ -23,7 +23,7 @@
                 <span
                   class="ui-state-dot"
                   :class="greenhouseClimateEnabled ? 'bg-[color:var(--accent-green)]' : 'bg-[color:var(--text-dim)]'"
-                />
+                ></span>
                 Климат {{ greenhouseClimateEnabled ? 'вкл' : 'выкл' }}
               </span>
             </div>
@@ -172,7 +172,7 @@
                   <span
                     class="h-1.5 w-1.5 rounded-full"
                     :class="maintenanceExitTargets.length > 0 ? 'bg-[color:var(--accent-amber)]' : 'bg-[color:var(--accent-green)]'"
-                  />
+                  ></span>
                   {{ maintenanceExitTargets.length > 0 ? 'Есть в maintenance' : 'Нет в maintenance' }}
                 </span>
               </div>

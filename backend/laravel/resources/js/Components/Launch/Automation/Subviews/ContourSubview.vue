@@ -175,224 +175,224 @@
       <div class="flex flex-col gap-3.5 px-3 pb-3 border-t border-[var(--border-muted)] pt-3">
         <SectionLabel>Долив</SectionLabel>
         <div class="grid grid-cols-1 md:grid-cols-3 gap-2.5">
-      <Field
-        compact
-        :label="meta('refillDurationSeconds').label"
-        :hint="meta('refillDurationSeconds').hint"
-      >
-        <input
-          v-bind="numAttrs"
-          :title="meta('refillDurationSeconds').details"
-          :value="waterForm.refillDurationSeconds"
-          @input="upd('refillDurationSeconds', toInt($event))"
-        />
-      </Field>
-      <Field
-        compact
-        :label="meta('refillTimeoutSeconds').label"
-        :hint="meta('refillTimeoutSeconds').hint"
-      >
-        <input
-          v-bind="numAttrs"
-          :title="meta('refillTimeoutSeconds').details"
-          :value="waterForm.refillTimeoutSeconds"
-          @input="upd('refillTimeoutSeconds', toInt($event))"
-        />
-      </Field>
-      <Field
-        compact
-        :label="meta('refillRequiredNodeTypes').label"
-        :hint="meta('refillRequiredNodeTypes').hint"
-      >
-        <input
-          v-bind="textAttrs"
-          :title="meta('refillRequiredNodeTypes').details"
-          :value="waterForm.refillRequiredNodeTypes"
-          placeholder="pump,valve"
-          @input="upd('refillRequiredNodeTypes', toStr($event))"
-        />
-      </Field>
-      <Field
-        compact
-        :label="meta('refillPreferredChannel').label"
-        :hint="meta('refillPreferredChannel').hint"
-      >
-        <input
-          v-bind="textAttrs"
-          :title="meta('refillPreferredChannel').details"
-          :value="waterForm.refillPreferredChannel"
-          @input="upd('refillPreferredChannel', toStr($event))"
-        />
-      </Field>
+          <Field
+            compact
+            :label="meta('refillDurationSeconds').label"
+            :hint="meta('refillDurationSeconds').hint"
+          >
+            <input
+              v-bind="numAttrs"
+              :title="meta('refillDurationSeconds').details"
+              :value="waterForm.refillDurationSeconds"
+              @input="upd('refillDurationSeconds', toInt($event))"
+            />
+          </Field>
+          <Field
+            compact
+            :label="meta('refillTimeoutSeconds').label"
+            :hint="meta('refillTimeoutSeconds').hint"
+          >
+            <input
+              v-bind="numAttrs"
+              :title="meta('refillTimeoutSeconds').details"
+              :value="waterForm.refillTimeoutSeconds"
+              @input="upd('refillTimeoutSeconds', toInt($event))"
+            />
+          </Field>
+          <Field
+            compact
+            :label="meta('refillRequiredNodeTypes').label"
+            :hint="meta('refillRequiredNodeTypes').hint"
+          >
+            <input
+              v-bind="textAttrs"
+              :title="meta('refillRequiredNodeTypes').details"
+              :value="waterForm.refillRequiredNodeTypes"
+              placeholder="pump,valve"
+              @input="upd('refillRequiredNodeTypes', toStr($event))"
+            />
+          </Field>
+          <Field
+            compact
+            :label="meta('refillPreferredChannel').label"
+            :hint="meta('refillPreferredChannel').hint"
+          >
+            <input
+              v-bind="textAttrs"
+              :title="meta('refillPreferredChannel').details"
+              :value="waterForm.refillPreferredChannel"
+              @input="upd('refillPreferredChannel', toStr($event))"
+            />
+          </Field>
         </div>
 
-    <SectionLabel>Диагностика и стартовые таймауты</SectionLabel>
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-2.5 items-center">
-      <ToggleField
-        :model-value="!!waterForm.diagnosticsEnabled"
-        :label="meta('diagnosticsEnabled').label"
-        :title="meta('diagnosticsEnabled').details"
-        @update:model-value="(v) => upd('diagnosticsEnabled', v)"
-      />
-      <Field
-        compact
-        :label="meta('diagnosticsIntervalMinutes').label"
-        :hint="meta('diagnosticsIntervalMinutes').hint"
-      >
-        <input
-          v-bind="numAttrs"
-          :title="meta('diagnosticsIntervalMinutes').details"
-          :value="waterForm.diagnosticsIntervalMinutes"
-          @input="upd('diagnosticsIntervalMinutes', toInt($event))"
-        />
-      </Field>
-      <Field
-        compact
-        :label="meta('diagnosticsWorkflow').label"
-        :hint="meta('diagnosticsWorkflow').hint"
-      >
-        <Select
-          :title="meta('diagnosticsWorkflow').details"
-          :model-value="waterForm.diagnosticsWorkflow ?? 'cycle_start'"
-          :options="['startup', 'cycle_start', 'diagnostics']"
-          mono
-          size="sm"
-          @update:model-value="(v: string) => upd('diagnosticsWorkflow', v as 'startup' | 'cycle_start' | 'diagnostics')"
-        />
-      </Field>
-      <Field
-        compact
-        :label="meta('estopDebounceMs').label"
-        :hint="meta('estopDebounceMs').hint"
-      >
-        <input
-          v-bind="numAttrs"
-          :title="meta('estopDebounceMs').details"
-          :value="waterForm.estopDebounceMs ?? 0"
-          @input="upd('estopDebounceMs', toInt($event))"
-        />
-      </Field>
-      <Field
-        compact
-        :label="meta('startupCleanFillTimeoutSeconds').label"
-        :hint="meta('startupCleanFillTimeoutSeconds').hint"
-      >
-        <input
-          v-bind="numAttrs"
-          :title="meta('startupCleanFillTimeoutSeconds').details"
-          :value="waterForm.startupCleanFillTimeoutSeconds ?? 0"
-          @input="upd('startupCleanFillTimeoutSeconds', toInt($event))"
-        />
-      </Field>
-      <Field
-        compact
-        :label="meta('startupSolutionFillTimeoutSeconds').label"
-        :hint="meta('startupSolutionFillTimeoutSeconds').hint"
-      >
-        <input
-          v-bind="numAttrs"
-          :title="meta('startupSolutionFillTimeoutSeconds').details"
-          :value="waterForm.startupSolutionFillTimeoutSeconds ?? 0"
-          @input="upd('startupSolutionFillTimeoutSeconds', toInt($event))"
-        />
-      </Field>
-      <Field
-        compact
-        :label="meta('startupPrepareRecirculationTimeoutSeconds').label"
-        :hint="meta('startupPrepareRecirculationTimeoutSeconds').hint"
-      >
-        <input
-          v-bind="numAttrs"
-          :title="meta('startupPrepareRecirculationTimeoutSeconds').details"
-          :value="waterForm.startupPrepareRecirculationTimeoutSeconds ?? 0"
-          @input="upd('startupPrepareRecirculationTimeoutSeconds', toInt($event))"
-        />
-      </Field>
-      <Field
-        compact
-        :label="meta('startupCleanFillRetryCycles').label"
-        :hint="meta('startupCleanFillRetryCycles').hint"
-      >
-        <input
-          v-bind="numAttrs"
-          :title="meta('startupCleanFillRetryCycles').details"
-          :value="waterForm.startupCleanFillRetryCycles ?? 0"
-          @input="upd('startupCleanFillRetryCycles', toInt($event))"
-        />
-      </Field>
-      <Field
-        compact
-        :label="meta('cleanFillMinCheckDelayMs').label"
-        :hint="meta('cleanFillMinCheckDelayMs').hint"
-      >
-        <input
-          v-bind="numAttrs"
-          :title="meta('cleanFillMinCheckDelayMs').details"
-          :value="waterForm.cleanFillMinCheckDelayMs ?? 0"
-          @input="upd('cleanFillMinCheckDelayMs', toInt($event))"
-        />
-      </Field>
-      <Field
-        compact
-        :label="meta('solutionFillCleanMinCheckDelayMs').label"
-        :hint="meta('solutionFillCleanMinCheckDelayMs').hint"
-      >
-        <input
-          v-bind="numAttrs"
-          :title="meta('solutionFillCleanMinCheckDelayMs').details"
-          :value="waterForm.solutionFillCleanMinCheckDelayMs ?? 0"
-          @input="upd('solutionFillCleanMinCheckDelayMs', toInt($event))"
-        />
-      </Field>
-      <Field
-        compact
-        :label="meta('solutionFillSolutionMinCheckDelayMs').label"
-        :hint="meta('solutionFillSolutionMinCheckDelayMs').hint"
-      >
-        <input
-          v-bind="numAttrs"
-          :title="meta('solutionFillSolutionMinCheckDelayMs').details"
-          :value="waterForm.solutionFillSolutionMinCheckDelayMs ?? 0"
-          @input="upd('solutionFillSolutionMinCheckDelayMs', toInt($event))"
-        />
-      </Field>
-      <ToggleField
-        :model-value="!!waterForm.recirculationStopOnSolutionMin"
-        :label="meta('recirculationStopOnSolutionMin').label"
-        :title="meta('recirculationStopOnSolutionMin').details"
-        @update:model-value="(v) => upd('recirculationStopOnSolutionMin', v)"
-      />
-      <ToggleField
-        :model-value="!!waterForm.stopOnSolutionMin"
-        :label="meta('stopOnSolutionMin').label"
-        :title="meta('stopOnSolutionMin').details"
-        @update:model-value="(v) => upd('stopOnSolutionMin', v)"
-      />
-      <ToggleField
-        :model-value="!!waterForm.enableDrainControl"
-        :label="meta('enableDrainControl').label"
-        :title="meta('enableDrainControl').details"
-        @update:model-value="(v) => upd('enableDrainControl', v)"
-      />
-      <Field
-        compact
-        :label="meta('drainTargetPercent').label"
-        :hint="meta('drainTargetPercent').hint"
-      >
-        <input
-          v-bind="numAttrs"
-          :title="meta('drainTargetPercent').details"
-          :value="waterForm.drainTargetPercent"
-          @input="upd('drainTargetPercent', toNum($event))"
-        />
-      </Field>
-      <ToggleField
-        :model-value="!!waterForm.valveSwitching"
-        :label="meta('valveSwitching').label"
-        :title="meta('valveSwitching').details"
-        @update:model-value="(v) => upd('valveSwitching', v)"
-      />
-    </div>
+        <SectionLabel>Диагностика и стартовые таймауты</SectionLabel>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-2.5 items-center">
+          <ToggleField
+            :model-value="!!waterForm.diagnosticsEnabled"
+            :label="meta('diagnosticsEnabled').label"
+            :title="meta('diagnosticsEnabled').details"
+            @update:model-value="(v) => upd('diagnosticsEnabled', v)"
+          />
+          <Field
+            compact
+            :label="meta('diagnosticsIntervalMinutes').label"
+            :hint="meta('diagnosticsIntervalMinutes').hint"
+          >
+            <input
+              v-bind="numAttrs"
+              :title="meta('diagnosticsIntervalMinutes').details"
+              :value="waterForm.diagnosticsIntervalMinutes"
+              @input="upd('diagnosticsIntervalMinutes', toInt($event))"
+            />
+          </Field>
+          <Field
+            compact
+            :label="meta('diagnosticsWorkflow').label"
+            :hint="meta('diagnosticsWorkflow').hint"
+          >
+            <Select
+              :title="meta('diagnosticsWorkflow').details"
+              :model-value="waterForm.diagnosticsWorkflow ?? 'cycle_start'"
+              :options="['startup', 'cycle_start', 'diagnostics']"
+              mono
+              size="sm"
+              @update:model-value="(v: string) => upd('diagnosticsWorkflow', v as 'startup' | 'cycle_start' | 'diagnostics')"
+            />
+          </Field>
+          <Field
+            compact
+            :label="meta('estopDebounceMs').label"
+            :hint="meta('estopDebounceMs').hint"
+          >
+            <input
+              v-bind="numAttrs"
+              :title="meta('estopDebounceMs').details"
+              :value="waterForm.estopDebounceMs ?? 0"
+              @input="upd('estopDebounceMs', toInt($event))"
+            />
+          </Field>
+          <Field
+            compact
+            :label="meta('startupCleanFillTimeoutSeconds').label"
+            :hint="meta('startupCleanFillTimeoutSeconds').hint"
+          >
+            <input
+              v-bind="numAttrs"
+              :title="meta('startupCleanFillTimeoutSeconds').details"
+              :value="waterForm.startupCleanFillTimeoutSeconds ?? 0"
+              @input="upd('startupCleanFillTimeoutSeconds', toInt($event))"
+            />
+          </Field>
+          <Field
+            compact
+            :label="meta('startupSolutionFillTimeoutSeconds').label"
+            :hint="meta('startupSolutionFillTimeoutSeconds').hint"
+          >
+            <input
+              v-bind="numAttrs"
+              :title="meta('startupSolutionFillTimeoutSeconds').details"
+              :value="waterForm.startupSolutionFillTimeoutSeconds ?? 0"
+              @input="upd('startupSolutionFillTimeoutSeconds', toInt($event))"
+            />
+          </Field>
+          <Field
+            compact
+            :label="meta('startupPrepareRecirculationTimeoutSeconds').label"
+            :hint="meta('startupPrepareRecirculationTimeoutSeconds').hint"
+          >
+            <input
+              v-bind="numAttrs"
+              :title="meta('startupPrepareRecirculationTimeoutSeconds').details"
+              :value="waterForm.startupPrepareRecirculationTimeoutSeconds ?? 0"
+              @input="upd('startupPrepareRecirculationTimeoutSeconds', toInt($event))"
+            />
+          </Field>
+          <Field
+            compact
+            :label="meta('startupCleanFillRetryCycles').label"
+            :hint="meta('startupCleanFillRetryCycles').hint"
+          >
+            <input
+              v-bind="numAttrs"
+              :title="meta('startupCleanFillRetryCycles').details"
+              :value="waterForm.startupCleanFillRetryCycles ?? 0"
+              @input="upd('startupCleanFillRetryCycles', toInt($event))"
+            />
+          </Field>
+          <Field
+            compact
+            :label="meta('cleanFillMinCheckDelayMs').label"
+            :hint="meta('cleanFillMinCheckDelayMs').hint"
+          >
+            <input
+              v-bind="numAttrs"
+              :title="meta('cleanFillMinCheckDelayMs').details"
+              :value="waterForm.cleanFillMinCheckDelayMs ?? 0"
+              @input="upd('cleanFillMinCheckDelayMs', toInt($event))"
+            />
+          </Field>
+          <Field
+            compact
+            :label="meta('solutionFillCleanMinCheckDelayMs').label"
+            :hint="meta('solutionFillCleanMinCheckDelayMs').hint"
+          >
+            <input
+              v-bind="numAttrs"
+              :title="meta('solutionFillCleanMinCheckDelayMs').details"
+              :value="waterForm.solutionFillCleanMinCheckDelayMs ?? 0"
+              @input="upd('solutionFillCleanMinCheckDelayMs', toInt($event))"
+            />
+          </Field>
+          <Field
+            compact
+            :label="meta('solutionFillSolutionMinCheckDelayMs').label"
+            :hint="meta('solutionFillSolutionMinCheckDelayMs').hint"
+          >
+            <input
+              v-bind="numAttrs"
+              :title="meta('solutionFillSolutionMinCheckDelayMs').details"
+              :value="waterForm.solutionFillSolutionMinCheckDelayMs ?? 0"
+              @input="upd('solutionFillSolutionMinCheckDelayMs', toInt($event))"
+            />
+          </Field>
+          <ToggleField
+            :model-value="!!waterForm.recirculationStopOnSolutionMin"
+            :label="meta('recirculationStopOnSolutionMin').label"
+            :title="meta('recirculationStopOnSolutionMin').details"
+            @update:model-value="(v) => upd('recirculationStopOnSolutionMin', v)"
+          />
+          <ToggleField
+            :model-value="!!waterForm.stopOnSolutionMin"
+            :label="meta('stopOnSolutionMin').label"
+            :title="meta('stopOnSolutionMin').details"
+            @update:model-value="(v) => upd('stopOnSolutionMin', v)"
+          />
+          <ToggleField
+            :model-value="!!waterForm.enableDrainControl"
+            :label="meta('enableDrainControl').label"
+            :title="meta('enableDrainControl').details"
+            @update:model-value="(v) => upd('enableDrainControl', v)"
+          />
+          <Field
+            compact
+            :label="meta('drainTargetPercent').label"
+            :hint="meta('drainTargetPercent').hint"
+          >
+            <input
+              v-bind="numAttrs"
+              :title="meta('drainTargetPercent').details"
+              :value="waterForm.drainTargetPercent"
+              @input="upd('drainTargetPercent', toNum($event))"
+            />
+          </Field>
+          <ToggleField
+            :model-value="!!waterForm.valveSwitching"
+            :label="meta('valveSwitching').label"
+            :title="meta('valveSwitching').details"
+            @update:model-value="(v) => upd('valveSwitching', v)"
+          />
+        </div>
       </div>
     </details>
 

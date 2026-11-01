@@ -136,7 +136,7 @@
             type="time"
             class="input-field"
             data-testid="manual-schedule-time-at"
-          >
+          />
           <p
             v-if="fieldError('time_at')"
             class="mt-1 text-xs text-status-critical"
@@ -158,7 +158,7 @@
               :max="intervalMaxValue"
               class="input-field"
               data-testid="manual-schedule-interval"
-            >
+            />
           </div>
           <div>
             <label class="mb-1 block text-xs text-[color:var(--text-muted)]">Единица</label>
@@ -196,7 +196,7 @@
               v-model="form.window_start"
               type="time"
               class="input-field"
-            >
+            />
           </div>
           <div>
             <label class="mb-1 block text-xs text-[color:var(--text-muted)]">Конец (UTC)</label>
@@ -204,7 +204,7 @@
               v-model="form.window_end"
               type="time"
               class="input-field"
-            >
+            />
           </div>
           <p
             v-if="fieldError('window_start') || fieldError('window_end')"
@@ -221,7 +221,7 @@
             type="datetime-local"
             class="input-field"
             data-testid="manual-schedule-run-at"
-          >
+          />
           <p class="mt-1 text-[10px] text-[color:var(--text-dim)]">
             Сработает один раз в указанный момент. Время вводится в UTC, не в локальном часовом поясе браузера.
           </p>
@@ -243,7 +243,7 @@
               :max="durationMaxValue"
               class="input-field"
               data-testid="manual-schedule-duration"
-            >
+            />
             <select
               v-model="durationUnit"
               class="input-field"
@@ -272,7 +272,7 @@
             maxlength="255"
             class="input-field"
             placeholder="Например: вечерний полив"
-          >
+          />
         </div>
 
         <label class="flex items-center gap-2 text-xs text-[color:var(--text-muted)]">
@@ -288,7 +288,7 @@
             <span
               class="absolute top-0.5 h-4 w-4 rounded-full bg-white transition motion-reduce:transition-none"
               :class="form.enabled ? 'left-[18px]' : 'left-0.5'"
-            />
+            ></span>
           </button>
           Активно
         </label>

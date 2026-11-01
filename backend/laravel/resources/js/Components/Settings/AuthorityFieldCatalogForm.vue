@@ -101,7 +101,7 @@
               rows="6"
               class="input-field settings-control--wide font-mono text-xs"
               :data-testid="`authority-field-${field.path}`"
-            />
+            ></textarea>
 
             <input
               v-else

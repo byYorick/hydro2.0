@@ -15,7 +15,7 @@
     <div
       class="absolute inset-y-0 left-0 w-1"
       :class="accentBarClass"
-    />
+    ></div>
 
     <header class="flex items-start justify-between gap-3">
       <div class="min-w-0 flex-1 space-y-2">
@@ -23,7 +23,7 @@
           <span
             class="h-2 w-2 shrink-0 rounded-full"
             :class="dotClass"
-          />
+          ></span>
           <Link
             :href="`/zones/${zone.id}`"
             class="truncate text-lg font-semibold tracking-tight text-[color:var(--text-primary)] no-underline hover:underline"

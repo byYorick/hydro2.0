@@ -409,111 +409,111 @@
                 row-clickable
                 @row-click="openDetails"
               >
-              <template #cell-select="{ row }">
-                <input
-                  type="checkbox"
-                  class="h-4 w-4 accent-[color:var(--accent-cyan)]"
-                  :checked="selectedIds.has(row.id)"
-                  :disabled="isResolved(row)"
-                  @change="toggleSelection(row)"
-                  @click.stop
-                />
-              </template>
+                <template #cell-select="{ row }">
+                  <input
+                    type="checkbox"
+                    class="h-4 w-4 accent-[color:var(--accent-cyan)]"
+                    :checked="selectedIds.has(row.id)"
+                    :disabled="isResolved(row)"
+                    @change="toggleSelection(row)"
+                    @click.stop
+                  />
+                </template>
 
-              <template #cell-severity="{ row }">
-                <div class="flex items-center gap-2">
-                  <span
-                    class="h-8 w-1 rounded-full"
-                    :class="severityRailClass(row)"
-                    aria-hidden="true"
-                  ></span>
+                <template #cell-severity="{ row }">
+                  <div class="flex items-center gap-2">
+                    <span
+                      class="h-8 w-1 rounded-full"
+                      :class="severityRailClass(row)"
+                      aria-hidden="true"
+                    ></span>
+                    <Badge
+                      :variant="severityBadgeVariant(row)"
+                      size="sm"
+                    >
+                      {{ severityLabel(row) }}
+                    </Badge>
+                  </div>
+                </template>
+
+                <template #cell-type="{ row }">
+                  <div class="min-w-0">
+                    <span
+                      class="truncate block max-w-[320px] text-[color:var(--text-primary)] font-medium"
+                      data-testid="alert-human-title"
+                    >
+                      {{ humanTitle(row) }}
+                    </span>
+                    <span
+                      v-if="row.code"
+                      class="mt-0.5 block truncate font-mono text-[11px] text-[color:var(--text-dim)]"
+                    >
+                      {{ row.code }}
+                    </span>
+                  </div>
+                </template>
+
+                <template #cell-process="{ row }">
                   <Badge
-                    :variant="severityBadgeVariant(row)"
+                    v-if="processStoppingKind(row)"
+                    variant="danger"
+                    size="sm"
+                    :data-testid="`alert-process-stop-badge-${row.id}`"
+                    :data-process-stopping-kind="processStoppingKind(row)"
+                  >
+                    {{ PROCESS_STOPPING_BADGE_LABEL[processStoppingKind(row)!] }}
+                  </Badge>
+                  <span
+                    v-else
+                    class="text-[color:var(--text-dim)]"
+                  >
+                    —
+                  </span>
+                </template>
+
+                <template #cell-zone="{ row }">
+                  <Link
+                    v-if="row.zone_id"
+                    class="truncate block max-w-[220px] text-[color:var(--accent-cyan)] font-medium hover:underline"
+                    :href="zoneAlertsTabUrl(row.zone_id)"
+                    :data-testid="`alert-zone-link-${row.id}`"
+                    @click.stop
+                  >
+                    {{ zoneLabel(row) }}
+                  </Link>
+                  <span
+                    v-else
+                    class="truncate block max-w-[220px]"
+                  >
+                    —
+                  </span>
+                </template>
+
+                <template #cell-created_at="{ row }">
+                  {{ formatDate(row.created_at) }}
+                </template>
+
+                <template #cell-status="{ row }">
+                  <Badge
+                    :variant="statusBadgeVariant(row)"
                     size="sm"
                   >
-                    {{ severityLabel(row) }}
+                    {{ translateStatus(row.status) }}
                   </Badge>
-                </div>
-              </template>
+                </template>
 
-              <template #cell-type="{ row }">
-                <div class="min-w-0">
-                  <span
-                    class="truncate block max-w-[320px] text-[color:var(--text-primary)] font-medium"
-                    data-testid="alert-human-title"
+                <template #row-actions="{ row }">
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    :data-testid="`alert-resolve-btn-${row.id}`"
+                    :disabled="isResolved(row)"
+                    @click.stop="openResolve(row)"
                   >
-                    {{ humanTitle(row) }}
-                  </span>
-                  <span
-                    v-if="row.code"
-                    class="mt-0.5 block truncate font-mono text-[11px] text-[color:var(--text-dim)]"
-                  >
-                    {{ row.code }}
-                  </span>
-                </div>
-              </template>
-
-              <template #cell-process="{ row }">
-                <Badge
-                  v-if="processStoppingKind(row)"
-                  variant="danger"
-                  size="sm"
-                  :data-testid="`alert-process-stop-badge-${row.id}`"
-                  :data-process-stopping-kind="processStoppingKind(row)"
-                >
-                  {{ PROCESS_STOPPING_BADGE_LABEL[processStoppingKind(row)!] }}
-                </Badge>
-                <span
-                  v-else
-                  class="text-[color:var(--text-dim)]"
-                >
-                  —
-                </span>
-              </template>
-
-              <template #cell-zone="{ row }">
-                <Link
-                  v-if="row.zone_id"
-                  class="truncate block max-w-[220px] text-[color:var(--accent-cyan)] font-medium hover:underline"
-                  :href="zoneAlertsTabUrl(row.zone_id)"
-                  :data-testid="`alert-zone-link-${row.id}`"
-                  @click.stop
-                >
-                  {{ zoneLabel(row) }}
-                </Link>
-                <span
-                  v-else
-                  class="truncate block max-w-[220px]"
-                >
-                  —
-                </span>
-              </template>
-
-              <template #cell-created_at="{ row }">
-                {{ formatDate(row.created_at) }}
-              </template>
-
-              <template #cell-status="{ row }">
-                <Badge
-                  :variant="statusBadgeVariant(row)"
-                  size="sm"
-                >
-                  {{ translateStatus(row.status) }}
-                </Badge>
-              </template>
-
-              <template #row-actions="{ row }">
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  :data-testid="`alert-resolve-btn-${row.id}`"
-                  :disabled="isResolved(row)"
-                  @click.stop="openResolve(row)"
-                >
-                  Отметить как решённый
-                </Button>
-              </template>
-            </DataTableV2>
+                    Отметить как решённый
+                  </Button>
+                </template>
+              </DataTableV2>
             </div>
           </section>
         </template>

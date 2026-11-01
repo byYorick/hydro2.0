@@ -169,7 +169,8 @@
         </span>
       </summary>
       <div class="p-3 grid grid-cols-1 md:grid-cols-4 gap-3">
-        <Field compact
+        <Field
+          compact
           label="Цель"
           :hint="phaseTargetAvailable ? phaseTargetSourceHint : 'runtime не подставит значения по умолчанию'"
         >
@@ -194,7 +195,8 @@
             readonly
           />
         </Field>
-        <Field compact
+        <Field
+          compact
           label="Мёртвая зона"
           hint="0..2 · игнорируется мелкое отклонение"
         >
@@ -214,7 +216,8 @@
             :title="fieldHelp('dead_zone')"
           />
         </Field>
-        <Field compact
+        <Field
+          compact
           label="Ближняя зона"
           hint="должна быть > мёртвой"
         >
@@ -234,7 +237,8 @@
             :title="fieldHelp('close_zone')"
           />
         </Field>
-        <Field compact
+        <Field
+          compact
           label="Дальняя зона"
           hint="должна быть > ближней"
         >
@@ -268,7 +272,10 @@
         <span class="text-[11px] text-[var(--text-dim)]">мягкая коррекция около target</span>
       </summary>
       <div class="p-3 grid grid-cols-1 md:grid-cols-3 gap-3">
-        <Field compact label="Kp">
+        <Field
+          compact
+          label="Kp"
+        >
           <template
             v-if="isCoeffDirty('close', 'kp')"
             #right
@@ -285,7 +292,10 @@
             :title="fieldHelp('close.kp')"
           />
         </Field>
-        <Field compact label="Ki">
+        <Field
+          compact
+          label="Ki"
+        >
           <template
             v-if="isCoeffDirty('close', 'ki')"
             #right
@@ -302,7 +312,10 @@
             :title="fieldHelp('close.ki')"
           />
         </Field>
-        <Field compact label="Kd">
+        <Field
+          compact
+          label="Kd"
+        >
           <template
             v-if="isCoeffDirty('close', 'kd')"
             #right
@@ -333,7 +346,10 @@
         <span class="text-[11px] text-[var(--text-dim)]">агрессивная коррекция при большом отклонении</span>
       </summary>
       <div class="p-3 grid grid-cols-1 md:grid-cols-3 gap-3">
-        <Field compact label="Kp">
+        <Field
+          compact
+          label="Kp"
+        >
           <template
             v-if="isCoeffDirty('far', 'kp')"
             #right
@@ -350,7 +366,10 @@
             :title="fieldHelp('far.kp')"
           />
         </Field>
-        <Field compact label="Ki">
+        <Field
+          compact
+          label="Ki"
+        >
           <template
             v-if="isCoeffDirty('far', 'ki')"
             #right
@@ -367,7 +386,10 @@
             :title="fieldHelp('far.ki')"
           />
         </Field>
-        <Field compact label="Kd">
+        <Field
+          compact
+          label="Kd"
+        >
           <template
             v-if="isCoeffDirty('far', 'kd')"
             #right
@@ -398,7 +420,8 @@
         <span class="text-[11px] text-[var(--text-dim)]">защита от накопления ошибки</span>
       </summary>
       <div class="p-3 grid grid-cols-1 md:grid-cols-3 gap-3">
-        <Field compact
+        <Field
+          compact
           label="Предел интеграла"
           hint="pH обычно 12–20 · EC 20–100"
         >

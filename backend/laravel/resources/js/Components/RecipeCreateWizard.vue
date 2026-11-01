@@ -3,8 +3,8 @@
     :open="show"
     title="Создать новый рецепт"
     size="large"
-    @close="$emit('close')"
     hide-default-cancel
+    @close="$emit('close')"
   >
     <RecipeEditor
       v-model:form="form"

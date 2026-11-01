@@ -610,19 +610,19 @@
 
       <ul class="diagram-legend">
         <li>
-          <span class="legend-dot legend-dot--flow" />
+          <span class="legend-dot legend-dot--flow"></span>
           Поток активен
         </li>
         <li>
-          <span class="legend-dot legend-dot--valve" />
+          <span class="legend-dot legend-dot--valve"></span>
           Клапан открыт
         </li>
         <li>
-          <span class="legend-dot legend-dot--dose" />
+          <span class="legend-dot legend-dot--dose"></span>
           Активный дозатор
         </li>
         <li>
-          <span class="legend-dot legend-dot--idle" />
+          <span class="legend-dot legend-dot--idle"></span>
           Ожидание
         </li>
       </ul>

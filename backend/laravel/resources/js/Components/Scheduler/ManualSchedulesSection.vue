@@ -98,7 +98,7 @@
                   <span
                     class="absolute top-0.5 h-4 w-4 rounded-full bg-white transition motion-reduce:transition-none"
                     :class="schedule.enabled ? 'left-[18px]' : 'left-0.5'"
-                  />
+                  ></span>
                 </button>
                 <Badge
                   v-else

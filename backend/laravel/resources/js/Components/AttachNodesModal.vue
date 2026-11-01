@@ -2,8 +2,8 @@
   <Modal
     :open="show"
     title="Привязать узлы к зоне"
-    @close="$emit('close')"
     hide-default-cancel
+    @close="$emit('close')"
   >
     <div
       v-if="loading"

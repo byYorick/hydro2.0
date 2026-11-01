@@ -363,8 +363,8 @@
         :open="showEditModal"
         title="Редактирование растения"
         size="large"
-        @close="closeEditModal"
         hide-default-cancel
+        @close="closeEditModal"
       >
         <form
           class="space-y-4"

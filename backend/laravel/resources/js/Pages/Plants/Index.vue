@@ -166,8 +166,8 @@
       :open="isEditing"
       title="Редактирование растения"
       size="large"
-      @close="resetForm"
       hide-default-cancel
+      @close="resetForm"
     >
       <form
         class="space-y-4"

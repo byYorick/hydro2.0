@@ -2,8 +2,8 @@
   <Modal
     :open="open"
     :title="title"
-    @close="$emit('close')"
     hide-default-cancel
+    @close="$emit('close')"
   >
     <slot>
       <div class="text-sm text-[color:var(--text-muted)]">

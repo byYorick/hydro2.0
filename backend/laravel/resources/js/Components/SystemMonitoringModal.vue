@@ -2,8 +2,8 @@
   <Modal
     :open="show"
     :title="'Мониторинг системы'"
-    @close="$emit('close')"
     hide-default-cancel
+    @close="$emit('close')"
   >
     <div class="space-y-4">
       <!-- Основные компоненты -->

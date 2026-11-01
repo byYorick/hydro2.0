@@ -2,8 +2,8 @@
   <Modal
     :open="show"
     title="Создать новую зону"
-    @close="$emit('close')"
     hide-default-cancel
+    @close="$emit('close')"
   >
     <div class="space-y-4">
       <!-- Шаг 1: Основная информация -->
