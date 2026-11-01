@@ -35,10 +35,11 @@
         :hint="meta('intervalMinutes').hint"
         required
       >
-        <input
-          v-bind="numAttrs"
+        <TextField
+          type="number"
           :title="meta('intervalMinutes').details"
           :value="waterForm.intervalMinutes"
+          input-class="font-mono"
           @input="upd('intervalMinutes', toInt($event))"
         />
       </Field>
@@ -47,10 +48,11 @@
         :hint="meta('durationSeconds').hint"
         required
       >
-        <input
-          v-bind="numAttrs"
+        <TextField
+          type="number"
           :title="meta('durationSeconds').details"
           :value="waterForm.durationSeconds"
+          input-class="font-mono"
           @input="upd('durationSeconds', toInt($event))"
         />
       </Field>
@@ -65,8 +67,7 @@
         :label="meta('irrigationEcComponent').label"
         :hint="meta('irrigationEcComponent').hint"
       >
-        <select
-          class="block w-full h-8 rounded-lg border border-[var(--border-muted)] bg-[var(--bg-surface)] text-[var(--text-primary)] px-2.5 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-brand-soft"
+        <SelectField
           :title="meta('irrigationEcComponent').details"
           :value="ecComponentSelectValue"
           @change="onEcComponentChange"
@@ -77,7 +78,7 @@
           <option value="npk">
             NPK (pump_a)
           </option>
-        </select>
+        </SelectField>
       </Field>
     </div>
 
@@ -89,11 +90,12 @@
         :label="meta('irrigationDecisionLookbackSeconds').label"
         :hint="meta('irrigationDecisionLookbackSeconds').hint"
       >
-        <input
-          v-bind="numAttrs"
+        <TextField
+          type="number"
           data-testid="irrigation-decision-lookback"
           :title="meta('irrigationDecisionLookbackSeconds').details"
           :value="waterForm.irrigationDecisionLookbackSeconds ?? 0"
+          input-class="font-mono"
           @input="upd('irrigationDecisionLookbackSeconds', toInt($event))"
         />
       </Field>
@@ -101,11 +103,12 @@
         :label="meta('irrigationDecisionStaleAfterSeconds').label"
         :hint="meta('irrigationDecisionStaleAfterSeconds').hint"
       >
-        <input
-          v-bind="numAttrs"
+        <TextField
+          type="number"
           data-testid="irrigation-decision-stale"
           :title="meta('irrigationDecisionStaleAfterSeconds').details"
           :value="waterForm.irrigationDecisionStaleAfterSeconds ?? 0"
+          input-class="font-mono"
           @input="upd('irrigationDecisionStaleAfterSeconds', toInt($event))"
         />
       </Field>
@@ -113,11 +116,12 @@
         :label="meta('irrigationDecisionHysteresisPct').label"
         :hint="meta('irrigationDecisionHysteresisPct').hint"
       >
-        <input
-          v-bind="numAttrs"
+        <TextField
+          type="number"
           data-testid="irrigation-decision-hysteresis"
           :title="meta('irrigationDecisionHysteresisPct').details"
           :value="waterForm.irrigationDecisionHysteresisPct ?? 0"
+          input-class="font-mono"
           @input="upd('irrigationDecisionHysteresisPct', toNum($event))"
         />
       </Field>
@@ -128,10 +132,11 @@
           :label="meta('irrigationDecisionMinSamples').label"
           :hint="meta('irrigationDecisionMinSamples').hint"
         >
-          <input
-            v-bind="numAttrs"
+          <TextField
+            type="number"
             :title="meta('irrigationDecisionMinSamples').details"
             :value="waterForm.irrigationDecisionMinSamples ?? 0"
+            input-class="font-mono"
             @input="upd('irrigationDecisionMinSamples', toInt($event))"
           />
         </Field>
@@ -139,10 +144,11 @@
           :label="meta('irrigationDecisionSpreadAlertThresholdPct').label"
           :hint="meta('irrigationDecisionSpreadAlertThresholdPct').hint"
         >
-          <input
-            v-bind="numAttrs"
+          <TextField
+            type="number"
             :title="meta('irrigationDecisionSpreadAlertThresholdPct').details"
             :value="waterForm.irrigationDecisionSpreadAlertThresholdPct ?? 0"
+            input-class="font-mono"
             @input="upd('irrigationDecisionSpreadAlertThresholdPct', toNum($event))"
           />
         </Field>
@@ -157,10 +163,11 @@
         :label="meta('irrigationMaxSetupReplays').label"
         :hint="meta('irrigationMaxSetupReplays').hint"
       >
-        <input
-          v-bind="numAttrs"
+        <TextField
+          type="number"
           :title="meta('irrigationMaxSetupReplays').details"
           :value="waterForm.irrigationMaxSetupReplays ?? 0"
+          input-class="font-mono"
           @input="upd('irrigationMaxSetupReplays', toInt($event))"
         />
       </Field>
@@ -185,6 +192,8 @@ import { Field, Hint, ToggleField } from '@/Components/Shared/Primitives'
 import { useLaunchPreferences } from '@/composables/useLaunchPreferences'
 import type { WaterFormState } from '@/composables/zoneAutomationTypes'
 import { createMetaResolver, toInt, toNum, type FieldMeta } from './sharedFormUtils'
+import TextField from '@/Components/TextField.vue'
+import SelectField from '@/Components/SelectField.vue'
 
 const props = defineProps<{ waterForm: WaterFormState }>()
 const emit = defineEmits<{ (e: 'update:waterForm', next: WaterFormState): void }>()
@@ -199,10 +208,6 @@ const ecComponentSelectValue = computed(() => {
   const raw = props.waterForm.irrigationEcComponent
   return raw === 'npk' ? 'npk' : 'calcium'
 })
-
-const inputCls =
-  'block w-full h-8 rounded-lg border border-[var(--border-muted)] bg-[var(--bg-surface)] text-[var(--text-primary)] px-2.5 text-sm font-mono outline-none transition-[border-color,box-shadow,background-color] duration-150 focus:border-brand focus:ring-2 focus:ring-brand-soft focus-visible:border-brand focus-visible:ring-2 focus-visible:ring-brand-soft'
-const numAttrs = { class: inputCls, type: 'number' }
 
 const IRRIGATION_FIELD_META: Partial<Record<keyof WaterFormState, FieldMeta>> = {
   intervalMinutes: {

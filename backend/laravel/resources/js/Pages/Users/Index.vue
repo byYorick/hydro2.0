@@ -10,14 +10,13 @@
     >
       <Card class="mb-4">
         <div class="mb-3 flex flex-wrap items-center gap-2">
-          <input
+          <TextField
             v-model="searchQuery"
             placeholder="Поиск по имени/email..."
-            class="input-field w-64"
+            class="w-64"
           />
-          <select
+          <SelectField
             v-model="roleFilter"
-            class="input-select"
           >
             <option value="">
               Все роли
@@ -31,7 +30,7 @@
             <option value="viewer">
               Наблюдатель
             </option>
-          </select>
+          </SelectField>
           <Button
             size="sm"
             :disabled="loading.load"
@@ -149,10 +148,10 @@
       <div class="space-y-3">
         <div>
           <label class="text-sm text-[color:var(--text-muted)]">Имя</label>
-          <input
+          <TextField
             v-model="userForm.name"
-            class="input-field mt-1"
-            :class="formErrors.name ? 'border-[color:var(--status-critical)] bg-[color:var(--bg-elevated)]' : ''"
+            :input-class="formErrors.name ? 'border-[color:var(--status-critical)] bg-[color:var(--bg-elevated)]' : ''"
+            class="mt-1"
           />
           <div
             v-if="formErrors.name"
@@ -163,11 +162,11 @@
         </div>
         <div>
           <label class="text-sm text-[color:var(--text-muted)]">Email</label>
-          <input
+          <TextField
             v-model="userForm.email"
             type="email"
-            class="input-field mt-1"
-            :class="formErrors.email ? 'border-[color:var(--status-critical)] bg-[color:var(--bg-elevated)]' : ''"
+            :input-class="formErrors.email ? 'border-[color:var(--status-critical)] bg-[color:var(--bg-elevated)]' : ''"
+            class="mt-1"
           />
           <div
             v-if="formErrors.email"
@@ -178,12 +177,12 @@
         </div>
         <div>
           <label class="text-sm text-[color:var(--text-muted)]">Пароль</label>
-          <input
+          <TextField
             v-model="userForm.password"
             type="password"
-            class="input-field mt-1"
-            :class="formErrors.password ? 'border-[color:var(--status-critical)] bg-[color:var(--bg-elevated)]' : ''"
             :placeholder="editingUser ? 'Оставьте пустым, чтобы не менять' : 'Минимум 8 символов'"
+            :input-class="formErrors.password ? 'border-[color:var(--status-critical)] bg-[color:var(--bg-elevated)]' : ''"
+            class="mt-1"
           />
           <div
             v-if="formErrors.password"
@@ -194,10 +193,10 @@
         </div>
         <div>
           <label class="text-sm text-[color:var(--text-muted)]">Роль</label>
-          <select
+          <SelectField
             v-model="userForm.role"
-            class="input-select mt-1"
-            :class="formErrors.role ? 'border-[color:var(--status-critical)] bg-[color:var(--bg-elevated)]' : ''"
+            :input-class="formErrors.role ? 'border-[color:var(--status-critical)] bg-[color:var(--bg-elevated)]' : ''"
+            class="mt-1"
           >
             <option value="viewer">
               Наблюдатель
@@ -208,7 +207,7 @@
             <option value="admin">
               Администратор
             </option>
-          </select>
+          </SelectField>
           <div
             v-if="formErrors.role"
             class="text-xs text-[color:var(--badge-danger-text)] mt-1"
@@ -285,6 +284,8 @@ import { api } from '@/services/api'
 import { useToast } from '@/composables/useToast'
 import { useSimpleModal } from '@/composables/useModal'
 import type { User } from '@/types'
+import TextField from '@/Components/TextField.vue'
+import SelectField from '@/Components/SelectField.vue'
 
 interface PageProps {
   auth?: {

@@ -14,17 +14,15 @@
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div>
             <label class="block text-xs text-[color:var(--text-muted)] mb-1">Производитель <span class="text-red-500">*</span></label>
-            <input
+            <TextField
               v-model="form.manufacturer"
-              class="input-field"
               placeholder="Yara, Masterblend, Haifa..."
             />
           </div>
           <div>
             <label class="block text-xs text-[color:var(--text-muted)] mb-1">Название продукта <span class="text-red-500">*</span></label>
-            <input
+            <TextField
               v-model="form.name"
-              class="input-field"
               placeholder="Masterblend 4-18-38"
             />
           </div>
@@ -45,9 +43,8 @@
         </div>
         <div>
           <label class="block text-xs text-[color:var(--text-muted)] mb-1">Состав / формула</label>
-          <input
+          <TextField
             v-model="form.composition"
-            class="input-field"
             placeholder="N 4% · P 18% · K 38%"
           />
           <p class="text-[11px] text-[color:var(--text-muted)] mt-1">
@@ -63,9 +60,8 @@
         </div>
         <div>
           <label class="block text-xs text-[color:var(--text-muted)] mb-1">Рекомендуемые стадии роста</label>
-          <input
+          <TextField
             v-model="form.recommended_stage"
-            class="input-field"
             placeholder="VEG, BLOOM, FRUIT"
           />
           <p class="text-[11px] text-[color:var(--text-muted)] mt-1">
@@ -74,12 +70,13 @@
         </div>
         <div>
           <label class="block text-xs text-[color:var(--text-muted)] mb-1">Заметки</label>
-          <textarea
+          <TextField
             v-model="form.notes"
-            rows="2"
-            class="input-field !h-auto !py-2"
+            :rows="2"
             placeholder="Например: хорошо растворим в тёплой воде; хранить в сухом месте"
-          ></textarea>
+            multiline
+            input-class="!h-auto !py-2"
+          />
         </div>
       </div>
     </div>
@@ -104,6 +101,7 @@ import type { NutrientProduct } from '@/types'
 import { api } from '@/services/api'
 import { useToast } from '@/composables/useToast'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
+import TextField from '@/Components/TextField.vue'
 
 const props = defineProps<{
   open: boolean

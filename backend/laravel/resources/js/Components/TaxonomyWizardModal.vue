@@ -10,43 +10,33 @@
         class="grid grid-cols-1 gap-2 items-end"
         :class="isGrowingSystem ? 'md:grid-cols-[1fr_160px_170px_auto]' : 'md:grid-cols-[1fr_160px_auto]'"
       >
-        <div>
-          <label class="block text-xs text-[color:var(--text-muted)] mb-1">Название</label>
-          <input
-            v-model="newItem.label"
-            type="text"
-            class="input-field h-9 w-full"
-            placeholder="Например: Кокосовый субстрат"
-            :disabled="loading"
-            autocomplete="off"
-          />
-        </div>
-        <div>
-          <label class="block text-xs text-[color:var(--text-muted)] mb-1">ID</label>
-          <input
-            v-model="newItem.id"
-            type="text"
-            class="input-field h-9 w-full"
-            placeholder="Например: coco"
-            :disabled="loading"
-            autocomplete="off"
-          />
-        </div>
-        <div v-if="isGrowingSystem">
-          <label class="block text-xs text-[color:var(--text-muted)] mb-1">Субстрат</label>
-          <select
-            v-model="newItem.uses_substrate"
-            class="input-field h-9 w-full"
-            :disabled="loading"
-          >
-            <option :value="true">
-              С субстратом
-            </option>
-            <option :value="false">
-              Без субстрата
-            </option>
-          </select>
-        </div>
+        <TextField
+          v-model="newItem.label"
+          label="Название"
+          placeholder="Например: Кокосовый субстрат"
+          :disabled="loading"
+          autocomplete="off"
+        />
+        <TextField
+          v-model="newItem.id"
+          label="ID"
+          placeholder="Например: coco"
+          :disabled="loading"
+          autocomplete="off"
+        />
+        <SelectField
+          v-if="isGrowingSystem"
+          v-model="newItem.uses_substrate"
+          label="Субстрат"
+          :disabled="loading"
+        >
+          <option :value="true">
+            С субстратом
+          </option>
+          <option :value="false">
+            Без субстрата
+          </option>
+        </SelectField>
         <Button
           type="button"
           size="sm"
@@ -72,22 +62,17 @@
           class="grid grid-cols-1 gap-2 items-center"
           :class="isGrowingSystem ? 'md:grid-cols-[1fr_160px_170px_auto]' : 'md:grid-cols-[1fr_160px_auto]'"
         >
-          <input
+          <TextField
             v-model="item.label"
-            type="text"
-            class="input-field h-9 w-full"
             :disabled="loading"
           />
-          <input
+          <TextField
             v-model="item.id"
-            type="text"
-            class="input-field h-9 w-full"
             :disabled="loading || item.locked"
           />
-          <select
+          <SelectField
             v-if="isGrowingSystem"
             v-model="item.uses_substrate"
-            class="input-field h-9 w-full"
             :disabled="loading"
           >
             <option :value="true">
@@ -96,7 +81,7 @@
             <option :value="false">
               Без субстрата
             </option>
-          </select>
+          </SelectField>
           <Button
             type="button"
             size="sm"
@@ -134,6 +119,8 @@
 import { computed, reactive, ref, watch } from 'vue'
 import Modal from '@/Components/Modal.vue'
 import Button from '@/Components/Button.vue'
+import TextField from '@/Components/TextField.vue'
+import SelectField from '@/Components/SelectField.vue'
 import { api } from '@/services/api'
 import { useToast } from '@/composables/useToast'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'

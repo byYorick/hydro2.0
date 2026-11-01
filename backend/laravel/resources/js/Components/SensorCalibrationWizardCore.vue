@@ -161,11 +161,11 @@
           :title="fieldHelp('point_1_reference')"
         >
           {{ point1FieldLabel }}
-          <input
+          <TextField
             v-model.number="point1Value"
             type="number"
             step="0.01"
-            class="input-field mt-1 w-full"
+            class="mt-1 w-full"
           />
         </label>
         <div class="text-xs text-[color:var(--text-dim)]">
@@ -206,11 +206,11 @@
           :title="fieldHelp('point_2_reference')"
         >
           {{ point2FieldLabel }}
-          <input
+          <TextField
             v-model.number="point2Value"
             type="number"
             step="0.01"
-            class="input-field mt-1 w-full"
+            class="mt-1 w-full"
           />
         </label>
         <div class="text-xs text-[color:var(--text-dim)]">
@@ -298,6 +298,7 @@ import type {
   SensorCalibrationSessionOutcome,
 } from '@/types/SensorCalibration'
 import type { SensorCalibrationSettings } from '@/types/SystemSettings'
+import TextField from '@/Components/TextField.vue'
 
 const props = defineProps<{
   zoneId: number

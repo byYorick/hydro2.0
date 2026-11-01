@@ -45,10 +45,11 @@
             class="text-red-400"
           >*</span>
         </div>
-        <select
+        <SelectField
           v-model="assignments[role.key]"
-          class="input-select h-8 text-xs flex-1"
           :disabled="!canManage"
+          input-class="h-8 text-xs"
+          class="flex-1"
         >
           <option value="">
             — не назначено —
@@ -60,7 +61,7 @@
           >
             {{ node.name }} ({{ node.uid }})
           </option>
-        </select>
+        </SelectField>
       </div>
     </div>
 
@@ -84,6 +85,7 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import Button from '@/Components/Button.vue'
 import { api } from '@/services/api'
 import { logger } from '@/utils/logger'
+import SelectField from '@/Components/SelectField.vue'
 
 interface Props {
   zoneId: number

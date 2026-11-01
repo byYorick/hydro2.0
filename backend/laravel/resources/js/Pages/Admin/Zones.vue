@@ -11,19 +11,16 @@
         class="grid grid-cols-1 md:grid-cols-4 gap-2"
         @submit.prevent="onCreate"
       >
-        <input
+        <TextField
           v-model="form.name"
           placeholder="Name"
-          class="input-field"
         />
-        <input
+        <TextField
           v-model="form.description"
           placeholder="Description"
-          class="input-field"
         />
-        <select
+        <SelectField
           v-model="form.status"
-          class="input-select"
         >
           <option value="RUNNING">
             RUNNING
@@ -37,10 +34,9 @@
           <option value="ALARM">
             ALARM
           </option>
-        </select>
-        <select
+        </SelectField>
+        <SelectField
           v-model="form.greenhouse_id"
-          class="input-select"
         >
           <option :value="null">
             Выберите теплицу
@@ -52,7 +48,7 @@
           >
             {{ gh.name }}
           </option>
-        </select>
+        </SelectField>
         <div class="md:col-span-4">
           <Button
             size="sm"
@@ -95,6 +91,8 @@ import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import { useZonesStore } from '@/stores/zones'
 import { extractHumanErrorMessage } from '@/utils/errorMessage'
 import type { Greenhouse, Zone } from '@/types'
+import TextField from '@/Components/TextField.vue'
+import SelectField from '@/Components/SelectField.vue'
 
 interface PageProps {
   zones?: Zone[]

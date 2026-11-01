@@ -10,84 +10,54 @@
       >
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label
-              for="greenhouse-name"
-              class="block text-xs text-[color:var(--text-muted)] mb-1"
-            >Название <span class="text-[color:var(--status-critical)]">*</span></label>
-            <input
+            <TextField
               id="greenhouse-name"
               v-model="form.name"
               name="name"
-              type="text"
+              label="Название"
               required
               placeholder="Main Greenhouse"
-              class="input-field"
-              :class="errors.name ? 'border-[color:var(--status-critical)] bg-[color:var(--badge-danger-bg)]' : ''"
-            />
-            <div
-              v-if="errors.name"
-              class="text-xs text-[color:var(--badge-danger-text)] mt-1"
-            >
-              {{ errors.name }}
-            </div>
-            <div class="text-xs text-[color:var(--text-dim)] mt-1">
-              UID будет сгенерирован автоматически: <span class="text-[color:var(--text-muted)]">{{ generatedUid }}</span>
-            </div>
-          </div>
-          
-          <div>
-            <label
-              for="greenhouse-timezone"
-              class="block text-xs text-[color:var(--text-muted)] mb-1"
-            >Часовой пояс</label>
-            <input
-              id="greenhouse-timezone"
-              v-model="form.timezone"
-              name="timezone"
-              type="text"
-              placeholder="Europe/Moscow"
-              class="input-field"
+              :error="errors.name"
+              :hint="`UID будет сгенерирован автоматически: ${generatedUid}`"
             />
           </div>
-          
-          <div>
-            <label
-              for="greenhouse-type"
-              class="block text-xs text-[color:var(--text-muted)] mb-1"
-            >Тип</label>
-            <select
-              id="greenhouse-type"
-              v-model.number="form.greenhouse_type_id"
-              name="greenhouse_type_id"
-              class="input-select"
+
+          <TextField
+            id="greenhouse-timezone"
+            v-model="form.timezone"
+            name="timezone"
+            label="Часовой пояс"
+            placeholder="Europe/Moscow"
+          />
+
+          <SelectField
+            id="greenhouse-type"
+            v-model.number="form.greenhouse_type_id"
+            name="greenhouse_type_id"
+            label="Тип"
+          >
+            <option :value="null">
+              Выберите тип
+            </option>
+            <option
+              v-for="greenhouseType in greenhouseTypes"
+              :key="greenhouseType.id"
+              :value="greenhouseType.id"
             >
-              <option :value="null">
-                Выберите тип
-              </option>
-              <option
-                v-for="greenhouseType in greenhouseTypes"
-                :key="greenhouseType.id"
-                :value="greenhouseType.id"
-              >
-                {{ greenhouseType.name }}
-              </option>
-            </select>
-          </div>
-          
-          <div class="md:col-span-2">
-            <label
-              for="greenhouse-description"
-              class="block text-xs text-[color:var(--text-muted)] mb-1"
-            >Описание</label>
-            <textarea
-              id="greenhouse-description"
-              v-model="form.description"
-              name="description"
-              rows="3"
-              placeholder="Описание теплицы..."
-              class="w-full rounded-md border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] px-2 py-1 text-sm text-[color:var(--text-primary)] focus:border-[color:var(--status-ok)] focus:outline-none"
-            ></textarea>
-          </div>
+              {{ greenhouseType.name }}
+            </option>
+          </SelectField>
+
+          <TextField
+            id="greenhouse-description"
+            v-model="form.description"
+            name="description"
+            label="Описание"
+            class="md:col-span-2"
+            multiline
+            :rows="3"
+            placeholder="Описание теплицы..."
+          />
         </div>
         
         <div class="flex justify-end gap-2">
@@ -119,6 +89,8 @@ import { Link, router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
 import Button from '@/Components/Button.vue'
+import TextField from '@/Components/TextField.vue'
+import SelectField from '@/Components/SelectField.vue'
 import { logger } from '@/utils/logger'
 import { api } from '@/services/api'
 import { useToast } from '@/composables/useToast'

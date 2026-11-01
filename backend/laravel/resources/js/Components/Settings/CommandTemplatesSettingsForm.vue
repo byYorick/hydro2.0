@@ -58,21 +58,21 @@
             />
           </div>
           <div class="settings-row__control flex-wrap">
-            <input
+            <TextField
               :id="stepInputId(field.path, index, 'channel')"
               v-model="step.channel"
               type="text"
-              class="input-field settings-control--text font-mono"
               placeholder="канал"
               :aria-label="`Канал шага ${index + 1}`"
               :data-testid="`command-template-channel-${field.path}-${index}`"
+              input-class="settings-control--text font-mono"
             />
-            <select
+            <SelectField
               :id="stepInputId(field.path, index, 'state')"
               :value="step.params.state ? 'true' : 'false'"
-              class="input-select settings-control--select"
               :aria-label="`Состояние шага ${index + 1}`"
               :data-testid="`command-template-state-${field.path}-${index}`"
+              input-class="settings-control--select"
               @change="step.params.state = ($event.target as HTMLSelectElement).value === 'true'"
             >
               <option value="true">
@@ -81,7 +81,7 @@
               <option value="false">
                 Выключить
               </option>
-            </select>
+            </SelectField>
             <Button
               size="sm"
               variant="secondary"
@@ -133,6 +133,8 @@ import { ref, watch } from 'vue'
 import Button from '@/Components/Button.vue'
 import SettingsFieldHelp from '@/Components/Settings/SettingsFieldHelp.vue'
 import type { AutomationCommandTemplateStep, SystemSettingsField } from '@/types/SystemSettings'
+import TextField from '@/Components/TextField.vue'
+import SelectField from '@/Components/SelectField.vue'
 
 const TEMPLATE_LABELS: Record<string, string> = {
   irrigation_start: 'Полив — запуск',

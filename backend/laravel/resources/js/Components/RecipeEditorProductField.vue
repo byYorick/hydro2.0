@@ -10,10 +10,10 @@
     </div>
 
     <div class="flex gap-1">
-      <select
-        :value="productId ?? ''"
-        class="input-field flex-1 min-w-0"
-        @input="onProductInput($event)"
+      <SelectField
+        :model-value="productId ?? ''"
+        class="flex-1 min-w-0"
+        @update:model-value="onProductValue"
       >
         <option value="">
           Продукт
@@ -25,7 +25,7 @@
         >
           {{ product.manufacturer }} · {{ product.name }}
         </option>
-      </select>
+      </SelectField>
       <button
         type="button"
         class="pill-btn"
@@ -54,32 +54,22 @@
       </button>
     </div>
 
-    <div>
-      <input
-        :value="ratio"
-        type="number"
-        step="0.01"
-        class="input-field"
-        placeholder="—"
-        @input="onRatioInput($event)"
-      />
-      <div class="text-[11px] text-[color:var(--text-muted)] mt-0.5">
-        Доля от EC, %
-      </div>
-    </div>
-    <div>
-      <input
-        :value="dose"
-        type="number"
-        step="0.01"
-        class="input-field"
-        placeholder="—"
-        @input="onDoseInput($event)"
-      />
-      <div class="text-[11px] text-[color:var(--text-muted)] mt-0.5">
-        Доза, мл/л
-      </div>
-    </div>
+    <TextField
+      :model-value="ratio ?? ''"
+      type="number"
+      step="0.01"
+      placeholder="—"
+      hint="Доля от EC, %"
+      @update:model-value="onRatioValue"
+    />
+    <TextField
+      :model-value="dose ?? ''"
+      type="number"
+      step="0.01"
+      placeholder="—"
+      hint="Доза, мл/л"
+      @update:model-value="onDoseValue"
+    />
 
     <NutrientProductCreateModal
       :open="modalOpen"
@@ -94,6 +84,9 @@
 import { ref } from 'vue'
 import type { NutrientProduct } from '@/types'
 import NutrientProductCreateModal from '@/Components/NutrientProductCreateModal.vue'
+import TextField from '@/Components/TextField.vue'
+import SelectField from '@/Components/SelectField.vue'
+import type { FieldModelValue } from '@/Components/fieldValue'
 
 withDefaults(defineProps<{
   label: string
@@ -114,19 +107,16 @@ const emit = defineEmits<{
 
 const modalOpen = ref(false)
 
-function onProductInput(event: Event): void {
-  const target = event.target as HTMLSelectElement
-  productId.value = Number(target.value) || null
+function onProductValue(value: FieldModelValue): void {
+  productId.value = Number(value) || null
 }
 
-function onRatioInput(event: Event): void {
-  const target = event.target as HTMLInputElement
-  ratio.value = Number(target.value) || null
+function onRatioValue(value: FieldModelValue): void {
+  ratio.value = Number(value) || null
 }
 
-function onDoseInput(event: Event): void {
-  const target = event.target as HTMLInputElement
-  dose.value = Number(target.value) || null
+function onDoseValue(value: FieldModelValue): void {
+  dose.value = Number(value) || null
 }
 
 function onCreated(product: NutrientProduct): void {

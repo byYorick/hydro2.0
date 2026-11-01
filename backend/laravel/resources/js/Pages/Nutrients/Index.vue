@@ -93,15 +93,15 @@
     </Card>
 
     <div class="mb-3 flex flex-col sm:flex-row gap-2 sm:items-center">
-      <input
+      <TextField
         v-model="query"
         type="text"
-        class="input-field sm:w-64"
         placeholder="Поиск по производителю/названию"
+        class="sm:w-64"
       />
-      <select
+      <SelectField
         v-model="componentFilter"
-        class="input-select sm:w-52"
+        class="sm:w-52"
       >
         <option value="all">
           Все компоненты
@@ -118,7 +118,7 @@
         <option value="micro">
           Микроэлементы
         </option>
-      </select>
+      </SelectField>
     </div>
 
     <div class="rounded-xl border border-[color:var(--border-muted)] overflow-hidden max-h-[720px] flex flex-col">
@@ -227,6 +227,8 @@ import Button from '@/Components/Button.vue'
 import Card from '@/Components/Card.vue'
 import Pagination from '@/Components/Pagination.vue'
 import type { NutrientProduct } from '@/types'
+import TextField from '@/Components/TextField.vue'
+import SelectField from '@/Components/SelectField.vue'
 
 interface PageProps {
   nutrients?: NutrientProduct[]

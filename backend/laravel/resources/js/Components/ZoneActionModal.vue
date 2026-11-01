@@ -20,7 +20,7 @@
             for="zone-action-duration-sec"
             class="block text-sm font-medium mb-1"
           >Длительность полива (секунды)</label>
-          <input
+          <TextField
             id="zone-action-duration-sec"
             v-model.number="form.duration_sec"
             name="duration_sec"
@@ -29,8 +29,8 @@
             max="3600"
             step="1"
             required
-            class="input-field w-full"
             :placeholder="String(defaultIrrigationDuration)"
+            class="w-full"
           />
           <div class="text-xs text-[color:var(--text-dim)] mt-1">
             По умолчанию: системная настройка или длительность из фазы рецепта (если задана). Диапазон 1–3600 с.
@@ -49,7 +49,7 @@
             for="zone-action-target-ph"
             class="block text-sm font-medium mb-1"
           >Целевой pH</label>
-          <input
+          <TextField
             id="zone-action-target-ph"
             v-model.number="form.target_ph"
             name="target_ph"
@@ -58,8 +58,8 @@
             max="9.0"
             step="0.1"
             required
-            class="input-field w-full"
             placeholder="6.0"
+            class="w-full"
           />
           <div class="text-xs text-[color:var(--text-dim)] mt-1">
             От 4.0 до 9.0
@@ -76,7 +76,7 @@
             for="zone-action-target-ec"
             class="block text-sm font-medium mb-1"
           >Целевой EC</label>
-          <input
+          <TextField
             id="zone-action-target-ec"
             v-model.number="form.target_ec"
             name="target_ec"
@@ -85,8 +85,8 @@
             max="10.0"
             step="0.1"
             required
-            class="input-field w-full"
             placeholder="1.5"
+            class="w-full"
           />
           <div class="text-xs text-[color:var(--text-dim)] mt-1">
             От 0.1 до 10.0
@@ -103,7 +103,7 @@
             for="zone-action-target-temp"
             class="block text-sm font-medium mb-1"
           >Целевая температура (°C)</label>
-          <input
+          <TextField
             id="zone-action-target-temp"
             v-model.number="form.target_temp"
             name="target_temp"
@@ -112,8 +112,8 @@
             max="35"
             step="0.5"
             required
-            class="input-field w-full"
             placeholder="22"
+            class="w-full"
           />
           <div class="text-xs text-[color:var(--text-dim)] mt-1">
             От 10 до 35°C
@@ -124,7 +124,7 @@
             for="zone-action-target-humidity"
             class="block text-sm font-medium mb-1"
           >Целевая влажность (%)</label>
-          <input
+          <TextField
             id="zone-action-target-humidity"
             v-model.number="form.target_humidity"
             name="target_humidity"
@@ -133,8 +133,8 @@
             max="90"
             step="1"
             required
-            class="input-field w-full"
             placeholder="60"
+            class="w-full"
           />
           <div class="text-xs text-[color:var(--text-dim)] mt-1">
             От 30 до 90%
@@ -151,7 +151,7 @@
             for="zone-action-intensity"
             class="block text-sm font-medium mb-1"
           >Интенсивность (%)</label>
-          <input
+          <TextField
             id="zone-action-intensity"
             v-model.number="form.intensity"
             name="intensity"
@@ -160,8 +160,8 @@
             max="100"
             step="1"
             required
-            class="input-field w-full"
             placeholder="80"
+            class="w-full"
           />
           <div class="text-xs text-[color:var(--text-dim)] mt-1">
             От 0 до 100%
@@ -172,7 +172,7 @@
             for="zone-action-duration-hours"
             class="block text-sm font-medium mb-1"
           >Длительность (часы)</label>
-          <input
+          <TextField
             id="zone-action-duration-hours"
             v-model.number="form.duration_hours"
             name="duration_hours"
@@ -181,8 +181,8 @@
             max="24"
             step="0.5"
             required
-            class="input-field w-full"
             placeholder="12"
+            class="w-full"
           />
           <div class="text-xs text-[color:var(--text-dim)] mt-1">
             От 0.5 до 24 часов
@@ -234,6 +234,7 @@ import { useAutomationDefaults } from '@/composables/useAutomationDefaults'
 import { validateNumberRange } from '@/utils/validation'
 import { VALIDATION_RANGES } from '@/constants/validation'
 import type { CommandType, IrrigationCorrectionSummary } from '@/types'
+import TextField from '@/Components/TextField.vue'
 
 type ActionType = CommandType
 

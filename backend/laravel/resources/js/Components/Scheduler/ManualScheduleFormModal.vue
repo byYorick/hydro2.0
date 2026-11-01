@@ -131,10 +131,9 @@
 
         <div v-if="form.schedule_kind === 'time'">
           <label class="mb-1 block text-xs text-[color:var(--text-muted)]">Время запуска (UTC)</label>
-          <input
+          <TextField
             v-model="form.time_at"
             type="time"
-            class="input-field"
             data-testid="manual-schedule-time-at"
           />
           <p
@@ -151,20 +150,18 @@
         >
           <div>
             <label class="mb-1 block text-xs text-[color:var(--text-muted)]">Интервал</label>
-            <input
+            <TextField
               v-model.number="intervalValue"
               type="number"
               :min="intervalMinValue"
               :max="intervalMaxValue"
-              class="input-field"
               data-testid="manual-schedule-interval"
             />
           </div>
           <div>
             <label class="mb-1 block text-xs text-[color:var(--text-muted)]">Единица</label>
-            <select
+            <SelectField
               v-model="intervalUnit"
-              class="input-field"
               data-testid="manual-schedule-interval-unit"
             >
               <option value="minutes">
@@ -173,7 +170,7 @@
               <option value="hours">
                 ч
               </option>
-            </select>
+            </SelectField>
           </div>
           <p class="col-span-2 text-[10px] text-[color:var(--text-dim)]">
             = {{ form.interval_sec ?? 0 }} с
@@ -192,18 +189,16 @@
         >
           <div>
             <label class="mb-1 block text-xs text-[color:var(--text-muted)]">Начало (UTC)</label>
-            <input
+            <TextField
               v-model="form.window_start"
               type="time"
-              class="input-field"
             />
           </div>
           <div>
             <label class="mb-1 block text-xs text-[color:var(--text-muted)]">Конец (UTC)</label>
-            <input
+            <TextField
               v-model="form.window_end"
               type="time"
-              class="input-field"
             />
           </div>
           <p
@@ -216,10 +211,9 @@
 
         <div v-if="form.schedule_kind === 'once'">
           <label class="mb-1 block text-xs text-[color:var(--text-muted)]">Дата и время (UTC)</label>
-          <input
+          <TextField
             v-model="runAtLocal"
             type="datetime-local"
-            class="input-field"
             data-testid="manual-schedule-run-at"
           />
           <p class="mt-1 text-[10px] text-[color:var(--text-dim)]">
@@ -236,17 +230,15 @@
         <div v-if="form.task_type === 'irrigation'">
           <label class="mb-1 block text-xs text-[color:var(--text-muted)]">Длительность полива</label>
           <div class="grid grid-cols-[1fr_auto] gap-2">
-            <input
+            <TextField
               v-model.number="durationValue"
               type="number"
               :min="durationMinValue"
               :max="durationMaxValue"
-              class="input-field"
               data-testid="manual-schedule-duration"
             />
-            <select
+            <SelectField
               v-model="durationUnit"
-              class="input-field"
             >
               <option value="seconds">
                 сек
@@ -254,7 +246,7 @@
               <option value="minutes">
                 мин
               </option>
-            </select>
+            </SelectField>
           </div>
           <p
             v-if="fieldError('payload.duration_sec')"
@@ -266,11 +258,10 @@
 
         <div>
           <label class="mb-1 block text-xs text-[color:var(--text-muted)]">Подпись (необязательно)</label>
-          <input
+          <TextField
             v-model="form.label"
             type="text"
             maxlength="255"
-            class="input-field"
             placeholder="Например: вечерний полив"
           />
         </div>
@@ -375,6 +366,8 @@ import {
   isTaskExecutableOnAe3,
   previewManualScheduleTriggers,
 } from '@/utils/manualSchedulePreview'
+import TextField from '@/Components/TextField.vue'
+import SelectField from '@/Components/SelectField.vue'
 
 const props = defineProps<{
   open: boolean

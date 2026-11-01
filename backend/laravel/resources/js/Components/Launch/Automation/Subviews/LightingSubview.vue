@@ -19,68 +19,76 @@
       ]"
     >
       <Field label="luxDay">
-        <input
-          v-bind="numAttrs"
+        <TextField
+          type="number"
           :value="lightingForm.luxDay"
           :disabled="!lightingForm.enabled"
+          input-class="font-mono"
           @input="upd('luxDay', toNum($event))"
         />
       </Field>
       <Field label="luxNight">
-        <input
-          v-bind="numAttrs"
+        <TextField
+          type="number"
           :value="lightingForm.luxNight"
           :disabled="!lightingForm.enabled"
+          input-class="font-mono"
           @input="upd('luxNight', toNum($event))"
         />
       </Field>
       <Field label="hoursOn">
-        <input
-          v-bind="numAttrs"
+        <TextField
+          type="number"
           :value="lightingForm.hoursOn"
           :disabled="!lightingForm.enabled"
+          input-class="font-mono"
           @input="upd('hoursOn', toNum($event))"
         />
       </Field>
       <Field label="intervalMinutes">
-        <input
-          v-bind="numAttrs"
+        <TextField
+          type="number"
           :value="lightingForm.intervalMinutes"
           :disabled="!lightingForm.enabled"
+          input-class="font-mono"
           @input="upd('intervalMinutes', toInt($event))"
         />
       </Field>
       <Field label="scheduleStart">
-        <input
-          v-bind="textAttrs"
+        <TextField
+          type="text"
           :value="lightingForm.scheduleStart"
           :disabled="!lightingForm.enabled"
           placeholder="06:00"
+          input-class="font-mono"
           @input="upd('scheduleStart', toStr($event))"
         />
       </Field>
       <Field label="scheduleEnd">
-        <input
-          v-bind="textAttrs"
+        <TextField
+          type="text"
           :value="lightingForm.scheduleEnd"
           :disabled="!lightingForm.enabled"
           placeholder="22:00"
+          input-class="font-mono"
           @input="upd('scheduleEnd', toStr($event))"
         />
       </Field>
       <Field label="manualIntensity">
-        <input
-          v-bind="numAttrs"
+        <TextField
+          type="number"
           :value="lightingForm.manualIntensity"
           :disabled="!lightingForm.enabled"
+          input-class="font-mono"
           @input="upd('manualIntensity', toNum($event))"
         />
       </Field>
       <Field label="manualDurationHours">
-        <input
-          v-bind="numAttrs"
+        <TextField
+          type="number"
           :value="lightingForm.manualDurationHours"
           :disabled="!lightingForm.enabled"
+          input-class="font-mono"
           @input="upd('manualDurationHours', toNum($event))"
         />
       </Field>
@@ -107,6 +115,7 @@ import { Field, Hint, ToggleField } from '@/Components/Shared/Primitives'
 import { useLaunchPreferences } from '@/composables/useLaunchPreferences'
 import type { LightingFormState } from '@/composables/zoneAutomationTypes'
 import { toInt, toNum, toStr } from './sharedFormUtils'
+import TextField from '@/Components/TextField.vue'
 
 const props = defineProps<{ lightingForm: LightingFormState }>()
 const emit = defineEmits<{
@@ -114,11 +123,6 @@ const emit = defineEmits<{
 }>()
 
 const { showHints } = useLaunchPreferences()
-
-const inputCls =
-  'block w-full h-8 rounded-lg border border-[var(--border-muted)] bg-[var(--bg-surface)] text-[var(--text-primary)] px-2.5 text-sm font-mono outline-none transition-[border-color,box-shadow,background-color] duration-150 focus:border-brand focus:ring-2 focus:ring-brand-soft focus-visible:border-brand focus-visible:ring-2 focus-visible:ring-brand-soft disabled:cursor-not-allowed disabled:bg-[var(--bg-elevated)] disabled:text-[var(--text-dim)] disabled:opacity-100'
-const numAttrs = { class: inputCls, type: 'number' }
-const textAttrs = { class: inputCls, type: 'text' }
 
 function upd<K extends keyof LightingFormState>(
   key: K,

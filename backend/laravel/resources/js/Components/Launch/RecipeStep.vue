@@ -39,14 +39,14 @@
               label="Название"
               required
             >
-              <TextInput
+              <TextField
                 v-model="newPlantName"
                 placeholder="Томат"
                 maxlength="255"
               />
             </Field>
             <Field label="Сорт">
-              <TextInput
+              <TextField
                 v-model="newPlantVariety"
                 placeholder="Cherry"
                 maxlength="255"
@@ -163,10 +163,10 @@
             required
           >
             <div class="flex gap-2">
-              <input
+              <TextField
                 type="datetime-local"
-                class="block w-full h-8 rounded-lg border border-[var(--border-muted)] bg-[var(--bg-surface)] text-[var(--text-primary)] px-2.5 text-sm font-mono outline-none transition-[border-color,box-shadow,background-color] duration-150 focus:border-brand focus:ring-2 focus:ring-brand-soft focus-visible:border-brand focus-visible:ring-2 focus-visible:ring-brand-soft"
                 :value="plantingLocalValue"
+                input-class="font-mono"
                 @input="onPlantingChange(($event.target as HTMLInputElement).value)"
               />
               <Button
@@ -182,24 +182,24 @@
             label="Метка партии"
             hint="например batch-2026-04"
           >
-            <TextInput
+            <TextField
               :model-value="batchLabel ?? ''"
               placeholder="batch-2026-04"
               maxlength="100"
-              @update:model-value="onBatchChange"
+              @update:model-value="(value) => onBatchChange(String(value ?? ''))"
             />
           </Field>
           <Field
             label="Заметки"
             class="md:col-span-2"
           >
-            <textarea
-              class="block w-full min-h-[72px] rounded-lg border border-[var(--border-muted)] bg-[var(--bg-surface)] text-[var(--text-primary)] px-2.5 py-1.5 text-sm outline-none transition-[border-color,box-shadow,background-color] duration-150 focus:border-brand focus:ring-2 focus:ring-brand-soft focus-visible:border-brand focus-visible:ring-2 focus-visible:ring-brand-soft resize-y"
-              :value="notes ?? ''"
+            <TextField
+              :model-value="notes ?? ''"
               maxlength="2000"
-              rows="3"
-              @input="onNotesChange(($event.target as HTMLTextAreaElement).value)"
-            ></textarea>
+              multiline
+              :rows="3"
+              @update:model-value="(value) => onNotesChange(String(value ?? ''))"
+            />
           </Field>
         </div>
       </ShellCard>
@@ -243,7 +243,6 @@ import { api } from '@/services/api'
 import { useToast } from '@/composables/useToast'
 import { useLaunchPreferences } from '@/composables/useLaunchPreferences'
 import Button from '@/Components/Button.vue'
-import TextInput from '@/Components/TextInput.vue'
 import {
   Field,
   Select,
@@ -255,6 +254,7 @@ import ShellCard from '@/Components/Launch/Shell/ShellCard.vue'
 import PhaseStrip, {
   type PhasePreview,
 } from '@/Components/Launch/Recipe/PhaseStrip.vue'
+import TextField from '@/Components/TextField.vue'
 
 interface PlantOption {
   id: number

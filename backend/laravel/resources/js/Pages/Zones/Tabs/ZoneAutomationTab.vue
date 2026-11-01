@@ -219,10 +219,10 @@
                     <div class="grid grid-cols-1 md:grid-cols-[220px,1fr] gap-3 items-end">
                       <label class="text-xs text-[color:var(--text-muted)]">
                         Режим профиля
-                        <select
+                        <SelectField
                           v-model="automationLogicMode"
-                          class="input-select mt-1 w-full"
                           :disabled="!canConfigureAutomation || isApplyingProfile || isSyncingAutomationLogicProfile"
+                          class="mt-1 w-full"
                         >
                           <option value="setup">
                             setup
@@ -230,7 +230,7 @@
                           <option value="working">
                             working
                           </option>
-                        </select>
+                        </SelectField>
                       </label>
                       <div class="text-xs text-[color:var(--text-muted)]">
                         <span v-if="isSyncingAutomationLogicProfile">Синхронизация профиля с бэкендом...</span>
@@ -383,11 +383,13 @@
             class="block text-sm text-[color:var(--text-primary)]"
           >
             Причина
-            <textarea
+            <TextField
               v-model="controlModeReason"
-              class="input-field mt-1 w-full min-h-[80px]"
               data-testid="control-mode-reason"
-            ></textarea>
+              multiline
+              input-class="min-h-[80px]"
+              class="mt-1 w-full"
+            />
           </label>
         </div>
       </ConfirmModal>
@@ -442,6 +444,8 @@ import {
   isControlModeTransitionAllowed,
 } from '@/utils/zoneAutomationControlMode'
 import { useToast } from '@/composables/useToast'
+import TextField from '@/Components/TextField.vue'
+import SelectField from '@/Components/SelectField.vue'
 
 interface ZoneAutomationWizardApplyPayload {
   climateForm: ClimateFormState

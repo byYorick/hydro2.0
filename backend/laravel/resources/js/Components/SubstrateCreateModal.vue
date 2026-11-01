@@ -14,9 +14,8 @@
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div>
             <label class="block text-xs text-[color:var(--text-muted)] mb-1">Код (английский) <span class="text-red-500">*</span></label>
-            <input
+            <TextField
               v-model="form.code"
-              class="input-field"
               placeholder="coco_perlite_70_30"
             />
             <p class="text-[11px] text-[color:var(--text-muted)] mt-0.5">
@@ -25,9 +24,8 @@
           </div>
           <div>
             <label class="block text-xs text-[color:var(--text-muted)] mb-1">Название <span class="text-red-500">*</span></label>
-            <input
+            <TextField
               v-model="form.name"
-              class="input-field"
               placeholder="Кокос + Перлит 70/30"
             />
           </div>
@@ -101,29 +99,29 @@
         >
           <div>
             <label class="block text-[10px] text-[color:var(--text-muted)] mb-0.5">Код</label>
-            <input
+            <TextField
               v-model="comp.name"
-              class="input-field !text-xs"
               placeholder="coco"
+              input-class="!text-xs"
             />
           </div>
           <div>
             <label class="block text-[10px] text-[color:var(--text-muted)] mb-0.5">Название</label>
-            <input
+            <TextField
               v-model="comp.label"
-              class="input-field !text-xs"
               placeholder="Кокос"
+              input-class="!text-xs"
             />
           </div>
           <div>
             <label class="block text-[10px] text-[color:var(--text-muted)] mb-0.5 text-center">Доля, %</label>
-            <input
+            <TextField
               v-model.number="comp.ratio_pct"
               type="number"
               min="0"
               max="100"
               step="0.1"
-              class="input-field hide-spin !text-xs text-center"
+              input-class="hide-spin !text-xs text-center"
             />
           </div>
           <button
@@ -170,12 +168,13 @@
       <!-- Заметки -->
       <div>
         <label class="block text-xs text-[color:var(--text-muted)] mb-1">Заметки</label>
-        <textarea
+        <TextField
           v-model="form.notes"
-          rows="2"
-          class="input-field !h-auto !py-2"
+          :rows="2"
           placeholder="Например: перед посадкой замочить на 12 часов"
-        ></textarea>
+          multiline
+          input-class="!h-auto !py-2"
+        />
       </div>
     </div>
 
@@ -199,6 +198,7 @@ import { api } from '@/services/api'
 import type { Substrate, SubstrateComponent } from '@/services/api/substrates'
 import { useToast } from '@/composables/useToast'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
+import TextField from '@/Components/TextField.vue'
 
 const props = defineProps<{
   open: boolean

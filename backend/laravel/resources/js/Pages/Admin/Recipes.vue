@@ -11,9 +11,8 @@
         class="grid grid-cols-1 md:grid-cols-3 gap-2"
         @submit.prevent="onUpdate"
       >
-        <select
+        <SelectField
           v-model="selectedId"
-          class="input-select"
         >
           <option
             v-for="r in recipes"
@@ -22,16 +21,14 @@
           >
             {{ r.name }}
           </option>
-        </select>
-        <input
+        </SelectField>
+        <TextField
           v-model="form.name"
           placeholder="New name"
-          class="input-field"
         />
-        <input
+        <TextField
           v-model="form.description"
           placeholder="Description"
-          class="input-field"
         />
         <div class="md:col-span-3">
           <Button
@@ -72,6 +69,8 @@ import { useRecipesStore } from '@/stores/recipes'
 import { logger } from '@/utils/logger'
 import { extractHumanErrorMessage } from '@/utils/errorMessage'
 import type { Recipe } from '@/types/Recipe'
+import TextField from '@/Components/TextField.vue'
+import SelectField from '@/Components/SelectField.vue'
 
 interface PageProps {
   recipes?: Recipe[]

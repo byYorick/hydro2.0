@@ -85,11 +85,10 @@
             v-if="librarySection !== 'references'"
           >
             <label class="block text-[11px] uppercase tracking-wider text-[color:var(--text-dim)] mb-1">Поиск в этом разделе</label>
-            <input
+            <TextField
               v-model="query"
               type="search"
               placeholder="Например: EC, дренаж, КиберЛенинка…"
-              class="w-full rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] px-3 py-2 text-sm text-[color:var(--text-primary)] placeholder:text-[color:var(--text-dim)] focus:outline-none focus:ring-1 focus:ring-[color:var(--status-ok)]"
             />
           </Card>
 
@@ -142,11 +141,10 @@
           <template v-else>
             <Card class="mb-4">
               <label class="block text-[11px] uppercase tracking-wider text-[color:var(--text-dim)] mb-1">Фильтр культуры</label>
-              <input
+              <TextField
                 v-model="cropQuery"
                 type="search"
                 placeholder="Начните вводить название…"
-                class="w-full max-w-md rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] px-3 py-2 text-sm text-[color:var(--text-primary)] placeholder:text-[color:var(--text-dim)] focus:outline-none focus:ring-1 focus:ring-[color:var(--status-ok)]"
               />
             </Card>
 
@@ -292,6 +290,7 @@ import {
   topicsForLibrarySection,
   type LibrarySectionId,
 } from '@/data/documentationKnowledgeLibrary'
+import TextField from '@/Components/TextField.vue'
 
 const activeTab = ref<'library' | 'fertigation'>('library')
 const librarySection = ref<LibrarySectionId>('intro')

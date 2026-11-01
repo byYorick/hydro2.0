@@ -7,15 +7,16 @@
     <p class="text-xs text-[color:var(--text-muted)] mb-1">
       Сколько часов моделировать. Дольше = более долгий прогноз.
     </p>
-    <input
+    <TextField
       id="simulation-duration-hours"
       v-model.number="form.duration_hours"
       name="duration_hours"
       type="number"
       min="1"
       max="720"
-      class="input-field h-9 w-full"
       required
+      input-class="h-9"
+      class="w-full"
     />
   </div>
 
@@ -27,15 +28,16 @@
     <p class="text-xs text-[color:var(--text-muted)] mb-1">
       Меньше шаг — выше детализация, но расчет дольше.
     </p>
-    <input
+    <TextField
       id="simulation-step-minutes"
       v-model.number="form.step_minutes"
       name="step_minutes"
       type="number"
       min="1"
       max="60"
-      class="input-field h-9 w-full"
       required
+      input-class="h-9"
+      class="w-full"
     />
   </div>
 
@@ -47,14 +49,15 @@
     <p class="text-xs text-[color:var(--text-muted)] mb-1">
       Опционально: сколько минут длится весь прогон в реальном времени.
     </p>
-    <input
+    <TextField
       id="simulation-real-duration-minutes"
       v-model.number="form.sim_duration_minutes"
       name="sim_duration_minutes"
       type="number"
       min="1"
       max="10080"
-      class="input-field h-9 w-full"
+      input-class="h-9"
+      class="w-full"
     />
   </div>
 
@@ -83,19 +86,21 @@
     <p class="text-xs text-[color:var(--text-muted)] mb-1">
       Выберите рецепт из базы или оставьте "по умолчанию", чтобы взять рецепт зоны.
     </p>
-    <input
+    <TextField
       id="simulation-recipe-search"
       v-model="recipeSearch"
       name="recipe_search"
       type="text"
       placeholder="Поиск по названию..."
-      class="input-field h-9 w-full mb-2"
+      input-class="h-9"
+      class="w-full mb-2"
     />
-    <select
+    <SelectField
       id="simulation-recipe-select"
       v-model="form.recipe_id"
       name="recipe_id"
-      class="input-field h-9 w-full"
+      input-class="h-9"
+      class="w-full"
     >
       <option :value="null">
         Рецепт зоны (по умолчанию)
@@ -107,7 +112,7 @@
       >
         {{ recipe.name }}
       </option>
-    </select>
+    </SelectField>
     <div
       v-if="recipesLoading"
       class="text-xs text-[color:var(--text-muted)] mt-1"
@@ -138,13 +143,14 @@
         <p class="text-[11px] text-[color:var(--text-dim)] mb-1">
           Обычно 5.5–6.5 для гидропоники.
         </p>
-        <input
+        <TextField
           id="simulation-initial-ph"
           v-model.number="form.initial_state.ph"
           name="initial_state_ph"
           type="number"
           step="0.0001"
-          class="input-field h-8 w-full"
+          input-class="h-8"
+          class="w-full"
         />
       </div>
       <div>
@@ -155,13 +161,14 @@
         <p class="text-[11px] text-[color:var(--text-dim)] mb-1">
           Электропроводность раствора (мСм/см).
         </p>
-        <input
+        <TextField
           id="simulation-initial-ec"
           v-model.number="form.initial_state.ec"
           name="initial_state_ec"
           type="number"
           step="0.0001"
-          class="input-field h-8 w-full"
+          input-class="h-8"
+          class="w-full"
         />
       </div>
       <div>
@@ -172,13 +179,14 @@
         <p class="text-[11px] text-[color:var(--text-dim)] mb-1">
           Стартовая температура воздуха в зоне.
         </p>
-        <input
+        <TextField
           id="simulation-initial-temp-air"
           v-model.number="form.initial_state.temp_air"
           name="initial_state_temp_air"
           type="number"
           step="0.0001"
-          class="input-field h-8 w-full"
+          input-class="h-8"
+          class="w-full"
         />
       </div>
       <div>
@@ -189,13 +197,14 @@
         <p class="text-[11px] text-[color:var(--text-dim)] mb-1">
           Температура питательного раствора.
         </p>
-        <input
+        <TextField
           id="simulation-initial-temp-water"
           v-model.number="form.initial_state.temp_water"
           name="initial_state_temp_water"
           type="number"
           step="0.0001"
-          class="input-field h-8 w-full"
+          input-class="h-8"
+          class="w-full"
         />
       </div>
       <div class="col-span-2">
@@ -206,13 +215,14 @@
         <p class="text-[11px] text-[color:var(--text-dim)] mb-1">
           Относительная влажность воздуха.
         </p>
-        <input
+        <TextField
           id="simulation-initial-humidity"
           v-model.number="form.initial_state.humidity_air"
           name="initial_state_humidity_air"
           type="number"
           step="0.0001"
-          class="input-field h-8 w-full"
+          input-class="h-8"
+          class="w-full"
         />
       </div>
     </div>
@@ -252,13 +262,14 @@
           for="simulation-drift-ph"
           class="block text-xs text-[color:var(--text-muted)] mb-1"
         >Дрифт pH (ед/мин)</label>
-        <input
+        <TextField
           id="simulation-drift-ph"
           v-model.number="driftPh"
           name="node_sim_drift_ph"
           type="number"
           step="0.0001"
-          class="input-field h-8 w-full"
+          input-class="h-8"
+          class="w-full"
           @input="$emit('markDriftTouched', 'ph')"
         />
       </div>
@@ -267,13 +278,14 @@
           for="simulation-drift-ec"
           class="block text-xs text-[color:var(--text-muted)] mb-1"
         >Дрифт EC (мСм/см/мин)</label>
-        <input
+        <TextField
           id="simulation-drift-ec"
           v-model.number="driftEc"
           name="node_sim_drift_ec"
           type="number"
           step="0.0001"
-          class="input-field h-8 w-full"
+          input-class="h-8"
+          class="w-full"
           @input="$emit('markDriftTouched', 'ec')"
         />
       </div>
@@ -282,13 +294,14 @@
           for="simulation-drift-temp-air"
           class="block text-xs text-[color:var(--text-muted)] mb-1"
         >Дрифт температуры воздуха (°C/мин)</label>
-        <input
+        <TextField
           id="simulation-drift-temp-air"
           v-model.number="driftTempAir"
           name="node_sim_drift_temp_air"
           type="number"
           step="0.0001"
-          class="input-field h-8 w-full"
+          input-class="h-8"
+          class="w-full"
           @input="$emit('markDriftTouched', 'temp_air')"
         />
       </div>
@@ -297,13 +310,14 @@
           for="simulation-drift-temp-water"
           class="block text-xs text-[color:var(--text-muted)] mb-1"
         >Дрифт температуры воды (°C/мин)</label>
-        <input
+        <TextField
           id="simulation-drift-temp-water"
           v-model.number="driftTempWater"
           name="node_sim_drift_temp_water"
           type="number"
           step="0.0001"
-          class="input-field h-8 w-full"
+          input-class="h-8"
+          class="w-full"
           @input="$emit('markDriftTouched', 'temp_water')"
         />
       </div>
@@ -312,13 +326,14 @@
           for="simulation-drift-humidity"
           class="block text-xs text-[color:var(--text-muted)] mb-1"
         >Дрифт влажности (%/мин)</label>
-        <input
+        <TextField
           id="simulation-drift-humidity"
           v-model.number="driftHumidity"
           name="node_sim_drift_humidity_air"
           type="number"
           step="0.0001"
-          class="input-field h-8 w-full"
+          input-class="h-8"
+          class="w-full"
           @input="$emit('markDriftTouched', 'humidity_air')"
         />
       </div>
@@ -327,13 +342,14 @@
           for="simulation-drift-noise"
           class="block text-xs text-[color:var(--text-muted)] mb-1"
         >Шум дрейфа (ед/мин)</label>
-        <input
+        <TextField
           id="simulation-drift-noise"
           v-model.number="driftNoise"
           name="node_sim_drift_noise"
           type="number"
           step="0.0001"
-          class="input-field h-8 w-full"
+          input-class="h-8"
+          class="w-full"
           @input="$emit('markDriftTouched', 'noise')"
         />
       </div>
@@ -345,6 +361,8 @@
 import Button from '@/Components/Button.vue'
 import type { RecipeOption } from '@/composables/useSimulationRecipes'
 import type { SimulationSubmitForm } from '@/composables/useSimulationSubmit'
+import TextField from '@/Components/TextField.vue'
+import SelectField from '@/Components/SelectField.vue'
 
 type DriftTouchedKey = 'ph' | 'ec' | 'temp_air' | 'temp_water' | 'humidity_air' | 'noise'
 

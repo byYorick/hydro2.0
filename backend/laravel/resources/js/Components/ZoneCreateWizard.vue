@@ -17,15 +17,16 @@
               for="zone-name"
               class="block text-xs text-[color:var(--text-muted)] mb-1"
             >Название зоны</label>
-            <input
+            <TextField
               id="zone-name"
               v-model="form.name"
               name="name"
               type="text"
               placeholder="Например: Зона A"
-              class="input-field h-9 w-full"
               autocomplete="off"
               required
+              input-class="h-9"
+              class="w-full"
             />
           </div>
           <div>
@@ -33,14 +34,16 @@
               for="zone-description"
               class="block text-xs text-[color:var(--text-muted)] mb-1"
             >Описание (опционально)</label>
-            <textarea
+            <TextField
               id="zone-description"
               v-model="form.description"
               name="description"
               placeholder="Описание зоны..."
-              class="input-field w-full min-h-[60px] py-2 h-auto"
               autocomplete="off"
-            ></textarea>
+              multiline
+              input-class="min-h-[60px] py-2 h-auto"
+              class="w-full"
+            />
           </div>
         </div>
       </div>
@@ -93,6 +96,7 @@ import { logger } from '@/utils/logger'
 import { api } from '@/services/api'
 import { useToast } from '@/composables/useToast'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
+import TextField from '@/Components/TextField.vue'
 
 interface Props {
   show: boolean

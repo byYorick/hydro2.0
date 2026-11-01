@@ -34,25 +34,23 @@
         class="flex flex-col gap-1 text-xs"
       >
         <span class="text-[color:var(--text-dim)]">{{ field.label }}</span>
-        <input
+        <TextField
           :value="formatNumberField(form[field.key])"
           type="number"
           :step="field.step"
           :min="field.min"
           :max="field.max"
-          class="text-sm px-2 py-1 rounded border border-[color:var(--border-muted)] bg-[color:var(--surface-card)]"
           @input="updateNumberField(field.key, $event)"
         />
         <span class="text-[11px] text-[color:var(--text-dim)]">{{ field.description }}</span>
       </label>
       <label class="col-span-2 md:col-span-3 flex flex-col gap-1 text-xs">
         <span class="text-[color:var(--text-dim)]">Причина изменения (обязательно, &ge; 3)</span>
-        <input
+        <TextField
           v-model="form.reason"
           type="text"
           minlength="3"
           maxlength="500"
-          class="text-sm px-2 py-1 rounded border border-[color:var(--border-muted)] bg-[color:var(--surface-card)]"
           data-testid="recipe-phase-reason"
         />
         <span class="text-[11px] text-[color:var(--text-dim)]">
@@ -102,6 +100,7 @@ import {
   type PhaseConfigUpdatePayload,
   zoneConfigModeApi,
 } from '@/services/api/zoneConfigMode'
+import TextField from '@/Components/TextField.vue'
 
 interface Props {
   growCycleId: number

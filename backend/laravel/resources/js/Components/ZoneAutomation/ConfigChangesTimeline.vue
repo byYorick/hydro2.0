@@ -8,9 +8,8 @@
         История изменений конфигурации
       </h3>
       <div class="flex items-center gap-2 text-xs">
-        <select
+        <SelectField
           v-model="selectedNamespace"
-          class="text-xs px-2 py-1 rounded border border-[color:var(--border-muted)] bg-[color:var(--surface-card)]"
           data-testid="config-changes-namespace"
           @change="reload"
         >
@@ -29,7 +28,7 @@
           <option value="recipe.phase">
             recipe.phase
           </option>
-        </select>
+        </SelectField>
         <button
           type="button"
           class="text-xs px-2 py-1 rounded border border-[color:var(--border-muted)]"
@@ -116,6 +115,7 @@ import {
   type ConfigChangeEntry,
   zoneConfigModeApi,
 } from '@/services/api/zoneConfigMode'
+import SelectField from '@/Components/SelectField.vue'
 
 interface Props {
   zoneId: number

@@ -34,10 +34,11 @@
         :label="meta('tanksCount').label"
         :hint="meta('tanksCount').hint"
       >
-        <input
-          v-bind="numAttrs"
+        <TextField
+          type="number"
           :title="meta('tanksCount').details"
           :value="waterForm.tanksCount"
+          input-class="font-mono"
           @input="upd('tanksCount', toInt($event))"
         />
       </Field>
@@ -46,10 +47,11 @@
         :label="meta('workingTankL').label"
         :hint="meta('workingTankL').hint"
       >
-        <input
-          v-bind="numAttrs"
+        <TextField
+          type="number"
           :title="meta('workingTankL').details"
           :value="waterForm.workingTankL"
+          input-class="font-mono"
           @input="upd('workingTankL', toNum($event))"
         />
       </Field>
@@ -58,10 +60,11 @@
         :label="meta('cleanTankFillL').label"
         :hint="meta('cleanTankFillL').hint"
       >
-        <input
-          v-bind="numAttrs"
+        <TextField
+          type="number"
           :title="meta('cleanTankFillL').details"
           :value="waterForm.cleanTankFillL"
+          input-class="font-mono"
           @input="upd('cleanTankFillL', toNum($event))"
         />
       </Field>
@@ -70,10 +73,11 @@
         :label="meta('nutrientTankTargetL').label"
         :hint="meta('nutrientTankTargetL').hint"
       >
-        <input
-          v-bind="numAttrs"
+        <TextField
+          type="number"
           :title="meta('nutrientTankTargetL').details"
           :value="waterForm.nutrientTankTargetL"
+          input-class="font-mono"
           @input="upd('nutrientTankTargetL', toNum($event))"
         />
       </Field>
@@ -82,10 +86,11 @@
         :label="meta('irrigationBatchL').label"
         :hint="meta('irrigationBatchL').hint"
       >
-        <input
-          v-bind="numAttrs"
+        <TextField
+          type="number"
           :title="meta('irrigationBatchL').details"
           :value="waterForm.irrigationBatchL"
+          input-class="font-mono"
           @input="upd('irrigationBatchL', toNum($event))"
         />
       </Field>
@@ -94,10 +99,11 @@
         :label="meta('mainPumpFlowLpm').label"
         :hint="meta('mainPumpFlowLpm').hint"
       >
-        <input
-          v-bind="numAttrs"
+        <TextField
+          type="number"
           :title="meta('mainPumpFlowLpm').details"
           :value="waterForm.mainPumpFlowLpm"
+          input-class="font-mono"
           @input="upd('mainPumpFlowLpm', toNum($event))"
         />
       </Field>
@@ -106,10 +112,11 @@
         :label="meta('cleanWaterFlowLpm').label"
         :hint="meta('cleanWaterFlowLpm').hint"
       >
-        <input
-          v-bind="numAttrs"
+        <TextField
+          type="number"
           :title="meta('cleanWaterFlowLpm').details"
           :value="waterForm.cleanWaterFlowLpm"
+          input-class="font-mono"
           @input="upd('cleanWaterFlowLpm', toNum($event))"
         />
       </Field>
@@ -122,10 +129,11 @@
         :label="meta('fillWindowStart').label"
         :hint="meta('fillWindowStart').hint"
       >
-        <input
-          v-bind="textAttrs"
+        <TextField
+          type="text"
           :title="meta('fillWindowStart').details"
           :value="waterForm.fillWindowStart"
+          input-class="font-mono"
           @input="upd('fillWindowStart', toStr($event))"
         />
       </Field>
@@ -134,10 +142,11 @@
         :label="meta('fillWindowEnd').label"
         :hint="meta('fillWindowEnd').hint"
       >
-        <input
-          v-bind="textAttrs"
+        <TextField
+          type="text"
           :title="meta('fillWindowEnd').details"
           :value="waterForm.fillWindowEnd"
+          input-class="font-mono"
           @input="upd('fillWindowEnd', toStr($event))"
         />
       </Field>
@@ -146,10 +155,11 @@
         :label="meta('fillTemperatureC').label"
         :hint="meta('fillTemperatureC').hint"
       >
-        <input
-          v-bind="numAttrs"
+        <TextField
+          type="number"
           :title="meta('fillTemperatureC').details"
           :value="waterForm.fillTemperatureC"
+          input-class="font-mono"
           @input="upd('fillTemperatureC', toNum($event))"
         />
       </Field>
@@ -158,10 +168,11 @@
         :label="meta('cleanTankFullThreshold').label"
         :hint="meta('cleanTankFullThreshold').hint"
       >
-        <input
-          v-bind="numAttrs"
+        <TextField
+          type="number"
           :title="meta('cleanTankFullThreshold').details"
           :value="waterForm.cleanTankFullThreshold"
+          input-class="font-mono"
           @input="upd('cleanTankFullThreshold', toNum($event))"
         />
       </Field>
@@ -180,10 +191,11 @@
             :label="meta('refillDurationSeconds').label"
             :hint="meta('refillDurationSeconds').hint"
           >
-            <input
-              v-bind="numAttrs"
+            <TextField
+              type="number"
               :title="meta('refillDurationSeconds').details"
               :value="waterForm.refillDurationSeconds"
+              input-class="font-mono"
               @input="upd('refillDurationSeconds', toInt($event))"
             />
           </Field>
@@ -192,10 +204,11 @@
             :label="meta('refillTimeoutSeconds').label"
             :hint="meta('refillTimeoutSeconds').hint"
           >
-            <input
-              v-bind="numAttrs"
+            <TextField
+              type="number"
               :title="meta('refillTimeoutSeconds').details"
               :value="waterForm.refillTimeoutSeconds"
+              input-class="font-mono"
               @input="upd('refillTimeoutSeconds', toInt($event))"
             />
           </Field>
@@ -204,11 +217,12 @@
             :label="meta('refillRequiredNodeTypes').label"
             :hint="meta('refillRequiredNodeTypes').hint"
           >
-            <input
-              v-bind="textAttrs"
+            <TextField
+              type="text"
               :title="meta('refillRequiredNodeTypes').details"
               :value="waterForm.refillRequiredNodeTypes"
               placeholder="pump,valve"
+              input-class="font-mono"
               @input="upd('refillRequiredNodeTypes', toStr($event))"
             />
           </Field>
@@ -217,10 +231,11 @@
             :label="meta('refillPreferredChannel').label"
             :hint="meta('refillPreferredChannel').hint"
           >
-            <input
-              v-bind="textAttrs"
+            <TextField
+              type="text"
               :title="meta('refillPreferredChannel').details"
               :value="waterForm.refillPreferredChannel"
+              input-class="font-mono"
               @input="upd('refillPreferredChannel', toStr($event))"
             />
           </Field>
@@ -239,10 +254,11 @@
             :label="meta('diagnosticsIntervalMinutes').label"
             :hint="meta('diagnosticsIntervalMinutes').hint"
           >
-            <input
-              v-bind="numAttrs"
+            <TextField
+              type="number"
               :title="meta('diagnosticsIntervalMinutes').details"
               :value="waterForm.diagnosticsIntervalMinutes"
+              input-class="font-mono"
               @input="upd('diagnosticsIntervalMinutes', toInt($event))"
             />
           </Field>
@@ -265,10 +281,11 @@
             :label="meta('estopDebounceMs').label"
             :hint="meta('estopDebounceMs').hint"
           >
-            <input
-              v-bind="numAttrs"
+            <TextField
+              type="number"
               :title="meta('estopDebounceMs').details"
               :value="waterForm.estopDebounceMs ?? 0"
+              input-class="font-mono"
               @input="upd('estopDebounceMs', toInt($event))"
             />
           </Field>
@@ -277,10 +294,11 @@
             :label="meta('startupCleanFillTimeoutSeconds').label"
             :hint="meta('startupCleanFillTimeoutSeconds').hint"
           >
-            <input
-              v-bind="numAttrs"
+            <TextField
+              type="number"
               :title="meta('startupCleanFillTimeoutSeconds').details"
               :value="waterForm.startupCleanFillTimeoutSeconds ?? 0"
+              input-class="font-mono"
               @input="upd('startupCleanFillTimeoutSeconds', toInt($event))"
             />
           </Field>
@@ -289,10 +307,11 @@
             :label="meta('startupSolutionFillTimeoutSeconds').label"
             :hint="meta('startupSolutionFillTimeoutSeconds').hint"
           >
-            <input
-              v-bind="numAttrs"
+            <TextField
+              type="number"
               :title="meta('startupSolutionFillTimeoutSeconds').details"
               :value="waterForm.startupSolutionFillTimeoutSeconds ?? 0"
+              input-class="font-mono"
               @input="upd('startupSolutionFillTimeoutSeconds', toInt($event))"
             />
           </Field>
@@ -301,10 +320,11 @@
             :label="meta('startupPrepareRecirculationTimeoutSeconds').label"
             :hint="meta('startupPrepareRecirculationTimeoutSeconds').hint"
           >
-            <input
-              v-bind="numAttrs"
+            <TextField
+              type="number"
               :title="meta('startupPrepareRecirculationTimeoutSeconds').details"
               :value="waterForm.startupPrepareRecirculationTimeoutSeconds ?? 0"
+              input-class="font-mono"
               @input="upd('startupPrepareRecirculationTimeoutSeconds', toInt($event))"
             />
           </Field>
@@ -313,10 +333,11 @@
             :label="meta('startupCleanFillRetryCycles').label"
             :hint="meta('startupCleanFillRetryCycles').hint"
           >
-            <input
-              v-bind="numAttrs"
+            <TextField
+              type="number"
               :title="meta('startupCleanFillRetryCycles').details"
               :value="waterForm.startupCleanFillRetryCycles ?? 0"
+              input-class="font-mono"
               @input="upd('startupCleanFillRetryCycles', toInt($event))"
             />
           </Field>
@@ -325,10 +346,11 @@
             :label="meta('cleanFillMinCheckDelayMs').label"
             :hint="meta('cleanFillMinCheckDelayMs').hint"
           >
-            <input
-              v-bind="numAttrs"
+            <TextField
+              type="number"
               :title="meta('cleanFillMinCheckDelayMs').details"
               :value="waterForm.cleanFillMinCheckDelayMs ?? 0"
+              input-class="font-mono"
               @input="upd('cleanFillMinCheckDelayMs', toInt($event))"
             />
           </Field>
@@ -337,10 +359,11 @@
             :label="meta('solutionFillCleanMinCheckDelayMs').label"
             :hint="meta('solutionFillCleanMinCheckDelayMs').hint"
           >
-            <input
-              v-bind="numAttrs"
+            <TextField
+              type="number"
               :title="meta('solutionFillCleanMinCheckDelayMs').details"
               :value="waterForm.solutionFillCleanMinCheckDelayMs ?? 0"
+              input-class="font-mono"
               @input="upd('solutionFillCleanMinCheckDelayMs', toInt($event))"
             />
           </Field>
@@ -349,10 +372,11 @@
             :label="meta('solutionFillSolutionMinCheckDelayMs').label"
             :hint="meta('solutionFillSolutionMinCheckDelayMs').hint"
           >
-            <input
-              v-bind="numAttrs"
+            <TextField
+              type="number"
               :title="meta('solutionFillSolutionMinCheckDelayMs').details"
               :value="waterForm.solutionFillSolutionMinCheckDelayMs ?? 0"
+              input-class="font-mono"
               @input="upd('solutionFillSolutionMinCheckDelayMs', toInt($event))"
             />
           </Field>
@@ -379,10 +403,11 @@
             :label="meta('drainTargetPercent').label"
             :hint="meta('drainTargetPercent').hint"
           >
-            <input
-              v-bind="numAttrs"
+            <TextField
+              type="number"
               :title="meta('drainTargetPercent').details"
               :value="waterForm.drainTargetPercent"
+              input-class="font-mono"
               @input="upd('drainTargetPercent', toNum($event))"
             />
           </Field>
@@ -409,10 +434,11 @@
         :label="meta('solutionChangeIntervalMinutes').label"
         :hint="meta('solutionChangeIntervalMinutes').hint"
       >
-        <input
-          v-bind="numAttrs"
+        <TextField
+          type="number"
           :title="meta('solutionChangeIntervalMinutes').details"
           :value="waterForm.solutionChangeIntervalMinutes"
+          input-class="font-mono"
           @input="upd('solutionChangeIntervalMinutes', toInt($event))"
         />
       </Field>
@@ -421,10 +447,11 @@
         :label="meta('solutionChangeDurationSeconds').label"
         :hint="meta('solutionChangeDurationSeconds').hint"
       >
-        <input
-          v-bind="numAttrs"
+        <TextField
+          type="number"
           :title="meta('solutionChangeDurationSeconds').details"
           :value="waterForm.solutionChangeDurationSeconds"
+          input-class="font-mono"
           @input="upd('solutionChangeDurationSeconds', toInt($event))"
         />
       </Field>
@@ -433,10 +460,11 @@
         :label="meta('manualIrrigationSeconds').label"
         :hint="meta('manualIrrigationSeconds').hint"
       >
-        <input
-          v-bind="numAttrs"
+        <TextField
+          type="number"
           :title="meta('manualIrrigationSeconds').details"
           :value="waterForm.manualIrrigationSeconds"
+          input-class="font-mono"
           @input="upd('manualIrrigationSeconds', toInt($event))"
         />
       </Field>
@@ -457,6 +485,7 @@ import Ic from '@/Components/Icons/Ic.vue'
 import { useLaunchPreferences } from '@/composables/useLaunchPreferences'
 import type { WaterFormState } from '@/composables/zoneAutomationTypes'
 import { createMetaResolver, toInt, toNum, toStr, type FieldMeta } from './sharedFormUtils'
+import TextField from '@/Components/TextField.vue'
 
 const props = defineProps<{
   waterForm: WaterFormState
@@ -469,12 +498,6 @@ const emit = defineEmits<{
 }>()
 
 const { showHints } = useLaunchPreferences()
-
-const inputCls =
-  'block w-full max-w-[9rem] h-8 rounded-md border border-[var(--border-muted)] bg-[var(--bg-surface)] text-[var(--text-primary)] px-2 text-sm font-mono outline-none transition-[border-color,box-shadow,background-color] duration-150 focus:border-brand focus:ring-2 focus:ring-brand-soft focus-visible:border-brand focus-visible:ring-2 focus-visible:ring-brand-soft'
-
-const numAttrs = { class: inputCls, type: 'number' }
-const textAttrs = { class: inputCls, type: 'text' }
 
 const WATER_FIELD_META: Partial<Record<keyof WaterFormState, FieldMeta>> = {
   systemType: { label: 'Тип гидросистемы', hint: 'Берётся из активного рецепта', details: 'Определяет сценарий работы водного контура: набор этапов запуска, fill/recirculation и проверки.' },

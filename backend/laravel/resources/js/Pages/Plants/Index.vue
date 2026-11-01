@@ -175,10 +175,9 @@
       >
         <div>
           <label class="block text-xs text-[color:var(--text-muted)] mb-1">Название</label>
-          <input
+          <TextField
             v-model="form.name"
             type="text"
-            class="input-field"
           />
           <p
             v-if="form.errors.name"
@@ -190,27 +189,24 @@
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label class="block text-xs text-[color:var(--text-muted)] mb-1">Вид</label>
-            <input
+            <TextField
               v-model="form.species"
               type="text"
-              class="input-field"
             />
           </div>
           <div>
             <label class="block text-xs text-[color:var(--text-muted)] mb-1">Сорт</label>
-            <input
+            <TextField
               v-model="form.variety"
               type="text"
-              class="input-field"
             />
           </div>
         </div>
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label class="block text-xs text-[color:var(--text-muted)] mb-1">Субстрат</label>
-            <select
+            <SelectField
               v-model="form.substrate_type"
-              class="input-select"
             >
               <option value="">
                 Не выбрано
@@ -222,13 +218,12 @@
               >
                 {{ option.label }}
               </option>
-            </select>
+            </SelectField>
           </div>
           <div>
             <label class="block text-xs text-[color:var(--text-muted)] mb-1">Система</label>
-            <select
+            <SelectField
               v-model="form.growing_system"
-              class="input-select"
             >
               <option value="">
                 Не выбрано
@@ -240,15 +235,14 @@
               >
                 {{ option.label }}
               </option>
-            </select>
+            </SelectField>
           </div>
         </div>
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label class="block text-xs text-[color:var(--text-muted)] mb-1">Фотопериод</label>
-            <select
+            <SelectField
               v-model="form.photoperiod_preset"
-              class="input-select"
             >
               <option value="">
                 Не выбрано
@@ -260,13 +254,12 @@
               >
                 {{ option.label }}
               </option>
-            </select>
+            </SelectField>
           </div>
           <div>
             <label class="block text-xs text-[color:var(--text-muted)] mb-1">Сезонность</label>
-            <select
+            <SelectField
               v-model="form.seasonality"
-              class="input-select"
             >
               <option value="">
                 Не выбрано
@@ -278,16 +271,17 @@
               >
                 {{ option.label }}
               </option>
-            </select>
+            </SelectField>
           </div>
         </div>
         <div>
           <label class="block text-xs text-[color:var(--text-muted)] mb-1">Описание</label>
-          <textarea
+          <TextField
             v-model="form.description"
-            rows="4"
-            class="input-field h-auto"
-          ></textarea>
+            :rows="4"
+            multiline
+            input-class="h-auto"
+          />
         </div>
         <div class="space-y-2">
           <p class="text-sm font-semibold text-[color:var(--text-primary)]">
@@ -299,19 +293,19 @@
             class="grid grid-cols-2 gap-2"
           >
             <label class="text-xs text-[color:var(--text-muted)] col-span-2">{{ metric.label }}</label>
-            <input
+            <TextField
               v-model="form.environment_requirements[metric.key].min"
               type="number"
               step="0.1"
-              class="input-field h-8 text-xs"
               placeholder="Мин"
+              input-class="h-8 text-xs"
             />
-            <input
+            <TextField
               v-model="form.environment_requirements[metric.key].max"
               type="number"
               step="0.1"
-              class="input-field h-8 text-xs"
               placeholder="Макс"
+              input-class="h-8 text-xs"
             />
           </div>
         </div>
@@ -367,6 +361,8 @@ import Pagination from '@/Components/Pagination.vue'
 import ConfirmModal from '@/Components/ConfirmModal.vue'
 import { useToast } from '@/composables/useToast'
 import { useSimpleModal } from '@/composables/useModal'
+import TextField from '@/Components/TextField.vue'
+import SelectField from '@/Components/SelectField.vue'
 
 interface EnvironmentRange {
   min?: number | string | null

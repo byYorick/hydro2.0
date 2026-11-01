@@ -25,10 +25,11 @@
         {{ kind.label }}
       </button>
       <div class="ml-auto flex items-center gap-1.5">
-        <input
+        <TextField
           :value="query"
-          class="input-field h-6 w-28 text-xs px-2"
           placeholder="Поиск..."
+          input-class="h-6 text-xs px-2"
+          class="w-28"
           @input="$emit('update:query', ($event.target as HTMLInputElement).value)"
         />
         <button
@@ -145,6 +146,7 @@ import Badge from '@/Components/Badge.vue'
 import EventRow from '@/Components/Events/EventRow.vue'
 import { collapseNoisyEvents, type CollapsedFeedItem } from '@/utils/eventOperatorView'
 import type { ZoneEventGroup } from '@/utils/eventGroups'
+import TextField from '@/Components/TextField.vue'
 
 type KindFilter = 'ALL' | 'ALERT' | 'WARNING' | 'INFO' | 'ACTION'
 

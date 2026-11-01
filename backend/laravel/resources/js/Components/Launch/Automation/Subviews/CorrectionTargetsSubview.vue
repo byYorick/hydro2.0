@@ -48,10 +48,11 @@
         :label="meta('phPct').label"
         :hint="meta('phPct').hint"
       >
-        <input
-          v-bind="numAttrs"
+        <TextField
+          type="number"
           :title="meta('phPct').details"
           :value="waterForm.phPct"
+          input-class="font-mono"
           @input="upd('phPct', toNum($event))"
         />
       </Field>
@@ -59,10 +60,11 @@
         :label="meta('ecPct').label"
         :hint="meta('ecPct').hint"
       >
-        <input
-          v-bind="numAttrs"
+        <TextField
+          type="number"
           :title="meta('ecPct').details"
           :value="waterForm.ecPct"
+          input-class="font-mono"
           @input="upd('ecPct', toNum($event))"
         />
       </Field>
@@ -87,6 +89,7 @@ import type { CorrectionProfileKey } from '../correctionPresets'
 import { useLaunchPreferences } from '@/composables/useLaunchPreferences'
 import type { WaterFormState } from '@/composables/zoneAutomationTypes'
 import { createMetaResolver, toNum, type FieldMeta } from './sharedFormUtils'
+import TextField from '@/Components/TextField.vue'
 
 const props = defineProps<{ waterForm: WaterFormState }>()
 const emit = defineEmits<{ (e: 'update:waterForm', next: WaterFormState): void }>()
@@ -101,10 +104,6 @@ watch(
     /* keep profileKey local; reset on form-mismatch handled by chooser. */
   },
 )
-
-const inputCls =
-  'block w-full h-8 rounded-lg border border-[var(--border-muted)] bg-[var(--bg-surface)] text-[var(--text-primary)] px-2.5 text-sm font-mono outline-none transition-[border-color,box-shadow,background-color] duration-150 focus:border-brand focus:ring-2 focus:ring-brand-soft focus-visible:border-brand focus-visible:ring-2 focus-visible:ring-brand-soft'
-const numAttrs = { class: inputCls, type: 'number' }
 
 const lockedCls =
   'flex items-center h-8 px-3 rounded-md border border-[var(--border-muted)] bg-[var(--bg-elevated)] text-sm font-mono text-[var(--text-primary)] gap-1.5'

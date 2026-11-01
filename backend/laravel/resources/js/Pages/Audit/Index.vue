@@ -15,9 +15,8 @@
         <Card class="mb-4">
           <div class="mb-3 flex flex-wrap items-center gap-2">
             <label class="text-sm text-[color:var(--text-muted)]">Уровень:</label>
-            <select
+            <SelectField
               v-model="levelFilter"
-              class="input-select"
             >
               <option value="">
                 Все уровни
@@ -34,12 +33,12 @@
               <option value="debug">
                 Debug
               </option>
-            </select>
+            </SelectField>
             <label class="ml-4 text-sm text-[color:var(--text-muted)]">Поиск:</label>
-            <input 
-              v-model="searchQuery" 
-              placeholder="Поиск по сообщению..." 
-              class="input-field w-64" 
+            <TextField
+              v-model="searchQuery"
+              placeholder="Поиск по сообщению..."
+              class="w-64"
             />
             <div class="ml-auto flex gap-2">
               <Button
@@ -223,6 +222,8 @@ import Pagination from '@/Components/Pagination.vue'
 import { logger } from '@/utils/logger'
 import { useToast } from '@/composables/useToast'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
+import TextField from '@/Components/TextField.vue'
+import SelectField from '@/Components/SelectField.vue'
 
 interface SystemLog {
   id: number

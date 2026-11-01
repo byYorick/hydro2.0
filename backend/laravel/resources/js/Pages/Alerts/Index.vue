@@ -10,10 +10,10 @@
       <FilterBar>
         <div class="flex items-center gap-2 flex-1 sm:flex-none">
           <label class="text-sm text-[color:var(--text-muted)] shrink-0">Статус:</label>
-          <select
+          <SelectField
             v-model="statusFilter"
             data-testid="alerts-filter-active"
-            class="input-select flex-1 sm:w-auto sm:min-w-[160px]"
+            class="flex-1 sm:w-auto sm:min-w-[160px]"
           >
             <option value="active">
               Только активные
@@ -24,15 +24,15 @@
             <option value="all">
               Все
             </option>
-          </select>
+          </SelectField>
         </div>
 
         <div class="flex items-center gap-2 flex-1 sm:flex-none">
           <label class="text-sm text-[color:var(--text-muted)] shrink-0">Зона:</label>
-          <select
+          <SelectField
             v-model="zoneIdFilter"
             data-testid="alerts-filter-zone"
-            class="input-select flex-1 sm:w-auto sm:min-w-[180px]"
+            class="flex-1 sm:w-auto sm:min-w-[180px]"
           >
             <option value="">
               Все зоны
@@ -44,15 +44,15 @@
             >
               {{ zone.name }}
             </option>
-          </select>
+          </SelectField>
         </div>
 
         <div class="flex items-center gap-2 flex-1 sm:flex-none">
           <label class="text-sm text-[color:var(--text-muted)] shrink-0">Критичность:</label>
-          <select
+          <SelectField
             v-model="severityFilter"
             data-testid="alerts-filter-severity"
-            class="input-select flex-1 sm:w-auto sm:min-w-[150px]"
+            class="flex-1 sm:w-auto sm:min-w-[150px]"
           >
             <option value="">
               Все
@@ -69,7 +69,7 @@
             <option value="info">
               {{ translateAlertSeverity('info') }}
             </option>
-          </select>
+          </SelectField>
         </div>
 
         <TextField
@@ -148,10 +148,10 @@
         >
           <div class="flex items-center gap-2 flex-1 sm:flex-none">
             <label class="text-sm text-[color:var(--text-muted)] shrink-0">Источник:</label>
-            <select
+            <SelectField
               v-model="sourceFilter"
               data-testid="alerts-filter-source"
-              class="input-select flex-1 sm:w-auto sm:min-w-[150px]"
+              class="flex-1 sm:w-auto sm:min-w-[150px]"
             >
               <option value="">
                 Все
@@ -165,15 +165,15 @@
               <option value="node">
                 {{ translateAlertSource('node') }}
               </option>
-            </select>
+            </SelectField>
           </div>
 
           <div class="flex items-center gap-2 flex-1 sm:flex-none">
             <label class="text-sm text-[color:var(--text-muted)] shrink-0">Категория:</label>
-            <select
+            <SelectField
               v-model="categoryFilter"
               data-testid="alerts-filter-category"
-              class="input-select flex-1 sm:w-auto sm:min-w-[170px]"
+              class="flex-1 sm:w-auto sm:min-w-[170px]"
             >
               <option value="">
                 Все
@@ -199,19 +199,19 @@
               <option value="other">
                 other
               </option>
-            </select>
+            </SelectField>
           </div>
 
           <div class="flex items-center gap-2 flex-1 sm:flex-none">
             <label class="text-sm text-[color:var(--text-muted)] shrink-0">Скрытие повторов, сек</label>
-            <input
+            <TextField
               v-model.number="toastSuppressionSec"
               type="number"
               min="0"
               max="600"
               step="5"
-              class="input-field w-24"
               data-testid="alerts-filter-suppression"
+              class="w-24"
             />
           </div>
         </div>
@@ -589,6 +589,7 @@ import {
   PROCESS_STOPPING_SECTION_TITLE,
 } from '@/utils/automationBlock'
 import { zoneAlertsTabUrl } from '@/utils/alertContext'
+import SelectField from '@/Components/SelectField.vue'
 
 const {
   statusFilter,

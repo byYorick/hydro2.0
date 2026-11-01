@@ -77,10 +77,10 @@
         <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
           <div class="flex flex-wrap items-center gap-2">
             <span class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">Фильтр</span>
-            <select
+            <SelectField
               v-model="filters.level"
-              class="input-select h-9"
               data-testid="logs-filter-level"
+              input-class="h-9"
             >
               <option value="">
                 Все уровни
@@ -92,24 +92,25 @@
               >
                 {{ level }}
               </option>
-            </select>
-            <input
+            </SelectField>
+            <TextField
               v-model="filters.search"
               type="search"
               placeholder="Поиск по сообщению/контексту"
-              class="input-field h-9 w-full sm:w-64"
+              input-class="h-9"
+              class="w-full sm:w-64"
             />
           </div>
           <div class="flex flex-wrap items-center gap-2">
-            <input
+            <TextField
               v-model="filters.from"
               type="date"
-              class="input-field h-9"
+              input-class="h-9"
             />
-            <input
+            <TextField
               v-model="filters.to"
               type="date"
-              class="input-field h-9"
+              input-class="h-9"
             />
             <Button
               size="sm"
@@ -240,6 +241,8 @@ import { formatTime } from '@/utils/formatTime'
 import { api } from '@/services/api'
 import { extractData } from '@/utils/apiHelpers'
 import { logger } from '@/utils/logger'
+import TextField from '@/Components/TextField.vue'
+import SelectField from '@/Components/SelectField.vue'
 
 interface ServiceOption {
   key: string

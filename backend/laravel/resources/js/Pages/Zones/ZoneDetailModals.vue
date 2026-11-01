@@ -60,23 +60,23 @@
         <div>Зафиксировать сбор урожая и завершить цикл?</div>
         <div>
           <label class="text-xs text-[color:var(--text-dim)]">Метка партии (опционально)</label>
-          <input
+          <TextField
             v-model="harvestBatchLabel"
-            class="input-field mt-1 w-full"
             placeholder="Например: Batch-042"
+            class="mt-1 w-full"
           />
         </div>
         <div>
           <label class="text-xs text-[color:var(--text-dim)]">Урожай, кг</label>
-          <input
+          <TextField
             v-model="harvestYieldKg"
             type="number"
             min="0"
             step="0.01"
             inputmode="decimal"
-            class="input-field mt-1 w-full"
             placeholder="Необязательно"
             data-testid="harvest-yield-kg"
+            class="mt-1 w-full"
           />
         </div>
       </div>
@@ -96,11 +96,13 @@
         <div>Остановить цикл? Это действие нельзя отменить.</div>
         <div>
           <label class="text-xs text-[color:var(--text-dim)]">Причина (опционально)</label>
-          <textarea
+          <TextField
             v-model="abortNotes"
-            class="input-field mt-1 w-full h-20 resize-none"
             placeholder="Короткое описание причины"
-          ></textarea>
+            multiline
+            input-class="h-20 resize-none"
+            class="mt-1 w-full"
+          />
         </div>
       </div>
     </ConfirmModal>
@@ -119,10 +121,10 @@
         <div>Введите ID ревизии рецепта и выберите режим применения.</div>
         <div>
           <label class="text-xs text-[color:var(--text-dim)]">ID ревизии рецепта</label>
-          <input
+          <TextField
             v-model="changeRecipeRevisionId"
-            class="input-field mt-1 w-full"
             placeholder="Например: 42"
+            class="mt-1 w-full"
           />
         </div>
         <div class="flex flex-wrap gap-2">
@@ -157,6 +159,7 @@ import AttachNodesModal from '@/Components/AttachNodesModal.vue'
 import NodeConfigModal from '@/Components/NodeConfigModal.vue'
 import ConfirmModal from '@/Components/ConfirmModal.vue'
 import { pickIrrigationDurationFromTargets } from '@/utils/irrigationModalDefaults'
+import TextField from '@/Components/TextField.vue'
 
 interface HarvestModalState {
   open: boolean

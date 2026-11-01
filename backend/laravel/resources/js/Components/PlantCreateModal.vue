@@ -34,12 +34,12 @@
           >
             Название <span class="text-[color:var(--status-critical)]">*</span>
           </label>
-          <input
+          <TextField
             id="plant-name"
             v-model="form.name"
             type="text"
-            class="input-field h-9 w-full"
-            :class="errors.name ? 'border-[color:var(--status-critical)] bg-[color:var(--badge-danger-bg)]' : ''"
+            :input-class="[errors.name ? 'border-[color:var(--status-critical)] bg-[color:var(--badge-danger-bg)]' : '', 'h-9']"
+            class="w-full"
           />
           <div
             v-if="errors.name"
@@ -54,11 +54,12 @@
             for="plant-species"
             class="block text-xs text-[color:var(--text-muted)] mb-1"
           >Вид</label>
-          <input
+          <TextField
             id="plant-species"
             v-model="form.species"
             type="text"
-            class="input-field h-9 w-full"
+            input-class="h-9"
+            class="w-full"
           />
         </div>
 
@@ -67,34 +68,33 @@
             for="plant-variety"
             class="block text-xs text-[color:var(--text-muted)] mb-1"
           >Сорт</label>
-          <input
+          <TextField
             id="plant-variety"
             v-model="form.variety"
             type="text"
-            class="input-field h-9 w-full"
+            input-class="h-9"
+            class="w-full"
           />
         </div>
 
         <div>
           <div class="flex items-center gap-2">
-            <div class="flex h-9 flex-1 items-center rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)]">
-              <select
-                id="plant-system"
-                v-model="form.growing_system"
-                class="h-9 w-full bg-transparent border-none focus:ring-0 focus:outline-none appearance-none px-2"
+            <SelectField
+              id="plant-system"
+              v-model="form.growing_system"
+              class="flex-1"
+            >
+              <option value="">
+                Не выбрано
+              </option>
+              <option
+                v-for="option in taxonomyOptions.growing_system"
+                :key="option.id"
+                :value="option.id"
               >
-                <option value="">
-                  Не выбрано
-                </option>
-                <option
-                  v-for="option in taxonomyOptions.growing_system"
-                  :key="option.id"
-                  :value="option.id"
-                >
-                  {{ option.label }}
-                </option>
-              </select>
-            </div>
+                {{ option.label }}
+              </option>
+            </SelectField>
             <button
               type="button"
               class="h-9 w-9 shrink-0 inline-flex items-center justify-center rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)] p-0"
@@ -113,24 +113,22 @@
 
         <div v-if="showSubstrateSelector">
           <div class="flex items-center gap-2">
-            <div class="flex h-9 flex-1 items-center rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)]">
-              <select
-                id="plant-substrate"
-                v-model="form.substrate_type"
-                class="h-9 w-full bg-transparent border-none focus:ring-0 focus:outline-none appearance-none px-2"
+            <SelectField
+              id="plant-substrate"
+              v-model="form.substrate_type"
+              class="flex-1"
+            >
+              <option value="">
+                Не выбрано
+              </option>
+              <option
+                v-for="option in taxonomyOptions.substrate_type"
+                :key="option.id"
+                :value="option.id"
               >
-                <option value="">
-                  Не выбрано
-                </option>
-                <option
-                  v-for="option in taxonomyOptions.substrate_type"
-                  :key="option.id"
-                  :value="option.id"
-                >
-                  {{ option.label }}
-                </option>
-              </select>
-            </div>
+                {{ option.label }}
+              </option>
+            </SelectField>
             <button
               type="button"
               class="h-9 w-9 shrink-0 inline-flex items-center justify-center rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)] p-0"
@@ -143,24 +141,22 @@
 
         <div>
           <div class="flex items-center gap-2">
-            <div class="flex h-9 flex-1 items-center rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)]">
-              <select
-                id="plant-seasonality"
-                v-model="form.seasonality"
-                class="h-9 w-full bg-transparent border-none focus:ring-0 focus:outline-none appearance-none px-2"
+            <SelectField
+              id="plant-seasonality"
+              v-model="form.seasonality"
+              class="flex-1"
+            >
+              <option value="">
+                Не выбрано
+              </option>
+              <option
+                v-for="option in seasonOptions"
+                :key="option.id"
+                :value="option.id"
               >
-                <option value="">
-                  Не выбрано
-                </option>
-                <option
-                  v-for="option in seasonOptions"
-                  :key="option.id"
-                  :value="option.id"
-                >
-                  {{ option.label }}
-                </option>
-              </select>
-            </div>
+                {{ option.label }}
+              </option>
+            </SelectField>
             <button
               type="button"
               class="h-9 w-9 shrink-0 inline-flex items-center justify-center rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)] p-0"
@@ -176,12 +172,13 @@
             for="plant-description"
             class="block text-xs text-[color:var(--text-muted)] mb-1"
           >Описание</label>
-          <textarea
+          <TextField
             id="plant-description"
             v-model="form.description"
-            rows="3"
-            class="input-field w-full"
-          ></textarea>
+            :rows="3"
+            multiline
+            class="w-full"
+          />
         </div>
       </div>
 
@@ -251,6 +248,8 @@ import Button from '@/Components/Button.vue'
 import RecipeEditor from '@/Components/RecipeEditor.vue'
 import TaxonomyWizardModal from '@/Components/TaxonomyWizardModal.vue'
 import { usePlantCreateModal, type TaxonomyOption } from '@/composables/usePlantCreateModal'
+import TextField from '@/Components/TextField.vue'
+import SelectField from '@/Components/SelectField.vue'
 
 interface Props {
   show?: boolean

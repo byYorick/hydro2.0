@@ -92,10 +92,9 @@
         for="pagination-per-page"
         class="text-xs text-[color:var(--text-dim)]"
       >На странице:</label>
-      <select
+      <SelectField
         id="pagination-per-page"
         :value="perPageModel"
-        class="h-7 px-2 text-xs rounded-md border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)] text-[color:var(--text-muted)] focus:border-[color:var(--status-ok)] focus:outline-none focus:ring-2 focus:ring-[color:var(--focus-ring)] focus:ring-offset-2 focus:ring-offset-[color:var(--bg-main)]"
         aria-label="Количество элементов на странице"
         @change="onPerPageChange(Number(($event.target as HTMLSelectElement).value))"
       >
@@ -111,13 +110,14 @@
         <option :value="100">
           100
         </option>
-      </select>
+      </SelectField>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, watch } from 'vue'
+import SelectField from '@/Components/SelectField.vue'
 
 interface Props {
   currentPage: number

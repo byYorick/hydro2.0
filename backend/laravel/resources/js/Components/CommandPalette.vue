@@ -24,11 +24,12 @@
           </div>
         </div>
         
-        <input 
-          ref="inputRef" 
+        <TextField
+          ref="inputRef"
           v-model="q"
-          placeholder="Команда или поиск..." 
-          class="input-field h-12 w-full px-4 text-sm transition-all duration-200"
+          placeholder="Команда или поиск..."
+          input-class="h-12 px-4 text-sm transition-all duration-200"
+          class="w-full"
           @keydown.down.prevent="selectedIndex = Math.min(selectedIndex + 1, totalItemsCount - 1)"
           @keydown.up.prevent="selectedIndex = Math.max(selectedIndex - 1, 0)"
           @keydown.enter.prevent="runSelected()"
@@ -148,6 +149,7 @@ import ConfirmModal from '@/Components/ConfirmModal.vue'
 import ZoneActionModal from '@/Components/ZoneActionModal.vue'
 import { pickIrrigationDurationFromTargets } from '@/utils/irrigationModalDefaults'
 import type { CommandParams, CommandType } from '@/types'
+import TextField from '@/Components/TextField.vue'
 
 interface ConfirmModalState {
   open: boolean

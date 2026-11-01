@@ -72,15 +72,15 @@
                 field-id="settings-alert-suppression-input"
                 test-id="settings-notifications-suppression-card"
               >
-                <input
+                <TextField
                   id="settings-alert-suppression-input"
                   v-model.number="notificationSettings.alertToastSuppressionSec"
                   type="number"
                   min="0"
                   max="600"
                   step="5"
-                  class="input-field settings-control--num text-right"
                   data-testid="settings-alert-suppression-input"
+                  input-class="settings-control--num text-right"
                 />
               </SettingsFieldRow>
             </div>
@@ -168,11 +168,11 @@
                   field-id="settings-alert-policy-input"
                   test-id="settings-alert-policy-card"
                 >
-                  <select
+                  <SelectField
                     id="settings-alert-policy-input"
                     v-model="alertPolicyDraft.ae3_operational_resolution_mode"
                     data-testid="settings-alert-policy-input-ae3-operational-resolution-mode"
-                    class="input-select settings-control--select"
+                    input-class="settings-control--select"
                   >
                     <option value="manual_ack">
                       Только вручную
@@ -180,7 +180,7 @@
                     <option value="auto_resolve_on_recovery">
                       Автоматически, когда причина устранена
                     </option>
-                  </select>
+                  </SelectField>
                 </SettingsFieldRow>
               </div>
               <template #footer>
@@ -257,6 +257,8 @@ import { useAutomationConfig } from '@/composables/useAutomationConfig'
 import { useToast } from '@/composables/useToast'
 import { ERROR_MESSAGES } from '@/constants/messages'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
+import TextField from '@/Components/TextField.vue'
+import SelectField from '@/Components/SelectField.vue'
 
 const page = usePage()
 const currentUser = computed(() => page.props.auth?.user)

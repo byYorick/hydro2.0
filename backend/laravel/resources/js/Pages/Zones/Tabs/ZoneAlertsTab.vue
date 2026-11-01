@@ -23,10 +23,11 @@
         {{ status.label }}
       </button>
       <div class="ml-auto flex items-center">
-        <input
+        <TextField
           :value="query"
-          class="input-field h-6 w-32 text-xs px-2"
           placeholder="Поиск..."
+          input-class="h-6 text-xs px-2"
+          class="w-32"
           @input="query = ($event.target as HTMLInputElement).value"
         />
       </div>
@@ -115,6 +116,7 @@ import {
   isSafetyCriticalCode,
   PROCESS_STOPPING_SECTION_TITLE,
 } from '@/utils/automationBlock'
+import TextField from '@/Components/TextField.vue'
 
 interface Props {
   alerts: Alert[]
