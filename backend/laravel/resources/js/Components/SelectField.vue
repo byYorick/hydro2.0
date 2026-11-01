@@ -12,7 +12,7 @@
       :aria-describedby="error ? errorId : undefined"
       v-bind="inputAttrs"
     >
-      <slot />
+      <slot></slot>
     </select>
     <span
       v-if="error"

@@ -271,7 +271,7 @@ describe('Devices/Show.vue', () => {
     expect(wrapper.text()).toContain('Онлайн')
     const badge = wrapper.findComponent({ name: 'Badge' })
     expect(badge.exists()).toBe(true)
-    expect(badge.props('variant')).toBe('success')
+    expect(badge.props('variant')).toBe('ok')
   })
 
   it('отображает тип устройства', () => {
@@ -487,7 +487,7 @@ describe('Devices/Show.vue', () => {
 
     expect(wrapper.text()).toContain('Офлайн')
     const badge = wrapper.findComponent({ name: 'Badge' })
-    expect(badge.props('variant')).toBe('danger')
+    expect(badge.props('variant')).toBe('offline')
   })
 
   it('показывает неизвестный статус устройства на русском', () => {

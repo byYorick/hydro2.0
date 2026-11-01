@@ -4,7 +4,7 @@
     :class="toneClass"
     role="status"
   >
-    <slot />
+    <slot></slot>
   </span>
 </template>
 

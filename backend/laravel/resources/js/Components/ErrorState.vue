@@ -9,7 +9,7 @@
       v-if="$slots.action"
       #action
     >
-      <slot name="action" />
+      <slot name="action"></slot>
     </template>
   </EmptyState>
 </template>
