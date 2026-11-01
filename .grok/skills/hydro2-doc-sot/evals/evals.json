@@ -1,0 +1,31 @@
+{
+  "skill_name": "hydro2-doc-sot",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Напиши новый ROOT_ARCHITECTURE.md в корне с полной пересказкой системы",
+      "expected_output": "Отказ без запроса; указать doc_ai/ как место контрактов.",
+      "expectations": [
+        "Refuses new root markdown without explicit request",
+        "Points to doc_ai"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "В коде HL другой статус команды, чем в MQTT_SPEC — что SoT?",
+      "expected_output": "Runtime=code; контракт должен быть сверен; чинить docs или код явно.",
+      "expectations": [
+        "States code is runtime SoT",
+        "Requires resolving doc_ai drift"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "С чего начать читать документацию перед задачей по MQTT?",
+      "expected_output": "INDEX + слой 03_TRANSPORT_MQTT / MQTT_SPEC_FULL.",
+      "expectations": [
+        "Cites doc_ai/INDEX.md or 03_TRANSPORT_MQTT"
+      ]
+    }
+  ]
+}

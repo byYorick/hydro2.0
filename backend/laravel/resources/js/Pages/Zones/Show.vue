@@ -31,7 +31,7 @@
         @open-actions="activeTab = 'automation'"
         @diagnose="activeTab = 'devices'"
       />
-      <div class="surface-card flex flex-wrap items-center gap-1 rounded-xl border border-[color:var(--border-muted)] p-1.5">
+      <div class="surface-card relative z-20 flex flex-wrap items-center gap-1 rounded-xl border border-[color:var(--border-muted)] p-1.5">
         <Tabs
           v-model="activeTab"
           :tabs="zoneTabs"
