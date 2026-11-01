@@ -23,7 +23,7 @@
       </div>
     </div>
     <div
-      class="text-2xl font-bold mb-2"
+      class="telemetry-value text-telemetry mb-2"
       :style="{ color: color }"
     >
       {{ currentValue !== null ? formatValue(currentValue) : '-' }}
@@ -72,6 +72,7 @@ import { computed } from 'vue'
 import Card from '@/Components/Card.vue'
 import ChartBase from '@/Components/ChartBase.vue'
 import { useTheme } from '@/composables/useTheme'
+import { CHART_FONT_FAMILY, readCssVar } from '@/theme/chartTheme'
 
 interface TelemetryDataPoint {
   ts: number
@@ -107,33 +108,25 @@ const props = withDefaults(defineProps<Props>(), {
 
 const { theme } = useTheme()
 
-const resolveCssColor = (variable: string, fallback: string): string => {
-  if (typeof window === 'undefined') {
-    return fallback
-  }
-  const value = getComputedStyle(document.documentElement).getPropertyValue(variable).trim()
-  return value || fallback
-}
-
 const chartPalette = computed(() => {
   theme.value
   return {
-    surface: resolveCssColor('--bg-surface-strong', 'rgba(17, 24, 39, 0.95)'),
-    border: resolveCssColor('--border-muted', '#374151'),
-    text: resolveCssColor('--text-primary', '#f3f4f6'),
+    surface: readCssVar('--bg-surface-strong', 'rgba(17, 24, 39, 0.95)'),
+    border: readCssVar('--border-muted', '#374151'),
+    text: readCssVar('--text-primary', '#f3f4f6'),
   }
 })
 
 const resolveColorFromProp = (value?: string): string => {
   if (!value) {
-    return resolveCssColor('--accent-cyan', '#3b82f6')
+    return readCssVar('--accent-cyan', '#3b82f6')
   }
   if (value.startsWith('var(')) {
     const variable = value.slice(4, -1).trim()
-    return resolveCssColor(variable, '#3b82f6')
+    return readCssVar(variable, '#3b82f6')
   }
   if (value.startsWith('--')) {
-    return resolveCssColor(value, '#3b82f6')
+    return readCssVar(value, '#3b82f6')
   }
   return value
 }
@@ -245,6 +238,7 @@ const chartOption = computed(() => {
       textStyle: {
         color: chartPalette.value.text,
         fontSize: 12,
+        fontFamily: CHART_FONT_FAMILY,
       },
       extraCssText: 'z-index: 99999 !important; box-shadow: var(--shadow-card); padding: 6px 10px; border-radius: 6px;',
     },

@@ -57,6 +57,7 @@ import ChartBase from '@/Components/ChartBase.vue'
 import EmptyState from '@/Components/EmptyState.vue'
 import SkeletonBlock from '@/Components/SkeletonBlock.vue'
 import { useTheme } from '@/composables/useTheme'
+import { CHART_FONT_FAMILY, readCssVar } from '@/theme/chartTheme'
 
 interface AggregatePoint {
   ts: string
@@ -92,24 +93,16 @@ const meta = computed(() => (props.data.length ? `${props.data.length} точе�
 
 const { theme } = useTheme()
 
-const resolveCssColor = (variable: string, fallback: string): string => {
-  if (typeof window === 'undefined') {
-    return fallback
-  }
-  const value = getComputedStyle(document.documentElement).getPropertyValue(variable).trim()
-  return value || fallback
-}
-
 const colors = computed(() => {
   theme.value
   return {
-    avg: resolveCssColor('--accent-cyan', '#60a5fa'),
-    band: resolveCssColor('--accent-green', '#22c55e'),
-    median: resolveCssColor('--accent-amber', '#f59e0b'),
-    textPrimary: resolveCssColor('--text-primary', '#111827'),
-    textDim: resolveCssColor('--text-dim', '#6b7280'),
-    borderMuted: resolveCssColor('--border-muted', '#e5e7eb'),
-    tooltipBg: resolveCssColor('--bg-surface-strong', '#111827'),
+    avg: readCssVar('--status-info', '#5dd6ff'),
+    band: readCssVar('--status-ok', '#49e08a'),
+    median: readCssVar('--status-warning', '#f0b268'),
+    textPrimary: readCssVar('--text-primary', '#111827'),
+    textDim: readCssVar('--text-dim', '#6b7280'),
+    borderMuted: readCssVar('--border-muted', '#e5e7eb'),
+    tooltipBg: readCssVar('--bg-surface-strong', '#111827'),
   }
 })
 
@@ -147,7 +140,7 @@ const option = computed(() => {
       trigger: 'axis',
       backgroundColor: colors.value.tooltipBg,
       borderColor: colors.value.borderMuted,
-      textStyle: { color: colors.value.textPrimary, fontSize: 12 },
+      textStyle: { color: colors.value.textPrimary, fontSize: 12, fontFamily: CHART_FONT_FAMILY },
       formatter: (params: any) => {
         if (!Array.isArray(params) || params.length === 0) return ''
         const time = new Date(params[0].value[0]).toLocaleString('ru-RU')

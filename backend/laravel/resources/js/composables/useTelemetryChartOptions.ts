@@ -249,7 +249,7 @@ export function buildTelemetryChartOptions(params: BuildTelemetryChartOptionsPar
       backgroundColor: palette.tooltipBg,
       borderColor: palette.borderMuted,
       borderWidth: 1,
-      textStyle: { color: palette.textPrimary, fontSize: 12 },
+      textStyle: { color: palette.textPrimary, fontSize: 12, fontFamily: palette.fontFamily },
       extraCssText: 'z-index: 99999 !important; box-shadow: var(--shadow-card); padding: 8px 12px; border-radius: 6px;',
     },
     axisPointer: {
