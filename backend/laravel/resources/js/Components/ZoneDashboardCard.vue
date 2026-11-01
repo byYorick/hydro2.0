@@ -49,7 +49,14 @@
         </div>
 
         <div class="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-[color:var(--text-muted)]">
-          <span v-if="zone.greenhouse">{{ zone.greenhouse.name }}</span>
+          <Link
+            v-if="zone.greenhouse"
+            :href="zone.greenhouse.id ? `/greenhouses/${zone.greenhouse.id}` : '/greenhouses'"
+            class="text-[color:var(--text-muted)] no-underline hover:text-[color:var(--text-primary)] hover:underline"
+            @click.stop
+          >
+            {{ zone.greenhouse.name }}
+          </Link>
           <span
             v-if="zone.recipe"
             class="truncate"

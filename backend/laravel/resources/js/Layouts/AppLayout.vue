@@ -31,8 +31,10 @@
 
             <!-- Nav -->
             <nav
+              id="app-sidebar-nav"
               class="flex-1 py-2 overflow-y-auto overflow-x-hidden scrollbar-glow transition-all duration-300"
               :class="collapsed ? 'px-2' : 'px-3'"
+              aria-label="Разделы"
             >
               <RoleBasedNavigation :collapsed="collapsed" />
             </nav>
@@ -42,7 +44,11 @@
               <UserMenu :collapsed="collapsed" />
               <div :class="collapsed ? 'flex justify-center' : 'flex justify-end'">
                 <button
+                  type="button"
                   class="p-1.5 rounded-lg text-[color:var(--text-dim)] hover:text-[color:var(--text-primary)] hover:bg-[color:var(--bg-elevated)] transition-colors"
+                  :aria-expanded="!collapsed"
+                  aria-controls="app-sidebar-nav"
+                  :aria-label="collapsed ? 'Развернуть меню' : 'Свернуть меню'"
                   :title="collapsed ? 'Развернуть меню' : 'Свернуть меню'"
                   @click="toggleSidebar"
                 >
@@ -71,13 +77,16 @@
           >
             <div class="fixed inset-0 bg-[color:var(--bg-main)] opacity-80 backdrop-blur-sm"></div>
             <div
+              id="mobile-nav"
               class="fixed left-0 top-0 bottom-0 w-72 bg-[color:var(--bg-surface-strong)] border-r border-[color:var(--border-muted)] glass-panel"
               @click.stop
             >
               <div class="h-16 flex items-center justify-between px-4 border-b border-[color:var(--border-muted)]">
                 <span class="text-base font-semibold">hydro 2.0</span>
                 <button
+                  type="button"
                   class="p-2 rounded-md text-[color:var(--text-dim)] hover:text-[color:var(--text-primary)] hover:bg-[color:var(--bg-elevated)]"
+                  aria-label="Закрыть меню"
                   @click="showMobileMenu = false"
                 >
                   <svg
@@ -97,6 +106,7 @@
               </div>
               <nav
                 class="p-4 space-y-1 overflow-y-auto"
+                aria-label="Разделы"
                 @click="showMobileMenu = false"
               >
                 <RoleBasedNavigation />
@@ -114,7 +124,11 @@
             <header class="h-16 flex items-center justify-between px-4 border-b border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] lg:hidden backdrop-blur-xl shrink-0">
               <div class="flex items-center gap-3">
                 <button
+                  type="button"
                   class="p-2 rounded-md text-[color:var(--text-muted)] hover:text-[color:var(--text-primary)] hover:bg-[color:var(--bg-elevated)]"
+                  aria-label="Открыть меню"
+                  :aria-expanded="showMobileMenu"
+                  aria-controls="mobile-nav"
                   @click="showMobileMenu = !showMobileMenu"
                 >
                   <svg
@@ -173,6 +187,7 @@
               <button
                 type="button"
                 class="p-1.5 rounded-lg text-[color:var(--text-dim)] hover:text-[color:var(--text-primary)] hover:bg-[color:var(--bg-elevated)] transition-colors"
+                :aria-label="eventsCollapsed ? 'Развернуть события' : 'Свернуть события'"
                 :title="eventsCollapsed ? 'Развернуть события' : 'Свернуть события'"
                 data-testid="events-rail-toggle"
                 :aria-expanded="!eventsCollapsed"

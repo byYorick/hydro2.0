@@ -6,6 +6,13 @@
           {{ device.uid || device.name || device.id }}
         </h1>
         <div class="text-xs text-[color:var(--text-muted)]">
+          <span v-if="linkedGreenhouseName">
+            <Link
+              :href="linkedGreenhouseHref"
+              class="text-[color:var(--text-muted)] hover:text-[color:var(--text-primary)] hover:underline"
+            >{{ linkedGreenhouseName }}</Link>
+            <span aria-hidden="true"> / </span>
+          </span>
           <span v-if="linkedZoneId">
             <Link
               :href="`/zones/${linkedZoneId}`"
@@ -19,7 +26,7 @@
       </div>
       <div class="flex flex-col gap-2 lg:items-end">
         <div class="flex flex-wrap items-center gap-2 lg:justify-end">
-          <Badge :variant="device.status === 'online' ? 'success' : device.status === 'offline' ? 'danger' : 'neutral'">
+          <Badge :variant="device.status === 'online' ? 'ok' : device.status === 'offline' ? 'offline' : device.status === 'degraded' ? 'warning' : 'neutral'">
             {{ formatDeviceStatus(device.status) }}
           </Badge>
           <NodeLifecycleBadge
@@ -461,6 +468,11 @@ const device = computed(() => (page.props.device || {}) as Device)
 const channels = computed(() => (device.value.channels || []) as DeviceChannel[])
 const linkedZoneId = computed<number | null>(() => {
   return device.value.zone?.id ?? device.value.zone_id ?? device.value.pending_zone_id ?? null
+})
+const linkedGreenhouseName = computed(() => device.value.zone?.greenhouse?.name ?? '')
+const linkedGreenhouseHref = computed(() => {
+  const id = device.value.zone?.greenhouse?.id
+  return id ? `/greenhouses/${id}` : '/greenhouses'
 })
 const linkedZoneName = computed(() => {
   if (device.value.zone?.name) {

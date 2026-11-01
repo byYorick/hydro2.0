@@ -6,16 +6,15 @@
       </span>
       <span
         v-if="offline"
-        class="inline-flex items-center gap-1 rounded-full border border-[color:var(--badge-danger-border)] bg-[color:var(--badge-danger-bg)] px-1.5 py-0.5 text-[9px] font-medium text-[color:var(--badge-danger-text)]"
+        class="status-chip status-chip--offline px-1.5 py-0.5 text-[9px]"
       >
-        <span aria-hidden="true">📡</span>
-        offline
+        нет связи
       </span>
     </div>
 
     <div class="mt-0.5 flex items-baseline gap-1 min-h-[15px]">
       <span
-        class="text-sm font-semibold tabular-nums leading-none"
+        class="telemetry-value text-lg leading-none"
         :class="offline ? 'text-[color:var(--text-dim)]' : valueColorClass"
       >
         {{ offline ? '—' : formattedValue }}
@@ -119,8 +118,8 @@ const markerStyle = computed(() => {
   return { left: `${pos}%` }
 })
 
-const state = computed<'ok' | 'warn' | 'danger' | 'unknown'>(() => {
-  if (props.offline) return 'danger'
+const state = computed<'ok' | 'warn' | 'danger' | 'unknown' | 'offline'>(() => {
+  if (props.offline) return 'offline'
   if (props.value === null || Number.isNaN(props.value)) return 'unknown'
   if (props.targetMin === null || props.targetMax === null) return 'unknown'
   if (props.value >= props.targetMin && props.value <= props.targetMax) return 'ok'
@@ -137,18 +136,20 @@ const state = computed<'ok' | 'warn' | 'danger' | 'unknown'>(() => {
 
 const valueColorClass = computed(() => {
   switch (state.value) {
-    case 'ok': return 'text-[color:var(--accent-green)]'
-    case 'warn': return 'text-[color:var(--accent-amber)]'
-    case 'danger': return 'text-[color:var(--accent-red)]'
+    case 'ok': return 'text-status-ok'
+    case 'warn': return 'text-status-warning'
+    case 'danger': return 'text-status-critical'
+    case 'offline': return 'text-status-offline'
     default: return 'text-[color:var(--text-primary)]'
   }
 })
 
 const markerColorClass = computed(() => {
   switch (state.value) {
-    case 'ok': return 'bg-[color:var(--accent-green)]'
-    case 'warn': return 'bg-[color:var(--accent-amber)]'
-    case 'danger': return 'bg-[color:var(--accent-red)]'
+    case 'ok': return 'bg-status-ok'
+    case 'warn': return 'bg-status-warning'
+    case 'danger': return 'bg-status-critical'
+    case 'offline': return 'bg-status-offline'
     default: return 'bg-[color:var(--text-primary)]'
   }
 })

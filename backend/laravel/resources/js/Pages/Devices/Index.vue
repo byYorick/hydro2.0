@@ -48,7 +48,7 @@
             <div class="ui-kpi-label">
               Онлайн
             </div>
-            <div class="ui-kpi-value text-[color:var(--accent-green)]">
+            <div class="ui-kpi-value text-status-ok">
               {{ onlineDevices }}
             </div>
             <div class="ui-kpi-hint">
@@ -59,7 +59,7 @@
             <div class="ui-kpi-label">
               Оффлайн
             </div>
-            <div class="ui-kpi-value text-[color:var(--accent-amber)]">
+            <div class="ui-kpi-value text-status-offline">
               {{ offlineDevices }}
             </div>
             <div class="ui-kpi-hint">
@@ -70,7 +70,7 @@
             <div class="ui-kpi-label">
               По фильтру
             </div>
-            <div class="ui-kpi-value text-[color:var(--accent-cyan)]">
+            <div class="ui-kpi-value text-status-info">
               {{ visibleDevices }}
             </div>
             <div class="ui-kpi-hint">
@@ -161,34 +161,32 @@
       </section>
 
       <FilterBar>
-        <div class="flex items-center gap-2 flex-1 sm:flex-none">
-          <label class="text-sm text-[color:var(--text-muted)] shrink-0">Тип:</label>
-          <select
-            v-model="type"
-            class="input-select flex-1 sm:w-auto sm:min-w-[140px]"
-            data-testid="devices-filter-type"
+        <SelectField
+          v-model="type"
+          inline
+          label="Тип"
+          class="flex-1 sm:min-w-[200px]"
+          data-testid="devices-filter-type"
+        >
+          <option value="">
+            Все
+          </option>
+          <option
+            v-for="option in typeOptions"
+            :key="option.value"
+            :value="option.value"
           >
-            <option value="">
-              Все
-            </option>
-            <option
-              v-for="option in typeOptions"
-              :key="option.value"
-              :value="option.value"
-            >
-              {{ option.label }}
-            </option>
-          </select>
-        </div>
-        <div class="flex items-center gap-2 flex-1 sm:flex-none">
-          <label class="text-sm text-[color:var(--text-muted)] shrink-0">Поиск:</label>
-          <input
-            v-model="query"
-            placeholder="ID устройства..."
-            class="input-field flex-1 sm:w-56"
-            data-testid="devices-filter-query"
-          />
-        </div>
+            {{ option.label }}
+          </option>
+        </SelectField>
+        <TextField
+          v-model="query"
+          inline
+          label="Поиск"
+          placeholder="ID устройства..."
+          class="flex-1 sm:w-64"
+          data-testid="devices-filter-query"
+        />
         <div class="flex items-center gap-2 flex-1 sm:flex-none">
           <button
             class="h-9 px-3 rounded-md border text-sm transition-colors flex items-center gap-1.5 bg-[color:var(--bg-elevated)]"
@@ -277,7 +275,12 @@
             {{ row.type ? translateDeviceType(row.type) : '-' }}
           </template>
           <template #cell-status="{ row }">
-            {{ row.status ? translateStatus(row.status) : 'неизвестно' }}
+            <Badge
+              :variant="nodeStatusVariant(row.status)"
+              size="sm"
+            >
+              {{ row.status ? translateStatus(row.status) : 'неизвестно' }}
+            </Badge>
           </template>
           <template #cell-fw_version="{ row }">
             {{ row.fw_version || '-' }}
@@ -303,7 +306,10 @@
 import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
 import { Link, usePage } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
+import Badge, { type BadgeVariant } from '@/Components/Badge.vue'
 import Button from '@/Components/Button.vue'
+import SelectField from '@/Components/SelectField.vue'
+import TextField from '@/Components/TextField.vue'
 import DataTableV2 from '@/Components/DataTableV2.vue'
 import FilterBar from '@/Components/FilterBar.vue'
 import Pagination from '@/Components/Pagination.vue'
@@ -632,6 +638,20 @@ const typeOptions = computed(() => {
   }))
 })
 const totalDevices = computed(() => allDevices.value.length)
+function nodeStatusVariant(status: string | null | undefined): BadgeVariant {
+  const value = String(status || '').toLowerCase()
+  if (value === 'online') {
+    return 'ok'
+  }
+  if (value === 'offline') {
+    return 'offline'
+  }
+  if (value === 'degraded' || value === 'error' || value === 'stale') {
+    return 'warning'
+  }
+  return 'neutral'
+}
+
 const onlineDevices = computed(() => allDevices.value.filter((device) => device.status === 'online').length)
 const offlineDevices = computed(() => allDevices.value.filter((device) => device.status === 'offline').length)
 

@@ -72,14 +72,14 @@
           </select>
         </div>
 
-        <div class="flex items-center gap-2 flex-1 sm:flex-none">
-          <label class="text-sm text-[color:var(--text-muted)] shrink-0">Поиск:</label>
-          <input
-            v-model="searchQuery"
-            placeholder="тип / код / сообщение"
-            class="input-field flex-1 sm:w-60"
-          />
-        </div>
+        <TextField
+          v-model="searchQuery"
+          inline
+          label="Поиск"
+          placeholder="тип / код / сообщение"
+          class="flex-1 sm:w-72"
+          aria-label="Поиск тревог"
+        />
 
         <div class="flex flex-wrap items-center gap-2">
           <button
@@ -564,6 +564,7 @@ import ConfirmModal from '@/Components/ConfirmModal.vue'
 import DataTableV2 from '@/Components/DataTableV2.vue'
 import FilterBar from '@/Components/FilterBar.vue'
 import PageHeader from '@/Components/PageHeader.vue'
+import TextField from '@/Components/TextField.vue'
 import { useRole } from '@/composables/useRole'
 import { formatAlertHumanTitle, translateAlertSeverity, translateAlertSource, translateStatus } from '@/utils/i18n'
 import {
@@ -742,7 +743,8 @@ function severitySortWeight(alert: AlertRecord): number {
 
 function severityBadgeVariant(alert: AlertRecord): BadgeVariant {
   const severity = severityValue(alert)
-  if (severity === 'critical' || severity === 'error') return 'danger'
+  if (severity === 'critical') return 'critical'
+  if (severity === 'error') return 'danger'
   if (severity === 'warning') return 'warning'
   if (severity === 'info') return 'info'
   return 'neutral'
