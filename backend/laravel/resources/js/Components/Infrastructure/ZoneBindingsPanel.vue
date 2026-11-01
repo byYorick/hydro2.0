@@ -24,7 +24,7 @@
 
     <div
       v-else-if="error"
-      class="text-sm text-red-500"
+      class="text-sm text-status-critical"
     >
       {{ error }}
     </div>
@@ -42,7 +42,7 @@
           {{ role.label }}
           <span
             v-if="role.required"
-            class="text-red-400"
+            class="text-status-critical"
           >*</span>
         </div>
         <SelectField v-model="assignments[role.key]" class="flex-1" :disabled="!canManage"  control-class="h-8 text-xs" >
@@ -62,13 +62,13 @@
 
     <div
       v-if="saveError"
-      class="text-sm text-red-500"
+      class="text-sm text-status-critical"
     >
       {{ saveError }}
     </div>
     <div
       v-if="saveSuccess"
-      class="text-sm text-green-500"
+      class="text-sm text-status-ok"
     >
       Привязки сохранены
     </div>

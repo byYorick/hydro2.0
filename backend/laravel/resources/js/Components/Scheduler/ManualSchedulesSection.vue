@@ -126,7 +126,7 @@
                 </Badge>
                 <span
                   v-if="!isExecutable(schedule.task_type)"
-                  class="text-[10px] text-amber-400/90"
+                  class="text-[10px] text-status-warning"
                   title="Без автозапуска на AE3"
                 >
                   план

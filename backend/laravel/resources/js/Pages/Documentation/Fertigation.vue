@@ -36,7 +36,7 @@
     </section>
 
     <template v-if="activeTab === 'library'">
-      <Card class="mb-4 border-amber-500/20 dark:border-amber-400/25">
+      <Card class="mb-4 border-status-warning dark:border-status-warning">
         <p class="text-xs text-[color:var(--text-muted)] leading-relaxed">
           <span class="font-semibold text-[color:var(--text-primary)]">Дисклеймер:</span>
           материалы — обобщение открытых руководств. Цели EC/pH/полива зависят от сорта, климата в теплице, PAR/VPD и качества воды.

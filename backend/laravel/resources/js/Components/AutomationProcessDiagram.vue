@@ -1064,8 +1064,8 @@ function handlePumpLeave(event: MouseEvent): void {
 }
 
 .correction-block--active {
-  fill: color-mix(in srgb, var(--accent-violet, #7c3aed) 12%, var(--surface-card, #f8fafc));
-  stroke: var(--accent-violet, #7c3aed);
+  fill: color-mix(in srgb, var(--series-violet, #7c3aed) 12%, var(--surface-card, #f8fafc));
+  stroke: var(--series-violet, #7c3aed);
 }
 
 .equipment-label {
@@ -1103,7 +1103,7 @@ function handlePumpLeave(event: MouseEvent): void {
 }
 
 .dose-pump--ph {
-  stroke: color-mix(in srgb, var(--accent-violet, #7c3aed) 55%, var(--border-muted));
+  stroke: color-mix(in srgb, var(--series-violet, #7c3aed) 55%, var(--border-muted));
 }
 
 .dose-pump--ec {
@@ -1111,8 +1111,8 @@ function handlePumpLeave(event: MouseEvent): void {
 }
 
 .dose-pump--running {
-  fill: color-mix(in srgb, var(--accent-violet, #7c3aed) 45%, transparent);
-  stroke: var(--accent-violet, #7c3aed);
+  fill: color-mix(in srgb, var(--series-violet, #7c3aed) 45%, transparent);
+  stroke: var(--series-violet, #7c3aed);
   animation: dose-pulse 1.2s ease-in-out infinite;
 }
 
@@ -1185,7 +1185,7 @@ function handlePumpLeave(event: MouseEvent): void {
 }
 
 .legend-dot--dose {
-  background: var(--accent-violet, #7c3aed);
+  background: var(--series-violet, #7c3aed);
 }
 
 .legend-dot--idle {

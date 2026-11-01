@@ -35,7 +35,7 @@
             </span>
             <span
               v-if="displayRemainingLabel"
-              class="inline-flex items-center rounded-full border border-amber-400/35 bg-amber-500/10 px-2.5 py-1 font-mono text-xs tabular-nums text-amber-200"
+              class="inline-flex items-center rounded-full border border-status-warning bg-status-warning-soft px-2.5 py-1 font-mono text-xs tabular-nums text-status-warning"
             >
               {{ displayRemainingLabel }}
             </span>
@@ -65,7 +65,7 @@
         </div>
         <div class="h-1.5 overflow-hidden rounded-full bg-[color:var(--surface-muted)]/70">
           <div
-            class="h-full rounded-full bg-amber-400/90 transition-all duration-500"
+            class="h-full rounded-full bg-status-warning-soft transition-all duration-500"
             :style="{ width: `${Math.max(progressPercent, isProcessActive ? 8 : 0)}%` }"
           ></div>
         </div>
@@ -74,13 +74,13 @@
 
     <p
       v-if="errorMessage"
-      class="text-xs text-red-500"
+      class="text-xs text-status-critical"
     >
       {{ errorMessage }}
     </p>
     <p
       v-if="warningMessage"
-      class="text-xs text-amber-400"
+      class="text-xs text-status-warning"
     >
       {{ warningMessage }}
     </p>
@@ -195,29 +195,29 @@ function stageStatusIcon(status: PipelineStageVisualStatus): string {
 
 function stageCardClass(status: PipelineStageVisualStatus): string {
   if (status === 'running') {
-    return 'border-amber-400/45 bg-amber-500/10 shadow-[0_0_0_1px_rgb(245_158_11/0.15)]'
+    return 'border-status-warning bg-status-warning-soft shadow-[0_0_0_1px_color-mix(in_srgb,var(--status-warning)_25%,transparent)]'
   }
   if (status === 'completed') {
     return 'border-emerald-400/35 bg-emerald-500/8'
   }
   if (status === 'failed') {
-    return 'border-red-400/35 bg-red-500/10'
+    return 'border-status-critical bg-status-critical-soft'
   }
   return 'border-[color:var(--border-muted)]/40 bg-[color:var(--surface-card)]/25'
 }
 
 function stagePillClass(status: PipelineStageVisualStatus): string {
   if (status === 'running') {
-    return 'bg-amber-500/20 text-amber-300 border border-amber-400/40'
+    return 'bg-status-warning-soft text-status-warning border border-status-warning'
   }
   if (status === 'completed') {
     return 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/40'
   }
   if (status === 'failed') {
-    return 'bg-red-500/20 text-red-300 border border-red-400/40'
+    return 'bg-status-critical-soft text-status-critical border border-status-critical'
   }
   if (status === 'manual') {
-    return 'bg-sky-500/20 text-sky-300 border border-sky-400/40'
+    return 'bg-status-info-soft text-status-info border border-status-info'
   }
   if (status === 'canceled') {
     return 'bg-zinc-500/25 text-zinc-300 border border-zinc-400/40'

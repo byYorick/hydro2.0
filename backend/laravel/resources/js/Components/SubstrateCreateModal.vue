@@ -13,14 +13,14 @@
         </div>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div>
-            <label class="block text-xs text-[color:var(--text-muted)] mb-1">Код (английский) <span class="text-red-500">*</span></label>
+            <label class="block text-xs text-[color:var(--text-muted)] mb-1">Код (английский) <span class="text-status-critical">*</span></label>
             <TextField v-model="form.code" placeholder="coco_perlite_70_30" />
             <p class="text-[11px] text-[color:var(--text-muted)] mt-0.5">
               Уникальный код, латиница + цифры + _
             </p>
           </div>
           <div>
-            <label class="block text-xs text-[color:var(--text-muted)] mb-1">Название <span class="text-red-500">*</span></label>
+            <label class="block text-xs text-[color:var(--text-muted)] mb-1">Название <span class="text-status-critical">*</span></label>
             <TextField v-model="form.name" placeholder="Кокос + Перлит 70/30" />
           </div>
         </div>
@@ -106,7 +106,7 @@
           <button
             v-if="form.components.length > 1"
             type="button"
-            class="h-[2.6rem] px-2 text-sm text-[color:var(--text-muted)] hover:text-red-500"
+            class="h-[2.6rem] px-2 text-sm text-[color:var(--text-muted)] hover:text-status-critical"
             title="Удалить компонент"
             @click="removeComponent(idx)"
           >

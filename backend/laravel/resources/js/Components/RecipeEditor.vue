@@ -223,7 +223,7 @@
               Удалить
             </Button>
             <div class="flex flex-col items-center">
-              <span class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-[color:var(--accent-primary)]/10 text-[11px] font-bold text-[color:var(--accent-primary)]">{{ index + 1 }}</span>
+              <span class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-[color:var(--series-primary)]/10 text-[11px] font-bold text-[color:var(--series-primary)]">{{ index + 1 }}</span>
               <span class="text-[8px] text-[color:var(--text-dim)] mt-0.5">фаза</span>
             </div>
           </div>

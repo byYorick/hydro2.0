@@ -61,7 +61,7 @@
           <div class="ui-kpi-label">
             Магний
           </div>
-          <div class="ui-kpi-value text-[color:var(--accent-orange)]">
+          <div class="ui-kpi-value text-[color:var(--series-orange)]">
             {{ magnesiumCount }}
           </div>
           <div class="ui-kpi-hint">

@@ -14,11 +14,11 @@
         <div class="flex items-center gap-1">
           <span
             class="h-2 w-2 rounded-full"
-            :class="currentStep >= 1 ? 'bg-[color:var(--accent-primary)]' : 'bg-[color:var(--border-muted)]'"
+            :class="currentStep >= 1 ? 'bg-[color:var(--series-primary)]' : 'bg-[color:var(--border-muted)]'"
           ></span>
           <span
             class="h-2 w-2 rounded-full"
-            :class="currentStep >= 2 ? 'bg-[color:var(--accent-primary)]' : 'bg-[color:var(--border-muted)]'"
+            :class="currentStep >= 2 ? 'bg-[color:var(--series-primary)]' : 'bg-[color:var(--border-muted)]'"
           ></span>
         </div>
       </div>

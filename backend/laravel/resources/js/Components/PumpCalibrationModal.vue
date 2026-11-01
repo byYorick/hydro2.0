@@ -212,7 +212,7 @@
                   v-for="item in currentPathStatuses"
                   :key="item.component"
                   class="inline-flex items-center rounded-full border px-2 py-1"
-                  :class="item.calibrated ? 'border-[color:var(--status-ok)] text-[color:var(--status-ok)]' : (item.current ? 'border-[color:var(--accent-yellow)] text-[color:var(--accent-yellow)]' : 'border-[color:var(--border-muted)] text-[color:var(--text-dim)]')"
+                  :class="item.calibrated ? 'border-[color:var(--status-ok)] text-[color:var(--status-ok)]' : (item.current ? 'border-[color:var(--series-yellow)] text-[color:var(--series-yellow)]' : 'border-[color:var(--border-muted)] text-[color:var(--text-dim)]')"
                 >
                   {{ item.label }}: {{ item.stateLabel }}
                 </span>

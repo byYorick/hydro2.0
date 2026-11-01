@@ -26,7 +26,7 @@
         </p>
         <p
           v-if="state?.config_mode === 'live' && countdownLabel"
-          class="text-xs text-amber-500 dark:text-amber-400 mt-1"
+          class="text-xs text-status-warning dark:text-status-warning mt-1"
           data-testid="config-mode-countdown"
         >
           ⏱ {{ countdownLabel }}

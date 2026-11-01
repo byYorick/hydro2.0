@@ -3,6 +3,27 @@ import type { EChartsOption } from 'echarts'
 export const CHART_FONT_FAMILY = '"IBM Plex Sans", Figtree, sans-serif'
 export const CHART_FONT_MONO = '"JetBrains Mono", ui-monospace, SFMono-Regular, monospace'
 
+/** Именованная палитра серий. Компоненты не держат свои hex. */
+export const CHART_SERIES_VAR = {
+  lime: '--series-lime',
+  orange: '--series-orange',
+  purple: '--series-purple',
+  pink: '--series-pink',
+  teal: '--series-teal',
+  violet: '--series-violet',
+  yellow: '--series-yellow',
+  blue: '--series-blue',
+  primary: '--series-primary',
+  ok: '--status-ok',
+  warning: '--status-warning',
+  critical: '--status-critical',
+  info: '--status-info',
+} as const
+
+export function chartSeriesColor(name: keyof typeof CHART_SERIES_VAR, fallback: string): string {
+  return readCssVar(CHART_SERIES_VAR[name], fallback)
+}
+
 export interface HydroChartPalette {
   tooltipBg: string
   borderMuted: string

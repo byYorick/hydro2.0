@@ -170,7 +170,7 @@ function pointTitle(laneName: string, point: LaneHistoryPoint): string {
 
 function pointClass(point: LaneHistoryPoint): string {
   if (point.kind === 'planned') {
-    return 'swim-point--planned h-2.5 w-2.5 border-amber-200/50'
+    return 'swim-point--planned h-2.5 w-2.5 border-status-warning'
   }
   if (point.s === 'run') {
     return 'h-4 w-[18px]'

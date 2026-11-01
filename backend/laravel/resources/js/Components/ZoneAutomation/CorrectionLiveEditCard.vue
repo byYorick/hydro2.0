@@ -1,6 +1,6 @@
 <template>
   <section
-    class="surface-card surface-card--elevated border border-amber-300/50 dark:border-amber-700/60 rounded-2xl p-4 space-y-4 bg-amber-50/30 dark:bg-amber-950/10"
+    class="surface-card surface-card--elevated border border-status-warning dark:border-status-warning rounded-2xl p-4 space-y-4 bg-status-warning-soft dark:bg-status-warning-soft"
     data-testid="correction-live-edit"
   >
     <header class="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
@@ -281,7 +281,7 @@
             </p>
             <p
               v-else-if="submitBlocker"
-              class="text-xs text-amber-700 dark:text-amber-300"
+              class="text-xs text-status-warning dark:text-status-warning"
               data-testid="correction-live-blocker"
             >
               {{ submitBlocker }}

@@ -217,7 +217,7 @@ const metricColor = computed(() => {
     PH: 'var(--status-info)',
     EC: 'var(--status-ok)',
     TEMPERATURE: 'var(--status-warning)',
-    HUMIDITY: 'var(--accent-blue)',
+    HUMIDITY: 'var(--series-blue)',
   }
   return colors[props.metricType] || 'var(--text-primary)'
 })

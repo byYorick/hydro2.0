@@ -48,7 +48,7 @@
 
         <div
           v-if="showNonExecutableWarning"
-          class="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200/90"
+          class="rounded-xl border border-status-warning bg-status-warning-soft px-3 py-2 text-xs text-status-warning"
         >
           На AE3 этот тип появится в плане, но без автоматического запуска.
         </div>
@@ -295,7 +295,7 @@
 
     <p
       v-if="!isValid && validationHint"
-      class="mt-3 text-xs text-amber-400/90"
+      class="mt-3 text-xs text-status-warning"
       data-testid="manual-schedule-validation-hint"
     >
       {{ validationHint }}
@@ -475,9 +475,9 @@ function taskCardClass(option: (typeof taskOptions)[number]): string {
   const selected = form.task_type === option.value
   const accentMap: Record<string, string> = {
     cyan: 'border-cyan-500/50 bg-cyan-500/10',
-    amber: 'border-amber-500/50 bg-amber-500/10',
+    amber: 'border-status-warning bg-status-warning-soft',
     green: 'border-emerald-500/50 bg-emerald-500/10',
-    blue: 'border-sky-500/50 bg-sky-500/10',
+    blue: 'border-status-info bg-status-info-soft',
     violet: 'border-violet-500/50 bg-violet-500/10',
     slate: 'border-slate-500/50 bg-slate-500/10',
   }
