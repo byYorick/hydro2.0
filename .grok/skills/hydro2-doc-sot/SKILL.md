@@ -14,7 +14,7 @@ lifecycle: active
 4. Папка `docs/` удалена; материалы в `doc_ai/`.
 
 ## Hard rules (defer)
-`.grok/rules/hydro-hard-rules.md`, `AGENTS.md`, `doc_ai/DEV_CONVENTIONS.md`.  
+`.grok/rules/hydro-hard-rules.md`, `AGENTS.md`, `doc_ai/DEV_CONVENTIONS.md`.
 Не создавать `.md` без явного запроса (кроме обязательных обновлений контрактов).
 
 ## Override внешних skills
@@ -23,7 +23,7 @@ lifecycle: active
 - `review-and-ship` — Compatible-With строка при смене протокола/данных.
 
 ## Навигация
-Старт: `doc_ai/INDEX.md`, `SYSTEM_ARCH_FULL.md`, `ARCHITECTURE_FLOWS.md`, `DEV_CONVENTIONS.md`.  
+Старт: `doc_ai/INDEX.md`, `SYSTEM_ARCH_FULL.md`, `ARCHITECTURE_FLOWS.md`, `DEV_CONVENTIONS.md`.
 Слои: `01_SYSTEM` … `13_TESTING` (+ Android `12_`, AI guides `10_`).
 
 ## Источники

@@ -11,7 +11,7 @@ lifecycle: active
 Топики, ACL, TLS, `node_secret`, HMAC, ошибки `invalid_signature` / `timestamp_expired` / `invalid_hmac_format`, provisioning секретов.
 
 ## Топики
-Канон: `hydro/{gh}/{zone}/{node}/{channel}/{message_type}`  
+Канон: `hydro/{gh}/{zone}/{node}/{channel}/{message_type}`
 Спеки: `doc_ai/03_TRANSPORT_MQTT/MQTT_NAMESPACE.md`, `MQTT_SPEC_FULL.md`.
 
 ## HMAC: что канон, что planned
@@ -22,7 +22,12 @@ lifecycle: active
 Обязателен, длина ≥ 32. Хранится в NodeConfig. Не логировать и не публиковать в телеметрии.
 
 ## ACL / брокер
-Примеры и prod/dev: `backend/services/mqtt-bridge/acl`, `acl.example`, `mosquitto.dev.conf`, `mosquitto.prod.conf`; HIL: `infra/hil/mosquitto.acl`.
+- Dev и prod: `mosquitto.dev.conf` / `mosquitto.prod.conf` — **`allow_anonymous false`**; пароли и ACL обязательны.
+- `mosquitto-entrypoint.sh` добавляет TLS listener 8883 при наличии `server.crt` и `server.key`. Plaintext 1883 отключается через `MQTT_PLAINTEXT_ENABLED=0` после перевода клиентов на TLS.
+- Пользователи/ACL: `backend/services/mqtt-bridge/README_MQTT_AUTH.md`, файлы `acl` / `acl.example`. Per-node pattern использует client id = `node_uid`; это не отдельная криптографическая идентичность узла.
+- `node_secret` не передаётся plaintext в MQTT NodeConfig: используется `node_secret_enc` (AES-256-GCM); прошивка сохраняет прежний ключ при отсутствии поля или ошибке расшифровки.
+- HIL: `infra/hil/mosquitto.acl`; настройки изолированных HIL/e2e проверять отдельно.
+- Фактическое включение TLS и параметры установленного стенда проверять по runtime-конфигу; наличие кода не доказывает завершённую миграцию.
 
 ## Hard rules (defer)
 `.grok/rules/hydro-hard-rules.md`: publish команд только HL→MQTT; ответы пользователю на русском.
@@ -36,5 +41,5 @@ lifecycle: active
 - `doc_ai/03_TRANSPORT_MQTT/{MQTT_SPEC_FULL,MQTT_NAMESPACE,BACKEND_NODE_CONTRACT_FULL,COMMAND_VALIDATION_ENGINE}.md`
 - `doc_ai/08_SECURITY_AND_OPS/SECURITY_ARCHITECTURE.md`
 - `doc_ai/10_AI_DEV_GUIDES/MQTT_TOPICS_SPEC_AI_GUIDE.md`
-- `backend/services/history-logger/commands/command_service.py`
+- `backend/services/history-logger/command_service.py`
 - `backend/services/mqtt-bridge/*`
