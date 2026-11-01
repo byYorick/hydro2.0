@@ -39,14 +39,16 @@ jobs:
         working-directory: backend/services
         run: |
           pip install --upgrade pip
-          pip install 'jsonschema>=4.23' pytest pydantic httpx asyncpg
+          # requirements-test.txt — объявленные зависимости chaos/contract-тестов,
+          # включая paho-mqtt (импорт common.mqtt) и pytest-asyncio.
+          pip install -r requirements-test.txt
       - name: Chaos tests (strict — no continue-on-error)
         working-directory: backend/services
         env:
           PYTHONPATH: ${{ github.workspace }}/backend/services:${{ github.workspace }}/backend/services/history-logger:${{ github.workspace }}/backend/services/common
           PG_DB: hydro_test
           PG_USER: hydro
-          PG_PASSWORD: hydro
+          PG_PASS: hydro
           PG_HOST: 127.0.0.1
           PG_PORT: 5432
         run: |
@@ -58,7 +60,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Trivy filesystem scan (repository)
-        uses: aquasecurity/trivy-action@0.24.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: 'fs'
           scan-ref: '.'
@@ -67,7 +69,7 @@ jobs:
           format: 'table'
           exit-code: '0'  # non-blocking, чтобы CVE-шум не блокировал release
       - name: Trivy config scan (docker-compose / Dockerfile)
-        uses: aquasecurity/trivy-action@0.24.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: 'config'
           scan-ref: '.'

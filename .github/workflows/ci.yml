@@ -87,7 +87,7 @@ jobs:
           php artisan key:generate
       - name: Install Python deps
         working-directory: backend/services/automation-engine
-        run: pip install -r requirements.txt
+        run: pip install -r requirements.txt -r requirements-dev.txt
       - name: Apply Laravel migrations to test DB
         working-directory: backend/laravel
         env:
@@ -507,7 +507,7 @@ jobs:
           cp .env.example .env
           php artisan key:generate
       - name: Install Python deps
-        run: pip install -r backend/services/automation-engine/requirements.txt
+        run: pip install -r backend/services/automation-engine/requirements.txt -r backend/services/automation-engine/requirements-dev.txt
       - name: Laravel schema snapshot (validate against committed)
         working-directory: backend/laravel
         env:

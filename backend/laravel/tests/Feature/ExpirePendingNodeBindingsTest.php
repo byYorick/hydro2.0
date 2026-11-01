@@ -6,12 +6,24 @@ use App\Enums\NodeLifecycleState;
 use App\Models\DeviceNode;
 use App\Models\Zone;
 use App\Services\AlertService;
+use Illuminate\Support\Facades\Http;
 use Tests\RefreshDatabase;
 use Tests\TestCase;
 
 class ExpirePendingNodeBindingsTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        // Сохранение узла с pending_zone_id синхронно публикует NodeConfig.
+        // В CI history-logger нет: подменяем HTTP, сами проверки — про TTL pending bind.
+        Http::fake([
+            'history-logger:9300/*' => Http::response(['status' => 'ok'], 200),
+        ]);
+    }
 
     public function test_expires_stale_pending_bind_and_clears_timestamp(): void
     {
