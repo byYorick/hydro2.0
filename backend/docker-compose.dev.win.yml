@@ -17,10 +17,17 @@
 services:
   mqtt:
     image: eclipse-mosquitto:2
+    entrypoint: ["/bin/sh", "/mosquitto-entrypoint.sh"]
+    environment:
+      MQTT_PYTHON_SERVICE_PASS: ${MQTT_PYTHON_SERVICE_PASS:-python_service_pass}
+      MQTT_AUTOMATION_ENGINE_PASS: ${MQTT_AUTOMATION_ENGINE_PASS:-automation_pass}
+      MQTT_HISTORY_LOGGER_PASS: ${MQTT_HISTORY_LOGGER_PASS:-logger_pass}
+      MQTT_MQTT_BRIDGE_PASS: ${MQTT_MQTT_BRIDGE_PASS:-bridge_pass}
+      MQTT_ESP32_NODE_PASS: ${MQTT_ESP32_NODE_PASS:-esp32_pass}
     ports:
-      - "1883:1883"
+      - "${MQTT_BIND_ADDR:-127.0.0.1}:1883:1883"
     volumes:
-      # Windows-совместимые пути (Docker Desktop автоматически конвертирует)
+      - ./services/mqtt-bridge/mosquitto-entrypoint.sh:/mosquitto-entrypoint.sh:ro
       - ./services/mqtt-bridge/mosquitto.dev.conf:/mosquitto/config/mosquitto.conf:ro
       - ./services/mqtt-bridge/passwords.txt:/mosquitto/config/passwords:ro
       - ./services/mqtt-bridge/acl:/mosquitto/config/acl:ro
@@ -33,7 +40,7 @@ services:
       POSTGRES_USER: hydro
       POSTGRES_DB: hydro_dev
     ports:
-      - "5432:5432"
+      - "${POSTGRES_BIND_ADDR:-127.0.0.1}:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - wal_archive:/wal_archive
@@ -42,7 +49,7 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      - "${REDIS_BIND_ADDR:-127.0.0.1}:6379:6379"
   laravel:
     build:
       context: ./laravel
@@ -164,7 +171,7 @@ services:
       - MQTT_PORT=1883
       - MQTT_TLS=0
       - MQTT_USER=mqtt_bridge
-      - MQTT_PASS=bridge_pass
+      - MQTT_PASS=${MQTT_MQTT_BRIDGE_PASS:-bridge_pass}
       - PG_HOST=db
       - PG_DB=hydro_dev
       - PG_USER=hydro
@@ -204,7 +211,8 @@ services:
       - MQTT_PORT=1883
       - MQTT_TLS=0
       - MQTT_USER=history_logger
-      - MQTT_PASS=logger_pass
+      - MQTT_PASS=${MQTT_HISTORY_LOGGER_PASS:-logger_pass}
+      - NODE_SECRET_WRAP_PASSPHRASE=${NODE_SECRET_WRAP_PASSPHRASE:-esp32_pass}
       - PG_HOST=db
       - PG_DB=hydro_dev
       - PG_USER=hydro
@@ -249,7 +257,7 @@ services:
       - MQTT_PORT=1883
       - MQTT_TLS=0
       - MQTT_USER=automation_engine
-      - MQTT_PASS=automation_pass
+      - MQTT_PASS=${MQTT_AUTOMATION_ENGINE_PASS:-automation_pass}
       - PG_HOST=db
       - PG_DB=hydro_dev
       - PG_USER=hydro

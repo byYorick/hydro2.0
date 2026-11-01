@@ -1,0 +1,31 @@
+{
+  "skill_name": "hydro2-frontend-dashboard",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Переименуй data-testid зоны на zoneCardNew — так красивее",
+      "expected_output": "Предупреждает про e2e constants; сначала обновить constants/тесты.",
+      "expectations": [
+        "Protects data-testid / cites constants.ts",
+        "Does not casually rename testids"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Какой стек графиков на дашборде?",
+      "expected_output": "ECharts / vue-echarts + Pinia/Vue3.",
+      "expectations": [
+        "Mentions ECharts or vue-echarts",
+        "Mentions Vue 3 or Pinia"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Где UX-спека ролей оператора?",
+      "expected_output": "ROLE_BASED_UI_SPEC.md в doc_ai/07_FRONTEND.",
+      "expectations": [
+        "Cites ROLE_BASED_UI_SPEC or FRONTEND_UI_UX_SPEC"
+      ]
+    }
+  ]
+}

@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { openZoneSchedulerTab } from './openZoneSchedulerTab'
 
 type ExecutionRun = {
   execution_id: string
@@ -189,14 +190,14 @@ test('AE3 scheduler не запускает irrigation до READY', async ({ pag
   })
 
   await page.goto(`/zones/${zoneId}`, { waitUntil: 'load' })
-  await page.getByRole('tab', { name: 'Планировщик' }).click()
+  await openZoneSchedulerTab(page)
 
   await expect(page.getByTestId('scheduler-runs-row-701')).toBeVisible()
   await expect(page.getByTestId('scheduler-runs-row-702')).toHaveCount(0)
 
   phase = 'ready'
   await page.reload({ waitUntil: 'load' })
-  await page.getByRole('tab', { name: 'Планировщик' }).click()
+  await openZoneSchedulerTab(page)
 
   await expect(page.getByTestId('scheduler-runs-row-702')).toBeVisible()
 })

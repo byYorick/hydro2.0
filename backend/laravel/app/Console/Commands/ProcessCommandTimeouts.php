@@ -38,7 +38,7 @@ class ProcessCommandTimeouts extends ConsoleCommand
     {
         $timeoutMinutes = config('commands.timeout_minutes', 5);
         $cutoff = now()->subMinutes($timeoutMinutes);
-        $nodeOfflineTimeoutSec = max(1, (int) env('NODE_OFFLINE_TIMEOUT_SEC', 120));
+        $nodeOfflineTimeoutSec = max(1, (int) config('commands.node_offline_timeout_sec', 120));
         $timeoutContextStore = app(CommandTimeoutContextStore::class);
         $this->info("Processing command timeouts (timeout: {$timeoutMinutes} minutes)");
 

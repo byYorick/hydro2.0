@@ -41,16 +41,15 @@ Breaking-change: обратная совместимость со старыми
 
 # 2. Слой безопасности MQTT
 
-## 2.1. Состояние по умолчанию (2.0)
-MQTT работает в режиме:
-- внутри LAN,
-- anonymous-enabled,
-- без логина/пароля.
+## 2.1. Dev-брокер (mosquitto.dev.conf)
 
-Это допустимо, если:
-- Wi‑Fi скрыт,
-- включен WPA2/WPA3,
-- LAN недоступна извне.
+Анонимные подключения **запрещены** (`allow_anonymous false`), включены `password_file` и `acl_file`.
+
+`docker-compose.dev.yml` публикует MQTT `1883`, Postgres `5432` и Redis `6379` только на `127.0.0.1`. Контейнеры ходят друг к другу по сети compose. Для ESP32 в LAN задайте `MQTT_BIND_ADDR=0.0.0.0` (и при необходимости `POSTGRES_BIND_ADDR` / `REDIS_BIND_ADDR`).
+
+Если `passwords.txt` отсутствует, `mosquitto-entrypoint.sh` собирает его из `MQTT_*_PASS` (dev-fallback'и только для локального стенда). Файл паролей не коммитится.
+
+`node_secret` не кладётся в MQTT NodeConfig открытым текстом. History-logger при заданном `NODE_SECRET_WRAP_PASSPHRASE` (должен совпадать с `mqtt.password` узла, обычно `MQTT_ESP32_NODE_PASS`) публикует `node_secret_enc`. Прошивка расшифровывает его и, если поля нет или расшифровка не удалась, оставляет секрет, уже записанный в NVS. Команды по-прежнему подписываются секретом из БД (`nodes.config.node_secret`).
 
 ## 2.2. Production
 

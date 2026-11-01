@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { openZoneSchedulerTab } from './openZoneSchedulerTab'
 
 type ExecutionRun = {
   execution_id: string
@@ -299,7 +300,7 @@ test.describe('Scheduler workspace lifecycle на вкладке Планиро�
     })
 
     await page.goto(`/zones/${zoneId}`, { waitUntil: 'load' })
-    await page.getByRole('tab', { name: 'Планировщик' }).click()
+    await openZoneSchedulerTab(page)
     await expect(page.getByTestId('scheduler-root')).toBeVisible()
     await expect(page.getByText('Планировщик зоны')).toBeVisible()
     await expect(page.getByRole('button', { name: /#601/ })).toBeVisible()

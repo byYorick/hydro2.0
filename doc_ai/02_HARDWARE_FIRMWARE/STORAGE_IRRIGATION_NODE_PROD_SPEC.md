@@ -139,6 +139,10 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
   `ERROR estop_active`; `set_relay {state:false}` остаётся разрешённым как fail-safe stop.
   На нажатие нода публикует `emergency_stop_activated`. На отпускание актуаторы **остаются OFF**,
   snapshot до нажатия **не** восстанавливается, stage-timeout guards disarm'ятся.
+  Таймаут `g_actuator_mutex` **не** отменяет стоп: нода сразу пишет GPIO safe-OFF (direct MOSFET, level 0),
+  ставит защёлку и логирует, что обычный locked-path не выполнен. Bookkeeping (пауза guards, sync
+  `pump_driver`, событие) повторяется, пока мьютекс не взят. Защёлка снимается только после
+  успешного bookkeeping отпускания, поэтому ON-команды не проходят, пока выходы не синхронизированы.
   AE3 обязан fail-closed по `emergency_stop_activated` и не продолжать stage даже если probe совпал с expected ON.
   **Hardware caveat:** `GPIO15` — strapping pin ESP32; если E-Stop зажат (вход в `LOW`) в момент
   power-on/reset, возможен сбой/нестандартный boot — не держать E-Stop нажатым при старте;
