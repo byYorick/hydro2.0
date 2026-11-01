@@ -285,9 +285,6 @@ watch(showMobileMenu, (val) => {
 </script>
 
 <style>
-.bg-neutral-925 { background-color: var(--bg-surface-strong); }
-.bg-neutral-850 { background-color: var(--bg-elevated); }
-
 .fade-slide-enter-active { transition: opacity 0.2s ease, transform 0.2s ease; }
 .fade-slide-leave-active { transition: opacity 0.15s ease, transform 0.15s ease; }
 .fade-slide-enter-from { opacity: 0; transform: translateX(-6px); }
