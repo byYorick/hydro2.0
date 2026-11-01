@@ -17,6 +17,7 @@
 #include "ph_node_defaults.h"
 #include "correction_node_contract.h"
 #include "pump_driver.h"
+#include "actuator_failsafe.h"
 #include "trema_ph.h"
 #include "mqtt_manager.h"
 #include "node_utils.h"
@@ -37,6 +38,25 @@
 #include <stdio.h>
 
 static const char *TAG = "ph_node_fw";
+
+static esp_err_t ph_node_failsafe_safe_state(void *ctx) {
+    (void)ctx;
+    return pump_driver_force_deenergize();
+}
+
+static void ph_node_init_actuator_failsafe(void) {
+    actuator_failsafe_config_t cfg = {
+        .gpio_pin = PH_NODE_ESTOP_GPIO,
+        .active_low = (PH_NODE_ESTOP_ACTIVE_LOW != 0),
+        .debounce_ms = PH_NODE_ESTOP_DEBOUNCE_MS,
+        .safe_state_cb = ph_node_failsafe_safe_state,
+        .safe_state_ctx = NULL,
+    };
+    esp_err_t fs_err = actuator_failsafe_init(&cfg);
+    if (fs_err != ESP_OK) {
+        ESP_LOGE(TAG, "E-STOP input init failed: %s", esp_err_to_name(fs_err));
+    }
+}
 
 static bool s_ph_last_poll_chip_present;
 
@@ -299,6 +319,20 @@ static esp_err_t ph_node_enqueue_pump_command(
             cJSON_Delete(extra);
         }
         return ESP_ERR_INVALID_ARG;
+    }
+
+    if (actuator_failsafe_is_latched()) {
+        if (extra) {
+            cJSON_Delete(extra);
+        }
+        *response = node_command_handler_create_response(
+            cmd_id,
+            "ERROR",
+            "estop_active",
+            "E-Stop is latched; actuator ON commands are rejected",
+            NULL
+        );
+        return ESP_ERR_INVALID_STATE;
     }
 
     uint32_t cooldown_remaining_ms = 0;
@@ -970,6 +1004,8 @@ esp_err_t ph_node_framework_init(void) {
         return err;
     }
 
+    ph_node_init_actuator_failsafe();
+
     // Регистрация обработчиков команд
     err = node_command_handler_register("run_pump", handle_run_pump, NULL);
     if (err != ESP_OK) {
@@ -1038,7 +1074,11 @@ static void ph_node_command_handler_wrapper(
 static esp_err_t ph_node_disable_actuators_in_safe_mode(void *user_ctx) {
     (void)user_ctx;
     ESP_LOGW(TAG, "Disabling all actuators in safe mode");
-    return pump_driver_emergency_stop();
+    esp_err_t safe_err = pump_driver_force_deenergize();
+    if (safe_err != ESP_OK) {
+        ESP_LOGW(TAG, "Safe-mode deenergize incomplete: %s", esp_err_to_name(safe_err));
+    }
+    return safe_err;
 }
 
 // Регистрация MQTT обработчиков через node_framework
@@ -1420,6 +1460,9 @@ static void ph_node_pump_retry_timer_cb(TimerHandle_t timer) {
 
 static esp_err_t ph_node_start_pump_command(const char *channel, uint32_t duration_ms,
                                             float *current_ma, bool *current_valid) {
+    if (actuator_failsafe_is_latched()) {
+        return ESP_ERR_INVALID_STATE;
+    }
     esp_err_t err = pump_driver_run(channel, duration_ms);
     if (err != ESP_OK) {
         return err;
@@ -1475,6 +1518,16 @@ static void ph_node_signal_pump_queue_process(void) {
 }
 
 static cJSON *ph_node_create_pump_failed_response(const char *cmd_id, const char *channel, esp_err_t err) {
+    if (actuator_failsafe_is_latched()) {
+        return node_command_handler_create_response(
+            cmd_id,
+            "ERROR",
+            "estop_active",
+            "E-Stop is latched; actuator ON commands are rejected",
+            NULL
+        );
+    }
+
     char detail_buf[256];
     const char *ina_code = NULL;
     if (channel != NULL &&

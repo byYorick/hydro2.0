@@ -14,6 +14,7 @@ idf_component_register(
         wifi_manager
         config_storage
         pump_driver
+        actuator_failsafe
         config_apply
         setup_portal
         node_framework

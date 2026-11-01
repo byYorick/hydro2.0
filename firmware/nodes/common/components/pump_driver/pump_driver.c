@@ -23,6 +23,21 @@
 
 static const char *TAG = "pump_driver";
 
+/*
+ * Слабая ссылка: нода с компонентом actuator_failsafe подставляет сильный
+ * символ. Без компонента указатель NULL и включение не блокируется.
+ */
+extern bool actuator_failsafe_is_latched(void) __attribute__((weak));
+
+static bool pump_energize_blocked_by_estop(const char *channel_name) {
+    if (actuator_failsafe_is_latched && actuator_failsafe_is_latched()) {
+        ESP_LOGW(TAG, "E-STOP latched, refusing to energize %s",
+                 channel_name != NULL ? channel_name : "?");
+        return true;
+    }
+    return false;
+}
+
 typedef struct {
     uint64_t total_run_time_ms;
     uint32_t last_run_duration_ms;
@@ -670,6 +685,57 @@ esp_err_t pump_driver_stop(const char *channel_name) {
     return pump_stop_internal(channel_name);
 }
 
+static void pump_force_channel_off_unlocked(pump_channel_t *channel) {
+    if (channel == NULL || !channel->initialized) {
+        return;
+    }
+    if (channel->is_running) {
+        (void)pump_stop_internal_unlocked(channel);
+        return;
+    }
+    if (!channel->use_relay && channel->gpio_pin >= 0) {
+        (void)gpio_set_level((gpio_num_t)channel->gpio_pin, 0);
+    } else if (channel->use_relay && channel->relay_channel[0] != '\0') {
+        (void)relay_driver_set_state(channel->relay_channel, RELAY_STATE_OPEN);
+    }
+    if (channel->current_state == PUMP_STATE_ON) {
+        channel->current_state = PUMP_STATE_OFF;
+    }
+}
+
+esp_err_t pump_driver_force_deenergize(void) {
+    if (!s_initialized) {
+        return ESP_OK;
+    }
+
+    for (size_t i = 0; i < s_channel_count; i++) {
+        if (!s_channels[i].initialized) {
+            continue;
+        }
+        if (!s_channels[i].use_relay) {
+            if (s_channels[i].gpio_pin < 0 || s_channels[i].gpio_pin >= GPIO_NUM_MAX) {
+                continue;
+            }
+            (void)gpio_set_level((gpio_num_t)s_channels[i].gpio_pin, 0);
+            continue;
+        }
+        if (s_channels[i].relay_channel[0] != '\0') {
+            (void)relay_driver_set_state(s_channels[i].relay_channel, RELAY_STATE_OPEN);
+        }
+    }
+
+    if (s_mutex == NULL || xSemaphoreTake(s_mutex, pdMS_TO_TICKS(50)) != pdTRUE) {
+        ESP_LOGW(TAG, "force_deenergize: mutex busy, outputs forced OFF, driver state sync deferred");
+        return ESP_ERR_TIMEOUT;
+    }
+
+    for (size_t i = 0; i < s_channel_count; i++) {
+        pump_force_channel_off_unlocked(&s_channels[i]);
+    }
+    xSemaphoreGive(s_mutex);
+    return ESP_OK;
+}
+
 esp_err_t pump_driver_emergency_stop(void) {
     ESP_LOGW(TAG, "EMERGENCY STOP - all pumps (including latched)");
 
@@ -876,6 +942,10 @@ esp_err_t pump_driver_describe_last_start_fault(const char *channel_name,
 // Внутренние функции
 
 static esp_err_t pump_start_internal(const char *channel_name, uint32_t duration_ms, bool auto_stop_enabled) {
+    if (pump_energize_blocked_by_estop(channel_name)) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
     if (xSemaphoreTake(s_mutex, pdMS_TO_TICKS(1000)) != pdTRUE) {
         return ESP_ERR_TIMEOUT;
     }
