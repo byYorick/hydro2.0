@@ -7,6 +7,9 @@ object PreferencesKeys {
 	const val KEY_WS_URL = "ws_url"
 	const val KEY_LOGIN_TIME = "login_time"
 	const val KEY_LAST_ACTIVITY_TIME = "last_activity_time"
+	const val KEY_SERVER_HOST = "server_host"
+	const val KEY_SERVER_PORT = "server_port"
+	const val KEY_SERVER_HTTPS = "server_https"
 }
 
 

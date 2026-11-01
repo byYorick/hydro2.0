@@ -8,6 +8,9 @@ import retrofit2.http.POST
 data class LoginRequest(val email: String, val password: String)
 
 interface AuthApi {
-    @POST("/api/auth/login")
+    @POST("api/auth/login")
     suspend fun login(@Body body: LoginRequest): ApiResponse<LoginResponseData>
+
+    @POST("api/auth/logout")
+    suspend fun logout(): ApiResponse<Unit>
 }

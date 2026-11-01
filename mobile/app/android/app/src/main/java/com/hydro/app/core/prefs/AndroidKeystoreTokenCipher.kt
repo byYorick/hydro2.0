@@ -12,6 +12,7 @@ import javax.crypto.spec.GCMParameterSpec
 /**
  * AES-256-GCM через Android Keystore. В DataStore пишется только ciphertext
  * с префиксом [PREFIX], ключ из приложения не экспортируется.
+ * Реализация та же, что в SEC-03.
  */
 class AndroidKeystoreTokenCipher : TokenCipher {
 	override fun encrypt(plaintext: String): String {

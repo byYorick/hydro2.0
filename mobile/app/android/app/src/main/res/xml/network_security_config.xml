@@ -2,6 +2,7 @@
 <!--
     Release и любой non-debug вариант: cleartext запрещён.
     Debug-сборка подменяет этот файл из src/debug/res/xml/.
+    Совпадает с подходом SEC-03 (PR #20).
 -->
 <network-security-config>
     <base-config cleartextTrafficPermitted="false">

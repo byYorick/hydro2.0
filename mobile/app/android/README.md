@@ -1,6 +1,23 @@
 # Hydro Android App (Kotlin + Jetpack Compose)
 
-Полнофункциональное Android-приложение для Hydro 2.0.
+Операторское приложение для локальной сети: теплицы → зоны → узлы, телеметрия, алерты, команды с подтверждением.
+
+## Подключение к локальному серверу
+
+1. На машине с backend: `make up` (Laravel на порту **8080**).
+2. Сборка debug: из `mobile/app/android` выполнить `./gradlew assembleDevDebug` и `./gradlew testDevDebugUnitTest`.
+3. В приложении на экране входа нажать адрес сервера:
+   - эмулятор: `10.0.2.2` и порт `8080` (значение по умолчанию);
+   - телефон в той же LAN: IP компьютера и порт `8080`.
+4. Войти учёткой Laravel Sanctum (`POST /api/auth/login`). В сидах dev часто `operator@example.com` / `password`.
+5. HTTP без TLS разрешён **только в debug**. Release требует HTTPS, либо сборку с `-Phydro.allowCleartext=true`.
+6. Токен Sanctum в DataStore хранится только как AES-256-GCM через Android Keystore (тот же контракт, что SEC-03 / PR #20). Старый plaintext мигрирует при первом чтении.
+
+Обновление данных — polling REST (теплицы 10 с, зона 8 с, алерты 5 с). Laravel Reverb в приложении не подключён: это протокол Pusher, отдельный клиент оставлен на следующую фазу.
+
+## Стек
+
+Jetpack Compose, Material 3, Hilt, Retrofit, OkHttp, Moshi, DataStore, Room (кэш прежних экранов).
 
 ## Стек технологий
 
@@ -10,7 +27,7 @@
 - **Retrofit + OkHttp** — HTTP клиент
 - **Moshi** — JSON парсинг
 - **Room** — локальная база данных для кэширования
-- **DataStore** — хранение настроек и токенов
+- **DataStore** — адрес сервера; токен — ciphertext AES-256-GCM (Android Keystore, SEC-03)
 - **Navigation Compose** — навигация между экранами
 
 ## Требования

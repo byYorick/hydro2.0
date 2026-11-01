@@ -64,8 +64,12 @@ class AuthRepository @Inject constructor(
 	}
 
 	suspend fun logout() {
+		try {
+			api.logout()
+		} catch (error: Exception) {
+			Log.w("AuthRepository", "Logout request failed, local session will still be cleared", error)
+		}
 		prefs.setToken(null)
-		// Время входа и активности будет очищено автоматически в setToken
 	}
 }
 

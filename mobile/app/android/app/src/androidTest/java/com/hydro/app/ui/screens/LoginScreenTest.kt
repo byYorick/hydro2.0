@@ -24,24 +24,34 @@ class LoginScreenTest {
     fun loginScreen_displaysEmailAndPasswordFields() {
         // Given
         composeTestRule.setContent {
-            LoginScreen(onLoggedIn = {})
+            LoginScreenContent(
+                serverLabel = "http://10.0.2.2:8080",
+                state = com.hydro.app.features.auth.presentation.LoginState.Idle,
+                onLogin = { _, _ -> },
+                onOpenSettings = {},
+            )
         }
 
         // Then
         composeTestRule.onNodeWithText("Email").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Password").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Пароль").assertIsDisplayed()
     }
 
     @Test
     fun loginScreen_allowsTextInput() {
         // Given
         composeTestRule.setContent {
-            LoginScreen(onLoggedIn = {})
+            LoginScreenContent(
+                serverLabel = "http://10.0.2.2:8080",
+                state = com.hydro.app.features.auth.presentation.LoginState.Idle,
+                onLogin = { _, _ -> },
+                onOpenSettings = {},
+            )
         }
 
         // When
         composeTestRule.onNodeWithText("Email").performTextInput("test@example.com")
-        composeTestRule.onNodeWithText("Password").performTextInput("password123")
+        composeTestRule.onNodeWithText("Пароль").performTextInput("password123")
 
         // Then - поля должны содержать введенный текст
         // (детальная проверка зависит от реализации LoginScreen)
