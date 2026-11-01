@@ -208,14 +208,7 @@
                   :for="`node-${node.id}-greenhouse`"
                   class="sr-only"
                 >Теплица</label>
-                <select
-                  :id="`node-${node.id}-greenhouse`"
-                  v-model="assignmentForms[node.id].greenhouse_id"
-                  :name="`node_${node.id}_greenhouse_id`"
-                  class="input-select"
-                  required
-                  @change="onGreenhouseChange(node.id)"
-                >
+                <SelectField :id="`node-${node.id}-greenhouse`" v-model="assignmentForms[node.id].greenhouse_id" :name="`node_${node.id}_greenhouse_id`" required @change="onGreenhouseChange(node.id)" >
                   <option :value="null">
                     Выберите теплицу
                   </option>
@@ -226,19 +219,12 @@
                   >
                     {{ gh.name }}
                   </option>
-                </select>
+                </SelectField>
                 <label
                   :for="`node-${node.id}-zone`"
                   class="sr-only"
                 >Зона</label>
-                <select
-                  :id="`node-${node.id}-zone`"
-                  v-model="assignmentForms[node.id].zone_id"
-                  :name="`node_${node.id}_zone_id`"
-                  class="input-select"
-                  :disabled="!assignmentForms[node.id].greenhouse_id"
-                  required
-                >
+                <SelectField :id="`node-${node.id}-zone`" v-model="assignmentForms[node.id].zone_id" :name="`node_${node.id}_zone_id`" :disabled="!assignmentForms[node.id].greenhouse_id" required >
                   <option :value="null">
                     Выберите зону
                   </option>
@@ -249,18 +235,12 @@
                   >
                     {{ zone.name }}
                   </option>
-                </select>
+                </SelectField>
                 <label
                   :for="`node-${node.id}-name`"
                   class="sr-only"
                 >Имя ноды</label>
-                <input
-                  :id="`node-${node.id}-name`"
-                  v-model="assignmentForms[node.id].name"
-                  :name="`node_${node.id}_name`"
-                  placeholder="Имя ноды (опционально)"
-                  class="input-field"
-                />
+                <TextField :id="`node-${node.id}-name`" v-model="assignmentForms[node.id].name" :name="`node_${node.id}_name`" placeholder="Имя ноды (опционально)" />
                 <Button
                   type="submit"
                   size="sm"
@@ -287,6 +267,10 @@
 </template>
 
 <script setup lang="ts">
+import SelectField from '@/Components/SelectField.vue'
+
+import TextField from '@/Components/TextField.vue'
+
 import { ref, reactive, onMounted, onUnmounted, computed } from 'vue'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'

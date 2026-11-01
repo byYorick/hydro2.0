@@ -10,15 +10,8 @@
     >
       <Card class="mb-4">
         <div class="mb-3 flex flex-wrap items-center gap-2">
-          <input
-            v-model="searchQuery"
-            placeholder="Поиск по имени/email..."
-            class="input-field w-64"
-          />
-          <select
-            v-model="roleFilter"
-            class="input-select"
-          >
+          <TextField v-model="searchQuery" placeholder="Поиск по имени/email..." class="w-64" />
+          <SelectField v-model="roleFilter" >
             <option value="">
               Все роли
             </option>
@@ -31,7 +24,7 @@
             <option value="viewer">
               Наблюдатель
             </option>
-          </select>
+          </SelectField>
           <Button
             size="sm"
             :disabled="loading.load"
@@ -149,11 +142,7 @@
       <div class="space-y-3">
         <div>
           <label class="text-sm text-[color:var(--text-muted)]">Имя</label>
-          <input
-            v-model="userForm.name"
-            class="input-field mt-1"
-            :class="formErrors.name ? 'border-[color:var(--status-critical)] bg-[color:var(--bg-elevated)]' : ''"
-          />
+          <TextField v-model="userForm.name" class="mt-1" :class="formErrors.name ? 'border-[color:var(--status-critical)] bg-[color:var(--bg-elevated)]' : ''" />
           <div
             v-if="formErrors.name"
             class="text-xs text-[color:var(--badge-danger-text)] mt-1"
@@ -163,12 +152,7 @@
         </div>
         <div>
           <label class="text-sm text-[color:var(--text-muted)]">Email</label>
-          <input
-            v-model="userForm.email"
-            type="email"
-            class="input-field mt-1"
-            :class="formErrors.email ? 'border-[color:var(--status-critical)] bg-[color:var(--bg-elevated)]' : ''"
-          />
+          <TextField v-model="userForm.email" type="email" class="mt-1" :class="formErrors.email ? 'border-[color:var(--status-critical)] bg-[color:var(--bg-elevated)]' : ''" />
           <div
             v-if="formErrors.email"
             class="text-xs text-[color:var(--badge-danger-text)] mt-1"
@@ -178,13 +162,7 @@
         </div>
         <div>
           <label class="text-sm text-[color:var(--text-muted)]">Пароль</label>
-          <input
-            v-model="userForm.password"
-            type="password"
-            class="input-field mt-1"
-            :class="formErrors.password ? 'border-[color:var(--status-critical)] bg-[color:var(--bg-elevated)]' : ''"
-            :placeholder="editingUser ? 'Оставьте пустым, чтобы не менять' : 'Минимум 8 символов'"
-          />
+          <TextField v-model="userForm.password" type="password" class="mt-1" :class="formErrors.password ? 'border-[color:var(--status-critical)] bg-[color:var(--bg-elevated)]' : ''" :placeholder="editingUser ? 'Оставьте пустым, чтобы не менять' : 'Минимум 8 символов'" />
           <div
             v-if="formErrors.password"
             class="text-xs text-[color:var(--badge-danger-text)] mt-1"
@@ -194,11 +172,7 @@
         </div>
         <div>
           <label class="text-sm text-[color:var(--text-muted)]">Роль</label>
-          <select
-            v-model="userForm.role"
-            class="input-select mt-1"
-            :class="formErrors.role ? 'border-[color:var(--status-critical)] bg-[color:var(--bg-elevated)]' : ''"
-          >
+          <SelectField v-model="userForm.role" class="mt-1" :class="formErrors.role ? 'border-[color:var(--status-critical)] bg-[color:var(--bg-elevated)]' : ''" >
             <option value="viewer">
               Наблюдатель
             </option>
@@ -208,7 +182,7 @@
             <option value="admin">
               Администратор
             </option>
-          </select>
+          </SelectField>
           <div
             v-if="formErrors.role"
             class="text-xs text-[color:var(--badge-danger-text)] mt-1"
@@ -269,6 +243,10 @@
 </template>
 
 <script setup lang="ts">
+import SelectField from '@/Components/SelectField.vue'
+
+import TextField from '@/Components/TextField.vue'
+
 import { computed, reactive, ref, watch, onMounted } from 'vue'
 import { usePage } from '@inertiajs/vue3'
 import type { AxiosError } from 'axios'

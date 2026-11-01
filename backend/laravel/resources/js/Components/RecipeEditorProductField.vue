@@ -10,11 +10,7 @@
     </div>
 
     <div class="flex gap-1">
-      <select
-        :value="productId ?? ''"
-        class="input-field flex-1 min-w-0"
-        @input="onProductInput($event)"
-      >
+      <SelectField :value="productId ?? ''" class="flex-1 min-w-0" @input="onProductInput($event)" >
         <option value="">
           Продукт
         </option>
@@ -25,7 +21,7 @@
         >
           {{ product.manufacturer }} · {{ product.name }}
         </option>
-      </select>
+      </SelectField>
       <button
         type="button"
         class="pill-btn"
@@ -55,27 +51,13 @@
     </div>
 
     <div>
-      <input
-        :value="ratio"
-        type="number"
-        step="0.01"
-        class="input-field"
-        placeholder="—"
-        @input="onRatioInput($event)"
-      />
+      <TextField :value="ratio" type="number" step="0.01" placeholder="—" @input="onRatioInput($event)" />
       <div class="text-[11px] text-[color:var(--text-muted)] mt-0.5">
         Доля от EC, %
       </div>
     </div>
     <div>
-      <input
-        :value="dose"
-        type="number"
-        step="0.01"
-        class="input-field"
-        placeholder="—"
-        @input="onDoseInput($event)"
-      />
+      <TextField :value="dose" type="number" step="0.01" placeholder="—" @input="onDoseInput($event)" />
       <div class="text-[11px] text-[color:var(--text-muted)] mt-0.5">
         Доза, мл/л
       </div>
@@ -91,6 +73,10 @@
 </template>
 
 <script setup lang="ts">
+import SelectField from '@/Components/SelectField.vue'
+
+import TextField from '@/Components/TextField.vue'
+
 import { ref } from 'vue'
 import type { NutrientProduct } from '@/types'
 import NutrientProductCreateModal from '@/Components/NutrientProductCreateModal.vue'

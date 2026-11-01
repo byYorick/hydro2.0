@@ -58,30 +58,15 @@
             />
           </div>
           <div class="settings-row__control flex-wrap">
-            <input
-              :id="stepInputId(field.path, index, 'channel')"
-              v-model="step.channel"
-              type="text"
-              class="input-field settings-control--text font-mono"
-              placeholder="канал"
-              :aria-label="`Канал шага ${index + 1}`"
-              :data-testid="`command-template-channel-${field.path}-${index}`"
-            />
-            <select
-              :id="stepInputId(field.path, index, 'state')"
-              :value="step.params.state ? 'true' : 'false'"
-              class="input-select settings-control--select"
-              :aria-label="`Состояние шага ${index + 1}`"
-              :data-testid="`command-template-state-${field.path}-${index}`"
-              @change="step.params.state = ($event.target as HTMLSelectElement).value === 'true'"
-            >
+            <TextField :id="stepInputId(field.path, index, 'channel')" v-model="step.channel" type="text" placeholder="канал" :aria-label="`Канал шага ${index + 1}`" :data-testid="`command-template-channel-${field.path}-${index}`"  control-class="settings-control--text font-mono" />
+            <SelectField :id="stepInputId(field.path, index, 'state')" :value="step.params.state ? 'true' : 'false'" :aria-label="`Состояние шага ${index + 1}`" :data-testid="`command-template-state-${field.path}-${index}`" @change="step.params.state = ($event.target as HTMLSelectElement).value === 'true'"  control-class="settings-control--select" >
               <option value="true">
                 Включить
               </option>
               <option value="false">
                 Выключить
               </option>
-            </select>
+            </SelectField>
             <Button
               size="sm"
               variant="secondary"
@@ -129,6 +114,10 @@
 </template>
 
 <script setup lang="ts">
+import SelectField from '@/Components/SelectField.vue'
+
+import TextField from '@/Components/TextField.vue'
+
 import { ref, watch } from 'vue'
 import Button from '@/Components/Button.vue'
 import SettingsFieldHelp from '@/Components/Settings/SettingsFieldHelp.vue'

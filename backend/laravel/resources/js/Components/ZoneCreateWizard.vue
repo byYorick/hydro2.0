@@ -17,30 +17,14 @@
               for="zone-name"
               class="block text-xs text-[color:var(--text-muted)] mb-1"
             >Название зоны</label>
-            <input
-              id="zone-name"
-              v-model="form.name"
-              name="name"
-              type="text"
-              placeholder="Например: Зона A"
-              class="input-field h-9 w-full"
-              autocomplete="off"
-              required
-            />
+            <TextField id="zone-name" v-model="form.name" name="name" type="text" placeholder="Например: Зона A" class="w-full" autocomplete="off" required  control-class="h-9" />
           </div>
           <div>
             <label
               for="zone-description"
               class="block text-xs text-[color:var(--text-muted)] mb-1"
             >Описание (опционально)</label>
-            <textarea
-              id="zone-description"
-              v-model="form.description"
-              name="description"
-              placeholder="Описание зоны..."
-              class="input-field w-full min-h-[60px] py-2 h-auto"
-              autocomplete="off"
-            ></textarea>
+            <TextField multiline id="zone-description" v-model="form.description" name="description" placeholder="Описание зоны..." class="w-full" autocomplete="off"  control-class="min-h-[60px] py-2 h-auto"  />
           </div>
         </div>
       </div>
@@ -86,6 +70,8 @@
 </template>
 
 <script setup lang="ts">
+import TextField from '@/Components/TextField.vue'
+
 import { ref, reactive, watch } from 'vue'
 import Modal from './Modal.vue'
 import Button from './Button.vue'

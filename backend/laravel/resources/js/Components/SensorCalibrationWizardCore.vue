@@ -161,12 +161,7 @@
           :title="fieldHelp('point_1_reference')"
         >
           {{ point1FieldLabel }}
-          <input
-            v-model.number="point1Value"
-            type="number"
-            step="0.01"
-            class="input-field mt-1 w-full"
-          />
+          <TextField v-model.number="point1Value" type="number" step="0.01" class="mt-1 w-full" />
         </label>
         <div class="text-xs text-[color:var(--text-dim)]">
           {{ point1StatusLine }}
@@ -206,12 +201,7 @@
           :title="fieldHelp('point_2_reference')"
         >
           {{ point2FieldLabel }}
-          <input
-            v-model.number="point2Value"
-            type="number"
-            step="0.01"
-            class="input-field mt-1 w-full"
-          />
+          <TextField v-model.number="point2Value" type="number" step="0.01" class="mt-1 w-full" />
         </label>
         <div class="text-xs text-[color:var(--text-dim)]">
           {{ point2StatusLine }}
@@ -287,6 +277,8 @@
 </template>
 
 <script setup lang="ts">
+import TextField from '@/Components/TextField.vue'
+
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import Button from '@/Components/Button.vue'
 import { useSensorCalibration } from '@/composables/useSensorCalibration'

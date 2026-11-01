@@ -326,15 +326,7 @@
                   </span>
                 </label>
 
-                <select
-                  v-else-if="field.type === 'enum'"
-                  :id="`correction-config-${currentTab}-${field.path}`"
-                  :value="String(getByPath(currentForm, field.path) ?? '')"
-                  :data-testid="`correction-config-${currentTab}-${field.path}`"
-                  class="input-select settings-control--select"
-                  :disabled="Boolean(field.readonly)"
-                  @change="setByPath(currentForm, field.path, ($event.target as HTMLSelectElement).value)"
-                >
+                <SelectField v-else-if="field.type === 'enum'" :id="`correction-config-${currentTab}-${field.path}`" :value="String(getByPath(currentForm, field.path) ?? '')" :data-testid="`correction-config-${currentTab}-${field.path}`" :disabled="Boolean(field.readonly)" @change="setByPath(currentForm, field.path, ($event.target as HTMLSelectElement).value)"  control-class="settings-control--select" >
                   <option
                     v-for="option in field.options || []"
                     :key="option"
@@ -342,22 +334,9 @@
                   >
                     {{ option }}
                   </option>
-                </select>
+                </SelectField>
 
-                <input
-                  v-else
-                  :id="`correction-config-${currentTab}-${field.path}`"
-                  :value="String(getByPath(currentForm, field.path) ?? '')"
-                  :data-testid="`correction-config-${currentTab}-${field.path}`"
-                  :type="field.type === 'string' ? 'text' : 'number'"
-                  :step="field.step ?? (field.type === 'integer' ? 1 : 'any')"
-                  :min="field.min"
-                  :max="field.max"
-                  :disabled="Boolean(field.readonly)"
-                  class="input-field"
-                  :class="field.type === 'string' ? 'settings-control--text font-mono' : 'settings-control--num text-right'"
-                  @input="handleScalarInput(currentForm, field, $event)"
-                />
+                <TextField v-else :id="`correction-config-${currentTab}-${field.path}`" :value="String(getByPath(currentForm, field.path) ?? '')" :data-testid="`correction-config-${currentTab}-${field.path}`" :type="field.type === 'string' ? 'text' : 'number'" :step="field.step ?? (field.type === 'integer' ? 1 : 'any')" :min="field.min" :max="field.max" :disabled="Boolean(field.readonly)" :class="field.type === 'string' ? 'settings-control--text font-mono' : 'settings-control--num text-right'" @input="handleScalarInput(currentForm, field, $event)" />
                 <span
                   v-if="isFieldOverridden(field) && currentTab !== 'base'"
                   class="text-[11px] text-[var(--text-dim)] whitespace-nowrap"
@@ -736,6 +715,10 @@
 </template>
 
 <script setup lang="ts">
+import SelectField from '@/Components/SelectField.vue'
+
+import TextField from '@/Components/TextField.vue'
+
 import { computed, onMounted, ref, watch } from 'vue'
 import Button from '@/Components/Button.vue'
 import SettingsFieldRow from '@/Components/Settings/SettingsFieldRow.vue'

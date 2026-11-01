@@ -23,12 +23,7 @@
         {{ status.label }}
       </button>
       <div class="ml-auto flex items-center">
-        <input
-          :value="query"
-          class="input-field h-6 w-32 text-xs px-2"
-          placeholder="Поиск..."
-          @input="query = ($event.target as HTMLInputElement).value"
-        />
+        <TextField :value="query" class="w-32" placeholder="Поиск..." @input="query = ($event.target as HTMLInputElement).value"  control-class="h-6 text-xs px-2" />
       </div>
     </div>
 
@@ -92,6 +87,8 @@
 </template>
 
 <script setup lang="ts">
+import TextField from '@/Components/TextField.vue'
+
 import { computed, ref, watch } from 'vue'
 import Badge from '@/Components/Badge.vue'
 import AlertRow from '@/Components/Alerts/AlertRow.vue'

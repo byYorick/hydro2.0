@@ -15,10 +15,7 @@
         <Card class="mb-4">
           <div class="mb-3 flex flex-wrap items-center gap-2">
             <label class="text-sm text-[color:var(--text-muted)]">Уровень:</label>
-            <select
-              v-model="levelFilter"
-              class="input-select"
-            >
+            <SelectField v-model="levelFilter" >
               <option value="">
                 Все уровни
               </option>
@@ -34,13 +31,9 @@
               <option value="debug">
                 Debug
               </option>
-            </select>
+            </SelectField>
             <label class="ml-4 text-sm text-[color:var(--text-muted)]">Поиск:</label>
-            <input 
-              v-model="searchQuery" 
-              placeholder="Поиск по сообщению..." 
-              class="input-field w-64" 
-            />
+            <TextField v-model="searchQuery" placeholder="Поиск по сообщению..." class="w-64" />
             <div class="ml-auto flex gap-2">
               <Button
                 size="sm"
@@ -207,6 +200,10 @@
 </template>
 
 <script setup lang="ts">
+import SelectField from '@/Components/SelectField.vue'
+
+import TextField from '@/Components/TextField.vue'
+
 import { computed, ref, watch, onMounted } from 'vue'
 import { usePage, router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'

@@ -175,11 +175,7 @@
       >
         <div>
           <label class="block text-xs text-[color:var(--text-muted)] mb-1">Название</label>
-          <input
-            v-model="form.name"
-            type="text"
-            class="input-field"
-          />
+          <TextField v-model="form.name" type="text" />
           <p
             v-if="form.errors.name"
             class="text-xs text-[color:var(--badge-danger-text)] mt-1"
@@ -190,28 +186,17 @@
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label class="block text-xs text-[color:var(--text-muted)] mb-1">Вид</label>
-            <input
-              v-model="form.species"
-              type="text"
-              class="input-field"
-            />
+            <TextField v-model="form.species" type="text" />
           </div>
           <div>
             <label class="block text-xs text-[color:var(--text-muted)] mb-1">Сорт</label>
-            <input
-              v-model="form.variety"
-              type="text"
-              class="input-field"
-            />
+            <TextField v-model="form.variety" type="text" />
           </div>
         </div>
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label class="block text-xs text-[color:var(--text-muted)] mb-1">Субстрат</label>
-            <select
-              v-model="form.substrate_type"
-              class="input-select"
-            >
+            <SelectField v-model="form.substrate_type" >
               <option value="">
                 Не выбрано
               </option>
@@ -222,14 +207,11 @@
               >
                 {{ option.label }}
               </option>
-            </select>
+            </SelectField>
           </div>
           <div>
             <label class="block text-xs text-[color:var(--text-muted)] mb-1">Система</label>
-            <select
-              v-model="form.growing_system"
-              class="input-select"
-            >
+            <SelectField v-model="form.growing_system" >
               <option value="">
                 Не выбрано
               </option>
@@ -240,16 +222,13 @@
               >
                 {{ option.label }}
               </option>
-            </select>
+            </SelectField>
           </div>
         </div>
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label class="block text-xs text-[color:var(--text-muted)] mb-1">Фотопериод</label>
-            <select
-              v-model="form.photoperiod_preset"
-              class="input-select"
-            >
+            <SelectField v-model="form.photoperiod_preset" >
               <option value="">
                 Не выбрано
               </option>
@@ -260,14 +239,11 @@
               >
                 {{ option.label }}
               </option>
-            </select>
+            </SelectField>
           </div>
           <div>
             <label class="block text-xs text-[color:var(--text-muted)] mb-1">Сезонность</label>
-            <select
-              v-model="form.seasonality"
-              class="input-select"
-            >
+            <SelectField v-model="form.seasonality" >
               <option value="">
                 Не выбрано
               </option>
@@ -278,16 +254,12 @@
               >
                 {{ option.label }}
               </option>
-            </select>
+            </SelectField>
           </div>
         </div>
         <div>
           <label class="block text-xs text-[color:var(--text-muted)] mb-1">Описание</label>
-          <textarea
-            v-model="form.description"
-            rows="4"
-            class="input-field h-auto"
-          ></textarea>
+          <TextField multiline v-model="form.description" rows="4"  control-class="h-auto"  />
         </div>
         <div class="space-y-2">
           <p class="text-sm font-semibold text-[color:var(--text-primary)]">
@@ -299,20 +271,8 @@
             class="grid grid-cols-2 gap-2"
           >
             <label class="text-xs text-[color:var(--text-muted)] col-span-2">{{ metric.label }}</label>
-            <input
-              v-model="form.environment_requirements[metric.key].min"
-              type="number"
-              step="0.1"
-              class="input-field h-8 text-xs"
-              placeholder="Мин"
-            />
-            <input
-              v-model="form.environment_requirements[metric.key].max"
-              type="number"
-              step="0.1"
-              class="input-field h-8 text-xs"
-              placeholder="Макс"
-            />
+            <TextField v-model="form.environment_requirements[metric.key].min" type="number" step="0.1" placeholder="Мин"  control-class="h-8 text-xs" />
+            <TextField v-model="form.environment_requirements[metric.key].max" type="number" step="0.1" placeholder="Макс"  control-class="h-8 text-xs" />
           </div>
         </div>
       </form>
@@ -357,6 +317,10 @@
 </template>
 
 <script setup lang="ts">
+import SelectField from '@/Components/SelectField.vue'
+
+import TextField from '@/Components/TextField.vue'
+
 import { Head, useForm, router, Link, usePage } from '@inertiajs/vue3'
 import { computed, ref, watch } from 'vue'
 import AppLayout from '@/Layouts/AppLayout.vue'

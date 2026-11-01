@@ -93,16 +93,8 @@
     </Card>
 
     <div class="mb-3 flex flex-col sm:flex-row gap-2 sm:items-center">
-      <input
-        v-model="query"
-        type="text"
-        class="input-field sm:w-64"
-        placeholder="Поиск по производителю/названию"
-      />
-      <select
-        v-model="componentFilter"
-        class="input-select sm:w-52"
-      >
+      <TextField v-model="query" type="text" class="sm:w-64" placeholder="Поиск по производителю/названию" />
+      <SelectField v-model="componentFilter" class="sm:w-52" >
         <option value="all">
           Все компоненты
         </option>
@@ -118,7 +110,7 @@
         <option value="micro">
           Микроэлементы
         </option>
-      </select>
+      </SelectField>
     </div>
 
     <div class="rounded-xl border border-[color:var(--border-muted)] overflow-hidden max-h-[720px] flex flex-col">
@@ -220,6 +212,10 @@
 </template>
 
 <script setup lang="ts">
+import SelectField from '@/Components/SelectField.vue'
+
+import TextField from '@/Components/TextField.vue'
+
 import { computed, ref, watch } from 'vue'
 import { Link, usePage } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'

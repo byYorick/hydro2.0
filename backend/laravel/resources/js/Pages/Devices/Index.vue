@@ -97,11 +97,7 @@
             v-if="canConfigureDevices"
             class="flex flex-wrap items-center gap-2"
           >
-            <select
-              v-model="assignWeatherNodeId"
-              class="input-select min-w-[180px]"
-              data-testid="site-weather-assign-select"
-            >
+            <SelectField v-model="assignWeatherNodeId" class="min-w-[180px]" data-testid="site-weather-assign-select" >
               <option :value="null">
                 Выберите climate-ноду
               </option>
@@ -112,7 +108,7 @@
               >
                 {{ node.name || node.uid }} ({{ node.uid }})
               </option>
-            </select>
+            </SelectField>
             <Button
               size="sm"
               variant="outline"

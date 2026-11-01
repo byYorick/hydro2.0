@@ -72,16 +72,7 @@
                 field-id="settings-alert-suppression-input"
                 test-id="settings-notifications-suppression-card"
               >
-                <input
-                  id="settings-alert-suppression-input"
-                  v-model.number="notificationSettings.alertToastSuppressionSec"
-                  type="number"
-                  min="0"
-                  max="600"
-                  step="5"
-                  class="input-field settings-control--num text-right"
-                  data-testid="settings-alert-suppression-input"
-                />
+                <TextField id="settings-alert-suppression-input" v-model.number="notificationSettings.alertToastSuppressionSec" type="number" min="0" max="600" step="5" data-testid="settings-alert-suppression-input"  control-class="settings-control--num text-right" />
               </SettingsFieldRow>
             </div>
             <template #footer>
@@ -168,19 +159,14 @@
                   field-id="settings-alert-policy-input"
                   test-id="settings-alert-policy-card"
                 >
-                  <select
-                    id="settings-alert-policy-input"
-                    v-model="alertPolicyDraft.ae3_operational_resolution_mode"
-                    data-testid="settings-alert-policy-input-ae3-operational-resolution-mode"
-                    class="input-select settings-control--select"
-                  >
+                  <SelectField id="settings-alert-policy-input" v-model="alertPolicyDraft.ae3_operational_resolution_mode" data-testid="settings-alert-policy-input-ae3-operational-resolution-mode"  control-class="settings-control--select" >
                     <option value="manual_ack">
                       Только вручную
                     </option>
                     <option value="auto_resolve_on_recovery">
                       Автоматически, когда причина устранена
                     </option>
-                  </select>
+                  </SelectField>
                 </SettingsFieldRow>
               </div>
               <template #footer>
@@ -237,6 +223,10 @@
 </template>
 
 <script setup>
+import SelectField from '@/Components/SelectField.vue'
+
+import TextField from '@/Components/TextField.vue'
+
 import { computed, reactive, ref, watch, onMounted } from 'vue'
 import { usePage } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'

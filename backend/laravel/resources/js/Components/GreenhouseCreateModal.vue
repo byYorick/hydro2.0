@@ -17,17 +17,7 @@
           >
             Название <span class="text-[color:var(--status-critical)]">*</span>
           </label>
-          <input
-            id="greenhouse-name"
-            v-model="form.name"
-            name="name"
-            type="text"
-            required
-            placeholder="Main Greenhouse"
-            class="input-field h-9 w-full"
-            :class="errors.name ? 'border-[color:var(--status-critical)] bg-[color:var(--badge-danger-bg)]' : ''"
-            autocomplete="off"
-          />
+          <TextField id="greenhouse-name" v-model="form.name" name="name" type="text" required placeholder="Main Greenhouse" class="w-full" :class="errors.name ? 'border-[color:var(--status-critical)] bg-[color:var(--badge-danger-bg)]' : ''" autocomplete="off"  control-class="h-9" />
           <div
             v-if="errors.name"
             class="text-xs text-[color:var(--status-critical)] mt-1"
@@ -44,17 +34,7 @@
             for="greenhouse-width"
             class="block text-xs text-[color:var(--text-muted)] mb-1"
           >Ширина (м)</label>
-          <input
-            id="greenhouse-width"
-            v-model.number="form.width"
-            name="width"
-            type="number"
-            step="0.1"
-            min="0"
-            placeholder="10.0"
-            class="input-field h-9 w-full"
-            autocomplete="off"
-          />
+          <TextField id="greenhouse-width" v-model.number="form.width" name="width" type="number" step="0.1" min="0" placeholder="10.0" class="w-full" autocomplete="off"  control-class="h-9" />
         </div>
 
         <div>
@@ -62,17 +42,7 @@
             for="greenhouse-length"
             class="block text-xs text-[color:var(--text-muted)] mb-1"
           >Длина (м)</label>
-          <input
-            id="greenhouse-length"
-            v-model.number="form.length"
-            name="length"
-            type="number"
-            step="0.1"
-            min="0"
-            placeholder="20.0"
-            class="input-field h-9 w-full"
-            autocomplete="off"
-          />
+          <TextField id="greenhouse-length" v-model.number="form.length" name="length" type="number" step="0.1" min="0" placeholder="20.0" class="w-full" autocomplete="off"  control-class="h-9" />
         </div>
 
         <div>
@@ -80,17 +50,7 @@
             for="greenhouse-height"
             class="block text-xs text-[color:var(--text-muted)] mb-1"
           >Высота (м)</label>
-          <input
-            id="greenhouse-height"
-            v-model.number="form.height"
-            name="height"
-            type="number"
-            step="0.1"
-            min="0"
-            placeholder="3.0"
-            class="input-field h-9 w-full"
-            autocomplete="off"
-          />
+          <TextField id="greenhouse-height" v-model.number="form.height" name="height" type="number" step="0.1" min="0" placeholder="3.0" class="w-full" autocomplete="off"  control-class="h-9" />
         </div>
 
         <div>
@@ -98,12 +58,7 @@
             for="greenhouse-type"
             class="block text-xs text-[color:var(--text-muted)] mb-1"
           >Тип теплицы</label>
-          <select
-            id="greenhouse-type"
-            v-model="form.type"
-            name="type"
-            class="input-select h-9 w-full"
-          >
+          <SelectField id="greenhouse-type" v-model="form.type" name="type" class="w-full"  control-class="h-9" >
             <option value="">
               Выберите тип
             </option>
@@ -116,7 +71,7 @@
             <option value="indoor">
               Помещение
             </option>
-          </select>
+          </SelectField>
         </div>
 
         <div>
@@ -124,15 +79,7 @@
             for="greenhouse-location"
             class="block text-xs text-[color:var(--text-muted)] mb-1"
           >Расположение</label>
-          <input
-            id="greenhouse-location"
-            v-model="form.location"
-            name="location"
-            type="text"
-            placeholder="Москва, ул. Примерная, д. 1"
-            class="input-field h-9 w-full"
-            autocomplete="off"
-          />
+          <TextField id="greenhouse-location" v-model="form.location" name="location" type="text" placeholder="Москва, ул. Примерная, д. 1" class="w-full" autocomplete="off"  control-class="h-9" />
         </div>
 
         <div class="md:col-span-2">
@@ -140,15 +87,7 @@
             for="greenhouse-description"
             class="block text-xs text-[color:var(--text-muted)] mb-1"
           >Описание</label>
-          <textarea
-            id="greenhouse-description"
-            v-model="form.description"
-            name="description"
-            rows="3"
-            placeholder="Описание теплицы..."
-            class="input-field w-full py-2 h-auto"
-            autocomplete="off"
-          ></textarea>
+          <TextField multiline id="greenhouse-description" v-model="form.description" name="description" rows="3" placeholder="Описание теплицы..." class="w-full" autocomplete="off"  control-class="py-2 h-auto"  />
         </div>
       </div>
 
@@ -173,6 +112,10 @@
 </template>
 
 <script setup lang="ts">
+import SelectField from '@/Components/SelectField.vue'
+
+import TextField from '@/Components/TextField.vue'
+
 import { reactive, ref, computed, watch } from 'vue'
 import { router } from '@inertiajs/vue3'
 import Modal from '@/Components/Modal.vue'

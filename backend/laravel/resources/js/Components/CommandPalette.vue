@@ -24,15 +24,7 @@
           </div>
         </div>
         
-        <input 
-          ref="inputRef" 
-          v-model="q"
-          placeholder="Команда или поиск..." 
-          class="input-field h-12 w-full px-4 text-sm transition-all duration-200"
-          @keydown.down.prevent="selectedIndex = Math.min(selectedIndex + 1, totalItemsCount - 1)"
-          @keydown.up.prevent="selectedIndex = Math.max(selectedIndex - 1, 0)"
-          @keydown.enter.prevent="runSelected()"
-        />
+        <TextField ref="inputRef" v-model="q" placeholder="Команда или поиск..." class="w-full transition-all duration-200" @keydown.down.prevent="selectedIndex = Math.min(selectedIndex + 1, totalItemsCount - 1)" @keydown.up.prevent="selectedIndex = Math.max(selectedIndex - 1, 0)" @keydown.enter.prevent="runSelected()"  control-class="h-12 px-4 text-sm" />
         
         <div class="mt-3 max-h-80 overflow-y-auto scrollbar-thin scrollbar-thumb-[color:var(--border-muted)] scrollbar-track-transparent">
           <!-- Группированные результаты -->
@@ -136,6 +128,8 @@
 </template>
 
 <script setup lang="ts">
+import TextField from '@/Components/TextField.vue'
+
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { router, usePage } from '@inertiajs/vue3'
 import { logger } from '@/utils/logger'
@@ -161,7 +155,7 @@ const { sendZoneCommand } = useCommands()
 const { role } = useRole()
 
 const open = ref<boolean>(false)
-const inputRef = ref<HTMLInputElement | null>(null)
+const inputRef = ref<{ focus: () => void } | null>(null)
 const commandHistory = ref<CommandHistoryItem[]>([])
 const maxHistorySize = 10
 const visitTimers = new Map<string, ReturnType<typeof setTimeout>>()

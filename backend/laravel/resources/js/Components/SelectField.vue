@@ -1,5 +1,8 @@
 <template>
-  <label :class="rootClass">
+  <component
+    :is="label ? 'label' : 'div'"
+    :class="rootClass"
+  >
     <span
       v-if="label"
       class="field-label shrink-0"
@@ -7,7 +10,8 @@
     <select
       v-model="model"
       class="input-select min-w-0"
-      :class="inline ? 'flex-1' : 'w-full'"
+      :class="[inline ? 'flex-1' : 'w-full', controlClass]"
+      :disabled="disabled || undefined"
       :aria-invalid="error ? 'true' : undefined"
       :aria-describedby="error ? errorId : undefined"
       v-bind="inputAttrs"
@@ -15,13 +19,18 @@
       <slot></slot>
     </select>
     <span
+      v-if="hint && !error"
+      class="text-xs text-[color:var(--text-dim)]"
+      :class="inline ? 'basis-full' : ''"
+    >{{ hint }}</span>
+    <span
       v-if="error"
       :id="errorId"
       class="field-error"
       :class="inline ? 'basis-full' : ''"
       role="alert"
     >{{ error }}</span>
-  </label>
+  </component>
 </template>
 
 <script setup lang="ts">
@@ -32,13 +41,19 @@ defineOptions({ inheritAttrs: false })
 interface Props {
   label?: string
   error?: string
+  hint?: string
   inline?: boolean
+  disabled?: boolean
+  controlClass?: string
 }
 
 const props = withDefaults(defineProps<Props>(), {
   label: '',
   error: '',
+  hint: '',
   inline: false,
+  disabled: false,
+  controlClass: '',
 })
 
 const model = defineModel<string | number>({ default: '' })

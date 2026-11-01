@@ -4,14 +4,7 @@
     data-testid="automation-runtime-fields-form"
   >
     <div class="flex flex-wrap items-center gap-2">
-      <input
-        v-model="search"
-        type="search"
-        class="input-field w-full sm:w-64"
-        placeholder="Поиск параметра"
-        aria-label="Поиск параметра"
-        data-testid="automation-runtime-search"
-      />
+      <TextField v-model="search" type="search" class="w-full sm:w-64" placeholder="Поиск параметра" aria-label="Поиск параметра" data-testid="automation-runtime-search" />
       <button
         v-if="advancedCount > 0"
         type="button"
@@ -79,13 +72,7 @@
                   {{ draft[item.key] ? 'вкл' : 'выкл' }}
                 </span>
               </label>
-              <select
-                v-else-if="item.input_type === 'select'"
-                :id="fieldInputId(item.key)"
-                v-model="draft[item.key]"
-                class="input-select settings-control--select"
-                :data-testid="`settings-automation-engine-input-${item.key}`"
-              >
+              <SelectField v-else-if="item.input_type === 'select'" :id="fieldInputId(item.key)" v-model="draft[item.key]" :data-testid="`settings-automation-engine-input-${item.key}`"  control-class="settings-control--select" >
                 <option
                   v-for="option in item.options || []"
                   :key="`${item.key}-option-${option}`"
@@ -93,26 +80,9 @@
                 >
                   {{ item.option_labels?.[option] ?? option }}
                 </option>
-              </select>
-              <input
-                v-else-if="item.input_type === 'number'"
-                :id="fieldInputId(item.key)"
-                v-model="draft[item.key]"
-                class="input-field settings-control--num text-right"
-                type="number"
-                :step="item.step || 1"
-                :min="item.min"
-                :max="item.max"
-                :data-testid="`settings-automation-engine-input-${item.key}`"
-              />
-              <input
-                v-else
-                :id="fieldInputId(item.key)"
-                v-model="draft[item.key]"
-                class="input-field settings-control--text font-mono"
-                type="text"
-                :data-testid="`settings-automation-engine-input-${item.key}`"
-              />
+              </SelectField>
+              <TextField v-else-if="item.input_type === 'number'" :id="fieldInputId(item.key)" v-model="draft[item.key]" type="number" :step="item.step || 1" :min="item.min" :max="item.max" :data-testid="`settings-automation-engine-input-${item.key}`"  control-class="settings-control--num text-right" />
+              <TextField v-else :id="fieldInputId(item.key)" v-model="draft[item.key]" type="text" :data-testid="`settings-automation-engine-input-${item.key}`"  control-class="settings-control--text font-mono" />
             </template>
             <template v-else>
               <span class="settings-row__readonly">{{ formatValue(item.value, item.unit) }}</span>
@@ -125,6 +95,10 @@
 </template>
 
 <script setup lang="ts">
+import SelectField from '@/Components/SelectField.vue'
+
+import TextField from '@/Components/TextField.vue'
+
 import { computed, ref, watch } from 'vue'
 import SettingsFieldRow from '@/Components/Settings/SettingsFieldRow.vue'
 import { isSameSettingsDraft, type SettingsDraftValue } from '@/utils/settingsDraft'

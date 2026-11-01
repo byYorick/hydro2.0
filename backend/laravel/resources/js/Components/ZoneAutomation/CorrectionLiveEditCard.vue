@@ -57,11 +57,7 @@
           <span class="block text-xs font-medium text-[color:var(--text-muted)]">
             Куда писать correction
           </span>
-          <select
-            v-model="correctionTarget"
-            class="input-select w-full"
-            data-testid="correction-live-correction-target"
-          >
+          <SelectField v-model="correctionTarget" class="w-full" data-testid="correction-live-correction-target" >
             <option value="base">Базовая конфигурация</option>
             <option
               v-for="phase in CORRECTION_PHASES"
@@ -70,7 +66,7 @@
             >
               {{ correctionTargetLabel(phase) }}
             </option>
-          </select>
+          </SelectField>
           <span class="block text-[11px] text-[color:var(--text-dim)]">
             Базовый режим меняет `base_config.*`. Фазовый режим пишет только в `phase_overrides.{phase}.*` и влияет на выбранную фазу, не трогая остальные.
           </span>
@@ -80,11 +76,7 @@
           <span class="block text-xs font-medium text-[color:var(--text-muted)]">
             Куда писать process calibration
           </span>
-          <select
-            v-model="calibrationTarget"
-            class="input-select w-full"
-            data-testid="correction-live-calibration-target"
-          >
+          <SelectField v-model="calibrationTarget" class="w-full" data-testid="correction-live-calibration-target" >
             <option value="none">Не менять process calibration</option>
             <option
               v-for="mode in CALIBRATION_TARGETS"
@@ -93,7 +85,7 @@
             >
               {{ calibrationTargetLabel(mode) }}
             </option>
-          </select>
+          </SelectField>
           <span class="block text-[11px] text-[color:var(--text-dim)]">
             Фазовые режимы меняют `zone.process_calibration.{phase}`. `generic` — общий fallback-профиль; его нужно отправлять отдельно без correction-изменений.
           </span>
@@ -161,14 +153,7 @@
                   <span>Включить параметр</span>
                 </label>
 
-                <select
-                  v-else-if="field.type === 'enum'"
-                  :value="String(getByPath(correctionForm, field.path) ?? '')"
-                  :data-testid="fieldTestId('correction-live-field', field.path)"
-                  class="input-select w-full"
-                  :disabled="Boolean(field.readonly)"
-                  @change="setByPath(correctionForm, field.path, ($event.target as HTMLSelectElement).value)"
-                >
+                <SelectField v-else-if="field.type === 'enum'" :value="String(getByPath(correctionForm, field.path) ?? '')" :data-testid="fieldTestId('correction-live-field', field.path)" class="w-full" :disabled="Boolean(field.readonly)" @change="setByPath(correctionForm, field.path, ($event.target as HTMLSelectElement).value)" >
                   <option
                     v-for="option in field.options || []"
                     :key="option"
@@ -176,20 +161,9 @@
                   >
                     {{ option }}
                   </option>
-                </select>
+                </SelectField>
 
-                <input
-                  v-else
-                  :value="String(getByPath(correctionForm, field.path) ?? '')"
-                  :data-testid="fieldTestId('correction-live-field', field.path)"
-                  :type="field.type === 'string' ? 'text' : 'number'"
-                  :step="field.step ?? (field.type === 'integer' ? 1 : 'any')"
-                  :min="field.min"
-                  :max="field.max"
-                  :disabled="Boolean(field.readonly)"
-                  class="input-field w-full"
-                  @input="handleScalarInput(correctionForm, field, $event)"
-                />
+                <TextField v-else :value="String(getByPath(correctionForm, field.path) ?? '')" :data-testid="fieldTestId('correction-live-field', field.path)" :type="field.type === 'string' ? 'text' : 'number'" :step="field.step ?? (field.type === 'integer' ? 1 : 'any')" :min="field.min" :max="field.max" :disabled="Boolean(field.readonly)" class="w-full" @input="handleScalarInput(correctionForm, field, $event)" />
 
                 <p class="text-[11px] text-[color:var(--text-dim)]">
                   {{ field.description }}
@@ -229,16 +203,7 @@
                 <label class="block text-xs font-medium text-[color:var(--text-muted)]">
                   {{ field.label }}
                 </label>
-                <input
-                  :value="String(getByPath(calibrationForm, field.path) ?? '')"
-                  :data-testid="fieldTestId('correction-live-calibration-field', field.path)"
-                  type="number"
-                  :step="field.step ?? 'any'"
-                  :min="field.min"
-                  :max="field.max"
-                  class="input-field w-full"
-                  @input="handleScalarInput(calibrationForm, field, $event)"
-                />
+                <TextField :value="String(getByPath(calibrationForm, field.path) ?? '')" :data-testid="fieldTestId('correction-live-calibration-field', field.path)" type="number" :step="field.step ?? 'any'" :min="field.min" :max="field.max" class="w-full" @input="handleScalarInput(calibrationForm, field, $event)" />
                 <p class="text-[11px] text-[color:var(--text-dim)]">
                   {{ field.description }}
                 </p>
@@ -288,13 +253,7 @@
               <span class="block text-xs font-medium text-[color:var(--text-muted)]">
                 Причина изменения (обязательно, не короче 3 символов)
               </span>
-              <textarea
-                v-model="reason"
-                rows="3"
-                maxlength="500"
-                class="input-field w-full min-h-[96px]"
-                data-testid="correction-live-reason"
-              ></textarea>
+              <TextField multiline v-model="reason" rows="3" maxlength="500" class="w-full" data-testid="correction-live-reason"  control-class="min-h-[96px]"  />
               <span class="block text-[11px] text-[color:var(--text-dim)]">
                 Коротко опишите, зачем меняете live runtime: например, «увеличиваю окно наблюдения из-за медленного отклика EC» или «снижаю Kp pH, чтобы убрать перерегулирование».
               </span>
@@ -346,6 +305,10 @@
 </template>
 
 <script setup lang="ts">
+import SelectField from '@/Components/SelectField.vue'
+
+import TextField from '@/Components/TextField.vue'
+
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import Badge from '@/Components/Badge.vue'
 import Button from '@/Components/Button.vue'

@@ -77,11 +77,7 @@
         <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
           <div class="flex flex-wrap items-center gap-2">
             <span class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">Фильтр</span>
-            <select
-              v-model="filters.level"
-              class="input-select h-9"
-              data-testid="logs-filter-level"
-            >
+            <SelectField v-model="filters.level" data-testid="logs-filter-level"  control-class="h-9" >
               <option value="">
                 Все уровни
               </option>
@@ -92,25 +88,12 @@
               >
                 {{ level }}
               </option>
-            </select>
-            <input
-              v-model="filters.search"
-              type="search"
-              placeholder="Поиск по сообщению/контексту"
-              class="input-field h-9 w-full sm:w-64"
-            />
+            </SelectField>
+            <TextField v-model="filters.search" type="search" placeholder="Поиск по сообщению/контексту" class="w-full sm:w-64"  control-class="h-9" />
           </div>
           <div class="flex flex-wrap items-center gap-2">
-            <input
-              v-model="filters.from"
-              type="date"
-              class="input-field h-9"
-            />
-            <input
-              v-model="filters.to"
-              type="date"
-              class="input-field h-9"
-            />
+            <TextField v-model="filters.from" type="date"  control-class="h-9" />
+            <TextField v-model="filters.to" type="date"  control-class="h-9" />
             <Button
               size="sm"
               variant="outline"
@@ -231,6 +214,10 @@
 </template>
 
 <script setup lang="ts">
+import SelectField from '@/Components/SelectField.vue'
+
+import TextField from '@/Components/TextField.vue'
+
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Tabs from '@/Components/Tabs.vue'

@@ -29,11 +29,7 @@
       v-else
       class="flex items-center gap-2"
     >
-      <select
-        v-model="selectedState"
-        class="input-select h-9 flex-1"
-        :disabled="transitioning"
-      >
+      <SelectField v-model="selectedState" class="flex-1" :disabled="transitioning"  control-class="h-9" >
         <option :value="null">
           Выберите состояние...
         </option>
@@ -48,7 +44,7 @@
             class="text-[color:var(--status-ok)]"
           >(Активно)</span>
         </option>
-      </select>
+      </SelectField>
       
       <Button
         size="sm"
@@ -70,6 +66,8 @@
 </template>
 
 <script setup lang="ts">
+import SelectField from '@/Components/SelectField.vue'
+
 import { ref, onMounted, watch } from 'vue'
 import Button from './Button.vue'
 import { useNodeLifecycle, type AllowedTransition, type CurrentState } from '@/composables/useNodeLifecycle'

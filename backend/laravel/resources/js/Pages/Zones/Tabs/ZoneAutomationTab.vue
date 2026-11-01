@@ -219,18 +219,14 @@
                     <div class="grid grid-cols-1 md:grid-cols-[220px,1fr] gap-3 items-end">
                       <label class="text-xs text-[color:var(--text-muted)]">
                         Режим профиля
-                        <select
-                          v-model="automationLogicMode"
-                          class="input-select mt-1 w-full"
-                          :disabled="!canConfigureAutomation || isApplyingProfile || isSyncingAutomationLogicProfile"
-                        >
+                        <SelectField v-model="automationLogicMode" class="mt-1 w-full" :disabled="!canConfigureAutomation || isApplyingProfile || isSyncingAutomationLogicProfile" >
                           <option value="setup">
                             setup
                           </option>
                           <option value="working">
                             working
                           </option>
-                        </select>
+                        </SelectField>
                       </label>
                       <div class="text-xs text-[color:var(--text-muted)]">
                         <span v-if="isSyncingAutomationLogicProfile">Синхронизация профиля с бэкендом...</span>
@@ -383,11 +379,7 @@
             class="block text-sm text-[color:var(--text-primary)]"
           >
             Причина
-            <textarea
-              v-model="controlModeReason"
-              class="input-field mt-1 w-full min-h-[80px]"
-              data-testid="control-mode-reason"
-            ></textarea>
+            <TextField multiline v-model="controlModeReason" class="mt-1 w-full" data-testid="control-mode-reason"  control-class="min-h-[80px]"  />
           </label>
         </div>
       </ConfirmModal>
@@ -396,6 +388,10 @@
 </template>
 
 <script setup lang="ts">
+import SelectField from '@/Components/SelectField.vue'
+
+import TextField from '@/Components/TextField.vue'
+
 import { computed, ref, toRef, watch } from 'vue'
 import AIPredictionsSection from '@/Components/AIPredictionsSection.vue'
 import AutomationProfileCard from '@/Components/AutomationProfileCard.vue'

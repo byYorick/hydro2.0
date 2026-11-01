@@ -34,13 +34,7 @@
           >
             Название <span class="text-[color:var(--status-critical)]">*</span>
           </label>
-          <input
-            id="plant-name"
-            v-model="form.name"
-            type="text"
-            class="input-field h-9 w-full"
-            :class="errors.name ? 'border-[color:var(--status-critical)] bg-[color:var(--badge-danger-bg)]' : ''"
-          />
+          <TextField id="plant-name" v-model="form.name" type="text" class="w-full" :class="errors.name ? 'border-[color:var(--status-critical)] bg-[color:var(--badge-danger-bg)]' : ''"  control-class="h-9" />
           <div
             v-if="errors.name"
             class="text-xs text-[color:var(--status-critical)] mt-1"
@@ -54,12 +48,7 @@
             for="plant-species"
             class="block text-xs text-[color:var(--text-muted)] mb-1"
           >Вид</label>
-          <input
-            id="plant-species"
-            v-model="form.species"
-            type="text"
-            class="input-field h-9 w-full"
-          />
+          <TextField id="plant-species" v-model="form.species" type="text" class="w-full"  control-class="h-9" />
         </div>
 
         <div>
@@ -67,12 +56,7 @@
             for="plant-variety"
             class="block text-xs text-[color:var(--text-muted)] mb-1"
           >Сорт</label>
-          <input
-            id="plant-variety"
-            v-model="form.variety"
-            type="text"
-            class="input-field h-9 w-full"
-          />
+          <TextField id="plant-variety" v-model="form.variety" type="text" class="w-full"  control-class="h-9" />
         </div>
 
         <div>
@@ -176,12 +160,7 @@
             for="plant-description"
             class="block text-xs text-[color:var(--text-muted)] mb-1"
           >Описание</label>
-          <textarea
-            id="plant-description"
-            v-model="form.description"
-            rows="3"
-            class="input-field w-full"
-          ></textarea>
+          <TextField multiline id="plant-description" v-model="form.description" rows="3" class="w-full"  />
         </div>
       </div>
 
@@ -245,6 +224,8 @@
 </template>
 
 <script setup lang="ts">
+import TextField from '@/Components/TextField.vue'
+
 import { toRef } from 'vue'
 import Modal from '@/Components/Modal.vue'
 import Button from '@/Components/Button.vue'

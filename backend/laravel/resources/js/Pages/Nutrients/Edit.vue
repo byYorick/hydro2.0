@@ -12,12 +12,7 @@
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div>
             <label class="block text-xs text-[color:var(--text-muted)] mb-1">Производитель</label>
-            <input
-              v-model="form.manufacturer"
-              type="text"
-              class="input-field"
-              placeholder="Yara"
-            />
+            <TextField v-model="form.manufacturer" type="text" placeholder="Yara" />
             <p
               v-if="errors.manufacturer"
               class="text-xs text-[color:var(--badge-danger-text)] mt-1"
@@ -28,12 +23,7 @@
 
           <div>
             <label class="block text-xs text-[color:var(--text-muted)] mb-1">Название продукта</label>
-            <input
-              v-model="form.name"
-              type="text"
-              class="input-field"
-              placeholder="YaraRega Water-Soluble NPK"
-            />
+            <TextField v-model="form.name" type="text" placeholder="YaraRega Water-Soluble NPK" />
             <p
               v-if="errors.name"
               class="text-xs text-[color:var(--badge-danger-text)] mt-1"
@@ -44,10 +34,7 @@
 
           <div>
             <label class="block text-xs text-[color:var(--text-muted)] mb-1">Компонент</label>
-            <select
-              v-model="form.component"
-              class="input-select"
-            >
+            <SelectField v-model="form.component" >
               <option value="npk">
                 NPK
               </option>
@@ -60,7 +47,7 @@
               <option value="micro">
                 Микроэлементы
               </option>
-            </select>
+            </SelectField>
             <p
               v-if="errors.component"
               class="text-xs text-[color:var(--badge-danger-text)] mt-1"
@@ -71,12 +58,7 @@
 
           <div>
             <label class="block text-xs text-[color:var(--text-muted)] mb-1">Состав</label>
-            <input
-              v-model="form.composition"
-              type="text"
-              class="input-field"
-              placeholder="NPK 18-18-18"
-            />
+            <TextField v-model="form.composition" type="text" placeholder="NPK 18-18-18" />
             <p
               v-if="errors.composition"
               class="text-xs text-[color:var(--badge-danger-text)] mt-1"
@@ -87,12 +69,7 @@
 
           <div>
             <label class="block text-xs text-[color:var(--text-muted)] mb-1">Рекомендуемые стадии</label>
-            <input
-              v-model="form.recommended_stage"
-              type="text"
-              class="input-field"
-              placeholder="ROOTING,VEG,FLOWER,FRUIT"
-            />
+            <TextField v-model="form.recommended_stage" type="text" placeholder="ROOTING,VEG,FLOWER,FRUIT" />
             <p
               v-if="errors.recommended_stage"
               class="text-xs text-[color:var(--badge-danger-text)] mt-1"
@@ -103,32 +80,17 @@
 
           <div>
             <label class="block text-xs text-[color:var(--text-muted)] mb-1">Ссылка на источник</label>
-            <input
-              v-model="form.source_url"
-              type="url"
-              class="input-field"
-              placeholder="example.test/product"
-            />
+            <TextField v-model="form.source_url" type="url" placeholder="example.test/product" />
           </div>
 
           <div class="md:col-span-2">
             <label class="block text-xs text-[color:var(--text-muted)] mb-1">Код системы питания</label>
-            <input
-              v-model="form.system_code"
-              type="text"
-              class="input-field"
-              placeholder="YARAREGA_CALCINIT_HAIFA_MICRO_V1"
-            />
+            <TextField v-model="form.system_code" type="text" placeholder="YARAREGA_CALCINIT_HAIFA_MICRO_V1" />
           </div>
 
           <div class="md:col-span-2">
             <label class="block text-xs text-[color:var(--text-muted)] mb-1">Заметки</label>
-            <textarea
-              v-model="form.notes"
-              rows="5"
-              class="input-field h-auto"
-              placeholder="Технологические примечания по применению..."
-            ></textarea>
+            <TextField multiline v-model="form.notes" rows="5" placeholder="Технологические примечания по применению..."  control-class="h-auto"  />
             <p
               v-if="errors.notes"
               class="text-xs text-[color:var(--badge-danger-text)] mt-1"
@@ -193,6 +155,10 @@
 </template>
 
 <script setup lang="ts">
+import SelectField from '@/Components/SelectField.vue'
+
+import TextField from '@/Components/TextField.vue'
+
 import { computed, reactive, ref } from 'vue'
 import { Link, router, usePage } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'

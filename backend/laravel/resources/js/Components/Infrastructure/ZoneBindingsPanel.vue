@@ -45,11 +45,7 @@
             class="text-red-400"
           >*</span>
         </div>
-        <select
-          v-model="assignments[role.key]"
-          class="input-select h-8 text-xs flex-1"
-          :disabled="!canManage"
-        >
+        <SelectField v-model="assignments[role.key]" class="flex-1" :disabled="!canManage"  control-class="h-8 text-xs" >
           <option value="">
             — не назначено —
           </option>
@@ -60,7 +56,7 @@
           >
             {{ node.name }} ({{ node.uid }})
           </option>
-        </select>
+        </SelectField>
       </div>
     </div>
 
@@ -80,6 +76,8 @@
 </template>
 
 <script setup lang="ts">
+import SelectField from '@/Components/SelectField.vue'
+
 import { ref, reactive, computed, onMounted } from 'vue'
 import Button from '@/Components/Button.vue'
 import { api } from '@/services/api'

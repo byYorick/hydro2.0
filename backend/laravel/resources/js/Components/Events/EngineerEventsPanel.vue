@@ -25,12 +25,7 @@
         {{ kind.label }}
       </button>
       <div class="ml-auto flex items-center gap-1.5">
-        <input
-          :value="query"
-          class="input-field h-6 w-28 text-xs px-2"
-          placeholder="Поиск..."
-          @input="$emit('update:query', ($event.target as HTMLInputElement).value)"
-        />
+        <TextField :value="query" class="w-28" placeholder="Поиск..." @input="$emit('update:query', ($event.target as HTMLInputElement).value)"  control-class="h-6 text-xs px-2" />
         <button
           type="button"
           class="h-6 px-2 text-[11px] rounded-md border border-[color:var(--border-muted)] text-[color:var(--text-dim)] hover:text-[color:var(--text-primary)] hover:bg-[color:var(--bg-elevated)] transition-colors"
@@ -140,6 +135,8 @@
 </template>
 
 <script setup lang="ts">
+import TextField from '@/Components/TextField.vue'
+
 import { ref } from 'vue'
 import Badge from '@/Components/Badge.vue'
 import EventRow from '@/Components/Events/EventRow.vue'

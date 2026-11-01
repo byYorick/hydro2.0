@@ -59,46 +59,29 @@
           <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
               <label class="block text-xs text-[color:var(--text-muted)] mb-1">Системное имя</label>
-              <input
-                v-model="channel.channel"
-                type="text"
-                placeholder="relay1"
-                class="input-field h-9 text-xs"
-              />
+              <TextField v-model="channel.channel" type="text" placeholder="relay1"  control-class="h-9 text-xs" />
             </div>
             <div>
               <label class="block text-xs text-[color:var(--text-muted)] mb-1">Отображаемое имя</label>
-              <input
-                v-model="channel.name"
-                type="text"
-                placeholder="Реле 1"
-                class="input-field h-9 text-xs"
-              />
+              <TextField v-model="channel.name" type="text" placeholder="Реле 1"  control-class="h-9 text-xs" />
             </div>
           </div>
 
           <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
               <label class="block text-xs text-[color:var(--text-muted)] mb-1">Тип</label>
-              <select
-                v-model="channel.type"
-                class="input-select h-9 text-xs"
-              >
+              <SelectField v-model="channel.type"  control-class="h-9 text-xs" >
                 <option value="ACTUATOR">
                   ACTUATOR
                 </option>
                 <option value="SENSOR">
                   SENSOR
                 </option>
-              </select>
+              </SelectField>
             </div>
             <div>
               <label class="block text-xs text-[color:var(--text-muted)] mb-1">Actuator type</label>
-              <select
-                v-model="channel.actuator_type"
-                class="input-select h-9 text-xs"
-                :disabled="channel.type !== 'ACTUATOR'"
-              >
+              <SelectField v-model="channel.actuator_type" :disabled="channel.type !== 'ACTUATOR'"  control-class="h-9 text-xs" >
                 <option value="RELAY">
                   RELAY
                 </option>
@@ -111,28 +94,18 @@
                 <option value="FAN">
                   FAN
                 </option>
-              </select>
+              </SelectField>
             </div>
           </div>
 
           <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
               <label class="block text-xs text-[color:var(--text-muted)] mb-1">Metric</label>
-              <input
-                v-model="channel.metric"
-                type="text"
-                placeholder="RELAY"
-                class="input-field h-9 text-xs"
-              />
+              <TextField v-model="channel.metric" type="text" placeholder="RELAY"  control-class="h-9 text-xs" />
             </div>
             <div>
               <label class="block text-xs text-[color:var(--text-muted)] mb-1">Описание</label>
-              <input
-                v-model="channel.description"
-                type="text"
-                placeholder="Краткое описание канала"
-                class="input-field h-9 text-xs"
-              />
+              <TextField v-model="channel.description" type="text" placeholder="Краткое описание канала"  control-class="h-9 text-xs" />
             </div>
           </div>
         </div>
@@ -170,6 +143,10 @@
 </template>
 
 <script setup lang="ts">
+import SelectField from '@/Components/SelectField.vue'
+
+import TextField from '@/Components/TextField.vue'
+
 import { computed, ref, watch } from 'vue'
 import Modal from '@/Components/Modal.vue'
 import Button from '@/Components/Button.vue'

@@ -20,18 +20,7 @@
             for="zone-action-duration-sec"
             class="block text-sm font-medium mb-1"
           >Длительность полива (секунды)</label>
-          <input
-            id="zone-action-duration-sec"
-            v-model.number="form.duration_sec"
-            name="duration_sec"
-            type="number"
-            min="1"
-            max="3600"
-            step="1"
-            required
-            class="input-field w-full"
-            :placeholder="String(defaultIrrigationDuration)"
-          />
+          <TextField id="zone-action-duration-sec" v-model.number="form.duration_sec" name="duration_sec" type="number" min="1" max="3600" step="1" required class="w-full" :placeholder="String(defaultIrrigationDuration)" />
           <div class="text-xs text-[color:var(--text-dim)] mt-1">
             По умолчанию: системная настройка или длительность из фазы рецепта (если задана). Диапазон 1–3600 с.
           </div>
@@ -49,18 +38,7 @@
             for="zone-action-target-ph"
             class="block text-sm font-medium mb-1"
           >Целевой pH</label>
-          <input
-            id="zone-action-target-ph"
-            v-model.number="form.target_ph"
-            name="target_ph"
-            type="number"
-            min="4.0"
-            max="9.0"
-            step="0.1"
-            required
-            class="input-field w-full"
-            placeholder="6.0"
-          />
+          <TextField id="zone-action-target-ph" v-model.number="form.target_ph" name="target_ph" type="number" min="4.0" max="9.0" step="0.1" required class="w-full" placeholder="6.0" />
           <div class="text-xs text-[color:var(--text-dim)] mt-1">
             От 4.0 до 9.0
           </div>
@@ -76,18 +54,7 @@
             for="zone-action-target-ec"
             class="block text-sm font-medium mb-1"
           >Целевой EC</label>
-          <input
-            id="zone-action-target-ec"
-            v-model.number="form.target_ec"
-            name="target_ec"
-            type="number"
-            min="0.1"
-            max="10.0"
-            step="0.1"
-            required
-            class="input-field w-full"
-            placeholder="1.5"
-          />
+          <TextField id="zone-action-target-ec" v-model.number="form.target_ec" name="target_ec" type="number" min="0.1" max="10.0" step="0.1" required class="w-full" placeholder="1.5" />
           <div class="text-xs text-[color:var(--text-dim)] mt-1">
             От 0.1 до 10.0
           </div>
@@ -103,18 +70,7 @@
             for="zone-action-target-temp"
             class="block text-sm font-medium mb-1"
           >Целевая температура (°C)</label>
-          <input
-            id="zone-action-target-temp"
-            v-model.number="form.target_temp"
-            name="target_temp"
-            type="number"
-            min="10"
-            max="35"
-            step="0.5"
-            required
-            class="input-field w-full"
-            placeholder="22"
-          />
+          <TextField id="zone-action-target-temp" v-model.number="form.target_temp" name="target_temp" type="number" min="10" max="35" step="0.5" required class="w-full" placeholder="22" />
           <div class="text-xs text-[color:var(--text-dim)] mt-1">
             От 10 до 35°C
           </div>
@@ -124,18 +80,7 @@
             for="zone-action-target-humidity"
             class="block text-sm font-medium mb-1"
           >Целевая влажность (%)</label>
-          <input
-            id="zone-action-target-humidity"
-            v-model.number="form.target_humidity"
-            name="target_humidity"
-            type="number"
-            min="30"
-            max="90"
-            step="1"
-            required
-            class="input-field w-full"
-            placeholder="60"
-          />
+          <TextField id="zone-action-target-humidity" v-model.number="form.target_humidity" name="target_humidity" type="number" min="30" max="90" step="1" required class="w-full" placeholder="60" />
           <div class="text-xs text-[color:var(--text-dim)] mt-1">
             От 30 до 90%
           </div>
@@ -151,18 +96,7 @@
             for="zone-action-intensity"
             class="block text-sm font-medium mb-1"
           >Интенсивность (%)</label>
-          <input
-            id="zone-action-intensity"
-            v-model.number="form.intensity"
-            name="intensity"
-            type="number"
-            min="0"
-            max="100"
-            step="1"
-            required
-            class="input-field w-full"
-            placeholder="80"
-          />
+          <TextField id="zone-action-intensity" v-model.number="form.intensity" name="intensity" type="number" min="0" max="100" step="1" required class="w-full" placeholder="80" />
           <div class="text-xs text-[color:var(--text-dim)] mt-1">
             От 0 до 100%
           </div>
@@ -172,18 +106,7 @@
             for="zone-action-duration-hours"
             class="block text-sm font-medium mb-1"
           >Длительность (часы)</label>
-          <input
-            id="zone-action-duration-hours"
-            v-model.number="form.duration_hours"
-            name="duration_hours"
-            type="number"
-            min="0.5"
-            max="24"
-            step="0.5"
-            required
-            class="input-field w-full"
-            placeholder="12"
-          />
+          <TextField id="zone-action-duration-hours" v-model.number="form.duration_hours" name="duration_hours" type="number" min="0.5" max="24" step="0.5" required class="w-full" placeholder="12" />
           <div class="text-xs text-[color:var(--text-dim)] mt-1">
             От 0.5 до 24 часов
           </div>
@@ -226,6 +149,8 @@
 </template>
 
 <script setup lang="ts">
+import TextField from '@/Components/TextField.vue'
+
 import { ref, computed, watch } from 'vue'
 import Modal from '@/Components/Modal.vue'
 import Button from '@/Components/Button.vue'

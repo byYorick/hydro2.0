@@ -38,12 +38,7 @@
         v-if="plantMode === 'select'"
         class="grid gap-2 md:grid-cols-[1fr_auto]"
       >
-        <select
-          id="recipe-plant"
-          v-model.number="form.plant_id"
-          class="input-field"
-          :disabled="plantsLoading"
-        >
+        <SelectField id="recipe-plant" v-model.number="form.plant_id" :disabled="plantsLoading" >
           <option :value="null">
             Выберите культуру
           </option>
@@ -54,7 +49,7 @@
           >
             {{ plant.name }}
           </option>
-        </select>
+        </SelectField>
         <Button
           size="sm"
           variant="secondary"
@@ -71,27 +66,15 @@
         <div class="grid grid-cols-1 md:grid-cols-3 gap-2">
           <div>
             <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">Название растения</label>
-            <input
-              v-model="newPlantName"
-              class="input-field"
-              placeholder="Томат Черри"
-            />
+            <TextField v-model="newPlantName" placeholder="Томат Черри" />
           </div>
           <div>
             <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">Вид (species)</label>
-            <input
-              v-model="newPlantSpecies"
-              class="input-field"
-              placeholder="Solanum lycopersicum"
-            />
+            <TextField v-model="newPlantSpecies" placeholder="Solanum lycopersicum" />
           </div>
           <div>
             <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">Сорт (variety)</label>
-            <input
-              v-model="newPlantVariety"
-              class="input-field"
-              placeholder="Cherry"
-            />
+            <TextField v-model="newPlantVariety" placeholder="Cherry" />
           </div>
         </div>
         <div class="flex gap-2">
@@ -130,13 +113,7 @@
       >
         {{ recipeName }}
       </div>
-      <input
-        id="recipe-description"
-        v-model="recipeLabel"
-        data-testid="recipe-name-input"
-        class="input-field mt-1"
-        placeholder="Veg+Bloom, зима 2026..."
-      />
+      <TextField id="recipe-description" v-model="recipeLabel" data-testid="recipe-name-input" class="mt-1" placeholder="Veg+Bloom, зима 2026..." />
     </div>
 
     <!-- ── 3. Система подготовки раствора и полива ─────────────── -->
@@ -148,17 +125,14 @@
         Система подготовки раствора и полива
       </div>
       <div class="max-w-lg">
-        <select
-          v-model="recipeIrrigationMode"
-          class="input-field w-full"
-        >
+        <SelectField v-model="recipeIrrigationMode" class="w-full" >
           <option value="SUBSTRATE">
             Проточная (2 бака)
           </option>
           <option value="RECIRC">
             Рециркуляция (3 бака)
           </option>
-        </select>
+        </SelectField>
         <div class="mt-1.5 text-[12px] text-[color:var(--text-muted)] leading-snug space-y-0.5">
           <p v-if="recipeIrrigationMode === 'SUBSTRATE'">
             <span class="font-semibold text-[color:var(--text-primary)]">2 бака</span> — для субстратного полива (кокос, минвата, грунт):
@@ -218,23 +192,11 @@
           <div class="flex items-end gap-4">
             <div>
               <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">Название</label>
-              <input
-                v-model="phase.name"
-                :data-testid="`phase-name-input-${index}`"
-                class="input-field !w-40"
-                placeholder="VEG / BLOOM"
-              />
+              <TextField v-model="phase.name" :data-testid="`phase-name-input-${index}`" class="!w-40" placeholder="VEG / BLOOM" />
             </div>
             <div>
               <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">Длительность (дни:часы)</label>
-              <input
-                :value="durationDisplay(phase)"
-                :data-testid="`phase-duration-input-${index}`"
-                type="text"
-                placeholder="0 : 00"
-                class="input-field !w-24 text-center tracking-widest"
-                @change="setDurationFromString(phase, ($event.target as HTMLInputElement).value)"
-              />
+              <TextField :value="durationDisplay(phase)" :data-testid="`phase-duration-input-${index}`" type="text" placeholder="0 : 00" class="!w-24" @change="setDurationFromString(phase, ($event.target as HTMLInputElement).value)"  control-class="text-center tracking-widest" />
             </div>
             <div v-if="isAdvanced">
               <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">Раздельно день / ночь</label>
@@ -278,10 +240,7 @@
           >
             <div>
               <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">Тип системы полива</label>
-              <select
-                v-model="phase.irrigation_system_type"
-                class="input-field w-full"
-              >
+              <SelectField v-model="phase.irrigation_system_type" class="w-full" >
                 <template v-if="recipeIrrigationMode === 'SUBSTRATE'">
                   <option value="drip_tape">
                     Капельная лента
@@ -304,16 +263,12 @@
                     Аэропоника
                   </option>
                 </template>
-              </select>
+              </SelectField>
             </div>
             <div>
               <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">Субстрат</label>
               <div class="flex gap-2">
-                <select
-                  v-model="phase.substrate_type"
-                  class="input-field flex-1 min-w-0"
-                  :disabled="substrateOptions(phase).length === 0"
-                >
+                <SelectField v-model="phase.substrate_type" class="flex-1 min-w-0" :disabled="substrateOptions(phase).length === 0" >
                   <option
                     v-for="opt in substrateOptions(phase)"
                     :key="opt.value ?? 'null'"
@@ -321,7 +276,7 @@
                   >
                     {{ opt.label }}
                   </option>
-                </select>
+                </SelectField>
                 <button
                   type="button"
                   class="pill-btn"
@@ -432,26 +387,14 @@
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-lg">
             <div>
               <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">Интервал между поливами (ЧЧ:ММ)</label>
-              <input
-                :value="intervalDisplay(phase)"
-                type="text"
-                placeholder="00 : 00"
-                class="input-field !w-32 text-center tracking-widest"
-                @change="setIntervalFromString(phase, ($event.target as HTMLInputElement).value)"
-              />
+              <TextField :value="intervalDisplay(phase)" type="text" placeholder="00 : 00" class="!w-32" @change="setIntervalFromString(phase, ($event.target as HTMLInputElement).value)"  control-class="text-center tracking-widest" />
               <p class="text-[12px] text-[color:var(--text-muted)] mt-1 leading-snug">
                 Время между началами циклов полива
               </p>
             </div>
             <div>
               <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">Длительность полива (ММ:СС)</label>
-              <input
-                :value="durationIrrigDisplay(phase)"
-                type="text"
-                placeholder="00 : 00"
-                class="input-field !w-28 text-center tracking-widest"
-                @change="setDurationIrrigFromString(phase, ($event.target as HTMLInputElement).value)"
-              />
+              <TextField :value="durationIrrigDisplay(phase)" type="text" placeholder="00 : 00" class="!w-28" @change="setDurationIrrigFromString(phase, ($event.target as HTMLInputElement).value)"  control-class="text-center tracking-widest" />
               <p class="text-[12px] text-[color:var(--text-muted)] mt-1 leading-snug">
                 Сколько длится один цикл полива (подача раствора)
               </p>
@@ -691,10 +634,7 @@
           <div class="flex flex-wrap gap-2">
             <div>
               <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">Режим питания</label>
-              <select
-                v-model="phase.nutrient_mode"
-                class="input-field !min-w-[200px]"
-              >
+              <SelectField v-model="phase.nutrient_mode" class="!min-w-[200px]" >
                 <option value="ratio_ec_pid">
                   PID по EC + доли
                 </option>
@@ -704,7 +644,7 @@
                 <option value="dose_ml_l_only">
                   Фикс. доза мл/л
                 </option>
-              </select>
+              </SelectField>
               <p class="text-[12px] text-[color:var(--text-muted)] mt-1 leading-snug">
                 <template v-if="phase.nutrient_mode === 'ratio_ec_pid'">
                   PID-регулятор по EC, доза распределяется по долям компонентов
@@ -719,17 +659,14 @@
             </div>
             <div v-if="phase.nutrient_mode !== 'dose_ml_l_only'">
               <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">Режим дозирования</label>
-              <select
-                v-model="phase.nutrient_ec_dosing_mode"
-                class="input-field !min-w-[200px]"
-              >
+              <SelectField v-model="phase.nutrient_ec_dosing_mode" class="!min-w-[200px]" >
                 <option value="sequential">
                   Последовательный
                 </option>
                 <option value="parallel">
                   Параллельный
                 </option>
-              </select>
+              </SelectField>
               <p class="text-[12px] text-[color:var(--text-muted)] mt-1 leading-snug">
                 <template v-if="phase.nutrient_ec_dosing_mode === 'parallel'">
                   Ca, Mg, Micro дозируются одновременно в одном окне коррекции
@@ -1090,53 +1027,23 @@
           <div class="grid grid-cols-1 md:grid-cols-2 gap-3 max-w-xl">
             <div>
               <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">Мин. температура раствора, °C</label>
-              <input
-                type="number"
-                step="0.1"
-                class="input-field"
-                :value="cropDayInputValue(phase.solution_temp_min)"
-                @input="setCropDayNumber(phase, 'solution_temp_min', $event)"
-              />
+              <TextField type="number" step="0.1" :value="cropDayInputValue(phase.solution_temp_min)" @input="setCropDayNumber(phase, 'solution_temp_min', $event)" />
             </div>
             <div>
               <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">Макс. температура раствора, °C</label>
-              <input
-                type="number"
-                step="0.1"
-                class="input-field"
-                :value="cropDayInputValue(phase.solution_temp_max)"
-                @input="setCropDayNumber(phase, 'solution_temp_max', $event)"
-              />
+              <TextField type="number" step="0.1" :value="cropDayInputValue(phase.solution_temp_max)" @input="setCropDayNumber(phase, 'solution_temp_max', $event)" />
             </div>
             <div>
               <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">Удержание выхода за пределы, сек</label>
-              <input
-                type="number"
-                step="1"
-                class="input-field"
-                :value="cropDayInputValue(phase.solution_health_breach_hold_sec)"
-                @input="setCropDayNumber(phase, 'solution_health_breach_hold_sec', $event)"
-              />
+              <TextField type="number" step="1" :value="cropDayInputValue(phase.solution_health_breach_hold_sec)" @input="setCropDayNumber(phase, 'solution_health_breach_hold_sec', $event)" />
             </div>
             <div>
               <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">Возраст раствора до рекомендации, дни</label>
-              <input
-                type="number"
-                step="1"
-                class="input-field"
-                :value="cropDayInputValue(phase.solution_max_age_days)"
-                @input="setCropDayNumber(phase, 'solution_max_age_days', $event)"
-              />
+              <TextField type="number" step="1" :value="cropDayInputValue(phase.solution_max_age_days)" @input="setCropDayNumber(phase, 'solution_max_age_days', $event)" />
             </div>
             <div>
               <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">Объём доливов до рекомендации, мл</label>
-              <input
-                type="number"
-                step="1"
-                class="input-field"
-                :value="cropDayInputValue(phase.solution_refresh_after_topup_ml)"
-                @input="setCropDayNumber(phase, 'solution_refresh_after_topup_ml', $event)"
-              />
+              <TextField type="number" step="1" :value="cropDayInputValue(phase.solution_refresh_after_topup_ml)" @input="setCropDayNumber(phase, 'solution_refresh_after_topup_ml', $event)" />
             </div>
           </div>
           <p class="text-[12px] text-[color:var(--text-muted)] m-0 leading-snug">
@@ -1178,22 +1085,11 @@
             </div>
             <div>
               <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">Старт дня</label>
-              <input
-                v-model="phase.lighting_start_time"
-                type="time"
-                class="input-field"
-              />
+              <TextField v-model="phase.lighting_start_time" type="time" />
             </div>
             <div class="col-span-2">
               <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">DLI, моль/м²·сутки</label>
-              <input
-                data-testid="recipe-phase-dli-target"
-                type="number"
-                step="0.01"
-                class="input-field"
-                :value="cropDayInputValue(phase.dli_target)"
-                @input="setCropDayNumber(phase, 'dli_target', $event)"
-              />
+              <TextField data-testid="recipe-phase-dli-target" type="number" step="0.01" :value="cropDayInputValue(phase.dli_target)" @input="setCropDayNumber(phase, 'dli_target', $event)" />
               <p class="text-[12px] text-[color:var(--text-muted)] mt-1 mb-0 leading-snug">
                 Нужен канал с единицей PPFD. Люксы не пересчитываются. Если цель задана, внутри окна появятся проверочные тики света.
               </p>
@@ -1233,6 +1129,10 @@
 </template>
 
 <script setup lang="ts">
+import SelectField from '@/Components/SelectField.vue'
+
+import TextField from '@/Components/TextField.vue'
+
 import { computed, ref, watch } from 'vue'
 import Button from '@/Components/Button.vue'
 import RecipeEditorProductField from '@/Components/RecipeEditorProductField.vue'

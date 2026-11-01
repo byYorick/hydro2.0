@@ -131,12 +131,7 @@
 
         <div v-if="form.schedule_kind === 'time'">
           <label class="mb-1 block text-xs text-[color:var(--text-muted)]">Время запуска (UTC)</label>
-          <input
-            v-model="form.time_at"
-            type="time"
-            class="input-field"
-            data-testid="manual-schedule-time-at"
-          />
+          <TextField v-model="form.time_at" type="time" data-testid="manual-schedule-time-at" />
           <p
             v-if="fieldError('time_at')"
             class="mt-1 text-xs text-status-critical"
@@ -151,29 +146,18 @@
         >
           <div>
             <label class="mb-1 block text-xs text-[color:var(--text-muted)]">Интервал</label>
-            <input
-              v-model.number="intervalValue"
-              type="number"
-              :min="intervalMinValue"
-              :max="intervalMaxValue"
-              class="input-field"
-              data-testid="manual-schedule-interval"
-            />
+            <TextField v-model.number="intervalValue" type="number" :min="intervalMinValue" :max="intervalMaxValue" data-testid="manual-schedule-interval" />
           </div>
           <div>
             <label class="mb-1 block text-xs text-[color:var(--text-muted)]">Единица</label>
-            <select
-              v-model="intervalUnit"
-              class="input-field"
-              data-testid="manual-schedule-interval-unit"
-            >
+            <SelectField v-model="intervalUnit" data-testid="manual-schedule-interval-unit" >
               <option value="minutes">
                 мин
               </option>
               <option value="hours">
                 ч
               </option>
-            </select>
+            </SelectField>
           </div>
           <p class="col-span-2 text-[10px] text-[color:var(--text-dim)]">
             = {{ form.interval_sec ?? 0 }} с
@@ -192,19 +176,11 @@
         >
           <div>
             <label class="mb-1 block text-xs text-[color:var(--text-muted)]">Начало (UTC)</label>
-            <input
-              v-model="form.window_start"
-              type="time"
-              class="input-field"
-            />
+            <TextField v-model="form.window_start" type="time" />
           </div>
           <div>
             <label class="mb-1 block text-xs text-[color:var(--text-muted)]">Конец (UTC)</label>
-            <input
-              v-model="form.window_end"
-              type="time"
-              class="input-field"
-            />
+            <TextField v-model="form.window_end" type="time" />
           </div>
           <p
             v-if="fieldError('window_start') || fieldError('window_end')"
@@ -216,12 +192,7 @@
 
         <div v-if="form.schedule_kind === 'once'">
           <label class="mb-1 block text-xs text-[color:var(--text-muted)]">Дата и время (UTC)</label>
-          <input
-            v-model="runAtLocal"
-            type="datetime-local"
-            class="input-field"
-            data-testid="manual-schedule-run-at"
-          />
+          <TextField v-model="runAtLocal" type="datetime-local" data-testid="manual-schedule-run-at" />
           <p class="mt-1 text-[10px] text-[color:var(--text-dim)]">
             Сработает один раз в указанный момент. Время вводится в UTC, не в локальном часовом поясе браузера.
           </p>
@@ -236,25 +207,15 @@
         <div v-if="form.task_type === 'irrigation'">
           <label class="mb-1 block text-xs text-[color:var(--text-muted)]">Длительность полива</label>
           <div class="grid grid-cols-[1fr_auto] gap-2">
-            <input
-              v-model.number="durationValue"
-              type="number"
-              :min="durationMinValue"
-              :max="durationMaxValue"
-              class="input-field"
-              data-testid="manual-schedule-duration"
-            />
-            <select
-              v-model="durationUnit"
-              class="input-field"
-            >
+            <TextField v-model.number="durationValue" type="number" :min="durationMinValue" :max="durationMaxValue" data-testid="manual-schedule-duration" />
+            <SelectField v-model="durationUnit" >
               <option value="seconds">
                 сек
               </option>
               <option value="minutes">
                 мин
               </option>
-            </select>
+            </SelectField>
           </div>
           <p
             v-if="fieldError('payload.duration_sec')"
@@ -266,13 +227,7 @@
 
         <div>
           <label class="mb-1 block text-xs text-[color:var(--text-muted)]">Подпись (необязательно)</label>
-          <input
-            v-model="form.label"
-            type="text"
-            maxlength="255"
-            class="input-field"
-            placeholder="Например: вечерний полив"
-          />
+          <TextField v-model="form.label" type="text" maxlength="255" placeholder="Например: вечерний полив" />
         </div>
 
         <label class="flex items-center gap-2 text-xs text-[color:var(--text-muted)]">
@@ -360,6 +315,10 @@
 </template>
 
 <script setup lang="ts">
+import SelectField from '@/Components/SelectField.vue'
+
+import TextField from '@/Components/TextField.vue'
+
 import { computed, reactive, ref, watch } from 'vue'
 import Button from '@/Components/Button.vue'
 import Modal from '@/Components/Modal.vue'

@@ -41,11 +41,7 @@
                   :title="fieldHelp('component')"
                 >
                   Компонент
-                  <select
-                    v-model="form.component"
-                    class="input-select mt-1 w-full"
-                    data-testid="pump-calibration-component"
-                  >
+                  <SelectField v-model="form.component" class="mt-1 w-full" data-testid="pump-calibration-component" >
                     <option
                       v-for="option in componentOptions"
                       :key="option.value"
@@ -53,7 +49,7 @@
                     >
                       {{ option.label }}
                     </option>
-                  </select>
+                  </SelectField>
                 </label>
 
                 <label
@@ -61,11 +57,7 @@
                   :title="fieldHelp('node_channel_id')"
                 >
                   Канал помпы
-                  <select
-                    v-model.number="form.node_channel_id"
-                    class="input-select mt-1 w-full"
-                    data-testid="pump-calibration-channel"
-                  >
+                  <SelectField v-model.number="form.node_channel_id" class="mt-1 w-full" data-testid="pump-calibration-channel" >
                     <option
                       v-for="channel in pumpChannels"
                       :key="channel.id"
@@ -73,7 +65,7 @@
                     >
                       {{ channel.label }}
                     </option>
-                  </select>
+                  </SelectField>
                 </label>
 
                 <label
@@ -81,15 +73,7 @@
                   :title="fieldHelp('duration_sec')"
                 >
                   Время запуска (сек)
-                  <input
-                    v-model.number="form.duration_sec"
-                    type="number"
-                    :min="pumpSettings.calibration_duration_min_sec"
-                    :max="pumpSettings.calibration_duration_max_sec"
-                    step="1"
-                    class="input-field mt-1 w-full"
-                    data-testid="pump-calibration-duration"
-                  />
+                  <TextField v-model.number="form.duration_sec" type="number" :min="pumpSettings.calibration_duration_min_sec" :max="pumpSettings.calibration_duration_max_sec" step="1" class="mt-1 w-full" data-testid="pump-calibration-duration" />
                 </label>
               </div>
             </div>
@@ -107,15 +91,7 @@
                   :title="fieldHelp('actual_ml')"
                 >
                   Фактический объём (мл)
-                  <input
-                    v-model.number="form.actual_ml"
-                    type="number"
-                    min="0.01"
-                    max="100000"
-                    step="0.01"
-                    class="input-field mt-1 w-full"
-                    data-testid="pump-calibration-actual-ml"
-                  />
+                  <TextField v-model.number="form.actual_ml" type="number" min="0.01" max="100000" step="0.01" class="mt-1 w-full" data-testid="pump-calibration-actual-ml" />
                 </label>
 
                 <label
@@ -123,15 +99,7 @@
                   :title="fieldHelp('temperature_c')"
                 >
                   Температура (°C, опц.)
-                  <input
-                    v-model.number="form.temperature_c"
-                    type="number"
-                    min="0"
-                    max="50"
-                    step="0.1"
-                    class="input-field mt-1 w-full"
-                    data-testid="pump-calibration-temperature"
-                  />
+                  <TextField v-model.number="form.temperature_c" type="number" min="0" max="50" step="0.1" class="mt-1 w-full" data-testid="pump-calibration-temperature" />
                 </label>
 
                 <label
@@ -139,15 +107,7 @@
                   :title="fieldHelp('test_volume_l')"
                 >
                   Объём теста (л)
-                  <input
-                    v-model.number="form.test_volume_l"
-                    type="number"
-                    min="0.1"
-                    max="1000"
-                    step="0.1"
-                    class="input-field mt-1 w-full"
-                    data-testid="pump-calibration-test-volume"
-                  />
+                  <TextField v-model.number="form.test_volume_l" type="number" min="0.1" max="1000" step="0.1" class="mt-1 w-full" data-testid="pump-calibration-test-volume" />
                 </label>
 
                 <label
@@ -155,15 +115,7 @@
                   :title="fieldHelp('ec_before_ms')"
                 >
                   EC до дозы (mS/cm)
-                  <input
-                    v-model.number="form.ec_before_ms"
-                    type="number"
-                    min="0"
-                    max="20"
-                    step="0.001"
-                    class="input-field mt-1 w-full"
-                    data-testid="pump-calibration-ec-before"
-                  />
+                  <TextField v-model.number="form.ec_before_ms" type="number" min="0" max="20" step="0.001" class="mt-1 w-full" data-testid="pump-calibration-ec-before" />
                 </label>
 
                 <label
@@ -171,15 +123,7 @@
                   :title="fieldHelp('ec_after_ms')"
                 >
                   EC после дозы (mS/cm)
-                  <input
-                    v-model.number="form.ec_after_ms"
-                    type="number"
-                    min="0"
-                    max="20"
-                    step="0.001"
-                    class="input-field mt-1 w-full"
-                    data-testid="pump-calibration-ec-after"
-                  />
+                  <TextField v-model.number="form.ec_after_ms" type="number" min="0" max="20" step="0.001" class="mt-1 w-full" data-testid="pump-calibration-ec-after" />
                 </label>
               </div>
             </div>
@@ -357,6 +301,10 @@
 </template>
 
 <script setup lang="ts">
+import SelectField from '@/Components/SelectField.vue'
+
+import TextField from '@/Components/TextField.vue'
+
 import { computed } from 'vue'
 import Modal from '@/Components/Modal.vue'
 import Button from '@/Components/Button.vue'

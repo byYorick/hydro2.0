@@ -60,24 +60,11 @@
         <div>Зафиксировать сбор урожая и завершить цикл?</div>
         <div>
           <label class="text-xs text-[color:var(--text-dim)]">Метка партии (опционально)</label>
-          <input
-            v-model="harvestBatchLabel"
-            class="input-field mt-1 w-full"
-            placeholder="Например: Batch-042"
-          />
+          <TextField v-model="harvestBatchLabel" class="mt-1 w-full" placeholder="Например: Batch-042" />
         </div>
         <div>
           <label class="text-xs text-[color:var(--text-dim)]">Урожай, кг</label>
-          <input
-            v-model="harvestYieldKg"
-            type="number"
-            min="0"
-            step="0.01"
-            inputmode="decimal"
-            class="input-field mt-1 w-full"
-            placeholder="Необязательно"
-            data-testid="harvest-yield-kg"
-          />
+          <TextField v-model="harvestYieldKg" type="number" min="0" step="0.01" inputmode="decimal" class="mt-1 w-full" placeholder="Необязательно" data-testid="harvest-yield-kg" />
         </div>
       </div>
     </ConfirmModal>
@@ -96,11 +83,7 @@
         <div>Остановить цикл? Это действие нельзя отменить.</div>
         <div>
           <label class="text-xs text-[color:var(--text-dim)]">Причина (опционально)</label>
-          <textarea
-            v-model="abortNotes"
-            class="input-field mt-1 w-full h-20 resize-none"
-            placeholder="Короткое описание причины"
-          ></textarea>
+          <TextField multiline v-model="abortNotes" class="mt-1 w-full resize-none" placeholder="Короткое описание причины"  control-class="h-20"  />
         </div>
       </div>
     </ConfirmModal>
@@ -119,11 +102,7 @@
         <div>Введите ID ревизии рецепта и выберите режим применения.</div>
         <div>
           <label class="text-xs text-[color:var(--text-dim)]">ID ревизии рецепта</label>
-          <input
-            v-model="changeRecipeRevisionId"
-            class="input-field mt-1 w-full"
-            placeholder="Например: 42"
-          />
+          <TextField v-model="changeRecipeRevisionId" class="mt-1 w-full" placeholder="Например: 42" />
         </div>
         <div class="flex flex-wrap gap-2">
           <button
@@ -149,6 +128,8 @@
 </template>
 
 <script setup lang="ts">
+import TextField from '@/Components/TextField.vue'
+
 import { computed } from 'vue'
 import type { CommandType, Device, IrrigationCorrectionSummary } from '@/types'
 import ZoneActionModal from '@/Components/ZoneActionModal.vue'
