@@ -21,12 +21,13 @@ lifecycle: active
 ## node_secret
 Обязателен, длина ≥ 32. Хранится в NodeConfig. Не логировать и не публиковать в телеметрии.
 
-## ACL / брокер (факт `main`, не путать с open SEC PR)
-- Dev: `backend/services/mqtt-bridge/mosquitto.dev.conf` сейчас **`allow_anonymous true`** (в файле помечено temporary; `allow_anonymous false` закомментирован).
-- Prod: `mosquitto.prod.conf` — **`allow_anonymous false`**.
-- Целевая модель пользователей/ACL: `backend/services/mqtt-bridge/README_MQTT_AUTH.md`, файлы `acl` / `acl.example`.
-- HIL: `infra/hil/mosquitto.acl`.
-- Не утверждай, что anonymous на dev уже закрыт или что TLS listener уже в prod-конфиге, пока это не видно в коде/конфиге на текущем `main` (открытые PR SEC-01/SEC-02 — вне SoT до merge).
+## ACL / брокер
+- Dev и prod: `mosquitto.dev.conf` / `mosquitto.prod.conf` — **`allow_anonymous false`**; пароли и ACL обязательны.
+- `mosquitto-entrypoint.sh` добавляет TLS listener 8883 при наличии `server.crt` и `server.key`. Plaintext 1883 отключается через `MQTT_PLAINTEXT_ENABLED=0` после перевода клиентов на TLS.
+- Пользователи/ACL: `backend/services/mqtt-bridge/README_MQTT_AUTH.md`, файлы `acl` / `acl.example`. Per-node pattern использует client id = `node_uid`; это не отдельная криптографическая идентичность узла.
+- `node_secret` не передаётся plaintext в MQTT NodeConfig: используется `node_secret_enc` (AES-256-GCM); прошивка сохраняет прежний ключ при отсутствии поля или ошибке расшифровки.
+- HIL: `infra/hil/mosquitto.acl`; настройки изолированных HIL/e2e проверять отдельно.
+- Фактическое включение TLS и параметры установленного стенда проверять по runtime-конфигу; наличие кода не доказывает завершённую миграцию.
 
 ## Hard rules (defer)
 `.grok/rules/hydro-hard-rules.md`: publish команд только HL→MQTT; ответы пользователю на русском.

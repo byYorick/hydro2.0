@@ -3,7 +3,7 @@
 ## 0.1.1 — 2026-11-01
 
 - Исправлен путь к HL: `backend/services/history-logger/command_service.py` (не `commands/`).
-- Уточнено фактическое состояние MQTT auth на `main`: dev `allow_anonymous true` (temporary), prod `false`; ссылка на `README_MQTT_AUTH.md`.
+- Согласовано состояние MQTT auth с SEC-01/SEC-02: anonymous выключен, TLS включается при наличии сертификатов, доставка node_secret шифруется; ссылка на `README_MQTT_AUTH.md`.
 - Убраны trailing spaces (markdown hard-breaks).
 
 ## 0.1.0 — 2026-11-01
