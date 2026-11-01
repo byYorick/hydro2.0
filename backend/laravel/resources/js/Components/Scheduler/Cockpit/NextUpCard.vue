@@ -83,12 +83,12 @@ const props = withDefaults(defineProps<Props>(), {
 const visibleWindows = computed(() => props.windows.slice(0, props.maxItems))
 
 const LANE_ACCENT: Record<string, string> = {
-  irrigation: 'var(--accent-green)',
-  irrigation_tick: 'var(--accent-green)',
-  lighting: 'var(--accent-amber)',
-  lighting_tick: 'var(--accent-amber)',
-  ph_correction: 'var(--accent-cyan)',
-  ec_correction: 'var(--accent-cyan)',
+  irrigation: 'var(--status-ok)',
+  irrigation_tick: 'var(--status-ok)',
+  lighting: 'var(--status-warning)',
+  lighting_tick: 'var(--status-warning)',
+  ph_correction: 'var(--status-info)',
+  ec_correction: 'var(--status-info)',
   diagnostics: 'var(--text-dim)',
 }
 

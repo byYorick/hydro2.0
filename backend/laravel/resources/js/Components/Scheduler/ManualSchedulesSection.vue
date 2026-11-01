@@ -169,7 +169,7 @@
                 <Button
                   size="sm"
                   variant="ghost"
-                  class="h-7 px-2 text-[10px] text-red-500"
+                  class="h-7 px-2 text-[10px] text-status-critical"
                   @click="removeSchedule(schedule)"
                 >
                   Удал.

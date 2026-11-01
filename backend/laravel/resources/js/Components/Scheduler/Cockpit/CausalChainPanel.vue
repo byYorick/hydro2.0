@@ -199,11 +199,11 @@ defineEmits<{
 }>()
 
 const STATUS_COLOR: Record<ChainStepStatus, string> = {
-  ok: 'var(--accent-green)',
-  err: 'var(--accent-red)',
+  ok: 'var(--status-ok)',
+  err: 'var(--status-critical)',
   skip: 'var(--text-dim)',
-  run: 'var(--accent-cyan)',
-  warn: 'var(--accent-amber)',
+  run: 'var(--status-info)',
+  warn: 'var(--status-warning)',
 }
 
 const steps = computed<ChainStep[]>(() => props.run.chain ?? [])

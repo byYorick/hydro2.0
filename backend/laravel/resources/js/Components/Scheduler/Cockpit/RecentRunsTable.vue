@@ -113,10 +113,10 @@ const gridStyle = computed(() => ({
 
 function railColor(run: ExecutionRun): string {
   const status = String(run.status ?? '').toLowerCase()
-  if (run.is_active || status === 'running') return 'var(--accent-cyan)'
-  if (status === 'failed' || status === 'fail' || status === 'error') return 'var(--accent-red)'
-  if (run.chemistry_outcome === 'targets_not_achieved' || run.chemistry_outcome === 'unknown') return 'var(--accent-amber)'
-  if (status === 'completed' || status === 'complete' || status === 'done') return 'var(--accent-green)'
+  if (run.is_active || status === 'running') return 'var(--status-info)'
+  if (status === 'failed' || status === 'fail' || status === 'error') return 'var(--status-critical)'
+  if (run.chemistry_outcome === 'targets_not_achieved' || run.chemistry_outcome === 'unknown') return 'var(--status-warning)'
+  if (status === 'completed' || status === 'complete' || status === 'done') return 'var(--status-ok)'
   if (status === 'skipped' || status === 'skip') return 'var(--text-dim)'
   return 'var(--border-muted)'
 }
@@ -131,8 +131,8 @@ function chemistryLabel(run: ExecutionRun): string {
 
 function chemistryClass(run: ExecutionRun): string {
   return run.chemistry_outcome === 'targets_achieved'
-    ? 'text-[color:var(--accent-green)]'
-    : 'text-[color:var(--accent-amber)]'
+    ? 'text-status-ok'
+    : 'text-status-warning'
 }
 
 function chainSummary(run: ExecutionRun): string {

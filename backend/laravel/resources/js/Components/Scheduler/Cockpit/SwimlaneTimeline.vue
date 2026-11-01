@@ -119,11 +119,11 @@ const props = withDefaults(defineProps<Props>(), {
 })
 
 const STATUS_COLOR: Record<LaneHistoryStatus, string> = {
-  ok: 'var(--accent-green)',
-  err: 'var(--accent-red)',
+  ok: 'var(--status-ok)',
+  err: 'var(--status-critical)',
   skip: 'var(--text-dim)',
-  run: 'var(--accent-cyan)',
-  warn: 'var(--accent-amber)',
+  run: 'var(--status-info)',
+  warn: 'var(--status-warning)',
 }
 
 function defaultFormatDateTime(value: string | null | undefined): string {

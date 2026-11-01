@@ -8,7 +8,7 @@
   >
     <div
       v-if="generalError"
-      class="mb-3 rounded-xl border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-400"
+      class="mb-3 rounded-xl border border-[color:var(--status-critical)] bg-[color:var(--status-critical-soft)] px-3 py-2 text-xs text-status-critical"
     >
       {{ generalError }}
     </div>
@@ -40,7 +40,7 @@
           </div>
           <p
             v-if="fieldError('task_type')"
-            class="mt-1 text-xs text-red-400"
+            class="mt-1 text-xs text-status-critical"
           >
             {{ fieldError('task_type') }}
           </p>
@@ -139,7 +139,7 @@
           >
           <p
             v-if="fieldError('time_at')"
-            class="mt-1 text-xs text-red-400"
+            class="mt-1 text-xs text-status-critical"
           >
             {{ fieldError('time_at') }}
           </p>
@@ -180,7 +180,7 @@
           </p>
           <p
             v-if="fieldError('interval_sec')"
-            class="col-span-2 text-xs text-red-400"
+            class="col-span-2 text-xs text-status-critical"
           >
             {{ fieldError('interval_sec') }}
           </p>
@@ -208,7 +208,7 @@
           </div>
           <p
             v-if="fieldError('window_start') || fieldError('window_end')"
-            class="col-span-2 text-xs text-red-400"
+            class="col-span-2 text-xs text-status-critical"
           >
             {{ fieldError('window_start') || fieldError('window_end') }}
           </p>
@@ -227,7 +227,7 @@
           </p>
           <p
             v-if="fieldError('run_at')"
-            class="mt-1 text-xs text-red-400"
+            class="mt-1 text-xs text-status-critical"
           >
             {{ fieldError('run_at') }}
           </p>
@@ -258,7 +258,7 @@
           </div>
           <p
             v-if="fieldError('payload.duration_sec')"
-            class="mt-1 text-xs text-red-400"
+            class="mt-1 text-xs text-status-critical"
           >
             {{ fieldError('payload.duration_sec') }}
           </p>
@@ -294,7 +294,7 @@
         </label>
         <p
           v-if="fieldError('enabled')"
-          class="mt-1 text-xs text-red-400"
+          class="mt-1 text-xs text-status-critical"
         >
           {{ fieldError('enabled') }}
         </p>
