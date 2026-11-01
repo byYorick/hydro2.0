@@ -1,6 +1,6 @@
 # Структура hydro 2.0 (документация)
 
-**Дата обновления:** 2026-08-02
+**Дата обновления:** 2026-11-01
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 Breaking-change: обратная совместимость со старыми форматами и алиасами не поддерживается.
@@ -36,6 +36,7 @@ Breaking-change: обратная совместимость со старыми
 - `IMPLEMENTATION_STATUS.md` — сводный статус реализации (`guide`)
 - `README_STRUCTURE.md` — это описание структуры папок
 - Открытая очередь агента: `04_BACKEND_CORE/AE3_CROP_DAY_LOOP_PLAN_FOR_AI_AGENTS.md` (версия 1.2.0).
+- Программа владельца, статус `plan`: `14_GROW_PROGRAM/` (Крым, сезонная капля, 20 м² → 400 м²). Не подменяет очередь и не является runtime-каноном.
 - `ROADMAP_2.0.md`, `AGRO_AUTONOMY_MASTER_PLAN.md`, `FIRMWARE_OPTIMIZATION_PLAN.md`, `SYNC_PLAN.md` — заглушки. Полный текст в `00_ARCHIVE/PLANS/`, не исполнять.
 - Исторический спринт-план firmware: stub `DEVELOPMENT_PRIORITIES.md` → `00_ARCHIVE/PLANS/`
 - Закрытые audit-plans: stubs `AUDIT_*.md` → полные тексты в `00_ARCHIVE/PLANS/`
@@ -141,7 +142,16 @@ Android-приложение:
 
 См. [13_TESTING/README.md](13_TESTING/README.md).
 
+## 14_GROW_PROGRAM
+Программа выращивания (`plan`, не runtime):
+- как цикл устроен в коде;
+- пробелы до сезонной капли в Крыму, включая безопасность насосов и дозаторов;
+- агроориентиры салата, базилика и клубники;
+- состав оборудования и вехи до модуля 400 м².
+
+См. [14_GROW_PROGRAM/README.md](14_GROW_PROGRAM/README.md).
+
 ## Корень `doc_ai/` (вне нумерованных папок)
 
 Сквозные документы перечислены в блоке **Корень** выше и в [INDEX.md](INDEX.md).
-Нумерация разделов: `01`–`10`, затем `12`–`13` (отдельного раздела `11_*` нет — WebSocket лежит в корне как `11_WEBSOCKET_ARCHITECTURE.md`).
+Нумерация разделов: `01`–`10`, затем `12`–`14` (отдельного раздела `11_*` нет — WebSocket лежит в корне как `11_WEBSOCKET_ARCHITECTURE.md`).
