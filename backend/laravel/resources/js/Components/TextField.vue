@@ -37,6 +37,7 @@
         ref="control"
         class="input-field min-w-0 flex-1"
         :class="inputClass"
+        type="text"
         :value="displayValue"
         :disabled="disabled || undefined"
         :required="required || undefined"
@@ -156,7 +157,11 @@ function callListener(listener: unknown, event: Event): void {
 
 function onInput(event: Event): void {
   const target = event.target as HTMLInputElement | HTMLTextAreaElement
-  model.value = target.value
+  const type = target instanceof HTMLInputElement ? target.type : 'text'
+  const next = type === 'number'
+    ? applyFieldModifiers(target.value, { number: true })
+    : target.value
+  model.value = next
   callListener(attrs.onInput, event)
 }
 
