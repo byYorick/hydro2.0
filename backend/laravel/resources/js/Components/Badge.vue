@@ -8,7 +8,7 @@
 <script setup lang="ts">
 import { computed, useAttrs } from 'vue'
 
-export type BadgeVariant = 'success' | 'warning' | 'danger' | 'info' | 'neutral' | 'secondary'
+export type BadgeVariant = 'success' | 'warning' | 'danger' | 'info' | 'neutral' | 'secondary' | 'ok' | 'critical' | 'offline'
 type BadgeSize = 'xs' | 'sm'
 
 interface Props {
@@ -32,6 +32,9 @@ const classes = computed(() => {
     info: 'badge--info',
     neutral: 'badge--neutral',
     secondary: 'badge--secondary',
+    ok: 'badge--ok',
+    critical: 'badge--critical',
+    offline: 'badge--offline',
   }
   const sizes: Record<BadgeSize, string> = {
     xs: 'badge--xs',

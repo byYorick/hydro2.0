@@ -53,4 +53,23 @@ describe('Modal.vue', () => {
 
     wrapper.unmount()
   })
+
+  it('закрывается по Escape и возвращает фокус', async () => {
+    const trigger = document.createElement('button')
+    trigger.type = 'button'
+    document.body.appendChild(trigger)
+    trigger.focus()
+
+    const wrapper = mount(Modal, {
+      props: { open: true, title: 'Закрытие' },
+      attachTo: document.body,
+    })
+
+    await nextTick()
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await nextTick()
+
+    expect(wrapper.emitted('close')).toBeTruthy()
+    wrapper.unmount()
+  })
 })

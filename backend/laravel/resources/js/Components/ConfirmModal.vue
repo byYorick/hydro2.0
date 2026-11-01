@@ -14,13 +14,15 @@
       <Button
         size="sm"
         variant="secondary"
+        type="button"
         @click="$emit('close')"
       >
         {{ cancelText }}
       </Button>
-      <Button 
-        size="sm" 
+      <Button
+        size="sm"
         :variant="confirmVariant"
+        type="button"
         :disabled="loading || confirmDisabled"
         @click="$emit('confirm')"
       >
