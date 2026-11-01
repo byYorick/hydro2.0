@@ -67,6 +67,11 @@ extern "C" {
 #define PH_NODE_FACTORY_RESET_HOLD_MS        20000U
 #define PH_NODE_FACTORY_RESET_POLL_INTERVAL  50U
 
+/* E-STOP: GPIO32, active-low, внутренний pull-up. Не занимать этот GPIO насосом. */
+#define PH_NODE_ESTOP_GPIO                  GPIO_NUM_32
+#define PH_NODE_ESTOP_ACTIVE_LOW            1
+#define PH_NODE_ESTOP_DEBOUNCE_MS           80U
+
 // pH pump actuator defaults
 #define PH_NODE_PH_DOSER_UP_GPIO            GPIO_NUM_12
 #define PH_NODE_PH_DOSER_DOWN_GPIO          GPIO_NUM_13

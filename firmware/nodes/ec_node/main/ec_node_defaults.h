@@ -48,6 +48,11 @@ extern "C" {
 #define EC_NODE_EC_CACHE_MAX_AGE_MS 2500U
 #define EC_NODE_EC_SENSOR_PRECISION 2
 
+/* E-STOP: GPIO32, active-low, внутренний pull-up. Не занимать этот GPIO насосом. */
+#define EC_NODE_ESTOP_GPIO GPIO_NUM_32
+#define EC_NODE_ESTOP_ACTIVE_LOW 1
+#define EC_NODE_ESTOP_DEBOUNCE_MS 80U
+
 // Pump defaults
 #define EC_NODE_PUMP_A_GPIO 26
 #define EC_NODE_PUMP_B_GPIO 27
