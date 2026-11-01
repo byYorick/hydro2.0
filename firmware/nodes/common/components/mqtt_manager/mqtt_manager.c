@@ -26,6 +26,11 @@
 #include <stdio.h>
 #include <errno.h>
 
+#if defined(MQTT_MANAGER_EMBEDDED_CA)
+extern const char mqtt_ca_pem_start[] asm("_binary_ca_pem_start");
+extern const char mqtt_ca_pem_end[] asm("_binary_ca_pem_end");
+#endif
+
 // Слабые символы для опциональной зависимости от oled_ui
 // Если oled_ui не включен, эти функции будут NULL
 void oled_ui_notify_mqtt_tx(void) __attribute__((weak));
@@ -306,21 +311,27 @@ static esp_err_t mqtt_manager_create_client(void) {
     }
 
     const char *client_id = s_config.client_id;
-    static char client_id_fallback[32] = {0};
+    static char client_id_fallback[128] = {0};
     if (!client_id || client_id[0] == '\0') {
-        uint8_t mac[6] = {0};
-        if (esp_efuse_mac_get_default(mac) == ESP_OK) {
-            snprintf(
-                client_id_fallback,
-                sizeof(client_id_fallback),
-                "esp32-%02x%02x%02x%02x%02x%02x",
-                mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]
-            );
-            client_id = client_id_fallback;
-        } else {
+        /* Per-node ACL (%c) сравнивает client id с сегментом node_uid в топике. */
+        if (s_node_info.node_uid && s_node_info.node_uid[0] != '\0') {
             client_id = s_node_info.node_uid;
+        } else {
+            uint8_t mac[6] = {0};
+            if (esp_efuse_mac_get_default(mac) == ESP_OK) {
+                snprintf(
+                    client_id_fallback,
+                    sizeof(client_id_fallback),
+                    "esp32-%02x%02x%02x%02x%02x%02x",
+                    mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]
+                );
+                client_id = client_id_fallback;
+            } else {
+                client_id = "esp32-unknown";
+            }
         }
     }
+    ESP_LOGI(TAG, "MQTT client id: %s", client_id);
 
     static char lwt_topic_static[192];
     if (build_topic(lwt_topic_static, sizeof(lwt_topic_static), "lwt", NULL) != ESP_OK) {
@@ -359,6 +370,19 @@ static esp_err_t mqtt_manager_create_client(void) {
     }
 
     mqtt_cfg.credentials.client_id = client_id;
+
+    if (s_config.use_tls) {
+#if defined(MQTT_MANAGER_EMBEDDED_CA)
+        mqtt_cfg.broker.verification.certificate = mqtt_ca_pem_start;
+        mqtt_cfg.broker.verification.certificate_len =
+            (mqtt_ca_pem_end - mqtt_ca_pem_start);
+        ESP_LOGI(TAG, "MQTT TLS enabled with embedded CA");
+#else
+        ESP_LOGE(TAG, "MQTT TLS requested but mqtt_manager/ca.pem is not embedded");
+        return ESP_ERR_INVALID_STATE;
+#endif
+    }
+
     s_mqtt_client = esp_mqtt_client_init(&mqtt_cfg);
     if (s_mqtt_client == NULL) {
         ESP_LOGE(TAG, "Failed to initialize MQTT client");

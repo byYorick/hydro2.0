@@ -19,14 +19,17 @@ def test_acl_allows_time_sync_and_node_config_publish():
     text = (ROOT / "acl").read_text(encoding="utf-8")
     history = _acl_user_block(text, "history_logger")
     node = _acl_user_block(text, "esp32_node")
-    assert "topic write hydro/time/response" in history
-    assert "topic write hydro/+/+/+/config" in history
-    assert "topic write hydro/+/+/+/+/command" in history
-    assert "topic read hydro/time/request" in history
+    # SEC-02 объединяет права history-logger: он остаётся единственным
+    # publisher команд/config и читателем всех входящих сообщений.
+    assert "topic readwrite hydro/#" in history
     assert "topic write hydro/time/request" in node
     assert "topic read hydro/time/response" in node
-    assert "topic read hydro/+/+/+/config" in node
-    assert "topic read hydro/+/+/+/+/command" in node
+    assert "pattern read hydro/+/+/%c/config" in text
+    assert "pattern read hydro/+/+/%c/+/command" in text
+    assert "topic read hydro/+/+/+/config" not in node
+    assert "topic read hydro/+/+/+/+/command" not in node
+    assert "topic write hydro/+/+/+/config" not in node
+    assert "topic write hydro/+/+/+/+/command" not in node
 
 
 def _acl_user_block(text: str, user: str) -> str:

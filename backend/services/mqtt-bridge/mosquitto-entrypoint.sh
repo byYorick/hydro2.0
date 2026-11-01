@@ -30,6 +30,10 @@ else
     mosquitto_passwd -b "$GENERATED_PASS" history_logger "${MQTT_HISTORY_LOGGER_PASS:-logger_pass}"
     mosquitto_passwd -b "$GENERATED_PASS" mqtt_bridge "${MQTT_MQTT_BRIDGE_PASS:-bridge_pass}"
     mosquitto_passwd -b "$GENERATED_PASS" esp32_node "${MQTT_ESP32_NODE_PASS:-esp32_pass}"
+    # Mosquitto drops root privileges before opening its password file.
+    if [ "$(id -u)" = "0" ]; then
+        chown mosquitto:mosquitto "$GENERATED_PASS"
+    fi
     chmod 600 "$GENERATED_PASS"
     PASSFILE=$GENERATED_PASS
 fi

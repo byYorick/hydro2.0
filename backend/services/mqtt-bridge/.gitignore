@@ -6,3 +6,10 @@ passwords.*
 !passwords.example
 !acl.example
 
+# TLS material (generate_mqtt_certs.sh). ca.crt нужен клиентам, но не в git.
+certs/*.crt
+certs/*.key
+certs/*.csr
+certs/*.pem
+certs/*.srl
+
