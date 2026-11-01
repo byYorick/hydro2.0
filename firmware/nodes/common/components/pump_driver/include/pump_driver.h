@@ -146,6 +146,15 @@ esp_err_t pump_driver_stop(const char *channel_name);
 esp_err_t pump_driver_emergency_stop(void);
 
 /**
+ * @brief Безусловно обесточить насосы.
+ *
+ * Direct GPIO сбрасывается в 0 до захвата мьютекса. Если мьютекс занят,
+ * software-state не синхронизируется, функция возвращает ESP_ERR_TIMEOUT,
+ * выходы при этом уже OFF. Вызов безопасен, пока драйвер не инициализирован.
+ */
+esp_err_t pump_driver_force_deenergize(void);
+
+/**
  * @brief Append names of currently active pump channels to JSON array (for diagnostics/events).
  */
 void pump_driver_append_active_channels_json(cJSON *pumps_arr);
