@@ -218,7 +218,7 @@ test.describe('Scheduler workspace lifecycle на вкладке Планиро�
   test.beforeEach(async ({ page }) => {
     await loginAsAdmin(page)
     const zoneId = await resolveFirstZoneId(page)
-    test.skip(zoneId === null, 'Нет зон в тестовой БД для проверки scheduler workspace UI')
+    expect(zoneId, 'E2E bootstrap must create a zone').not.toBeNull()
 
     await page.route(`**/api/zones/${zoneId}/schedule-workspace**`, async (route) => {
       await route.fulfill({

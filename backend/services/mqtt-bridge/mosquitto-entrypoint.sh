@@ -48,6 +48,20 @@ fi
 CERT=/mosquitto/certs/server.crt
 KEY=/mosquitto/certs/server.key
 if [ -f "$CERT" ] && [ -f "$KEY" ]; then
+    # The mounted key may be root:0600; keep the original read-only and private.
+    cp "$KEY" /tmp/mosquitto.server.key
+    KEY=/tmp/mosquitto.server.key
+    if [ "$(id -u)" = "0" ]; then
+        chown mosquitto:mosquitto "$KEY"
+    fi
+    chmod 600 "$KEY"
+    cp "$CERT" /tmp/mosquitto.server.crt
+    CERT=/tmp/mosquitto.server.crt
+    chmod 644 "$CERT"
+    if [ -f /mosquitto/certs/ca.crt ]; then
+        cp /mosquitto/certs/ca.crt /tmp/mosquitto.ca.crt
+        chmod 644 /tmp/mosquitto.ca.crt
+    fi
     {
         echo ""
         echo "# TLS listener (сертификаты смонтированы в /mosquitto/certs)"
@@ -55,11 +69,15 @@ if [ -f "$CERT" ] && [ -f "$KEY" ]; then
         echo "certfile ${CERT}"
         echo "keyfile ${KEY}"
         if [ -f /mosquitto/certs/ca.crt ]; then
-            echo "cafile /mosquitto/certs/ca.crt"
+            echo "cafile /tmp/mosquitto.ca.crt"
         fi
         echo "require_certificate false"
         echo "tls_version tlsv1.2"
-    } >> "$RUNTIME_CONF"
+        # A listener must precede max_connections; otherwise Mosquitto 2.1
+        # silently creates a default plaintext listener after 1883 is removed.
+        cat "$RUNTIME_CONF"
+    } > "$RUNTIME_CONF.tls"
+    mv "$RUNTIME_CONF.tls" "$RUNTIME_CONF"
     echo "mosquitto-entrypoint: TLS listener 8883 enabled" >&2
 fi
 

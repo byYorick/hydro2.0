@@ -2,12 +2,21 @@ name: ci
 
 on:
   push:
+    branches: [main, develop]
   pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   python-lint:
     name: Python lint (ruff)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -20,20 +29,25 @@ jobs:
         run: ruff check --config ruff.toml .
 
   firmware-build-ph-node:
-    name: Firmware build (ph_node, ESP-IDF v5.5)
+    name: Firmware (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [nodes/ph_node, nodes/ec_node, nodes/pump_node, nodes/storage_irrigation_node, nodes/climate_node, nodes/light_node, nodes/relay_node, test_node]
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     container:
       image: espressif/idf:release-v5.5
     steps:
       - uses: actions/checkout@v4
       - name: Build ph_node
-        working-directory: firmware/nodes/ph_node
+        working-directory: firmware/${{ matrix.target }}
         shell: bash
         run: |
           . ${IDF_PATH}/export.sh
           idf.py build
       - name: Report ph_node binary size
-        working-directory: firmware/nodes/ph_node
+        working-directory: firmware/${{ matrix.target }}
         shell: bash
         run: |
           . ${IDF_PATH}/export.sh
@@ -42,13 +56,14 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: firmware-ph-node-${{ github.sha }}
-          path: firmware/nodes/ph_node/build/*.bin
+          name: firmware-${{ strategy.job-index }}-${{ github.sha }}
+          path: firmware/${{ matrix.target }}/build/*.bin
           retention-days: 7
           if-no-files-found: warn
 
   automation-engine-smoke-all:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     services:
       postgres:
         image: timescale/timescaledb:2.13.0-pg15
@@ -122,6 +137,7 @@ jobs:
 
   build-and-test:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     services:
       postgres:
         image: timescale/timescaledb:2.13.0-pg15
@@ -161,8 +177,7 @@ jobs:
       - name: Install PHP deps
         run: composer install --no-interaction --prefer-dist
       - name: Composer audit (security)
-        continue-on-error: true
-        run: composer audit --no-interaction || true
+        run: composer audit --no-interaction
       - name: Prepare env
         run: |
           cp .env.example .env
@@ -218,7 +233,7 @@ jobs:
             file_put_contents(\$file, \$env);
           "
       - name: Install Node deps
-        run: npm install
+        run: npm ci
       - name: File size guard
         run: ./scripts/check-file-size-guard.sh
       - name: Authority cleanup guard
@@ -264,12 +279,11 @@ jobs:
       - name: Lint (ESLint)
         run: npm run lint
       - name: NPM audit (production)
-        continue-on-error: true
-        run: npm audit --omit=dev || true
+        run: npm audit --omit=dev --audit-level=high
       - name: Unit tests (vitest)
         run: |
           mkdir -p test-results
-          npm run test -- --reporter=dot --reporter=junit --outputFile=test-results/junit.xml
+          npm run test -- --coverage --reporter=dot --reporter=junit --outputFile=test-results/junit.xml
       - name: Upload Vitest JUnit
         if: always()
         uses: actions/upload-artifact@v4
@@ -277,8 +291,6 @@ jobs:
           name: vitest-junit
           path: backend/laravel/test-results/junit.xml
           retention-days: 7
-      - name: Coverage (Vitest)
-        run: npm run test -- --coverage --reporter=dot
       - name: Upload Coverage
         if: always()
         uses: actions/upload-artifact@v4
@@ -361,36 +373,13 @@ jobs:
           # Start background processes
           php artisan migrate:fresh --force &
           MIGRATE_PID=$!
-          php artisan serve --host=127.0.0.1 --port=8000 --env=testing &
-          SERVE_PID=$!
-          
-          # Wait for migration to complete
           if ! wait "$MIGRATE_PID"; then
             echo "ERROR: migrate:fresh failed"
             exit 1
           fi
           MIGRATE_PID=""
           php artisan db:seed --class=AdminUserSeeder --force
-          
-          # Wait for server to be ready with health check
-          echo "Waiting for server to start..."
-          max_attempts=30
-          attempt=0
-          while [ $attempt -lt $max_attempts ]; do
-            attempt=$((attempt + 1))
-            if curl -f -s http://127.0.0.1:8000 > /dev/null 2>&1; then
-              echo "Server is ready!"
-              break
-            fi
-            echo "Attempt $attempt/$max_attempts: Server not ready, waiting..."
-            sleep 1
-          done
-          
-          if [ $attempt -eq $max_attempts ]; then
-            echo "ERROR: Server failed to start after $max_attempts attempts"
-            exit 1
-          fi
-          
+
           # Run Playwright tests (ошибки должны падать в CI)
           npx playwright test --reporter=list,html
           
@@ -405,6 +394,7 @@ jobs:
 
   laravel-scheduler-smoke:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     services:
       postgres:
         image: timescale/timescaledb:2.13.0-pg15
@@ -476,6 +466,7 @@ jobs:
   read-model-contract:
     name: Laravel-AE3 Read-Model Contract
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     services:
       postgres:
         image: timescale/timescaledb:2.13.0-pg15
@@ -527,3 +518,131 @@ jobs:
           PYTHONPATH: backend/services:backend/services/automation-engine
           AE_READ_MODEL_SNAPSHOT_PATH: ${{ github.workspace }}/schemas/automation_read_model_schema.json
         run: pytest -q backend/services/automation-engine/tests/unit/test_read_model_contract.py
+
+  python-services:
+    name: Python service (${{ matrix.service }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [history-logger, mqtt-bridge, common]
+    services:
+      postgres:
+        image: timescale/timescaledb:2.13.0-pg15
+        env:
+          POSTGRES_DB: hydro_test
+          POSTGRES_USER: hydro
+          POSTGRES_PASSWORD: hydro
+        ports: ['5432:5432']
+        options: --health-cmd="pg_isready -U hydro -d hydro_test" --health-interval=5s --health-timeout=5s --health-retries=10
+    env:
+      PG_HOST: 127.0.0.1
+      PG_PORT: '5432'
+      PG_USER: hydro
+      PG_PASS: hydro
+      PG_DB: hydro_test
+      DB_HOST: 127.0.0.1
+      DB_DATABASE: hydro_test
+      DB_USERNAME: hydro
+      DB_PASSWORD: hydro
+      APP_ENV: testing
+      CACHE_STORE: array
+      QUEUE_CONNECTION: sync
+      PYTHONPATH: ${{ github.workspace }}/backend/services:${{ github.workspace }}/backend/services/${{ matrix.service }}:${{ github.workspace }}/backend/services/history-logger
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Install dependencies
+        run: |
+          pip install -r backend/services/history-logger/requirements.txt -r backend/services/mqtt-bridge/requirements.txt -r backend/services/requirements-test.txt
+          cd backend/laravel
+          composer install --no-interaction --prefer-dist
+          cp .env.example .env
+          php artisan key:generate
+          php artisan migrate --force
+      - name: Test service
+        working-directory: backend/services/${{ matrix.service }}
+        run: pytest -ra --junitxml=test-results.xml
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: python-${{ matrix.service }}-junit
+          path: backend/services/${{ matrix.service }}/test-results.xml
+          if-no-files-found: error
+
+  mqtt-runtime:
+    name: MQTT runtime (auth, ACL, TLS)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 tools/ci/test_mqtt_runtime.py
+
+  firmware-host:
+    name: Firmware safety host tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash tools/ci/test_firmware_host.sh
+
+  android:
+    name: Android build and unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+      - working-directory: mobile/app/android
+        run: bash gradlew --no-daemon assembleDevDebug assembleProdRelease testDevDebugUnitTest
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-test-results
+          path: mobile/app/android/app/build/test-results
+
+  python-security:
+    name: Python dependency security
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install pip-audit
+      - run: |
+          for service in automation-engine history-logger mqtt-bridge; do
+            pip-audit -r "backend/services/$service/requirements.txt"
+          done
+
+  required:
+    name: CI required
+    if: always()
+    needs: [python-lint, firmware-build-ph-node, automation-engine-smoke-all, build-and-test, laravel-scheduler-smoke, read-model-contract, python-services, mqtt-runtime, firmware-host, android, python-security]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: All required jobs must succeed
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          jobs = json.loads(os.environ['RESULTS'])
+          failed = {name: job['result'] for name, job in jobs.items() if job['result'] != 'success'}
+          if failed:
+              raise SystemExit(f'Required jobs did not succeed: {failed}')
+          PY

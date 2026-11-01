@@ -27,12 +27,7 @@ from common.schemas.fixtures_extended import (
 
 # Импорт моделей из history-logger
 # Используем относительный импорт или переменную окружения
-try:
-    from history_logger.main import TelemetryPayloadModel
-except ImportError:
-    # Fallback для случаев когда модуль не доступен
-    # В реальных тестах это должно быть настроено через PYTHONPATH
-    TelemetryPayloadModel = None
+from models import TelemetryPayloadModel
 
 
 # Путь к JSON-schema файлам
@@ -79,13 +74,10 @@ class TestTelemetryProtocol:
         
         # Валидация через Pydantic модель (если доступна)
         # Пропускаем если модель не импортирована (для CI без history-logger)
-        try:
-            if TelemetryPayloadModel:
-                model = TelemetryPayloadModel(**payload)
-                assert model.metric_type == "PH"
-                assert model.value == 6.5
-        except Exception:
-            pass  # Пропускаем если модель недоступна
+        model = TelemetryPayloadModel(**payload)
+        assert model.metric_type == "PH"
+        assert model.value == 6.5
+
     
     def test_telemetry_full_payload(self, telemetry_schema):
         """Тест полного payload телеметрии со всеми опциональными полями."""
@@ -104,13 +96,10 @@ class TestTelemetryProtocol:
         
         # Валидация через Pydantic модель (если доступна)
         # Пропускаем если модель не импортирована (для CI без history-logger)
-        try:
-            if TelemetryPayloadModel:
-                model = TelemetryPayloadModel(**payload)
-                assert model.metric_type == "PH"
-                assert model.value == 6.5
-        except Exception:
-            pass  # Пропускаем если модель недоступна
+        model = TelemetryPayloadModel(**payload)
+        assert model.metric_type == "PH"
+        assert model.value == 6.5
+
     
     def test_telemetry_invalid_metric_type(self, telemetry_schema):
         """Тест невалидного metric_type (пустая строка)."""
@@ -490,13 +479,10 @@ class TestProtocolCompatibility:
         
         # Валидация через Pydantic в history-logger (если доступна)
         # Пропускаем если модель не импортирована (для CI без history-logger)
-        try:
-            if TelemetryPayloadModel:
-                model = TelemetryPayloadModel(**firmware_payload)
-                assert model.metric_type == "PH"
-                assert model.value == 6.5
-        except Exception:
-            pass  # Пропускаем если модель недоступна
+        model = TelemetryPayloadModel(**firmware_payload)
+        assert model.metric_type == "PH"
+        assert model.value == 6.5
+
 
 
 class TestZoneEventsProtocol:

@@ -14,6 +14,7 @@ jobs:
   chaos-tests:
     name: Protocol chaos tests (blocking)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     services:
       postgres:
         image: timescale/timescaledb:2.13.0-pg15
@@ -57,6 +58,7 @@ jobs:
   trivy-docker-images:
     name: Trivy security scan (dev stack)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - name: Trivy filesystem scan (repository)
@@ -67,7 +69,7 @@ jobs:
           severity: 'CRITICAL,HIGH'
           ignore-unfixed: 'true'
           format: 'table'
-          exit-code: '0'  # non-blocking, чтобы CVE-шум не блокировал release
+          exit-code: '1'
       - name: Trivy config scan (docker-compose / Dockerfile)
         uses: aquasecurity/trivy-action@v0.36.0
         with:
@@ -75,11 +77,12 @@ jobs:
           scan-ref: '.'
           severity: 'CRITICAL,HIGH'
           format: 'table'
-          exit-code: '0'
+          exit-code: '1'
 
   pip-audit:
     name: Python dependency audit (pip-audit)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -88,8 +91,8 @@ jobs:
       - name: Install pip-audit
         run: pip install pip-audit
       - name: Audit automation-engine
-        run: pip-audit -r backend/services/automation-engine/requirements.txt || true
+        run: pip-audit -r backend/services/automation-engine/requirements.txt
       - name: Audit history-logger
-        run: pip-audit -r backend/services/history-logger/requirements.txt || true
+        run: pip-audit -r backend/services/history-logger/requirements.txt
       - name: Audit mqtt-bridge
-        run: pip-audit -r backend/services/mqtt-bridge/requirements.txt || true
+        run: pip-audit -r backend/services/mqtt-bridge/requirements.txt

@@ -1,80 +1,55 @@
-import { test, expect } from '@playwright/test'
+import { expect, test } from '@playwright/test'
 
-test.describe.skip('PID Configuration', () => {
-  test.beforeEach(async ({ page }) => {
-    // Предполагаем, что есть страница логина
-    // В реальном тесте нужно добавить логин
-    await page.goto('/zones/1')
+// Exercise the current authority API with the browser's authenticated session.
+// The former PID Settings/PID Logs tabs no longer represent the runtime contract.
+for (const type of ['ph', 'ec']) {
+  test.describe(`PID authority ${type}`, () => {
+    let zoneId: number
+    let endpoint: string
+    test.beforeEach(async ({ page }) => {
+      await page.goto('/testing/login?email=agronomist@example.com')
+      await page.waitForSelector('#app[data-page]', { state: 'attached' })
+      const response = await page.request.get('/api/zones')
+      expect(response.ok()).toBeTruthy()
+      const payload = await response.json()
+      const zones = payload.data?.data ?? payload.data
+      expect(zones.length, 'bootstrap must provide a zone').toBeGreaterThan(0)
+      zoneId = Number(zones[0].id)
+      endpoint = `/api/automation-configs/zone/${zoneId}/zone.pid.${type}`
+    })
+
+    test('loads a valid configuration from Laravel', async ({ page }) => {
+      const response = await page.request.get(endpoint)
+      expect(response.ok()).toBeTruthy()
+      const body = await response.json()
+      expect(body.data.namespace).toBe(`zone.pid.${type}`)
+      expect(body.data.payload.dead_zone).toBeGreaterThanOrEqual(0)
+      expect(body.data.payload.zone_coeffs.close.kp).toBeGreaterThanOrEqual(0)
+    })
+
+    test('persists a valid change and returns it on a new read', async ({ page }) => {
+      const before = await (await page.request.get(endpoint)).json()
+      const payload = { ...before.data.payload, max_integral: 21 }
+      const xsrf = (await page.context().cookies()).find(cookie => cookie.name === 'XSRF-TOKEN')
+      const response = await page.request.put(endpoint, {
+        data: { payload },
+        headers: xsrf ? { 'X-XSRF-TOKEN': decodeURIComponent(xsrf.value) } : {},
+      })
+      expect(response.ok(), await response.text()).toBeTruthy()
+      const after = await (await page.request.get(endpoint)).json()
+      expect(after.data.payload.max_integral).toBe(21)
+    })
+
+    test('rejects an invalid value without corrupting saved configuration', async ({ page }) => {
+      const before = await (await page.request.get(endpoint)).json()
+      const xsrf = (await page.context().cookies()).find(cookie => cookie.name === 'XSRF-TOKEN')
+      const response = await page.request.put(endpoint, {
+        data: { payload: { ...before.data.payload, dead_zone: -1 } },
+        headers: xsrf ? { 'X-XSRF-TOKEN': decodeURIComponent(xsrf.value) } : {},
+      })
+      expect(response.status()).toBe(422)
+      const after = await (await page.request.get(endpoint)).json()
+      expect(after.data.payload).toEqual(before.data.payload)
+    })
   })
-
-  test('should display Automation Engine tab', async ({ page }) => {
-    // Проверяем, что компонент AutomationEngine отображается
-    await expect(page.locator('text=Automation Engine')).toBeVisible()
-  })
-
-  test('should switch between PID Settings and PID Logs tabs', async ({ page }) => {
-    // Переходим на вкладку Automation Engine (если она есть)
-    // Кликаем на таб "PID Settings"
-    await page.click('text=PID Settings')
-    await expect(page.locator('text=Настройки PID')).toBeVisible()
-
-    // Кликаем на таб "PID Logs"
-    await page.click('text=PID Logs')
-    await expect(page.locator('text=Логи PID')).toBeVisible()
-  })
-
-  test('should load and display PID config form', async ({ page }) => {
-    // Переходим на вкладку PID Settings
-    await page.click('text=PID Settings')
-
-    // Проверяем наличие полей формы
-    await expect(page.locator('input[type="number"]').first()).toBeVisible()
-    await expect(page.locator('text=Целевое значение')).toBeVisible()
-  })
-
-  test('should validate PID config form fields', async ({ page }) => {
-    await page.click('text=PID Settings')
-
-    // Пытаемся ввести невалидное значение
-    const targetInput = page.locator('input').first()
-    await targetInput.fill('20') // Невалидное для pH (должно быть 4-9)
-
-    // Пытаемся сохранить
-    await page.click('text=Сохранить')
-
-    // Должна быть ошибка валидации (если валидация на фронте)
-    // Или запрос должен вернуть ошибку
-  })
-
-  test('should save PID config', async ({ page }) => {
-    await page.click('text=PID Settings')
-
-    // Заполняем форму валидными данными
-    // (в реальном тесте нужно заполнить все поля)
-
-    // Сохраняем
-    await page.click('text=Сохранить')
-
-    // Проверяем успешное сохранение (toast или сообщение)
-    // await expect(page.locator('text=Сохранено')).toBeVisible()
-  })
-
-  test('should display PID logs', async ({ page }) => {
-    await page.click('text=PID Logs')
-
-    // Проверяем наличие таблицы логов
-    await expect(page.locator('table')).toBeVisible()
-    // Или проверяем наличие заголовков колонок
-    await expect(page.locator('text=Время')).toBeVisible()
-  })
-
-  test('should filter PID logs by type', async ({ page }) => {
-    await page.click('text=PID Logs')
-
-    // Кликаем на фильтр pH
-    await page.click('button:has-text("pH")')
-
-    // Проверяем, что логи отфильтрованы
-    // (в реальном тесте нужно проверить содержимое таблицы)
-  })
-})
+}
