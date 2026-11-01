@@ -45,7 +45,9 @@ storage_irrigation_node_binary_guard_state_t g_recirculation_guard = {0};
 storage_irrigation_node_binary_guard_state_t g_irrigation_guard = {0};
 storage_irrigation_node_estop_debounce_t g_estop_debounce = {0};
 bool g_estop_input_ready = false;
-bool g_estop_active = false;
+volatile bool g_estop_active = false;
+volatile bool g_estop_sync_pending = false;
+volatile bool g_estop_event_published = false;
 bool g_estop_restore_valid = false;
 bool g_estop_restore_states[PUMP_DRIVER_MAX_CHANNELS] = {0};
 
