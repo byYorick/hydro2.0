@@ -25,6 +25,7 @@ idf_component_register(
         heartbeat_task
         connection_status
         pump_driver
+        actuator_failsafe
         factory_reset_button
         driver
         esp_wifi
