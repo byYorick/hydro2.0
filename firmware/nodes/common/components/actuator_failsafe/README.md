@@ -10,9 +10,9 @@
   `ERROR` / `error_code=estop_active`. Команда, уже принятая в очередь до нажатия,
   не стартует и завершается тем же `ERROR`.
 - На фронте нажатия и пока кнопка удерживается нода вызывает safe-state callback.
-  Для этих нод callback — `pump_driver_force_deenergize`: direct GPIO сбрасывается в 0
-  без ожидания мьютекса драйвера; синхронизация software-state — best-effort.
-  Если мьютекс занят, это пишется в лог, выходы уже OFF.
+  Для этих нод callback — `pump_driver_force_deenergize`: direct GPIO сбрасывается в 0,
+  реле — в OPEN, без ожидания мьютекса драйвера насоса; синхронизация software-state —
+  best-effort. Если мьютекс занят, это пишется в лог, выходы уже OFF.
 - Отпускание снимает защёлку и **не** включает насосы обратно.
 - Boot и reset: `actuator_failsafe_init` один раз вызывает safe-state. Если кнопка уже
   зажата в первый отсчёт, защёлка ставится сразу, без ожидания debounce.

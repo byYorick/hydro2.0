@@ -709,17 +709,23 @@ esp_err_t pump_driver_force_deenergize(void) {
     }
 
     for (size_t i = 0; i < s_channel_count; i++) {
-        if (!s_channels[i].initialized || s_channels[i].use_relay) {
+        if (!s_channels[i].initialized) {
             continue;
         }
-        if (s_channels[i].gpio_pin < 0 || s_channels[i].gpio_pin >= GPIO_NUM_MAX) {
+        if (!s_channels[i].use_relay) {
+            if (s_channels[i].gpio_pin < 0 || s_channels[i].gpio_pin >= GPIO_NUM_MAX) {
+                continue;
+            }
+            (void)gpio_set_level((gpio_num_t)s_channels[i].gpio_pin, 0);
             continue;
         }
-        (void)gpio_set_level((gpio_num_t)s_channels[i].gpio_pin, 0);
+        if (s_channels[i].relay_channel[0] != '\0') {
+            (void)relay_driver_set_state(s_channels[i].relay_channel, RELAY_STATE_OPEN);
+        }
     }
 
     if (s_mutex == NULL || xSemaphoreTake(s_mutex, pdMS_TO_TICKS(50)) != pdTRUE) {
-        ESP_LOGW(TAG, "force_deenergize: mutex busy, GPIO forced OFF, driver state sync deferred");
+        ESP_LOGW(TAG, "force_deenergize: mutex busy, outputs forced OFF, driver state sync deferred");
         return ESP_ERR_TIMEOUT;
     }
 
