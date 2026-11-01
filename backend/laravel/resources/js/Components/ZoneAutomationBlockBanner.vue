@@ -84,12 +84,13 @@
         </p>
         <label class="mt-3 block text-xs font-medium text-[color:var(--text-muted)]">
           Причина (обязательно)
-          <textarea
+          <TextField
             v-model="reason"
-            rows="3"
-            class="mt-1 w-full rounded-md border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] px-2 py-1.5 text-sm text-[color:var(--text-primary)]"
+            multiline
+            :rows="3"
+            class="mt-1 w-full"
             data-testid="zone-operator-unblock-reason"
-          ></textarea>
+          />
         </label>
         <label class="mt-2 flex items-start gap-2 text-xs text-[color:var(--text-secondary)]">
           <input
@@ -133,6 +134,7 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import TextField from '@/Components/TextField.vue'
 import {
   automationBlockHint,
   automationBlockLabel,

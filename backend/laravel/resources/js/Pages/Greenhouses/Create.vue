@@ -58,14 +58,15 @@
               for="greenhouse-description"
               class="block text-xs text-[color:var(--text-muted)] mb-1"
             >Описание</label>
-            <textarea
+            <TextField
               id="greenhouse-description"
               v-model="form.description"
               name="description"
-              rows="3"
+              multiline
+              :rows="3"
               placeholder="Описание теплицы..."
-              class="w-full rounded-md border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] px-2 py-1 text-sm text-[color:var(--text-primary)] focus:border-[color:var(--status-ok)] focus:outline-none"
-            ></textarea>
+              class="w-full"
+            />
           </div>
         </div>
         

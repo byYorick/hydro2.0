@@ -675,21 +675,21 @@
           </header>
           <div class="px-4 py-3 flex flex-col gap-3">
             <Field label="Название">
-              <input
+              <TextField
                 v-model="newPresetName"
                 type="text"
-                :class="inputCls"
                 placeholder="Hydro · Tomato · v3"
                 data-testid="correction-config-new-preset-name"
               />
             </Field>
             <Field label="Описание">
-              <textarea
+              <TextField
                 v-model="newPresetDescription"
-                :class="[inputCls, 'min-h-[80px] resize-y']"
+                multiline
+                control-class="min-h-[80px]"
                 placeholder="Когда использовать этот пресет, какие цели"
                 data-testid="correction-config-new-preset-description"
-              ></textarea>
+              />
             </Field>
           </div>
           <footer class="flex items-center gap-2 px-4 py-3 border-t border-[var(--border-muted)] justify-end">
@@ -748,9 +748,6 @@ const emit = defineEmits<{ (e: 'saved'): void }>()
 const CORRECTION_NAMESPACE = 'zone.correction'
 const automationConfig = useAutomationConfig()
 const { loading } = automationConfig
-
-const inputCls =
-  'w-full px-2.5 py-1.5 rounded-md border border-[var(--border-muted)] bg-[var(--bg-surface)] text-sm text-[var(--text-primary)] focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/40 disabled:opacity-55'
 
 const menuItemClass =
   'block w-full text-left px-3 py-1.5 text-[12px] text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] disabled:opacity-45 disabled:cursor-not-allowed'

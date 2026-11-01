@@ -25,6 +25,22 @@ describe('TextField', () => {
     await input.setValue('ec')
     expect(wrapper.emitted('update:modelValue')?.[0]).toEqual(['ec'])
   })
+
+  it('рисует textarea, подсказку и суффикс', () => {
+    const wrapper = mount(TextField, {
+      props: {
+        modelValue: '12',
+        multiline: true,
+        hint: 'необязательно',
+        suffix: 'мл',
+        'onUpdate:modelValue': () => undefined,
+      },
+    })
+
+    expect(wrapper.find('textarea').exists()).toBe(true)
+    expect(wrapper.text()).toContain('необязательно')
+    expect(wrapper.text()).toContain('мл')
+  })
 })
 
 describe('SelectField', () => {

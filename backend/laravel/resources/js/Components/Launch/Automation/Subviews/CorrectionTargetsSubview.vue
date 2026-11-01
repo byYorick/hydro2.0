@@ -48,10 +48,10 @@
         :label="meta('phPct').label"
         :hint="meta('phPct').hint"
       >
-        <input
+        <TextField
           v-bind="numAttrs"
           :title="meta('phPct').details"
-          :value="waterForm.phPct"
+          :model-value="waterForm.phPct"
           @input="upd('phPct', toNum($event))"
         />
       </Field>
@@ -59,10 +59,10 @@
         :label="meta('ecPct').label"
         :hint="meta('ecPct').hint"
       >
-        <input
+        <TextField
           v-bind="numAttrs"
           :title="meta('ecPct').details"
-          :value="waterForm.ecPct"
+          :model-value="waterForm.ecPct"
           @input="upd('ecPct', toNum($event))"
         />
       </Field>
@@ -79,6 +79,8 @@
 </template>
 
 <script setup lang="ts">
+import TextField from '@/Components/TextField.vue'
+
 import { ref, watch } from 'vue'
 import { Field, Hint } from '@/Components/Shared/Primitives'
 import Ic from '@/Components/Icons/Ic.vue'
@@ -102,9 +104,7 @@ watch(
   },
 )
 
-const inputCls =
-  'block w-full h-8 rounded-lg border border-[var(--border-muted)] bg-[var(--bg-surface)] text-[var(--text-primary)] px-2.5 text-sm font-mono outline-none transition-[border-color,box-shadow,background-color] duration-150 focus:border-brand focus:ring-2 focus:ring-brand-soft focus-visible:border-brand focus-visible:ring-2 focus-visible:ring-brand-soft'
-const numAttrs = { class: inputCls, type: 'number' }
+const numAttrs = { type: 'number' }
 
 const lockedCls =
   'flex items-center h-8 px-3 rounded-md border border-[var(--border-muted)] bg-[var(--bg-elevated)] text-sm font-mono text-[var(--text-primary)] gap-1.5'

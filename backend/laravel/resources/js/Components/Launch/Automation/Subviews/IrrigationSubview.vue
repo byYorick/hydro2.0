@@ -35,10 +35,10 @@
         :hint="meta('intervalMinutes').hint"
         required
       >
-        <input
+        <TextField
           v-bind="numAttrs"
           :title="meta('intervalMinutes').details"
-          :value="waterForm.intervalMinutes"
+          :model-value="waterForm.intervalMinutes"
           @input="upd('intervalMinutes', toInt($event))"
         />
       </Field>
@@ -47,10 +47,10 @@
         :hint="meta('durationSeconds').hint"
         required
       >
-        <input
+        <TextField
           v-bind="numAttrs"
           :title="meta('durationSeconds').details"
-          :value="waterForm.durationSeconds"
+          :model-value="waterForm.durationSeconds"
           @input="upd('durationSeconds', toInt($event))"
         />
       </Field>
@@ -65,10 +65,10 @@
         :label="meta('irrigationEcComponent').label"
         :hint="meta('irrigationEcComponent').hint"
       >
-        <select
-          class="block w-full h-8 rounded-lg border border-[var(--border-muted)] bg-[var(--bg-surface)] text-[var(--text-primary)] px-2.5 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-brand-soft"
+        <SelectField
+         
           :title="meta('irrigationEcComponent').details"
-          :value="ecComponentSelectValue"
+          :model-value="ecComponentSelectValue"
           @change="onEcComponentChange"
         >
           <option value="calcium">
@@ -77,7 +77,7 @@
           <option value="npk">
             NPK (pump_a)
           </option>
-        </select>
+        </SelectField>
       </Field>
     </div>
 
@@ -89,11 +89,11 @@
         :label="meta('irrigationDecisionLookbackSeconds').label"
         :hint="meta('irrigationDecisionLookbackSeconds').hint"
       >
-        <input
+        <TextField
           v-bind="numAttrs"
           data-testid="irrigation-decision-lookback"
           :title="meta('irrigationDecisionLookbackSeconds').details"
-          :value="waterForm.irrigationDecisionLookbackSeconds ?? 0"
+          :model-value="waterForm.irrigationDecisionLookbackSeconds ?? 0"
           @input="upd('irrigationDecisionLookbackSeconds', toInt($event))"
         />
       </Field>
@@ -101,11 +101,11 @@
         :label="meta('irrigationDecisionStaleAfterSeconds').label"
         :hint="meta('irrigationDecisionStaleAfterSeconds').hint"
       >
-        <input
+        <TextField
           v-bind="numAttrs"
           data-testid="irrigation-decision-stale"
           :title="meta('irrigationDecisionStaleAfterSeconds').details"
-          :value="waterForm.irrigationDecisionStaleAfterSeconds ?? 0"
+          :model-value="waterForm.irrigationDecisionStaleAfterSeconds ?? 0"
           @input="upd('irrigationDecisionStaleAfterSeconds', toInt($event))"
         />
       </Field>
@@ -113,11 +113,11 @@
         :label="meta('irrigationDecisionHysteresisPct').label"
         :hint="meta('irrigationDecisionHysteresisPct').hint"
       >
-        <input
+        <TextField
           v-bind="numAttrs"
           data-testid="irrigation-decision-hysteresis"
           :title="meta('irrigationDecisionHysteresisPct').details"
-          :value="waterForm.irrigationDecisionHysteresisPct ?? 0"
+          :model-value="waterForm.irrigationDecisionHysteresisPct ?? 0"
           @input="upd('irrigationDecisionHysteresisPct', toNum($event))"
         />
       </Field>
@@ -128,10 +128,10 @@
           :label="meta('irrigationDecisionMinSamples').label"
           :hint="meta('irrigationDecisionMinSamples').hint"
         >
-          <input
+          <TextField
             v-bind="numAttrs"
             :title="meta('irrigationDecisionMinSamples').details"
-            :value="waterForm.irrigationDecisionMinSamples ?? 0"
+            :model-value="waterForm.irrigationDecisionMinSamples ?? 0"
             @input="upd('irrigationDecisionMinSamples', toInt($event))"
           />
         </Field>
@@ -139,10 +139,10 @@
           :label="meta('irrigationDecisionSpreadAlertThresholdPct').label"
           :hint="meta('irrigationDecisionSpreadAlertThresholdPct').hint"
         >
-          <input
+          <TextField
             v-bind="numAttrs"
             :title="meta('irrigationDecisionSpreadAlertThresholdPct').details"
-            :value="waterForm.irrigationDecisionSpreadAlertThresholdPct ?? 0"
+            :model-value="waterForm.irrigationDecisionSpreadAlertThresholdPct ?? 0"
             @input="upd('irrigationDecisionSpreadAlertThresholdPct', toNum($event))"
           />
         </Field>
@@ -157,10 +157,10 @@
         :label="meta('irrigationMaxSetupReplays').label"
         :hint="meta('irrigationMaxSetupReplays').hint"
       >
-        <input
+        <TextField
           v-bind="numAttrs"
           :title="meta('irrigationMaxSetupReplays').details"
-          :value="waterForm.irrigationMaxSetupReplays ?? 0"
+          :model-value="waterForm.irrigationMaxSetupReplays ?? 0"
           @input="upd('irrigationMaxSetupReplays', toInt($event))"
         />
       </Field>
@@ -179,6 +179,10 @@
 </template>
 
 <script setup lang="ts">
+import SelectField from '@/Components/SelectField.vue'
+
+import TextField from '@/Components/TextField.vue'
+
 import { computed } from 'vue'
 import Button from '@/Components/Button.vue'
 import { Field, Hint, ToggleField } from '@/Components/Shared/Primitives'
@@ -200,9 +204,7 @@ const ecComponentSelectValue = computed(() => {
   return raw === 'npk' ? 'npk' : 'calcium'
 })
 
-const inputCls =
-  'block w-full h-8 rounded-lg border border-[var(--border-muted)] bg-[var(--bg-surface)] text-[var(--text-primary)] px-2.5 text-sm font-mono outline-none transition-[border-color,box-shadow,background-color] duration-150 focus:border-brand focus:ring-2 focus:ring-brand-soft focus-visible:border-brand focus-visible:ring-2 focus-visible:ring-brand-soft'
-const numAttrs = { class: inputCls, type: 'number' }
+const numAttrs = { type: 'number' }
 
 const IRRIGATION_FIELD_META: Partial<Record<keyof WaterFormState, FieldMeta>> = {
   intervalMinutes: {
