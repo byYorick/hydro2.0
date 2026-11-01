@@ -33,6 +33,9 @@ class Settings:
     # В продакшене TLS должен быть включен
     mqtt_tls: bool = os.getenv("MQTT_TLS", "0") in ("1", "true", "True", "yes", "Yes")
     mqtt_ca_file: str | None = os.getenv("MQTT_CA_FILE")
+    # Только для dev с самоподписанным сертификатом без проверки hostname.
+    # В production оставлять выключенным.
+    mqtt_tls_insecure: bool = os.getenv("MQTT_TLS_INSECURE", "0") in ("1", "true", "True", "yes", "Yes")
 
     pg_host: str = os.getenv("PG_HOST", "db")
     pg_port: int = int(os.getenv("PG_PORT", "5432"))

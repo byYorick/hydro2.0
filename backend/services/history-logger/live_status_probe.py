@@ -181,10 +181,9 @@ def probe_node_status(
     if s.mqtt_user:
         client.username_pw_set(s.mqtt_user, s.mqtt_pass or None)
     if s.mqtt_tls:
-        if s.mqtt_ca_file:
-            client.tls_set(ca_certs=s.mqtt_ca_file)
-        else:
-            client.tls_set()
+        from common.mqtt import apply_mqtt_tls
+
+        apply_mqtt_tls(client, s)
     client.on_connect = on_connect
     client.on_message = on_message
 

@@ -14,12 +14,23 @@ services:
   mqtt:
     image: eclipse-mosquitto:2.0.22
     networks: [hydro_prod]
+    entrypoint: ["/bin/sh", "/mosquitto-entrypoint.sh"]
+    environment:
+      MQTT_PYTHON_SERVICE_PASS: ${MQTT_PYTHON_SERVICE_PASS:-}
+      MQTT_AUTOMATION_ENGINE_PASS: ${MQTT_AUTOMATION_ENGINE_PASS:?MQTT_AUTOMATION_ENGINE_PASS must be set}
+      MQTT_HISTORY_LOGGER_PASS: ${MQTT_HISTORY_LOGGER_PASS:?MQTT_HISTORY_LOGGER_PASS must be set}
+      MQTT_MQTT_BRIDGE_PASS: ${MQTT_MQTT_BRIDGE_PASS:?MQTT_MQTT_BRIDGE_PASS must be set}
+      MQTT_ESP32_NODE_PASS: ${MQTT_ESP32_NODE_PASS:?MQTT_ESP32_NODE_PASS must be set}
+      MQTT_PLAINTEXT_ENABLED: ${MQTT_PLAINTEXT_ENABLED:-1}
     ports:
-      - "1883:1883"
+      - "${MQTT_BIND_ADDR:-0.0.0.0}:1883:1883"
+      - "${MQTT_TLS_BIND_ADDR:-0.0.0.0}:8883:8883"
     volumes:
+      - ./services/mqtt-bridge/mosquitto-entrypoint.sh:/mosquitto-entrypoint.sh:ro
       - ./services/mqtt-bridge/mosquitto.prod.conf:/mosquitto/config/mosquitto.conf:ro
       - ./services/mqtt-bridge/passwords.txt:/mosquitto/config/passwords:ro
       - ./services/mqtt-bridge/acl:/mosquitto/config/acl:ro
+      - ./services/mqtt-bridge/certs:/mosquitto/certs:ro
       - mqtt_data:/mosquitto/data
       - mqtt_logs:/mosquitto/log
     healthcheck:
@@ -274,8 +285,9 @@ services:
     environment:
       - APP_ENV=production
       - MQTT_HOST=mqtt
-      - MQTT_PORT=1883
-      - MQTT_TLS=0
+      - MQTT_PORT=${MQTT_PORT:-1883}
+      - MQTT_TLS=${MQTT_TLS:-0}
+      - MQTT_CA_FILE=${MQTT_CA_FILE:-/etc/mqtt/certs/ca.crt}
       - MQTT_USER=${MQTT_MQTT_BRIDGE_USER:-mqtt_bridge}
       # ВАЖНО: Замените на уникальный пароль через переменную окружения
       - MQTT_PASS=${MQTT_MQTT_BRIDGE_PASS:?MQTT_MQTT_BRIDGE_PASS must be set}
@@ -301,6 +313,7 @@ services:
     volumes:
       # error_codes.json + api_error_raw_translations.json для локализации error_code (common/error_catalog.py)
       - ./error_codes.json:/app/error_codes.json:ro
+      - ./services/mqtt-bridge/certs:/etc/mqtt/certs:ro
       - ./api_error_raw_translations.json:/app/api_error_raw_translations.json:ro
     healthcheck:
       test: ["CMD-SHELL", "python -c 'import socket; s=socket.socket(); s.settimeout(1); s.connect((\"localhost\", 9000)); s.close()' || exit 1"]
@@ -324,8 +337,9 @@ services:
       - APP_ENV=production
       - AUTOMATION_ENGINE_API_PORT=9405
       - MQTT_HOST=mqtt
-      - MQTT_PORT=1883
-      - MQTT_TLS=0
+      - MQTT_PORT=${MQTT_PORT:-1883}
+      - MQTT_TLS=${MQTT_TLS:-0}
+      - MQTT_CA_FILE=${MQTT_CA_FILE:-/etc/mqtt/certs/ca.crt}
       - MQTT_USER=${MQTT_AUTOMATION_ENGINE_USER:-automation_engine}
       # ВАЖНО: Замените на уникальный пароль через переменную окружения
       - MQTT_PASS=${MQTT_AUTOMATION_ENGINE_PASS:?MQTT_AUTOMATION_ENGINE_PASS must be set}
@@ -354,6 +368,7 @@ services:
     volumes:
       # error_codes.json + api_error_raw_translations.json для локализации error_code (common/error_catalog.py)
       - ./error_codes.json:/app/error_codes.json:ro
+      - ./services/mqtt-bridge/certs:/etc/mqtt/certs:ro
       - ./api_error_raw_translations.json:/app/api_error_raw_translations.json:ro
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request,sys; r=urllib.request.urlopen('http://localhost:9405/health/ready', timeout=3); sys.exit(0 if r.getcode()==200 else 1)\" || exit 1"]
@@ -372,8 +387,9 @@ services:
     environment:
       - APP_ENV=production
       - MQTT_HOST=mqtt
-      - MQTT_PORT=1883
-      - MQTT_TLS=0
+      - MQTT_PORT=${MQTT_PORT:-1883}
+      - MQTT_TLS=${MQTT_TLS:-0}
+      - MQTT_CA_FILE=${MQTT_CA_FILE:-/etc/mqtt/certs/ca.crt}
       - MQTT_USER=${MQTT_HISTORY_LOGGER_USER:-history_logger}
       # ВАЖНО: Замените на уникальный пароль через переменную окружения
       - MQTT_PASS=${MQTT_HISTORY_LOGGER_PASS:?MQTT_HISTORY_LOGGER_PASS must be set}
@@ -405,6 +421,7 @@ services:
     volumes:
       # error_codes.json + api_error_raw_translations.json для локализации error_code (common/error_catalog.py)
       - ./error_codes.json:/app/error_codes.json:ro
+      - ./services/mqtt-bridge/certs:/etc/mqtt/certs:ro
       - ./api_error_raw_translations.json:/app/api_error_raw_translations.json:ro
     healthcheck:
       test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:9300/health\").read()' || exit 1"]

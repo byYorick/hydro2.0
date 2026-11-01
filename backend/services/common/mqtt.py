@@ -9,6 +9,16 @@ from .env import get_settings
 
 logger = logging.getLogger(__name__)
 
+
+def apply_mqtt_tls(client: mqtt.Client, settings) -> None:
+    """Включает TLS на paho-клиенте. CA берётся из MQTT_CA_FILE, если задан."""
+    if settings.mqtt_ca_file:
+        client.tls_set(ca_certs=settings.mqtt_ca_file)
+    else:
+        client.tls_set()
+    if getattr(settings, "mqtt_tls_insecure", False):
+        client.tls_insecure_set(True)
+
 _async_handler_error_callbacks: list[Callable[[str, str, BaseException], None]] = []
 
 
@@ -94,10 +104,7 @@ class MqttClient:
             self._client.username_pw_set(s.mqtt_user, s.mqtt_pass or None)
         if s.mqtt_tls:
             logger.info("Enabling TLS for MQTT connection")
-            if s.mqtt_ca_file:
-                self._client.tls_set(ca_certs=s.mqtt_ca_file)
-            else:
-                self._client.tls_set()
+            apply_mqtt_tls(self._client, s)
         else:
             logger.info("TLS disabled for MQTT connection")
         self._connected = threading.Event()
