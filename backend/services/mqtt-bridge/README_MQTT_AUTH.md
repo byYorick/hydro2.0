@@ -33,7 +33,8 @@ MQTT брокер настроен с обязательной аутентиф�
     `hydro/+/+/+/lwt`, `hydro/+/+/+/diagnostics`, `hydro/+/+/+/error`,
     `hydro/+/+/+/config_report`, `hydro/+/+/+/node_hello`,
     `hydro/+/+/+/+/command_response`, `hydro/+/+/+/+/event`, `hydro/node_hello`, `hydro/time/request`
-  - Запись: `hydro/+/+/+/+/command`, `hydro/+/+/events/#`
+  - Запись: `hydro/+/+/+/+/command`, `hydro/+/+/+/config` (NodeConfig и temp-namespace),
+    `hydro/time/response`, `hydro/+/+/events/#`
 
 ### 4. mqtt_bridge
 - **Назначение:** MQTT Bridge сервис
@@ -49,7 +50,8 @@ MQTT брокер настроен с обязательной аутентиф�
   - Запись: `hydro/+/+/+/status`, `hydro/+/+/+/heartbeat`, `hydro/+/+/+/lwt`,
     `hydro/+/+/+/diagnostics`, `hydro/+/+/+/error`, `hydro/+/+/+/config_report`,
     `hydro/+/+/+/+/command_response`, `hydro/+/+/+/+/event`
-  - Чтение: `hydro/+/+/+/config`, `hydro/+/+/+/+/command`
+  - Чтение: `hydro/+/+/+/config`, `hydro/+/+/+/+/command`, `hydro/time/response`
+  - Запись: `hydro/time/request`
 
 ## Генерация паролей
 
@@ -128,6 +130,8 @@ topic read hydro/+/+/+/+/command_response
 topic read hydro/+/+/+/+/event
 topic read hydro/node_hello
 topic read hydro/time/request
+topic write hydro/time/response
+topic write hydro/+/+/+/config
 topic write hydro/+/+/+/+/command
 topic write hydro/+/+/events/#
 
