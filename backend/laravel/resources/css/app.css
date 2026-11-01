@@ -1234,6 +1234,17 @@ textarea.input-field {
   font-size: 0.75rem;
 }
 
+.field-hint {
+  color: var(--text-dim);
+  font-size: 0.72rem;
+}
+
+.input-field[aria-invalid='true'],
+.input-select[aria-invalid='true'] {
+  border-color: var(--status-critical);
+  background: var(--status-critical-soft);
+}
+
 a:focus-visible,
 button:focus-visible,
 summary:focus-visible,
