@@ -87,9 +87,9 @@ services:
       - REVERB_DEBUG=false
       - REVERB_AUTO_START=true
       - REVERB_VERBOSE=false
-      - PY_API_TOKEN=${PY_API_TOKEN:?PY_API_TOKEN is required (run: make ensure-dev-secrets)}
-      - PY_INGEST_TOKEN=${PY_INGEST_TOKEN:?PY_INGEST_TOKEN is required (run: make ensure-dev-secrets)}
-      - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:?LARAVEL_API_TOKEN is required (run: make ensure-dev-secrets)}
+      - 'PY_API_TOKEN=${PY_API_TOKEN:?PY_API_TOKEN is required (run: make ensure-dev-secrets)}'
+      - 'PY_INGEST_TOKEN=${PY_INGEST_TOKEN:?PY_INGEST_TOKEN is required (run: make ensure-dev-secrets)}'
+      - 'LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:?LARAVEL_API_TOKEN is required (run: make ensure-dev-secrets)}'
       - MQTT_HOST=mqtt
       - MQTT_PORT=1883
     volumes:

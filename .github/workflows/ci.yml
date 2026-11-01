@@ -643,10 +643,18 @@ jobs:
           name: pipeline-smoke-logs
           path: /tmp/hydro-ci-pipeline.log
 
+  compose-configs:
+    name: Compose configuration validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 tools/ci/test_compose_configs.py
+
   required:
     name: CI required
     if: always()
-    needs: [python-lint, firmware-build-ph-node, automation-engine-smoke-all, build-and-test, laravel-scheduler-smoke, read-model-contract, python-services, mqtt-runtime, firmware-host, android, python-security, pipeline-smoke]
+    needs: [python-lint, firmware-build-ph-node, automation-engine-smoke-all, build-and-test, laravel-scheduler-smoke, read-model-contract, python-services, mqtt-runtime, firmware-host, android, python-security, pipeline-smoke, compose-configs]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

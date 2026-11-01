@@ -94,9 +94,9 @@ services:
       - MQTT_EXTERNAL_HOST=${MQTT_EXTERNAL_HOST:-localhost}
       - MQTT_HOST=mqtt
       - MQTT_PORT=1883
-      - PY_API_TOKEN=${PY_API_TOKEN:?PY_API_TOKEN is required (run: make ensure-dev-secrets)}
-      - PY_INGEST_TOKEN=${PY_INGEST_TOKEN:?PY_INGEST_TOKEN is required (run: make ensure-dev-secrets)}
-      - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:?LARAVEL_API_TOKEN is required (run: make ensure-dev-secrets)}
+      - 'PY_API_TOKEN=${PY_API_TOKEN:?PY_API_TOKEN is required (run: make ensure-dev-secrets)}'
+      - 'PY_INGEST_TOKEN=${PY_INGEST_TOKEN:?PY_INGEST_TOKEN is required (run: make ensure-dev-secrets)}'
+      - 'LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:?LARAVEL_API_TOKEN is required (run: make ensure-dev-secrets)}'
       - MQTT_BRIDGE_URL=http://mqtt-bridge:9000
       - HISTORY_LOGGER_URL=http://history-logger:9300
       - AUTOMATION_ENGINE_URL=http://automation-engine:9405
@@ -137,8 +137,8 @@ services:
       - PG_USER=${DB_USER:-hydro}
       - PG_PASS=${DB_PASSWORD:-hydro_hil}
       - LARAVEL_API_URL=http://laravel
-      - PY_API_TOKEN=${PY_API_TOKEN:?PY_API_TOKEN is required (run: make ensure-dev-secrets)}
-      - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:?LARAVEL_API_TOKEN is required (run: make ensure-dev-secrets)}
+      - 'PY_API_TOKEN=${PY_API_TOKEN:?PY_API_TOKEN is required (run: make ensure-dev-secrets)}'
+      - 'LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:?LARAVEL_API_TOKEN is required (run: make ensure-dev-secrets)}'
     depends_on:
       mqtt:
         condition: service_healthy
@@ -175,10 +175,10 @@ services:
       - PG_USER=${DB_USER:-hydro}
       - PG_PASS=${DB_PASSWORD:-hydro_hil}
       - LARAVEL_API_URL=http://laravel
-      - PY_API_TOKEN=${PY_API_TOKEN:?PY_API_TOKEN is required (run: make ensure-dev-secrets)}
-      - PY_INGEST_TOKEN=${PY_INGEST_TOKEN:?PY_INGEST_TOKEN is required (run: make ensure-dev-secrets)}
-      - HISTORY_LOGGER_API_TOKEN=${HISTORY_LOGGER_API_TOKEN:-${PY_INGEST_TOKEN:?PY_INGEST_TOKEN is required (run: make ensure-dev-secrets)}}
-      - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:?LARAVEL_API_TOKEN is required (run: make ensure-dev-secrets)}
+      - 'PY_API_TOKEN=${PY_API_TOKEN:?PY_API_TOKEN is required (run: make ensure-dev-secrets)}'
+      - 'PY_INGEST_TOKEN=${PY_INGEST_TOKEN:?PY_INGEST_TOKEN is required (run: make ensure-dev-secrets)}'
+      - 'HISTORY_LOGGER_API_TOKEN=${HISTORY_LOGGER_API_TOKEN:-${PY_INGEST_TOKEN:?PY_INGEST_TOKEN is required (run: make ensure-dev-secrets)}}'
+      - 'LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:?LARAVEL_API_TOKEN is required (run: make ensure-dev-secrets)}'
       - REDIS_HOST=redis
       - REDIS_PORT=6379
     depends_on:
@@ -248,8 +248,8 @@ services:
       - PG_USER=${DB_USER:-hydro}
       - PG_PASS=${DB_PASSWORD:-hydro_hil}
       - LARAVEL_API_URL=http://laravel
-      - PY_API_TOKEN=${PY_API_TOKEN:?PY_API_TOKEN is required (run: make ensure-dev-secrets)}
-      - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:?LARAVEL_API_TOKEN is required (run: make ensure-dev-secrets)}
+      - 'PY_API_TOKEN=${PY_API_TOKEN:?PY_API_TOKEN is required (run: make ensure-dev-secrets)}'
+      - 'LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:?LARAVEL_API_TOKEN is required (run: make ensure-dev-secrets)}'
     depends_on:
       mqtt:
         condition: service_healthy
