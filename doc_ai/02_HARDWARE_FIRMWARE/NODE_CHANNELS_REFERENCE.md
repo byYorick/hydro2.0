@@ -447,6 +447,7 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
 8. `set_relay {state:true}` на IRR-actuator path работает как latched `ON/OFF` и остаётся включенным до явного `OFF`.
 9. На отдельном физическом входе `E-Stop` нода должна держать все актуаторы в `OFF`, пока кнопка нажата,
    и публиковать `emergency_stop_activated` в `storage_state/event` на факт нажатия.
+   Таймаут мьютекса актуаторов не отменяет GPIO safe-OFF и защёлку `estop_active`.
 
 ### 3.5. Канал суммарного тока насосов (SENSOR + связь с актуаторами)
 
