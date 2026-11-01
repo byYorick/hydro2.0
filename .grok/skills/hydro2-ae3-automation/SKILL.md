@@ -11,12 +11,12 @@ lifecycle: active
 Код/баги AE3, intents, `ae_tasks`, workflow phases, corrections, leases, operator-unblock, climate tick.
 
 ## Runtime
-Канон пакета: `backend/services/automation-engine/ae3lite/`.  
-Локальный SoT: `backend/services/automation-engine/AGENT.md` (имя **AGENT.md**).  
+Канон пакета: `backend/services/automation-engine/ae3lite/`.
+Локальный SoT: `backend/services/automation-engine/AGENT.md` (имя **AGENT.md**).
 Спека: `doc_ai/04_BACKEND_CORE/ae3lite.md`.
 
 ## Ingress (не расширять без запроса)
-`start-cycle`, `start-irrigation`, `start-lighting-tick`, `start-solution-topup`, `start-solution-change`, `start-climate-tick` (+ internal task status, operator-unblock).  
+`start-cycle`, `start-irrigation`, `start-lighting-tick`, `start-solution-topup`, `start-solution-change`, `start-climate-tick` (+ internal task status, operator-unblock).
 **Новые `task_type` запрещены без явного запроса пользователя** (hard rules).
 
 ## Инварианты (сводка AGENT.md / hard rules)

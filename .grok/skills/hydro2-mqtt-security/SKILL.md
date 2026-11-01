@@ -11,7 +11,7 @@ lifecycle: active
 Топики, ACL, TLS, `node_secret`, HMAC, ошибки `invalid_signature` / `timestamp_expired` / `invalid_hmac_format`, provisioning секретов.
 
 ## Топики
-Канон: `hydro/{gh}/{zone}/{node}/{channel}/{message_type}`  
+Канон: `hydro/{gh}/{zone}/{node}/{channel}/{message_type}`
 Спеки: `doc_ai/03_TRANSPORT_MQTT/MQTT_NAMESPACE.md`, `MQTT_SPEC_FULL.md`.
 
 ## HMAC: что канон, что planned
@@ -21,8 +21,12 @@ lifecycle: active
 ## node_secret
 Обязателен, длина ≥ 32. Хранится в NodeConfig. Не логировать и не публиковать в телеметрии.
 
-## ACL / брокер
-Примеры и prod/dev: `backend/services/mqtt-bridge/acl`, `acl.example`, `mosquitto.dev.conf`, `mosquitto.prod.conf`; HIL: `infra/hil/mosquitto.acl`.
+## ACL / брокер (факт `main`, не путать с open SEC PR)
+- Dev: `backend/services/mqtt-bridge/mosquitto.dev.conf` сейчас **`allow_anonymous true`** (в файле помечено temporary; `allow_anonymous false` закомментирован).
+- Prod: `mosquitto.prod.conf` — **`allow_anonymous false`**.
+- Целевая модель пользователей/ACL: `backend/services/mqtt-bridge/README_MQTT_AUTH.md`, файлы `acl` / `acl.example`.
+- HIL: `infra/hil/mosquitto.acl`.
+- Не утверждай, что anonymous на dev уже закрыт или что TLS listener уже в prod-конфиге, пока это не видно в коде/конфиге на текущем `main` (открытые PR SEC-01/SEC-02 — вне SoT до merge).
 
 ## Hard rules (defer)
 `.grok/rules/hydro-hard-rules.md`: publish команд только HL→MQTT; ответы пользователю на русском.
@@ -36,5 +40,5 @@ lifecycle: active
 - `doc_ai/03_TRANSPORT_MQTT/{MQTT_SPEC_FULL,MQTT_NAMESPACE,BACKEND_NODE_CONTRACT_FULL,COMMAND_VALIDATION_ENGINE}.md`
 - `doc_ai/08_SECURITY_AND_OPS/SECURITY_ARCHITECTURE.md`
 - `doc_ai/10_AI_DEV_GUIDES/MQTT_TOPICS_SPEC_AI_GUIDE.md`
-- `backend/services/history-logger/commands/command_service.py`
+- `backend/services/history-logger/command_service.py`
 - `backend/services/mqtt-bridge/*`
