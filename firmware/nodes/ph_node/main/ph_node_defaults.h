@@ -58,7 +58,8 @@ extern "C" {
 #define PH_NODE_OLED_UPDATE_INTERVAL_MS 1500
 
 // Setup portal defaults
-#define PH_NODE_SETUP_AP_PASSWORD    "hydro2025"
+/* NULL: setup_portal генерирует пароль AP на сессию и пишет его в serial. */
+#define PH_NODE_SETUP_AP_PASSWORD    NULL
 
 // Factory reset (long-press) defaults
 #define PH_NODE_FACTORY_RESET_GPIO           GPIO_NUM_0  // BOOT button on most devkits

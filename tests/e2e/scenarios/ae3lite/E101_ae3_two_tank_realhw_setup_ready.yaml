@@ -1178,7 +1178,7 @@ actions:
       Content-Type: application/json
       X-Trace-Id: ${scheduler_trace_id}
       X-Scheduler-Id: laravel-scheduler
-      Authorization: Bearer dev-token-12345
+      Authorization: Bearer ${PY_API_TOKEN}
     body:
       source: ${scheduler_source}
       idempotency_key: ${idempotency_key}
@@ -1766,7 +1766,7 @@ actions:
       Accept: application/json
       X-Trace-Id: ${scheduler_trace_id}
       X-Scheduler-Id: laravel-scheduler
-      Authorization: Bearer dev-token-12345
+      Authorization: Bearer ${PY_API_TOKEN}
     capture_response: internal_task_response
 
 assertions:

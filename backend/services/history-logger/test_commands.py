@@ -14,14 +14,14 @@ def client():
 @pytest.fixture
 def auth_headers():
     """Create auth headers for testing."""
-    return {"Authorization": "Bearer dev-token-12345"}
+    return {"Authorization": "Bearer unit-test-service-token"}
 
 
 @pytest.fixture(autouse=True)
 def auth_settings():
     """Ensure auth uses a stable test token unless overridden."""
     with patch("auth.get_settings") as mock_settings:
-        mock_settings.return_value = Mock(history_logger_api_token="dev-token-12345")
+        mock_settings.return_value = Mock(history_logger_api_token="unit-test-service-token")
         yield mock_settings
 
 

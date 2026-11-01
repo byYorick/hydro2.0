@@ -107,19 +107,11 @@ return [
 
     /*
     | Per-node HMAC: nodes.config.node_secret (generated on register/hello).
-    | NODE_DEFAULT_SECRET / APP_KEY fallback is allowed only outside production
-    | (NodeSecretService resolves with WARN). In production: fail-closed.
-    |
-    | S1.5 (AUDIT_2026_05_28_BUGFIX_PLAN): hardcoded default removed from
-    | production config. If ENV NODE_DEFAULT_SECRET is unset:
-    |   - local/testing: 'hydro-default-secret-key-2025' (legacy fallback only)
-    |   - production: null (no shared secret; require per-node secret)
+    | Shared fallback exists only when NODE_DEFAULT_SECRET is set explicitly.
+    | There is no built-in default. Production must use per-node secrets
+    | (NodeSecretService fail-closed). Empty env => null.
     */
-    'node_default_secret' => env('NODE_DEFAULT_SECRET',
-        in_array(env('APP_ENV', 'production'), ['production', 'prod'], true)
-            ? null
-            : 'hydro-default-secret-key-2025'
-    ),
+    'node_default_secret' => env('NODE_DEFAULT_SECRET') ?: null,
 
     /*
     |--------------------------------------------------------------------------

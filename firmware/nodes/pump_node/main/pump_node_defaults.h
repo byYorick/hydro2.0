@@ -29,7 +29,8 @@ extern "C" {
 #define PUMP_NODE_I2C_CLOCK_SPEED      100000
 
 // Setup portal defaults
-#define PUMP_NODE_SETUP_AP_PASSWORD    "hydro2025"
+/* NULL: setup_portal генерирует пароль AP на сессию и пишет его в serial. */
+#define PUMP_NODE_SETUP_AP_PASSWORD    NULL
 
 #ifdef __cplusplus
 }
