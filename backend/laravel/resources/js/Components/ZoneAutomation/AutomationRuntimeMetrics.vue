@@ -38,7 +38,7 @@
         v-for="chip in activeChips"
         :key="chip.key"
         class="rounded-full border px-2 py-0.5 text-[10px] font-medium"
-        :class="chip.active ? 'border-emerald-400/40 bg-emerald-500/15 text-emerald-200' : 'border-[color:var(--border-muted)]/50 text-[color:var(--text-dim)]'"
+        :class="chip.active ? 'border-status-ok bg-status-ok-soft text-status-ok' : 'border-[color:var(--border-muted)]/50 text-[color:var(--text-dim)]'"
       >
         {{ chip.label }}
       </span>

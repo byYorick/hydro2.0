@@ -1,6 +1,6 @@
 <template>
   <section
-    class="surface-card surface-card--elevated border border-amber-300/50 dark:border-amber-700/60 rounded-2xl p-4 space-y-4 bg-amber-50/30 dark:bg-amber-950/10"
+    class="surface-card surface-card--elevated border border-status-warning rounded-2xl p-4 space-y-4 bg-status-warning-soft"
     data-testid="correction-live-edit"
   >
     <header class="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
@@ -40,7 +40,7 @@
     </p>
     <p
       v-else-if="loadError"
-      class="text-xs text-rose-500 dark:text-rose-400"
+      class="text-xs text-status-critical"
       data-testid="correction-live-load-error"
     >
       {{ loadError }}
@@ -304,7 +304,7 @@
 
             <p
               v-if="errorMessage"
-              class="text-xs text-rose-500 dark:text-rose-400"
+              class="text-xs text-status-critical"
               data-testid="correction-live-error"
             >
               {{ errorMessage }}
@@ -317,14 +317,14 @@
             </p>
             <p
               v-else-if="lastRevision !== null"
-              class="text-xs text-emerald-600 dark:text-emerald-400"
+              class="text-xs text-status-ok"
               data-testid="correction-live-success"
             >
               ✓ сохранено, ревизия {{ lastRevision }}
             </p>
             <p
               v-else-if="submitBlocker"
-              class="text-xs text-amber-700 dark:text-amber-300"
+              class="text-xs text-status-warning"
               data-testid="correction-live-blocker"
             >
               {{ submitBlocker }}

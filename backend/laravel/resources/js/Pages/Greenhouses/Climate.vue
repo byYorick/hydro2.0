@@ -210,7 +210,7 @@ onMounted(loadState)
 
       <div
         v-if="error"
-        class="border border-red-800 bg-red-950/30 p-3 text-sm text-red-100"
+        class="border border-status-critical bg-status-critical-soft p-3 text-sm text-status-critical"
       >
         {{ error }}
       </div>
@@ -308,13 +308,13 @@ onMounted(loadState)
               </div>
               <div
                 v-if="state.last_error_code"
-                class="mt-3 border border-red-900 bg-red-950/30 p-3 text-sm text-red-100"
+                class="mt-3 border border-status-critical bg-status-critical-soft p-3 text-sm text-status-critical"
               >
                 {{ state.last_error_code }}<span v-if="state.last_error_message"> · {{ state.last_error_message }}</span>
               </div>
               <div
                 v-if="state.active_alerts_summary?.length"
-                class="mt-3 border border-amber-900 bg-amber-950/30 p-3 text-sm text-amber-100"
+                class="mt-3 border border-status-warning bg-status-warning-soft p-3 text-sm text-status-warning"
               >
                 <div class="font-medium">
                   Активные ограничения

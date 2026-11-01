@@ -79,7 +79,7 @@
 
     <p
       v-if="error"
-      class="mt-2 rounded-lg border border-red-200/60 bg-red-50/40 px-2.5 py-1.5 text-[11px] text-red-700 dark:border-red-900/40 dark:bg-red-950/20 dark:text-red-400"
+      class="mt-2 rounded-lg border border-status-critical bg-status-critical-soft px-2.5 py-1.5 text-[11px] text-status-critical"
     >
       {{ error }}
     </p>

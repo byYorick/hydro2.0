@@ -24,7 +24,7 @@
 
     <div
       v-else-if="error"
-      class="text-sm text-red-500"
+      class="text-sm text-status-critical"
     >
       {{ error }}
     </div>
@@ -42,7 +42,7 @@
           {{ role.label }}
           <span
             v-if="role.required"
-            class="text-red-400"
+            class="text-status-critical"
           >*</span>
         </div>
         <SelectField
@@ -67,7 +67,7 @@
 
     <div
       v-if="saveError"
-      class="text-sm text-red-500"
+      class="text-sm text-status-critical"
     >
       {{ saveError }}
     </div>

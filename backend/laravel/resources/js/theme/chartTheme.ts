@@ -3,6 +3,42 @@ import type { EChartsOption } from 'echarts'
 export const CHART_FONT_FAMILY = '"IBM Plex Sans", Figtree, sans-serif'
 export const CHART_FONT_MONO = '"JetBrains Mono", ui-monospace, SFMono-Regular, monospace'
 
+export interface ChartSeriesPalette {
+  orange: string
+  violet: string
+  primary: string
+  lime: string
+  purple: string
+  pink: string
+  teal: string
+  yellow: string
+  blue: string
+}
+
+export const CHART_SERIES_VARS: Record<keyof ChartSeriesPalette, string> = {
+  orange: '--series-orange',
+  violet: '--series-violet',
+  primary: '--series-primary',
+  lime: '--series-lime',
+  purple: '--series-purple',
+  pink: '--series-pink',
+  teal: '--series-teal',
+  yellow: '--series-yellow',
+  blue: '--series-blue',
+}
+
+const CHART_SERIES_FALLBACK: ChartSeriesPalette = {
+  orange: '#fb923c',
+  violet: '#a78bfa',
+  primary: '#60a5fa',
+  lime: '#92f97a',
+  purple: '#c084fc',
+  pink: '#f472b6',
+  teal: '#2dd4bf',
+  yellow: '#facc15',
+  blue: '#60a5fa',
+}
+
 export interface HydroChartPalette {
   tooltipBg: string
   borderMuted: string
@@ -21,8 +57,23 @@ export interface HydroChartPalette {
   statusCritical: string
   statusOffline: string
   statusInfo: string
+  series: ChartSeriesPalette
   fontFamily: string
   fontMono: string
+}
+
+export function readChartSeries(): ChartSeriesPalette {
+  return {
+    orange: readCssVar(CHART_SERIES_VARS.orange, CHART_SERIES_FALLBACK.orange),
+    violet: readCssVar(CHART_SERIES_VARS.violet, CHART_SERIES_FALLBACK.violet),
+    primary: readCssVar(CHART_SERIES_VARS.primary, CHART_SERIES_FALLBACK.primary),
+    lime: readCssVar(CHART_SERIES_VARS.lime, CHART_SERIES_FALLBACK.lime),
+    purple: readCssVar(CHART_SERIES_VARS.purple, CHART_SERIES_FALLBACK.purple),
+    pink: readCssVar(CHART_SERIES_VARS.pink, CHART_SERIES_FALLBACK.pink),
+    teal: readCssVar(CHART_SERIES_VARS.teal, CHART_SERIES_FALLBACK.teal),
+    yellow: readCssVar(CHART_SERIES_VARS.yellow, CHART_SERIES_FALLBACK.yellow),
+    blue: readCssVar(CHART_SERIES_VARS.blue, CHART_SERIES_FALLBACK.blue),
+  }
 }
 
 export function readCssVar(variable: string, fallback: string): string {
@@ -53,6 +104,7 @@ export function readChartPalette(): HydroChartPalette {
     statusCritical: readCssVar('--status-critical', '#ff6c6c'),
     statusOffline: readCssVar('--status-offline', '#9aabbf'),
     statusInfo: readCssVar('--status-info', '#5dd6ff'),
+    series: readChartSeries(),
     fontFamily: CHART_FONT_FAMILY,
     fontMono: CHART_FONT_MONO,
   }

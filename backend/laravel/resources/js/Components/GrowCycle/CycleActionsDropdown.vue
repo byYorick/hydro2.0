@@ -67,7 +67,7 @@
           <span>Следующая фаза</span>
           <span
             v-if="phaseReadyBadge"
-            class="text-[11px] rounded-full bg-emerald-500/15 text-emerald-500 px-1.5 py-0.5"
+            class="text-[11px] rounded-full bg-status-ok-soft text-status-ok px-1.5 py-0.5"
           >готова</span>
           <span
             v-else-if="controlMode === 'auto'"

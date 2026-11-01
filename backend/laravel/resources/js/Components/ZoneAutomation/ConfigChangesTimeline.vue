@@ -47,7 +47,7 @@
     </p>
     <p
       v-else-if="error"
-      class="text-xs text-rose-500 dark:text-rose-400"
+      class="text-xs text-status-critical"
     >
       {{ error }}
     </p>

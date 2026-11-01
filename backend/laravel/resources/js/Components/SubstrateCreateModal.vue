@@ -13,7 +13,7 @@
         </div>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div>
-            <label class="block text-xs text-[color:var(--text-muted)] mb-1">Код (английский) <span class="text-red-500">*</span></label>
+            <label class="block text-xs text-[color:var(--text-muted)] mb-1">Код (английский) <span class="text-status-critical">*</span></label>
             <TextField
               v-model="form.code"
               placeholder="coco_perlite_70_30"
@@ -23,7 +23,7 @@
             </p>
           </div>
           <div>
-            <label class="block text-xs text-[color:var(--text-muted)] mb-1">Название <span class="text-red-500">*</span></label>
+            <label class="block text-xs text-[color:var(--text-muted)] mb-1">Название <span class="text-status-critical">*</span></label>
             <TextField
               v-model="form.name"
               placeholder="Кокос + Перлит 70/30"
@@ -127,7 +127,7 @@
           <button
             v-if="form.components.length > 1"
             type="button"
-            class="h-[2.6rem] px-2 text-sm text-[color:var(--text-muted)] hover:text-red-500"
+            class="h-[2.6rem] px-2 text-sm text-[color:var(--text-muted)] hover:text-status-critical"
             title="Удалить компонент"
             @click="removeComponent(idx)"
           >
@@ -151,7 +151,7 @@
             v-for="sys in SYSTEM_OPTIONS"
             :key="sys.value"
             class="flex items-center gap-1.5 rounded-md border border-[color:var(--border-muted)] px-2 py-1 cursor-pointer text-xs hover:bg-[color:var(--bg-muted)]"
-            :class="{ 'bg-emerald-50 dark:bg-emerald-900/20 border-[color:var(--status-ok)]': form.applicable_systems.includes(sys.value) }"
+            :class="{ 'bg-status-ok-soft border-status-ok': form.applicable_systems.includes(sys.value) }"
           >
             <input
               type="checkbox"

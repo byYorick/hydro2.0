@@ -13,14 +13,14 @@
         </div>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div>
-            <label class="block text-xs text-[color:var(--text-muted)] mb-1">Производитель <span class="text-red-500">*</span></label>
+            <label class="block text-xs text-[color:var(--text-muted)] mb-1">Производитель <span class="text-status-critical">*</span></label>
             <TextField
               v-model="form.manufacturer"
               placeholder="Yara, Masterblend, Haifa..."
             />
           </div>
           <div>
-            <label class="block text-xs text-[color:var(--text-muted)] mb-1">Название продукта <span class="text-red-500">*</span></label>
+            <label class="block text-xs text-[color:var(--text-muted)] mb-1">Название продукта <span class="text-status-critical">*</span></label>
             <TextField
               v-model="form.name"
               placeholder="Masterblend 4-18-38"

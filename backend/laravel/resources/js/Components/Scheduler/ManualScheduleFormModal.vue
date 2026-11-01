@@ -48,7 +48,7 @@
 
         <div
           v-if="showNonExecutableWarning"
-          class="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200/90"
+          class="rounded-xl border border-status-warning bg-status-warning-soft px-3 py-2 text-xs text-status-warning"
         >
           На AE3 этот тип появится в плане, но без автоматического запуска.
         </div>
@@ -331,7 +331,7 @@
 
     <p
       v-if="!isValid && validationHint"
-      class="mt-3 text-xs text-amber-400/90"
+      class="mt-3 text-xs text-status-warning"
       data-testid="manual-schedule-validation-hint"
     >
       {{ validationHint }}
@@ -508,12 +508,12 @@ function fieldError(key: string): string | null {
 function taskCardClass(option: (typeof taskOptions)[number]): string {
   const selected = form.task_type === option.value
   const accentMap: Record<string, string> = {
-    cyan: 'border-cyan-500/50 bg-cyan-500/10',
-    amber: 'border-amber-500/50 bg-amber-500/10',
-    green: 'border-emerald-500/50 bg-emerald-500/10',
-    blue: 'border-sky-500/50 bg-sky-500/10',
-    violet: 'border-violet-500/50 bg-violet-500/10',
-    slate: 'border-slate-500/50 bg-slate-500/10',
+    cyan: 'border-[color:var(--series-teal)] bg-[color:color-mix(in_srgb,var(--series-teal)_14%,transparent)]',
+    amber: 'border-[color:var(--series-yellow)] bg-[color:color-mix(in_srgb,var(--series-yellow)_14%,transparent)]',
+    green: 'border-[color:var(--series-lime)] bg-[color:color-mix(in_srgb,var(--series-lime)_14%,transparent)]',
+    blue: 'border-[color:var(--series-blue)] bg-[color:color-mix(in_srgb,var(--series-blue)_14%,transparent)]',
+    violet: 'border-[color:var(--series-violet)] bg-[color:color-mix(in_srgb,var(--series-violet)_14%,transparent)]',
+    slate: 'border-[color:var(--status-offline)] bg-status-offline-soft',
   }
   return selected
     ? `${accentMap[option.accent] ?? 'border-[color:var(--status-info)]'} ring-1 ring-[color:var(--status-info)]/30`
