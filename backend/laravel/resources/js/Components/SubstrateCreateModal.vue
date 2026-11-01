@@ -14,14 +14,20 @@
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div>
             <label class="block text-xs text-[color:var(--text-muted)] mb-1">Код (английский) <span class="text-status-critical">*</span></label>
-            <TextField v-model="form.code" placeholder="coco_perlite_70_30" />
+            <TextField
+              v-model="form.code"
+              placeholder="coco_perlite_70_30"
+            />
             <p class="text-[11px] text-[color:var(--text-muted)] mt-0.5">
               Уникальный код, латиница + цифры + _
             </p>
           </div>
           <div>
             <label class="block text-xs text-[color:var(--text-muted)] mb-1">Название <span class="text-status-critical">*</span></label>
-            <TextField v-model="form.name" placeholder="Кокос + Перлит 70/30" />
+            <TextField
+              v-model="form.name"
+              placeholder="Кокос + Перлит 70/30"
+            />
           </div>
         </div>
       </div>
@@ -93,15 +99,31 @@
         >
           <div>
             <label class="block text-[10px] text-[color:var(--text-muted)] mb-0.5">Код</label>
-            <TextField v-model="comp.name" class="!text-xs" placeholder="coco" />
+            <TextField
+              v-model="comp.name"
+              class="!text-xs"
+              placeholder="coco"
+            />
           </div>
           <div>
             <label class="block text-[10px] text-[color:var(--text-muted)] mb-0.5">Название</label>
-            <TextField v-model="comp.label" class="!text-xs" placeholder="Кокос" />
+            <TextField
+              v-model="comp.label"
+              class="!text-xs"
+              placeholder="Кокос"
+            />
           </div>
           <div>
             <label class="block text-[10px] text-[color:var(--text-muted)] mb-0.5 text-center">Доля, %</label>
-            <TextField v-model.number="comp.ratio_pct" type="number" min="0" max="100" step="0.1" class="hide-spin !text-xs"  control-class="text-center" />
+            <TextField
+              v-model.number="comp.ratio_pct"
+              type="number"
+              min="0"
+              max="100"
+              step="0.1"
+              class="hide-spin !text-xs"
+              control-class="text-center"
+            />
           </div>
           <button
             v-if="form.components.length > 1"
@@ -147,7 +169,13 @@
       <!-- Заметки -->
       <div>
         <label class="block text-xs text-[color:var(--text-muted)] mb-1">Заметки</label>
-        <TextField multiline v-model="form.notes" rows="2" class="!h-auto !py-2" placeholder="Например: перед посадкой замочить на 12 часов"  />
+        <TextField
+          v-model="form.notes"
+          multiline
+          rows="2"
+          class="!h-auto !py-2"
+          placeholder="Например: перед посадкой замочить на 12 часов"
+        />
       </div>
     </div>
 

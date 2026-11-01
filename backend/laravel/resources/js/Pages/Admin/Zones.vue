@@ -11,9 +11,15 @@
         class="grid grid-cols-1 md:grid-cols-4 gap-2"
         @submit.prevent="onCreate"
       >
-        <TextField v-model="form.name" placeholder="Name" />
-        <TextField v-model="form.description" placeholder="Description" />
-        <SelectField v-model="form.status" >
+        <TextField
+          v-model="form.name"
+          placeholder="Name"
+        />
+        <TextField
+          v-model="form.description"
+          placeholder="Description"
+        />
+        <SelectField v-model="form.status">
           <option value="RUNNING">
             RUNNING
           </option>
@@ -27,7 +33,7 @@
             ALARM
           </option>
         </SelectField>
-        <SelectField v-model="form.greenhouse_id" >
+        <SelectField v-model="form.greenhouse_id">
           <option :value="null">
             Выберите теплицу
           </option>

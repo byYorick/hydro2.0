@@ -58,8 +58,23 @@
             />
           </div>
           <div class="settings-row__control flex-wrap">
-            <TextField :id="stepInputId(field.path, index, 'channel')" v-model="step.channel" type="text" placeholder="канал" :aria-label="`Канал шага ${index + 1}`" :data-testid="`command-template-channel-${field.path}-${index}`"  control-class="settings-control--text font-mono" />
-            <SelectField :id="stepInputId(field.path, index, 'state')" :value="step.params.state ? 'true' : 'false'" :aria-label="`Состояние шага ${index + 1}`" :data-testid="`command-template-state-${field.path}-${index}`" @change="step.params.state = ($event.target as HTMLSelectElement).value === 'true'"  control-class="settings-control--select" >
+            <TextField
+              :id="stepInputId(field.path, index, 'channel')"
+              v-model="step.channel"
+              type="text"
+              placeholder="канал"
+              :aria-label="`Канал шага ${index + 1}`"
+              :data-testid="`command-template-channel-${field.path}-${index}`"
+              control-class="settings-control--text font-mono"
+            />
+            <SelectField
+              :id="stepInputId(field.path, index, 'state')"
+              :model-value="step.params.state ? 'true' : 'false'"
+              :aria-label="`Состояние шага ${index + 1}`"
+              :data-testid="`command-template-state-${field.path}-${index}`"
+              control-class="settings-control--select"
+              @change="step.params.state = ($event.target as HTMLSelectElement).value === 'true'"
+            >
               <option value="true">
                 Включить
               </option>

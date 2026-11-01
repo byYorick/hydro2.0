@@ -208,7 +208,13 @@
                   :for="`node-${node.id}-greenhouse`"
                   class="sr-only"
                 >Теплица</label>
-                <SelectField :id="`node-${node.id}-greenhouse`" v-model="assignmentForms[node.id].greenhouse_id" :name="`node_${node.id}_greenhouse_id`" required @change="onGreenhouseChange(node.id)" >
+                <SelectField
+                  :id="`node-${node.id}-greenhouse`"
+                  v-model="assignmentForms[node.id].greenhouse_id"
+                  :name="`node_${node.id}_greenhouse_id`"
+                  required
+                  @change="onGreenhouseChange(node.id)"
+                >
                   <option :value="null">
                     Выберите теплицу
                   </option>
@@ -224,7 +230,13 @@
                   :for="`node-${node.id}-zone`"
                   class="sr-only"
                 >Зона</label>
-                <SelectField :id="`node-${node.id}-zone`" v-model="assignmentForms[node.id].zone_id" :name="`node_${node.id}_zone_id`" :disabled="!assignmentForms[node.id].greenhouse_id" required >
+                <SelectField
+                  :id="`node-${node.id}-zone`"
+                  v-model="assignmentForms[node.id].zone_id"
+                  :name="`node_${node.id}_zone_id`"
+                  :disabled="!assignmentForms[node.id].greenhouse_id"
+                  required
+                >
                   <option :value="null">
                     Выберите зону
                   </option>
@@ -240,7 +252,12 @@
                   :for="`node-${node.id}-name`"
                   class="sr-only"
                 >Имя ноды</label>
-                <TextField :id="`node-${node.id}-name`" v-model="assignmentForms[node.id].name" :name="`node_${node.id}_name`" placeholder="Имя ноды (опционально)" />
+                <TextField
+                  :id="`node-${node.id}-name`"
+                  v-model="assignmentForms[node.id].name"
+                  :name="`node_${node.id}_name`"
+                  placeholder="Имя ноды (опционально)"
+                />
                 <Button
                   type="submit"
                   size="sm"

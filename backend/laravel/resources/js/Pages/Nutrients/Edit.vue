@@ -12,7 +12,11 @@
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div>
             <label class="block text-xs text-[color:var(--text-muted)] mb-1">Производитель</label>
-            <TextField v-model="form.manufacturer" type="text" placeholder="Yara" />
+            <TextField
+              v-model="form.manufacturer"
+              type="text"
+              placeholder="Yara"
+            />
             <p
               v-if="errors.manufacturer"
               class="text-xs text-[color:var(--badge-danger-text)] mt-1"
@@ -23,7 +27,11 @@
 
           <div>
             <label class="block text-xs text-[color:var(--text-muted)] mb-1">Название продукта</label>
-            <TextField v-model="form.name" type="text" placeholder="YaraRega Water-Soluble NPK" />
+            <TextField
+              v-model="form.name"
+              type="text"
+              placeholder="YaraRega Water-Soluble NPK"
+            />
             <p
               v-if="errors.name"
               class="text-xs text-[color:var(--badge-danger-text)] mt-1"
@@ -34,7 +42,7 @@
 
           <div>
             <label class="block text-xs text-[color:var(--text-muted)] mb-1">Компонент</label>
-            <SelectField v-model="form.component" >
+            <SelectField v-model="form.component">
               <option value="npk">
                 NPK
               </option>
@@ -58,7 +66,11 @@
 
           <div>
             <label class="block text-xs text-[color:var(--text-muted)] mb-1">Состав</label>
-            <TextField v-model="form.composition" type="text" placeholder="NPK 18-18-18" />
+            <TextField
+              v-model="form.composition"
+              type="text"
+              placeholder="NPK 18-18-18"
+            />
             <p
               v-if="errors.composition"
               class="text-xs text-[color:var(--badge-danger-text)] mt-1"
@@ -69,7 +81,11 @@
 
           <div>
             <label class="block text-xs text-[color:var(--text-muted)] mb-1">Рекомендуемые стадии</label>
-            <TextField v-model="form.recommended_stage" type="text" placeholder="ROOTING,VEG,FLOWER,FRUIT" />
+            <TextField
+              v-model="form.recommended_stage"
+              type="text"
+              placeholder="ROOTING,VEG,FLOWER,FRUIT"
+            />
             <p
               v-if="errors.recommended_stage"
               class="text-xs text-[color:var(--badge-danger-text)] mt-1"
@@ -80,17 +96,31 @@
 
           <div>
             <label class="block text-xs text-[color:var(--text-muted)] mb-1">Ссылка на источник</label>
-            <TextField v-model="form.source_url" type="url" placeholder="example.test/product" />
+            <TextField
+              v-model="form.source_url"
+              type="url"
+              placeholder="example.test/product"
+            />
           </div>
 
           <div class="md:col-span-2">
             <label class="block text-xs text-[color:var(--text-muted)] mb-1">Код системы питания</label>
-            <TextField v-model="form.system_code" type="text" placeholder="YARAREGA_CALCINIT_HAIFA_MICRO_V1" />
+            <TextField
+              v-model="form.system_code"
+              type="text"
+              placeholder="YARAREGA_CALCINIT_HAIFA_MICRO_V1"
+            />
           </div>
 
           <div class="md:col-span-2">
             <label class="block text-xs text-[color:var(--text-muted)] mb-1">Заметки</label>
-            <TextField multiline v-model="form.notes" rows="5" placeholder="Технологические примечания по применению..."  control-class="h-auto"  />
+            <TextField
+              v-model="form.notes"
+              multiline
+              rows="5"
+              placeholder="Технологические примечания по применению..."
+              control-class="h-auto"
+            />
             <p
               v-if="errors.notes"
               class="text-xs text-[color:var(--badge-danger-text)] mt-1"

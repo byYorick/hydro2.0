@@ -97,7 +97,11 @@
             v-if="canConfigureDevices"
             class="flex flex-wrap items-center gap-2"
           >
-            <SelectField v-model="assignWeatherNodeId" class="min-w-[180px]" data-testid="site-weather-assign-select" >
+            <SelectField
+              v-model="assignWeatherNodeId"
+              class="min-w-[180px]"
+              data-testid="site-weather-assign-select"
+            >
               <option :value="null">
                 Выберите climate-ноду
               </option>

@@ -29,7 +29,12 @@
       v-else
       class="flex items-center gap-2"
     >
-      <SelectField v-model="selectedState" class="flex-1" :disabled="transitioning"  control-class="h-9" >
+      <SelectField
+        v-model="selectedState"
+        class="flex-1"
+        :disabled="transitioning"
+        control-class="h-9"
+      >
         <option :value="null">
           Выберите состояние...
         </option>

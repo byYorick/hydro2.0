@@ -10,7 +10,11 @@
       <FilterBar>
         <div class="flex items-center gap-2 flex-1 sm:flex-none">
           <label class="text-sm text-[color:var(--text-muted)] shrink-0">Статус:</label>
-          <SelectField v-model="statusFilter" data-testid="alerts-filter-active" class="flex-1 sm:w-auto sm:min-w-[160px]" >
+          <SelectField
+            v-model="statusFilter"
+            data-testid="alerts-filter-active"
+            class="flex-1 sm:w-auto sm:min-w-[160px]"
+          >
             <option value="active">
               Только активные
             </option>
@@ -25,7 +29,11 @@
 
         <div class="flex items-center gap-2 flex-1 sm:flex-none">
           <label class="text-sm text-[color:var(--text-muted)] shrink-0">Зона:</label>
-          <SelectField v-model="zoneIdFilter" data-testid="alerts-filter-zone" class="flex-1 sm:w-auto sm:min-w-[180px]" >
+          <SelectField
+            v-model="zoneIdFilter"
+            data-testid="alerts-filter-zone"
+            class="flex-1 sm:w-auto sm:min-w-[180px]"
+          >
             <option value="">
               Все зоны
             </option>
@@ -41,7 +49,11 @@
 
         <div class="flex items-center gap-2 flex-1 sm:flex-none">
           <label class="text-sm text-[color:var(--text-muted)] shrink-0">Критичность:</label>
-          <SelectField v-model="severityFilter" data-testid="alerts-filter-severity" class="flex-1 sm:w-auto sm:min-w-[150px]" >
+          <SelectField
+            v-model="severityFilter"
+            data-testid="alerts-filter-severity"
+            class="flex-1 sm:w-auto sm:min-w-[150px]"
+          >
             <option value="">
               Все
             </option>
@@ -136,7 +148,11 @@
         >
           <div class="flex items-center gap-2 flex-1 sm:flex-none">
             <label class="text-sm text-[color:var(--text-muted)] shrink-0">Источник:</label>
-            <SelectField v-model="sourceFilter" data-testid="alerts-filter-source" class="flex-1 sm:w-auto sm:min-w-[150px]" >
+            <SelectField
+              v-model="sourceFilter"
+              data-testid="alerts-filter-source"
+              class="flex-1 sm:w-auto sm:min-w-[150px]"
+            >
               <option value="">
                 Все
               </option>
@@ -154,7 +170,11 @@
 
           <div class="flex items-center gap-2 flex-1 sm:flex-none">
             <label class="text-sm text-[color:var(--text-muted)] shrink-0">Категория:</label>
-            <SelectField v-model="categoryFilter" data-testid="alerts-filter-category" class="flex-1 sm:w-auto sm:min-w-[170px]" >
+            <SelectField
+              v-model="categoryFilter"
+              data-testid="alerts-filter-category"
+              class="flex-1 sm:w-auto sm:min-w-[170px]"
+            >
               <option value="">
                 Все
               </option>
@@ -184,7 +204,15 @@
 
           <div class="flex items-center gap-2 flex-1 sm:flex-none">
             <label class="text-sm text-[color:var(--text-muted)] shrink-0">Скрытие повторов, сек</label>
-            <TextField v-model.number="toastSuppressionSec" type="number" min="0" max="600" step="5" class="w-24" data-testid="alerts-filter-suppression" />
+            <TextField
+              v-model.number="toastSuppressionSec"
+              type="number"
+              min="0"
+              max="600"
+              step="5"
+              class="w-24"
+              data-testid="alerts-filter-suppression"
+            />
           </div>
         </div>
 

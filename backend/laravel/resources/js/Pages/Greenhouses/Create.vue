@@ -14,7 +14,15 @@
               for="greenhouse-name"
               class="block text-xs text-[color:var(--text-muted)] mb-1"
             >Название <span class="text-[color:var(--status-critical)]">*</span></label>
-            <TextField id="greenhouse-name" v-model="form.name" name="name" type="text" required placeholder="Main Greenhouse" :class="errors.name ? 'border-[color:var(--status-critical)] bg-[color:var(--badge-danger-bg)]' : ''" />
+            <TextField
+              id="greenhouse-name"
+              v-model="form.name"
+              name="name"
+              type="text"
+              required
+              placeholder="Main Greenhouse"
+              :class="errors.name ? 'border-[color:var(--status-critical)] bg-[color:var(--badge-danger-bg)]' : ''"
+            />
             <div
               v-if="errors.name"
               class="text-xs text-[color:var(--badge-danger-text)] mt-1"
@@ -31,7 +39,13 @@
               for="greenhouse-timezone"
               class="block text-xs text-[color:var(--text-muted)] mb-1"
             >Часовой пояс</label>
-            <TextField id="greenhouse-timezone" v-model="form.timezone" name="timezone" type="text" placeholder="Europe/Moscow" />
+            <TextField
+              id="greenhouse-timezone"
+              v-model="form.timezone"
+              name="timezone"
+              type="text"
+              placeholder="Europe/Moscow"
+            />
           </div>
           
           <div>
@@ -39,7 +53,11 @@
               for="greenhouse-type"
               class="block text-xs text-[color:var(--text-muted)] mb-1"
             >Тип</label>
-            <SelectField id="greenhouse-type" v-model.number="form.greenhouse_type_id" name="greenhouse_type_id" >
+            <SelectField
+              id="greenhouse-type"
+              v-model.number="form.greenhouse_type_id"
+              name="greenhouse_type_id"
+            >
               <option :value="null">
                 Выберите тип
               </option>

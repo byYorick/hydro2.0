@@ -14,11 +14,17 @@
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div>
             <label class="block text-xs text-[color:var(--text-muted)] mb-1">Производитель <span class="text-status-critical">*</span></label>
-            <TextField v-model="form.manufacturer" placeholder="Yara, Masterblend, Haifa..." />
+            <TextField
+              v-model="form.manufacturer"
+              placeholder="Yara, Masterblend, Haifa..."
+            />
           </div>
           <div>
             <label class="block text-xs text-[color:var(--text-muted)] mb-1">Название продукта <span class="text-status-critical">*</span></label>
-            <TextField v-model="form.name" placeholder="Masterblend 4-18-38" />
+            <TextField
+              v-model="form.name"
+              placeholder="Masterblend 4-18-38"
+            />
           </div>
         </div>
         <div>
@@ -37,7 +43,10 @@
         </div>
         <div>
           <label class="block text-xs text-[color:var(--text-muted)] mb-1">Состав / формула</label>
-          <TextField v-model="form.composition" placeholder="N 4% · P 18% · K 38%" />
+          <TextField
+            v-model="form.composition"
+            placeholder="N 4% · P 18% · K 38%"
+          />
           <p class="text-[11px] text-[color:var(--text-muted)] mt-1">
             Указать % содержания элементов, либо химическую формулу (Ca(NO₃)₂·4H₂O)
           </p>
@@ -51,14 +60,23 @@
         </div>
         <div>
           <label class="block text-xs text-[color:var(--text-muted)] mb-1">Рекомендуемые стадии роста</label>
-          <TextField v-model="form.recommended_stage" placeholder="VEG, BLOOM, FRUIT" />
+          <TextField
+            v-model="form.recommended_stage"
+            placeholder="VEG, BLOOM, FRUIT"
+          />
           <p class="text-[11px] text-[color:var(--text-muted)] mt-1">
             На каких стадиях применять — через запятую
           </p>
         </div>
         <div>
           <label class="block text-xs text-[color:var(--text-muted)] mb-1">Заметки</label>
-          <TextField multiline v-model="form.notes" rows="2" class="!h-auto !py-2" placeholder="Например: хорошо растворим в тёплой воде; хранить в сухом месте"  />
+          <TextField
+            v-model="form.notes"
+            multiline
+            rows="2"
+            class="!h-auto !py-2"
+            placeholder="Например: хорошо растворим в тёплой воде; хранить в сухом месте"
+          />
         </div>
       </div>
     </div>

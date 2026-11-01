@@ -161,7 +161,12 @@
           :title="fieldHelp('point_1_reference')"
         >
           {{ point1FieldLabel }}
-          <TextField v-model.number="point1Value" type="number" step="0.01" class="mt-1 w-full" />
+          <TextField
+            v-model.number="point1Value"
+            type="number"
+            step="0.01"
+            class="mt-1 w-full"
+          />
         </label>
         <div class="text-xs text-[color:var(--text-dim)]">
           {{ point1StatusLine }}
@@ -201,7 +206,12 @@
           :title="fieldHelp('point_2_reference')"
         >
           {{ point2FieldLabel }}
-          <TextField v-model.number="point2Value" type="number" step="0.01" class="mt-1 w-full" />
+          <TextField
+            v-model.number="point2Value"
+            type="number"
+            step="0.01"
+            class="mt-1 w-full"
+          />
         </label>
         <div class="text-xs text-[color:var(--text-dim)]">
           {{ point2StatusLine }}

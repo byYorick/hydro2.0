@@ -11,7 +11,7 @@
         class="grid grid-cols-1 md:grid-cols-3 gap-2"
         @submit.prevent="onUpdate"
       >
-        <SelectField v-model="selectedId" >
+        <SelectField v-model="selectedId">
           <option
             v-for="r in recipes"
             :key="r.id"
@@ -20,8 +20,14 @@
             {{ r.name }}
           </option>
         </SelectField>
-        <TextField v-model="form.name" placeholder="New name" />
-        <TextField v-model="form.description" placeholder="Description" />
+        <TextField
+          v-model="form.name"
+          placeholder="New name"
+        />
+        <TextField
+          v-model="form.description"
+          placeholder="Description"
+        />
         <div class="md:col-span-3">
           <Button
             size="sm"

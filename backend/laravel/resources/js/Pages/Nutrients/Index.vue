@@ -93,8 +93,16 @@
     </Card>
 
     <div class="mb-3 flex flex-col sm:flex-row gap-2 sm:items-center">
-      <TextField v-model="query" type="text" class="sm:w-64" placeholder="Поиск по производителю/названию" />
-      <SelectField v-model="componentFilter" class="sm:w-52" >
+      <TextField
+        v-model="query"
+        type="text"
+        class="sm:w-64"
+        placeholder="Поиск по производителю/названию"
+      />
+      <SelectField
+        v-model="componentFilter"
+        class="sm:w-52"
+      >
         <option value="all">
           Все компоненты
         </option>

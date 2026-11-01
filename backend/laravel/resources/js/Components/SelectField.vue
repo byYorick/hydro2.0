@@ -10,7 +10,7 @@
     <select
       v-model="model"
       class="input-select min-w-0"
-      :class="[inline ? 'flex-1' : 'w-full', controlClass]"
+      :class="[inline ? 'flex-1' : 'w-full', controlClass, attrs.class]"
       :disabled="disabled || undefined"
       :aria-invalid="error ? 'true' : undefined"
       :aria-describedby="error ? errorId : undefined"
@@ -56,7 +56,7 @@ const props = withDefaults(defineProps<Props>(), {
   controlClass: '',
 })
 
-const model = defineModel<string | number>({ default: '' })
+const model = defineModel<string | number | boolean | null>({ default: '' })
 const attrs = useAttrs()
 const errorId = `field-error-${Math.random().toString(36).slice(2, 10)}`
 

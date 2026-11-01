@@ -23,7 +23,13 @@
         {{ status.label }}
       </button>
       <div class="ml-auto flex items-center">
-        <TextField :value="query" class="w-32" placeholder="Поиск..." @input="query = ($event.target as HTMLInputElement).value"  control-class="h-6 text-xs px-2" />
+        <TextField
+          :model-value="query"
+          class="w-32"
+          placeholder="Поиск..."
+          control-class="h-6 text-xs px-2"
+          @input="query = ($event.target as HTMLInputElement).value"
+        />
       </div>
     </div>
 

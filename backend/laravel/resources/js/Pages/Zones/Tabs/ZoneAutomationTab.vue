@@ -219,7 +219,11 @@
                     <div class="grid grid-cols-1 md:grid-cols-[220px,1fr] gap-3 items-end">
                       <label class="text-xs text-[color:var(--text-muted)]">
                         Режим профиля
-                        <SelectField v-model="automationLogicMode" class="mt-1 w-full" :disabled="!canConfigureAutomation || isApplyingProfile || isSyncingAutomationLogicProfile" >
+                        <SelectField
+                          v-model="automationLogicMode"
+                          class="mt-1 w-full"
+                          :disabled="!canConfigureAutomation || isApplyingProfile || isSyncingAutomationLogicProfile"
+                        >
                           <option value="setup">
                             setup
                           </option>
@@ -379,7 +383,13 @@
             class="block text-sm text-[color:var(--text-primary)]"
           >
             Причина
-            <TextField multiline v-model="controlModeReason" class="mt-1 w-full" data-testid="control-mode-reason"  control-class="min-h-[80px]"  />
+            <TextField
+              v-model="controlModeReason"
+              multiline
+              class="mt-1 w-full"
+              data-testid="control-mode-reason"
+              control-class="min-h-[80px]"
+            />
           </label>
         </div>
       </ConfirmModal>

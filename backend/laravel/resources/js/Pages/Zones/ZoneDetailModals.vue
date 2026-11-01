@@ -60,11 +60,24 @@
         <div>Зафиксировать сбор урожая и завершить цикл?</div>
         <div>
           <label class="text-xs text-[color:var(--text-dim)]">Метка партии (опционально)</label>
-          <TextField v-model="harvestBatchLabel" class="mt-1 w-full" placeholder="Например: Batch-042" />
+          <TextField
+            v-model="harvestBatchLabel"
+            class="mt-1 w-full"
+            placeholder="Например: Batch-042"
+          />
         </div>
         <div>
           <label class="text-xs text-[color:var(--text-dim)]">Урожай, кг</label>
-          <TextField v-model="harvestYieldKg" type="number" min="0" step="0.01" inputmode="decimal" class="mt-1 w-full" placeholder="Необязательно" data-testid="harvest-yield-kg" />
+          <TextField
+            v-model="harvestYieldKg"
+            type="number"
+            min="0"
+            step="0.01"
+            inputmode="decimal"
+            class="mt-1 w-full"
+            placeholder="Необязательно"
+            data-testid="harvest-yield-kg"
+          />
         </div>
       </div>
     </ConfirmModal>
@@ -83,7 +96,13 @@
         <div>Остановить цикл? Это действие нельзя отменить.</div>
         <div>
           <label class="text-xs text-[color:var(--text-dim)]">Причина (опционально)</label>
-          <TextField multiline v-model="abortNotes" class="mt-1 w-full resize-none" placeholder="Короткое описание причины"  control-class="h-20"  />
+          <TextField
+            v-model="abortNotes"
+            multiline
+            class="mt-1 w-full resize-none"
+            placeholder="Короткое описание причины"
+            control-class="h-20"
+          />
         </div>
       </div>
     </ConfirmModal>
@@ -102,7 +121,11 @@
         <div>Введите ID ревизии рецепта и выберите режим применения.</div>
         <div>
           <label class="text-xs text-[color:var(--text-dim)]">ID ревизии рецепта</label>
-          <TextField v-model="changeRecipeRevisionId" class="mt-1 w-full" placeholder="Например: 42" />
+          <TextField
+            v-model="changeRecipeRevisionId"
+            class="mt-1 w-full"
+            placeholder="Например: 42"
+          />
         </div>
         <div class="flex flex-wrap gap-2">
           <button

@@ -59,18 +59,31 @@
           <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
               <label class="block text-xs text-[color:var(--text-muted)] mb-1">Системное имя</label>
-              <TextField v-model="channel.channel" type="text" placeholder="relay1"  control-class="h-9 text-xs" />
+              <TextField
+                v-model="channel.channel"
+                type="text"
+                placeholder="relay1"
+                control-class="h-9 text-xs"
+              />
             </div>
             <div>
               <label class="block text-xs text-[color:var(--text-muted)] mb-1">Отображаемое имя</label>
-              <TextField v-model="channel.name" type="text" placeholder="Реле 1"  control-class="h-9 text-xs" />
+              <TextField
+                v-model="channel.name"
+                type="text"
+                placeholder="Реле 1"
+                control-class="h-9 text-xs"
+              />
             </div>
           </div>
 
           <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
               <label class="block text-xs text-[color:var(--text-muted)] mb-1">Тип</label>
-              <SelectField v-model="channel.type"  control-class="h-9 text-xs" >
+              <SelectField
+                v-model="channel.type"
+                control-class="h-9 text-xs"
+              >
                 <option value="ACTUATOR">
                   ACTUATOR
                 </option>
@@ -81,7 +94,11 @@
             </div>
             <div>
               <label class="block text-xs text-[color:var(--text-muted)] mb-1">Actuator type</label>
-              <SelectField v-model="channel.actuator_type" :disabled="channel.type !== 'ACTUATOR'"  control-class="h-9 text-xs" >
+              <SelectField
+                v-model="channel.actuator_type"
+                :disabled="channel.type !== 'ACTUATOR'"
+                control-class="h-9 text-xs"
+              >
                 <option value="RELAY">
                   RELAY
                 </option>
@@ -101,11 +118,21 @@
           <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
               <label class="block text-xs text-[color:var(--text-muted)] mb-1">Metric</label>
-              <TextField v-model="channel.metric" type="text" placeholder="RELAY"  control-class="h-9 text-xs" />
+              <TextField
+                v-model="channel.metric"
+                type="text"
+                placeholder="RELAY"
+                control-class="h-9 text-xs"
+              />
             </div>
             <div>
               <label class="block text-xs text-[color:var(--text-muted)] mb-1">Описание</label>
-              <TextField v-model="channel.description" type="text" placeholder="Краткое описание канала"  control-class="h-9 text-xs" />
+              <TextField
+                v-model="channel.description"
+                type="text"
+                placeholder="Краткое описание канала"
+                control-class="h-9 text-xs"
+              />
             </div>
           </div>
         </div>

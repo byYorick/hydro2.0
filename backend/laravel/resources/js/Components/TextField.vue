@@ -16,7 +16,7 @@
         ref="control"
         v-model="model"
         class="input-field min-w-0 w-full"
-        :class="controlClass"
+        :class="[controlClass, attrs.class]"
         :rows="rows"
         :disabled="disabled || undefined"
         :aria-invalid="error ? 'true' : undefined"
@@ -28,7 +28,7 @@
         ref="control"
         v-model="model"
         class="input-field min-w-0"
-        :class="[inline ? 'flex-1' : 'w-full', controlClass]"
+        :class="[inline ? 'flex-1' : 'w-full', controlClass, attrs.class]"
         :type="type"
         :disabled="disabled || undefined"
         :aria-invalid="error ? 'true' : undefined"
@@ -68,7 +68,7 @@ interface Props {
   suffix?: string
   inline?: boolean
   multiline?: boolean
-  rows?: number
+  rows?: number | string
   type?: string
   disabled?: boolean
   controlClass?: string
@@ -87,7 +87,7 @@ const props = withDefaults(defineProps<Props>(), {
   controlClass: '',
 })
 
-const model = defineModel<string | number | null>({ default: '' })
+const model = defineModel<string | number | boolean | null>({ default: '' })
 const attrs = useAttrs()
 const control = ref<HTMLInputElement | HTMLTextAreaElement | null>(null)
 const errorId = `field-error-${Math.random().toString(36).slice(2, 10)}`

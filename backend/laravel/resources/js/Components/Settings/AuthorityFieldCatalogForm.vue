@@ -7,7 +7,14 @@
       v-if="totalFields > SEARCH_THRESHOLD"
       class="flex flex-wrap items-center gap-2"
     >
-      <TextField v-model="search" type="search" class="w-full sm:w-64" placeholder="Поиск параметра" aria-label="Поиск параметра" data-testid="authority-field-search" />
+      <TextField
+        v-model="search"
+        type="search"
+        class="w-full sm:w-64"
+        placeholder="Поиск параметра"
+        aria-label="Поиск параметра"
+        data-testid="authority-field-search"
+      />
       <span class="text-xs text-[color:var(--text-dim)]">
         {{ matchedFields }} из {{ totalFields }}
       </span>
@@ -87,9 +94,27 @@
               </span>
             </label>
 
-            <TextField multiline v-else-if="field.type === 'json'" :id="fieldInputId(field.path)" v-model="draft[field.path]" rows="6" :data-testid="`authority-field-${field.path}`"  control-class="settings-control--wide font-mono text-xs"  />
+            <TextField
+              v-else-if="field.type === 'json'"
+              :id="fieldInputId(field.path)"
+              v-model="draft[field.path]"
+              multiline
+              rows="6"
+              :data-testid="`authority-field-${field.path}`"
+              control-class="settings-control--wide font-mono text-xs"
+            />
 
-            <TextField v-else :id="fieldInputId(field.path)" v-model="draft[field.path]" :type="field.type === 'string' ? 'text' : 'number'" :step="field.step ?? (field.type === 'integer' ? 1 : 'any')" :min="field.min" :max="field.max" :class="field.type === 'string' ? 'settings-control--text' : 'settings-control--num text-right'" :data-testid="`authority-field-${field.path}`" />
+            <TextField
+              v-else
+              :id="fieldInputId(field.path)"
+              v-model="draft[field.path]"
+              :type="field.type === 'string' ? 'text' : 'number'"
+              :step="field.step ?? (field.type === 'integer' ? 1 : 'any')"
+              :min="field.min"
+              :max="field.max"
+              :class="field.type === 'string' ? 'settings-control--text' : 'settings-control--num text-right'"
+              :data-testid="`authority-field-${field.path}`"
+            />
           </SettingsFieldRow>
         </div>
       </div>

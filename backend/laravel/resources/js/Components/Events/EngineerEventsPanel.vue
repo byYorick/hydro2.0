@@ -25,7 +25,13 @@
         {{ kind.label }}
       </button>
       <div class="ml-auto flex items-center gap-1.5">
-        <TextField :value="query" class="w-28" placeholder="Поиск..." @input="$emit('update:query', ($event.target as HTMLInputElement).value)"  control-class="h-6 text-xs px-2" />
+        <TextField
+          :model-value="query"
+          class="w-28"
+          placeholder="Поиск..."
+          control-class="h-6 text-xs px-2"
+          @input="$emit('update:query', ($event.target as HTMLInputElement).value)"
+        />
         <button
           type="button"
           class="h-6 px-2 text-[11px] rounded-md border border-[color:var(--border-muted)] text-[color:var(--text-dim)] hover:text-[color:var(--text-primary)] hover:bg-[color:var(--bg-elevated)] transition-colors"

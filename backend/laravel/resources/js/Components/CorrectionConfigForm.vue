@@ -326,7 +326,15 @@
                   </span>
                 </label>
 
-                <SelectField v-else-if="field.type === 'enum'" :id="`correction-config-${currentTab}-${field.path}`" :value="String(getByPath(currentForm, field.path) ?? '')" :data-testid="`correction-config-${currentTab}-${field.path}`" :disabled="Boolean(field.readonly)" @change="setByPath(currentForm, field.path, ($event.target as HTMLSelectElement).value)"  control-class="settings-control--select" >
+                <SelectField
+                  v-else-if="field.type === 'enum'"
+                  :id="`correction-config-${currentTab}-${field.path}`"
+                  :model-value="String(getByPath(currentForm, field.path) ?? '')"
+                  :data-testid="`correction-config-${currentTab}-${field.path}`"
+                  :disabled="Boolean(field.readonly)"
+                  control-class="settings-control--select"
+                  @change="setByPath(currentForm, field.path, ($event.target as HTMLSelectElement).value)"
+                >
                   <option
                     v-for="option in field.options || []"
                     :key="option"
@@ -336,7 +344,19 @@
                   </option>
                 </SelectField>
 
-                <TextField v-else :id="`correction-config-${currentTab}-${field.path}`" :value="String(getByPath(currentForm, field.path) ?? '')" :data-testid="`correction-config-${currentTab}-${field.path}`" :type="field.type === 'string' ? 'text' : 'number'" :step="field.step ?? (field.type === 'integer' ? 1 : 'any')" :min="field.min" :max="field.max" :disabled="Boolean(field.readonly)" :class="field.type === 'string' ? 'settings-control--text font-mono' : 'settings-control--num text-right'" @input="handleScalarInput(currentForm, field, $event)" />
+                <TextField
+                  v-else
+                  :id="`correction-config-${currentTab}-${field.path}`"
+                  :model-value="String(getByPath(currentForm, field.path) ?? '')"
+                  :data-testid="`correction-config-${currentTab}-${field.path}`"
+                  :type="field.type === 'string' ? 'text' : 'number'"
+                  :step="field.step ?? (field.type === 'integer' ? 1 : 'any')"
+                  :min="field.min"
+                  :max="field.max"
+                  :disabled="Boolean(field.readonly)"
+                  :class="field.type === 'string' ? 'settings-control--text font-mono' : 'settings-control--num text-right'"
+                  @input="handleScalarInput(currentForm, field, $event)"
+                />
                 <span
                   v-if="isFieldOverridden(field) && currentTab !== 'base'"
                   class="text-[11px] text-[var(--text-dim)] whitespace-nowrap"

@@ -193,13 +193,14 @@
             label="Заметки"
             class="md:col-span-2"
           >
-            <TextField multiline
+            <TextField
+              multiline
              
               :model-value="notes ?? ''"
               maxlength="2000"
               rows="3"
               @input="onNotesChange(($event.target as HTMLTextAreaElement).value)"
-             />
+            />
           </Field>
         </div>
       </ShellCard>

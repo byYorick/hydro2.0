@@ -45,7 +45,12 @@
             class="text-status-critical"
           >*</span>
         </div>
-        <SelectField v-model="assignments[role.key]" class="flex-1" :disabled="!canManage"  control-class="h-8 text-xs" >
+        <SelectField
+          v-model="assignments[role.key]"
+          class="flex-1"
+          :disabled="!canManage"
+          control-class="h-8 text-xs"
+        >
           <option value="">
             — не назначено —
           </option>

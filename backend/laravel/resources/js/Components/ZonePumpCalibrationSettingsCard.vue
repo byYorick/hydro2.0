@@ -34,7 +34,17 @@
           <label class="block text-xs font-medium text-[color:var(--text-muted)]">
             {{ field.label }}
           </label>
-          <TextField :value="stringValue(field.path)" :type="field.type === 'string' ? 'text' : 'number'" :step="field.step ?? (field.type === 'integer' ? 1 : 'any')" :min="field.min" :max="field.max" class="w-full" :placeholder="`Система: ${resolvedSystemSettings[field.path as keyof PumpCalibrationSettings]}`" :title="field.description" @input="updateField(field.path, ($event.target as HTMLInputElement).value)" />
+          <TextField
+            :model-value="stringValue(field.path)"
+            :type="field.type === 'string' ? 'text' : 'number'"
+            :step="field.step ?? (field.type === 'integer' ? 1 : 'any')"
+            :min="field.min"
+            :max="field.max"
+            class="w-full"
+            :placeholder="`Система: ${resolvedSystemSettings[field.path as keyof PumpCalibrationSettings]}`"
+            :title="field.description"
+            @input="updateField(field.path, ($event.target as HTMLInputElement).value)"
+          />
           <div class="text-[11px] text-[color:var(--text-dim)]">
             {{ field.description }}
           </div>

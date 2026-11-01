@@ -24,7 +24,16 @@
           </div>
         </div>
         
-        <TextField ref="inputRef" v-model="q" placeholder="Команда или поиск..." class="w-full transition-all duration-200" @keydown.down.prevent="selectedIndex = Math.min(selectedIndex + 1, totalItemsCount - 1)" @keydown.up.prevent="selectedIndex = Math.max(selectedIndex - 1, 0)" @keydown.enter.prevent="runSelected()"  control-class="h-12 px-4 text-sm" />
+        <TextField
+          ref="inputRef"
+          v-model="q"
+          placeholder="Команда или поиск..."
+          class="w-full transition-all duration-200"
+          control-class="h-12 px-4 text-sm"
+          @keydown.down.prevent="selectedIndex = Math.min(selectedIndex + 1, totalItemsCount - 1)"
+          @keydown.up.prevent="selectedIndex = Math.max(selectedIndex - 1, 0)"
+          @keydown.enter.prevent="runSelected()"
+        />
         
         <div class="mt-3 max-h-80 overflow-y-auto scrollbar-thin scrollbar-thumb-[color:var(--border-muted)] scrollbar-track-transparent">
           <!-- Группированные результаты -->

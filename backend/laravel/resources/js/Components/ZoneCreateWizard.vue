@@ -17,14 +17,33 @@
               for="zone-name"
               class="block text-xs text-[color:var(--text-muted)] mb-1"
             >Название зоны</label>
-            <TextField id="zone-name" v-model="form.name" name="name" type="text" placeholder="Например: Зона A" class="w-full" autocomplete="off" required  control-class="h-9" />
+            <TextField
+              id="zone-name"
+              v-model="form.name"
+              name="name"
+              type="text"
+              placeholder="Например: Зона A"
+              class="w-full"
+              autocomplete="off"
+              required
+              control-class="h-9"
+            />
           </div>
           <div>
             <label
               for="zone-description"
               class="block text-xs text-[color:var(--text-muted)] mb-1"
             >Описание (опционально)</label>
-            <TextField multiline id="zone-description" v-model="form.description" name="description" placeholder="Описание зоны..." class="w-full" autocomplete="off"  control-class="min-h-[60px] py-2 h-auto"  />
+            <TextField
+              id="zone-description"
+              v-model="form.description"
+              multiline
+              name="description"
+              placeholder="Описание зоны..."
+              class="w-full"
+              autocomplete="off"
+              control-class="min-h-[60px] py-2 h-auto"
+            />
           </div>
         </div>
       </div>

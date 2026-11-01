@@ -34,7 +34,14 @@
           >
             Название <span class="text-[color:var(--status-critical)]">*</span>
           </label>
-          <TextField id="plant-name" v-model="form.name" type="text" class="w-full" :class="errors.name ? 'border-[color:var(--status-critical)] bg-[color:var(--badge-danger-bg)]' : ''"  control-class="h-9" />
+          <TextField
+            id="plant-name"
+            v-model="form.name"
+            type="text"
+            class="w-full"
+            :class="errors.name ? 'border-[color:var(--status-critical)] bg-[color:var(--badge-danger-bg)]' : ''"
+            control-class="h-9"
+          />
           <div
             v-if="errors.name"
             class="text-xs text-[color:var(--status-critical)] mt-1"
@@ -48,7 +55,13 @@
             for="plant-species"
             class="block text-xs text-[color:var(--text-muted)] mb-1"
           >Вид</label>
-          <TextField id="plant-species" v-model="form.species" type="text" class="w-full"  control-class="h-9" />
+          <TextField
+            id="plant-species"
+            v-model="form.species"
+            type="text"
+            class="w-full"
+            control-class="h-9"
+          />
         </div>
 
         <div>
@@ -56,7 +69,13 @@
             for="plant-variety"
             class="block text-xs text-[color:var(--text-muted)] mb-1"
           >Сорт</label>
-          <TextField id="plant-variety" v-model="form.variety" type="text" class="w-full"  control-class="h-9" />
+          <TextField
+            id="plant-variety"
+            v-model="form.variety"
+            type="text"
+            class="w-full"
+            control-class="h-9"
+          />
         </div>
 
         <div>
@@ -160,7 +179,13 @@
             for="plant-description"
             class="block text-xs text-[color:var(--text-muted)] mb-1"
           >Описание</label>
-          <TextField multiline id="plant-description" v-model="form.description" rows="3" class="w-full"  />
+          <TextField
+            id="plant-description"
+            v-model="form.description"
+            multiline
+            rows="3"
+            class="w-full"
+          />
         </div>
       </div>
 

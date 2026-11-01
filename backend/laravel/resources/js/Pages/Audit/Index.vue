@@ -15,7 +15,7 @@
         <Card class="mb-4">
           <div class="mb-3 flex flex-wrap items-center gap-2">
             <label class="text-sm text-[color:var(--text-muted)]">Уровень:</label>
-            <SelectField v-model="levelFilter" >
+            <SelectField v-model="levelFilter">
               <option value="">
                 Все уровни
               </option>
@@ -33,7 +33,11 @@
               </option>
             </SelectField>
             <label class="ml-4 text-sm text-[color:var(--text-muted)]">Поиск:</label>
-            <TextField v-model="searchQuery" placeholder="Поиск по сообщению..." class="w-64" />
+            <TextField
+              v-model="searchQuery"
+              placeholder="Поиск по сообщению..."
+              class="w-64"
+            />
             <div class="ml-auto flex gap-2">
               <Button
                 size="sm"

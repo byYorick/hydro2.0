@@ -12,15 +12,36 @@
       >
         <div>
           <label class="block text-xs text-[color:var(--text-muted)] mb-1">Название</label>
-          <TextField v-model="newItem.label" type="text" class="w-full" placeholder="Например: Кокосовый субстрат" :disabled="loading" autocomplete="off"  control-class="h-9" />
+          <TextField
+            v-model="newItem.label"
+            type="text"
+            class="w-full"
+            placeholder="Например: Кокосовый субстрат"
+            :disabled="loading"
+            autocomplete="off"
+            control-class="h-9"
+          />
         </div>
         <div>
           <label class="block text-xs text-[color:var(--text-muted)] mb-1">ID</label>
-          <TextField v-model="newItem.id" type="text" class="w-full" placeholder="Например: coco" :disabled="loading" autocomplete="off"  control-class="h-9" />
+          <TextField
+            v-model="newItem.id"
+            type="text"
+            class="w-full"
+            placeholder="Например: coco"
+            :disabled="loading"
+            autocomplete="off"
+            control-class="h-9"
+          />
         </div>
         <div v-if="isGrowingSystem">
           <label class="block text-xs text-[color:var(--text-muted)] mb-1">Субстрат</label>
-          <SelectField v-model="newItem.uses_substrate" class="w-full" :disabled="loading" control-class="h-9" >
+          <SelectField
+            v-model="newItem.uses_substrate"
+            class="w-full"
+            :disabled="loading"
+            control-class="h-9"
+          >
             <option :value="true">
               С субстратом
             </option>
@@ -54,9 +75,27 @@
           class="grid grid-cols-1 gap-2 items-center"
           :class="isGrowingSystem ? 'md:grid-cols-[1fr_160px_170px_auto]' : 'md:grid-cols-[1fr_160px_auto]'"
         >
-          <TextField v-model="item.label" type="text" class="w-full" :disabled="loading"  control-class="h-9" />
-          <TextField v-model="item.id" type="text" class="w-full" :disabled="loading || item.locked"  control-class="h-9" />
-          <SelectField v-if="isGrowingSystem" v-model="item.uses_substrate" class="w-full" :disabled="loading" control-class="h-9" >
+          <TextField
+            v-model="item.label"
+            type="text"
+            class="w-full"
+            :disabled="loading"
+            control-class="h-9"
+          />
+          <TextField
+            v-model="item.id"
+            type="text"
+            class="w-full"
+            :disabled="loading || item.locked"
+            control-class="h-9"
+          />
+          <SelectField
+            v-if="isGrowingSystem"
+            v-model="item.uses_substrate"
+            class="w-full"
+            :disabled="loading"
+            control-class="h-9"
+          >
             <option :value="true">
               С субстратом
             </option>

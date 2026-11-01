@@ -10,8 +10,12 @@
     >
       <Card class="mb-4">
         <div class="mb-3 flex flex-wrap items-center gap-2">
-          <TextField v-model="searchQuery" placeholder="Поиск по имени/email..." class="w-64" />
-          <SelectField v-model="roleFilter" >
+          <TextField
+            v-model="searchQuery"
+            placeholder="Поиск по имени/email..."
+            class="w-64"
+          />
+          <SelectField v-model="roleFilter">
             <option value="">
               Все роли
             </option>
@@ -142,7 +146,11 @@
       <div class="space-y-3">
         <div>
           <label class="text-sm text-[color:var(--text-muted)]">Имя</label>
-          <TextField v-model="userForm.name" class="mt-1" :class="formErrors.name ? 'border-[color:var(--status-critical)] bg-[color:var(--bg-elevated)]' : ''" />
+          <TextField
+            v-model="userForm.name"
+            class="mt-1"
+            :class="formErrors.name ? 'border-[color:var(--status-critical)] bg-[color:var(--bg-elevated)]' : ''"
+          />
           <div
             v-if="formErrors.name"
             class="text-xs text-[color:var(--badge-danger-text)] mt-1"
@@ -152,7 +160,12 @@
         </div>
         <div>
           <label class="text-sm text-[color:var(--text-muted)]">Email</label>
-          <TextField v-model="userForm.email" type="email" class="mt-1" :class="formErrors.email ? 'border-[color:var(--status-critical)] bg-[color:var(--bg-elevated)]' : ''" />
+          <TextField
+            v-model="userForm.email"
+            type="email"
+            class="mt-1"
+            :class="formErrors.email ? 'border-[color:var(--status-critical)] bg-[color:var(--bg-elevated)]' : ''"
+          />
           <div
             v-if="formErrors.email"
             class="text-xs text-[color:var(--badge-danger-text)] mt-1"
@@ -162,7 +175,13 @@
         </div>
         <div>
           <label class="text-sm text-[color:var(--text-muted)]">Пароль</label>
-          <TextField v-model="userForm.password" type="password" class="mt-1" :class="formErrors.password ? 'border-[color:var(--status-critical)] bg-[color:var(--bg-elevated)]' : ''" :placeholder="editingUser ? 'Оставьте пустым, чтобы не менять' : 'Минимум 8 символов'" />
+          <TextField
+            v-model="userForm.password"
+            type="password"
+            class="mt-1"
+            :class="formErrors.password ? 'border-[color:var(--status-critical)] bg-[color:var(--bg-elevated)]' : ''"
+            :placeholder="editingUser ? 'Оставьте пустым, чтобы не менять' : 'Минимум 8 символов'"
+          />
           <div
             v-if="formErrors.password"
             class="text-xs text-[color:var(--badge-danger-text)] mt-1"
@@ -172,7 +191,11 @@
         </div>
         <div>
           <label class="text-sm text-[color:var(--text-muted)]">Роль</label>
-          <SelectField v-model="userForm.role" class="mt-1" :class="formErrors.role ? 'border-[color:var(--status-critical)] bg-[color:var(--bg-elevated)]' : ''" >
+          <SelectField
+            v-model="userForm.role"
+            class="mt-1"
+            :class="formErrors.role ? 'border-[color:var(--status-critical)] bg-[color:var(--bg-elevated)]' : ''"
+          >
             <option value="viewer">
               Наблюдатель
             </option>

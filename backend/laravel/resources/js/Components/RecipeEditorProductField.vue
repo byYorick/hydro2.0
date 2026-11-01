@@ -10,7 +10,11 @@
     </div>
 
     <div class="flex gap-1">
-      <SelectField :value="productId ?? ''" class="flex-1 min-w-0" @input="onProductInput($event)" >
+      <SelectField
+        :model-value="productId ?? ''"
+        class="flex-1 min-w-0"
+        @input="onProductInput($event)"
+      >
         <option value="">
           Продукт
         </option>
@@ -51,13 +55,25 @@
     </div>
 
     <div>
-      <TextField :value="ratio" type="number" step="0.01" placeholder="—" @input="onRatioInput($event)" />
+      <TextField
+        :model-value="ratio"
+        type="number"
+        step="0.01"
+        placeholder="—"
+        @input="onRatioInput($event)"
+      />
       <div class="text-[11px] text-[color:var(--text-muted)] mt-0.5">
         Доля от EC, %
       </div>
     </div>
     <div>
-      <TextField :value="dose" type="number" step="0.01" placeholder="—" @input="onDoseInput($event)" />
+      <TextField
+        :model-value="dose"
+        type="number"
+        step="0.01"
+        placeholder="—"
+        @input="onDoseInput($event)"
+      />
       <div class="text-[11px] text-[color:var(--text-muted)] mt-0.5">
         Доза, мл/л
       </div>
