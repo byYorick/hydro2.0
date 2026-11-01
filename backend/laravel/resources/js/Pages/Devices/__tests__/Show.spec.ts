@@ -384,7 +384,7 @@ describe('Devices/Show.vue', () => {
     expect(pre.classes()).toContain('node-config-json')
     expect(pre.text()).toContain('ph')
     expect(pre.text()).toContain('online')
-    expect(pre.html()).toContain('json-key')
+    expect(pre.html()).not.toContain('json-key')
   })
 
   it('отображает кнопку Restart', () => {
@@ -516,7 +516,7 @@ describe('Devices/Show.vue', () => {
     expect(configText).toContain('online')
     // id может быть в конфиге
     expect(configText).toMatch(/"id"|"name"|"type"/)
-    expect(nodeConfig.html()).toContain('json-string')
+    expect(nodeConfig.html()).not.toContain('<span')
   })
 
   it('использует uid или name или id для отображения названия', () => {

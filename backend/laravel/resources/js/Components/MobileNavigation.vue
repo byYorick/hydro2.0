@@ -12,7 +12,6 @@
         class="flex flex-col items-center justify-center flex-1 h-full"
         :mobile="true"
       >
-        <!-- eslint-disable vue/no-v-html -- статические SVG-пути из RoleBasedNavigation, не пользовательский ввод -->
         <svg
           class="w-6 h-6 mb-1"
           fill="none"
@@ -21,9 +20,9 @@
           stroke-width="2"
           stroke-linecap="round"
           stroke-linejoin="round"
-          v-html="item.icon"
-        />
-        <!-- eslint-enable vue/no-v-html -->
+        >
+          <SvgNodes :nodes="item.icon" />
+        </svg>
         <span>{{ item.label }}</span>
       </NavLink>
     </div>
@@ -34,6 +33,7 @@
 import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { usePage } from '@inertiajs/vue3'
 import NavLink from '@/Components/NavLink.vue'
+import SvgNodes from '@/Components/Icons/SvgNodes.vue'
 import { getRoleNavigationItems } from '@/Components/RoleBasedNavigation.vue'
 
 const page = usePage()

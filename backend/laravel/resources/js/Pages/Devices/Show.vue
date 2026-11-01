@@ -406,13 +406,10 @@
       >
         JSON скрыт, чтобы не занимать экран.
       </div>
-      <!-- eslint-disable vue/no-v-html -- highlightJson экранирует текст через escapeHtml() -->
       <pre
         v-else
         class="node-config-json max-h-[32rem] overflow-auto rounded-md border border-[color:var(--border-muted)] bg-[color:var(--bg-muted)] p-3 text-xs leading-relaxed text-[color:var(--text-muted)]"
-        v-html="highlightedNodeConfig"
-      ></pre>
-      <!-- eslint-enable vue/no-v-html -->
+      >{{ nodeConfig }}</pre>
     </Card>
 
     <ConfirmModal
@@ -837,7 +834,7 @@ const METRIC_COLORS = computed<Record<string, string>>(() => {
 const WATER_LEVEL_SERIES_COLORS = computed(() => [
   resolveCssColor('--status-warning', '#f59e0b'),
   resolveCssColor('--status-info', '#22d3ee'),
-  resolveCssColor('--chart-series-magenta', '#e879f9'),
+  resolveCssColor('--series-pink', '#f472b6'),
   resolveCssColor('--status-ok', '#34d399'),
   resolveCssColor('--status-critical', '#f87171'),
   resolveCssColor('--series-lime', '#a3e635'),
@@ -1013,36 +1010,6 @@ const nodeConfig = computed(() => {
   }
   return JSON.stringify(fallback, null, 2)
 })
-
-const JSON_TOKEN_RE = /("(?:\\u[a-fA-F0-9]{4}|\\[^u]|[^\\"])*"\s*:|"(?:\\u[a-fA-F0-9]{4}|\\[^u]|[^\\"])*"|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|\btrue\b|\bfalse\b|\bnull\b)/g
-
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-}
-
-function highlightJson(json: string): string {
-  return json.replace(JSON_TOKEN_RE, (token) => {
-    const escaped = escapeHtml(token)
-    if (/^".*"\s*:$/.test(token)) {
-      return `<span class="json-key" style="color: var(--status-info)">${escaped}</span>`
-    }
-    if (token.startsWith('"')) {
-      return `<span class="json-string" style="color: var(--status-ok)">${escaped}</span>`
-    }
-    if (token === 'true' || token === 'false') {
-      return `<span class="json-boolean" style="color: var(--status-warning)">${escaped}</span>`
-    }
-    if (token === 'null') {
-      return `<span class="json-null" style="color: var(--text-dim)">${escaped}</span>`
-    }
-    return `<span class="json-number" style="color: var(--series-lime)">${escaped}</span>`
-  })
-}
-
-const highlightedNodeConfig = computed(() => highlightJson(nodeConfig.value))
 
 const loadNodeConfig = async (): Promise<void> => {
   if (!device.value.id) return
