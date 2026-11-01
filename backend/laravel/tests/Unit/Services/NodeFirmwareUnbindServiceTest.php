@@ -48,6 +48,8 @@ class NodeFirmwareUnbindServiceTest extends TestCase
         $this->assertSame('nd-unbind-1', $config['node_id']);
         $this->assertSame('ph', $config['type']);
         $this->assertArrayHasKey('mqtt', $config);
+        $this->assertArrayNotHasKey('node_secret', $config);
+        $this->assertArrayNotHasKey('node_secret_enc', $config);
     }
 
     public function test_publish_temp_namespace_config_posts_to_history_logger(): void
@@ -67,6 +69,7 @@ class NodeFirmwareUnbindServiceTest extends TestCase
                 'type' => 'ec',
                 'channels' => [],
                 'mqtt' => ['configured' => true],
+                'node_secret' => 'secret-32-bytes-padding-xxxxxx',
             ],
         ]);
 
@@ -79,7 +82,8 @@ class NodeFirmwareUnbindServiceTest extends TestCase
                 && ($request->data()['zone_uid'] ?? null) === $zone->uid
                 && ($request->data()['greenhouse_uid'] ?? null) === $zone->greenhouse->uid
                 && ($request->data()['config']['gh_uid'] ?? null) === 'gh-temp'
-                && ($request->data()['config']['zone_uid'] ?? null) === 'zn-temp';
+                && ($request->data()['config']['zone_uid'] ?? null) === 'zn-temp'
+                && ! array_key_exists('node_secret', $request->data()['config'] ?? []);
         });
     }
 
