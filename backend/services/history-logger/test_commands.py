@@ -1289,6 +1289,8 @@ async def test_publish_node_config_success(client, auth_headers, mock_mqtt_clien
         assert mock_mqtt_client._client._client.publish.called
         publish_call = mock_mqtt_client._client._client.publish.call_args
         assert publish_call.args[0] == "hydro/gh-canonical/zn-1/nd-test/config"
+        published = __import__("json").loads(publish_call.args[1])
+        assert "node_secret" not in published
 
 
 @pytest.mark.asyncio

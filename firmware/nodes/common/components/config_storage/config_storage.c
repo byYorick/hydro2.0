@@ -11,8 +11,15 @@
 #include "cJSON.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include "mbedtls/base64.h"
+#include "mbedtls/gcm.h"
+#include "mbedtls/platform_util.h"
+#include "mbedtls/sha256.h"
 #include <string.h>
 #include <strings.h>
+
+/* Совпадает с history-logger commands/node_secret_wire.py */
+static const char NODE_SECRET_WRAP_LABEL[] = "hydro.node_secret.wrap.v1";
 
 static const char *TAG = "config_storage";
 static const char *NVS_NAMESPACE = "node_config";
@@ -186,6 +193,227 @@ esp_err_t config_storage_load(void) {
              has_wifi ? "yes" : "no", has_mqtt ? "yes" : "no");
     config_storage_unlock();
     return ESP_OK;
+}
+
+static const char *config_json_string(const cJSON *obj, const char *key) {
+    cJSON *item;
+    if (obj == NULL || key == NULL) {
+        return NULL;
+    }
+    item = cJSON_GetObjectItem((cJSON *)obj, key);
+    if (!cJSON_IsString(item) || item->valuestring == NULL || item->valuestring[0] == '\0') {
+        return NULL;
+    }
+    return item->valuestring;
+}
+
+static const char *config_mqtt_password(const cJSON *config) {
+    cJSON *mqtt;
+    if (config == NULL) {
+        return NULL;
+    }
+    mqtt = cJSON_GetObjectItem((cJSON *)config, "mqtt");
+    if (!cJSON_IsObject(mqtt)) {
+        return NULL;
+    }
+    return config_json_string(mqtt, "password");
+}
+
+static bool derive_node_secret_wrap_key(const char *passphrase, unsigned char key[32]) {
+    mbedtls_sha256_context ctx;
+    int ret;
+
+    if (passphrase == NULL || passphrase[0] == '\0') {
+        return false;
+    }
+
+    mbedtls_sha256_init(&ctx);
+    ret = mbedtls_sha256_starts(&ctx, 0);
+    if (ret == 0) {
+        ret = mbedtls_sha256_update(
+            &ctx,
+            (const unsigned char *)NODE_SECRET_WRAP_LABEL,
+            strlen(NODE_SECRET_WRAP_LABEL)
+        );
+    }
+    if (ret == 0) {
+        ret = mbedtls_sha256_update(
+            &ctx,
+            (const unsigned char *)passphrase,
+            strlen(passphrase)
+        );
+    }
+    if (ret == 0) {
+        ret = mbedtls_sha256_finish(&ctx, key);
+    }
+    mbedtls_sha256_free(&ctx);
+    return ret == 0;
+}
+
+static bool unwrap_node_secret_enc(
+    const char *token,
+    const char *passphrase,
+    const char *node_uid,
+    char *out,
+    size_t out_size
+) {
+    unsigned char key[32];
+    unsigned char raw[256];
+    size_t raw_len = 0;
+    size_t ct_len;
+    const size_t nonce_len = 12;
+    const size_t tag_len = 16;
+    mbedtls_gcm_context gcm;
+    int ret;
+
+    if (token == NULL || passphrase == NULL || node_uid == NULL || node_uid[0] == '\0' ||
+        out == NULL || out_size < 2) {
+        return false;
+    }
+
+    if (mbedtls_base64_decode(
+            raw,
+            sizeof(raw),
+            &raw_len,
+            (const unsigned char *)token,
+            strlen(token)
+        ) != 0) {
+        return false;
+    }
+    if (raw_len < nonce_len + tag_len + 1) {
+        return false;
+    }
+    ct_len = raw_len - nonce_len - tag_len;
+    if (ct_len >= out_size) {
+        return false;
+    }
+    if (!derive_node_secret_wrap_key(passphrase, key)) {
+        return false;
+    }
+
+    mbedtls_gcm_init(&gcm);
+    ret = mbedtls_gcm_setkey(&gcm, MBEDTLS_CIPHER_ID_AES, key, 256);
+    if (ret == 0) {
+        ret = mbedtls_gcm_auth_decrypt(
+            &gcm,
+            ct_len,
+            raw,
+            nonce_len,
+            (const unsigned char *)node_uid,
+            strlen(node_uid),
+            raw + nonce_len + ct_len,
+            tag_len,
+            raw + nonce_len,
+            (unsigned char *)out
+        );
+    }
+    mbedtls_gcm_free(&gcm);
+    mbedtls_platform_zeroize(key, sizeof(key));
+    if (ret != 0) {
+        mbedtls_platform_zeroize(out, out_size);
+        return false;
+    }
+    out[ct_len] = '\0';
+    return true;
+}
+
+static bool resolve_incoming_node_secret(
+    const cJSON *incoming,
+    const cJSON *previous,
+    char *out,
+    size_t out_size,
+    bool *had_material
+) {
+    const char *plain;
+    const char *enc;
+    const char *passphrase;
+    const char *node_uid;
+
+    if (had_material != NULL) {
+        *had_material = false;
+    }
+    if (out == NULL || out_size == 0) {
+        return false;
+    }
+    out[0] = '\0';
+
+    plain = config_json_string(incoming, "node_secret");
+    if (plain != NULL) {
+        if (had_material != NULL) {
+            *had_material = true;
+        }
+        if (strlen(plain) >= out_size) {
+            return false;
+        }
+        strncpy(out, plain, out_size - 1);
+        out[out_size - 1] = '\0';
+        return true;
+    }
+
+    enc = config_json_string(incoming, "node_secret_enc");
+    if (enc == NULL) {
+        return false;
+    }
+    if (had_material != NULL) {
+        *had_material = true;
+    }
+
+    passphrase = config_mqtt_password(incoming);
+    if (passphrase == NULL) {
+        passphrase = config_mqtt_password(previous);
+    }
+    node_uid = config_json_string(incoming, "node_id");
+    if (node_uid == NULL) {
+        node_uid = config_json_string(incoming, "node_uid");
+    }
+    if (node_uid == NULL && previous != NULL) {
+        node_uid = config_json_string(previous, "node_id");
+    }
+    if (passphrase == NULL || node_uid == NULL) {
+        return false;
+    }
+    return unwrap_node_secret_enc(enc, passphrase, node_uid, out, out_size);
+}
+
+bool config_storage_node_secret_changed(const cJSON *incoming, const cJSON *previous) {
+    char next[128];
+    const char *prev_secret;
+    bool had_material = false;
+
+    if (!resolve_incoming_node_secret(incoming, previous, next, sizeof(next), &had_material)) {
+        return false;
+    }
+    if (!had_material || next[0] == '\0') {
+        return false;
+    }
+    prev_secret = previous != NULL ? config_json_string(previous, "node_secret") : NULL;
+    if (prev_secret == NULL) {
+        return true;
+    }
+    return strcmp(prev_secret, next) != 0;
+}
+
+static void merge_node_secret_into_config(cJSON *new_config, const cJSON *old_config) {
+    char plain[128];
+    bool had_material = false;
+    bool ok;
+    const char *old_secret;
+
+    ok = resolve_incoming_node_secret(new_config, old_config, plain, sizeof(plain), &had_material);
+    cJSON_DeleteItemFromObject(new_config, "node_secret");
+    cJSON_DeleteItemFromObject(new_config, "node_secret_enc");
+    if (ok && plain[0] != '\0') {
+        cJSON_AddStringToObject(new_config, "node_secret", plain);
+        mbedtls_platform_zeroize(plain, sizeof(plain));
+        return;
+    }
+    if (had_material) {
+        ESP_LOGW(TAG, "node_secret_enc unwrap failed, preserving previous node_secret");
+    }
+    old_secret = config_json_string(old_config, "node_secret");
+    if (old_secret != NULL) {
+        cJSON_AddStringToObject(new_config, "node_secret", old_secret);
+    }
 }
 
 esp_err_t config_storage_save(const char *json_config, size_t json_len) {
@@ -408,6 +636,10 @@ esp_err_t config_storage_save(const char *json_config, size_t json_len) {
         cJSON_AddStringToObject(new_config, "zone_uid", value);
         ESP_LOGI(TAG, "Preserved zone_uid from %s config: %s", fallback_zone ? "old" : "default", value);
     }
+
+    /* node_secret не должен затираться server-push без поля.
+     * node_secret_enc расшифровывается ключом mqtt.password и в NVS пишется plaintext. */
+    merge_node_secret_into_config(new_config, old_config);
 
     // Освобождаем старый конфиг после использования
     if (old_config != NULL) {

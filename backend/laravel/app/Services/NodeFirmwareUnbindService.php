@@ -129,7 +129,8 @@ class NodeFirmwareUnbindService
      */
     public function buildUnbindConfig(DeviceNode $node): array
     {
-        $config = $this->configService->generateNodeConfig($node, null, true, false);
+        $config = $this->configService->generateNodeConfig($node, null, false, false);
+        unset($config['node_secret'], $config['node_secret_enc']);
 
         if (empty($config['node_id'])) {
             $config['node_id'] = $node->uid;

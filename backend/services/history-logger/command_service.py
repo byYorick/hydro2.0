@@ -438,6 +438,8 @@ async def publish_config_mqtt(
         zone_segment = zone_uid or f"zn-{zone_id}"
 
         topic = f"hydro/{gh_uid}/{zone_segment}/{node_uid}/config"
+        if isinstance(config_payload, dict):
+            config_payload.pop("node_secret", None)
         import json as json_lib
         try:
             has_secret = isinstance(config_payload.get("node_secret"), str) and bool(config_payload.get("node_secret"))
@@ -504,6 +506,8 @@ async def publish_config_temp_mqtt(
                 raise ConnectionError("MQTT client is not connected and reconnection failed")
 
         topic = f"hydro/gh-temp/zn-temp/{hardware_id}/config"
+        if isinstance(config_payload, dict):
+            config_payload.pop("node_secret", None)
         import json as json_lib
         try:
             has_secret = isinstance(config_payload.get("node_secret"), str) and bool(config_payload.get("node_secret"))
