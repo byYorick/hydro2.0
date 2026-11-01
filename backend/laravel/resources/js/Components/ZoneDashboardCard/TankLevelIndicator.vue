@@ -47,17 +47,17 @@ const displayValue = computed(() => {
 })
 
 const valueColorClass = computed(() => {
-  if (props.offline) return 'text-[color:var(--accent-red)]'
+  if (props.offline) return 'text-[color:var(--status-critical)]'
   if (props.percent === null) return 'text-[color:var(--text-dim)]'
-  if (props.percent < 15) return 'text-[color:var(--accent-red)]'
-  if (props.percent < 30) return 'text-[color:var(--accent-amber)]'
+  if (props.percent < 15) return 'text-[color:var(--status-critical)]'
+  if (props.percent < 30) return 'text-[color:var(--status-warning)]'
   return 'text-[color:var(--text-primary)]'
 })
 
 const barColorClass = computed(() => {
   if (props.percent === null) return 'bg-[color:var(--text-dim)]'
-  if (props.percent < 15) return 'bg-[color:var(--accent-red)]'
-  if (props.percent < 30) return 'bg-[color:var(--accent-amber)]'
-  return 'bg-[color:var(--accent-cyan)]'
+  if (props.percent < 15) return 'bg-[color:var(--status-critical)]'
+  if (props.percent < 30) return 'bg-[color:var(--status-warning)]'
+  return 'bg-[color:var(--status-info)]'
 })
 </script>

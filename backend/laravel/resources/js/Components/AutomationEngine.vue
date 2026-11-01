@@ -8,7 +8,7 @@
           :class="[
             'px-4 py-2 text-sm font-medium transition-colors border-b-2',
             activeTab === tab.id
-              ? 'border-[color:var(--accent-cyan)] text-[color:var(--accent-cyan)]'
+              ? 'border-[color:var(--status-info)] text-[color:var(--status-info)]'
               : 'border-transparent text-[color:var(--text-muted)] hover:text-[color:var(--text-primary)]'
           ]"
           @click="activeTab = tab.id"

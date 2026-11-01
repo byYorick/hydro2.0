@@ -112,7 +112,7 @@ const kpis = computed(() => {
       label: 'Активные',
       value: props.counters.active,
       sub: props.runtime ? `runtime=${props.runtime}` : 'runtime=—',
-      color: 'var(--accent-cyan)',
+      color: 'var(--status-info)',
       live: props.counters.active > 0,
       meter: meter(props.counters.active, 3),
     },
@@ -121,7 +121,7 @@ const kpis = computed(() => {
       label: 'Успешные за 24ч',
       value: props.counters.completed_24h,
       sub: `${sloPercent.value} SLO · ${totalNote}`,
-      color: 'var(--accent-green)',
+      color: 'var(--status-ok)',
       live: false,
       meter: meter(props.counters.completed_24h, Math.max(4, props.counters.completed_24h + props.counters.failed_24h)),
     },
@@ -133,7 +133,7 @@ const kpis = computed(() => {
         failHigh
           ? `${failPercent.value} · высокая доля ошибок — проверьте узлы и каналы · ${totalNote}`
           : `${failPercent.value} · ${totalNote}`,
-      color: 'var(--accent-red)',
+      color: 'var(--status-critical)',
       live: false,
       meter: meter(props.counters.failed_24h, Math.max(4, props.counters.completed_24h + props.counters.failed_24h)),
     },
@@ -142,7 +142,7 @@ const kpis = computed(() => {
       label: 'Окна на горизонте',
       value: props.executableWindowsCount,
       sub: props.windowTypeCount > 0 ? `${props.windowTypeCount} типа` : '—',
-      color: 'var(--accent-amber)',
+      color: 'var(--status-warning)',
       live: false,
       meter: meter(props.executableWindowsCount, 6),
     },
@@ -152,7 +152,7 @@ const kpis = computed(() => {
 
 <style scoped>
 .scheduler-kpi-card {
-  --scheduler-kpi-accent: var(--accent-cyan);
+  --scheduler-kpi-accent: var(--status-info);
   position: relative;
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--scheduler-kpi-accent) 24%, var(--border-muted));

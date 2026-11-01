@@ -11,10 +11,7 @@
         class="grid grid-cols-1 md:grid-cols-3 gap-2"
         @submit.prevent="onUpdate"
       >
-        <select
-          v-model="selectedId"
-          class="input-select"
-        >
+        <SelectField v-model="selectedId">
           <option
             v-for="r in recipes"
             :key="r.id"
@@ -22,16 +19,14 @@
           >
             {{ r.name }}
           </option>
-        </select>
-        <input
+        </SelectField>
+        <TextField
           v-model="form.name"
           placeholder="New name"
-          class="input-field"
         />
-        <input
+        <TextField
           v-model="form.description"
           placeholder="Description"
-          class="input-field"
         />
         <div class="md:col-span-3">
           <Button
@@ -60,6 +55,10 @@
 </template>
 
 <script setup lang="ts">
+import SelectField from '@/Components/SelectField.vue'
+
+import TextField from '@/Components/TextField.vue'
+
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
 import Button from '@/Components/Button.vue'

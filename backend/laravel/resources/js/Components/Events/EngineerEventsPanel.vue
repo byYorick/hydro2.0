@@ -18,17 +18,18 @@
         type="button"
         class="h-5 px-2 rounded text-[10px] font-semibold uppercase tracking-wide border transition-colors"
         :class="selectedKind === kind.value
-          ? 'border-[color:var(--accent-cyan)] text-[color:var(--accent-cyan)] bg-[color:var(--bg-elevated)]'
+          ? 'border-[color:var(--status-info)] text-[color:var(--status-info)] bg-[color:var(--bg-elevated)]'
           : 'border-transparent text-[color:var(--text-dim)] hover:border-[color:var(--border-strong)] hover:text-[color:var(--text-muted)]'"
         @click="$emit('update:selectedKind', kind.value)"
       >
         {{ kind.label }}
       </button>
       <div class="ml-auto flex items-center gap-1.5">
-        <input
-          :value="query"
-          class="input-field h-6 w-28 text-xs px-2"
+        <TextField
+          :model-value="query"
+          class="w-28"
           placeholder="Поиск..."
+          input-class="h-6 text-xs px-2"
           @input="$emit('update:query', ($event.target as HTMLInputElement).value)"
         />
         <button
@@ -57,7 +58,7 @@
         :key="group.id"
         class="rounded-lg border"
         :class="group.isCorrelated
-          ? 'border-[color:var(--accent-cyan)]/25 bg-[color:var(--accent-cyan)]/3'
+          ? 'border-[color:var(--status-info)]/25 bg-[color:var(--status-info)]/3'
           : 'border-[color:var(--border-muted)]'"
       >
         <div
@@ -140,6 +141,8 @@
 </template>
 
 <script setup lang="ts">
+import TextField from '@/Components/TextField.vue'
+
 import { ref } from 'vue'
 import Badge from '@/Components/Badge.vue'
 import EventRow from '@/Components/Events/EventRow.vue'

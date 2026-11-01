@@ -12,7 +12,7 @@
       <span
         v-for="(segment, position) in segments"
         :key="`light-${position}`"
-        class="absolute inset-y-0 bg-[color:var(--accent-amber)] opacity-70"
+        class="absolute inset-y-0 bg-[color:var(--status-warning)] opacity-70"
         :style="{ left: `${segment.leftPct}%`, width: `${segment.widthPct}%` }"
       ></span>
     </div>

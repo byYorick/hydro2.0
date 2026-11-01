@@ -154,7 +154,6 @@ const {
   attentionStatus,
   fetchWorkspace,
   fetchAutomationState,
-  fetchExecution,
   fetchDiagnostics,
   selectExecution,
   clearSelectedExecution,
@@ -466,8 +465,8 @@ watch(
   border: 1px solid color-mix(in srgb, var(--border-muted) 86%, transparent);
   border-radius: 1.6rem;
   background:
-    radial-gradient(70% 46% at 18% 0%, color-mix(in srgb, var(--accent-cyan) 12%, transparent), transparent 62%),
-    radial-gradient(56% 45% at 98% 12%, color-mix(in srgb, var(--accent-green) 11%, transparent), transparent 66%),
+    radial-gradient(70% 46% at 18% 0%, color-mix(in srgb, var(--status-info) 12%, transparent), transparent 62%),
+    radial-gradient(56% 45% at 98% 12%, color-mix(in srgb, var(--status-ok) 11%, transparent), transparent 66%),
     linear-gradient(180deg, color-mix(in srgb, var(--bg-surface) 96%, transparent), color-mix(in srgb, var(--bg-main) 88%, transparent));
   box-shadow: var(--shadow-card);
 }

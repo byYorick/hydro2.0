@@ -9,13 +9,13 @@
           <span
             class="inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px]"
             :class="enabled
-              ? 'border-[color:var(--accent-green)]/35 bg-[color:var(--accent-green)]/10 text-[color:var(--accent-green)]'
+              ? 'border-[color:var(--status-ok)]/35 bg-[color:var(--status-ok)]/10 text-[color:var(--status-ok)]'
               : 'border-[color:var(--border-muted)] bg-[color:var(--bg-surface)] text-[color:var(--text-muted)]'"
           >
             <span
               class="h-1.5 w-1.5 rounded-full"
-              :class="enabled ? 'bg-[color:var(--accent-green)]' : 'bg-[color:var(--text-dim)]'"
-            />
+              :class="enabled ? 'bg-[color:var(--status-ok)]' : 'bg-[color:var(--text-dim)]'"
+            ></span>
             {{ enabled ? 'Активен' : 'Выключен' }}
           </span>
           <span
@@ -48,7 +48,7 @@
       v-if="!enabled"
       class="flex flex-col items-center justify-center px-6 py-12 text-center"
     >
-      <div class="mb-3 flex h-11 w-11 items-center justify-center rounded-2xl border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] text-[color:var(--accent-cyan)]">
+      <div class="mb-3 flex h-11 w-11 items-center justify-center rounded-2xl border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] text-[color:var(--status-info)]">
         <svg
           class="h-5 w-5"
           fill="none"
@@ -82,7 +82,7 @@
           type="button"
           class="shrink-0 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors"
           :class="activePanel === panel.id
-            ? 'bg-[color:var(--accent-cyan)]/15 text-[color:var(--accent-cyan)]'
+            ? 'bg-[color:var(--status-info)]/15 text-[color:var(--status-info)]'
             : 'text-[color:var(--text-muted)] hover:bg-[color:var(--bg-elevated)] hover:text-[color:var(--text-primary)]'"
           @click="activePanel = panel.id"
         >
@@ -104,7 +104,7 @@
               Привязка нод
             </div>
             <p class="mt-1 text-xs text-[color:var(--text-muted)]">
-            Сначала выберите климатические ноды теплицы, затем сохраните профиль.
+              Сначала выберите климатические ноды теплицы, затем сохраните профиль.
             </p>
           </div>
 
@@ -117,10 +117,10 @@
               title="Разрешить climate tick брать outdoor-телеметрию с независимой site-level станции"
             >
               Использовать общую метеостанцию
-              <select
+              <SelectField
                 v-model="sharedWeatherStationSelect"
                 data-testid="greenhouse-shared-weather-station"
-                class="input-select mt-1 w-full"
+                class="mt-1 w-full"
                 :disabled="!canConfigure"
               >
                 <option :value="null">
@@ -133,7 +133,7 @@
                 >
                   {{ station.name || station.uid }} ({{ station.uid }})
                 </option>
-              </select>
+              </SelectField>
             </label>
             <p
               v-if="siteWeatherStations.length === 0"
@@ -167,7 +167,7 @@
                   :key="`${group.key}-${node.id}`"
                   class="flex cursor-pointer items-center gap-2.5 rounded-lg border px-2.5 py-2 text-sm transition-colors"
                   :class="bindings[group.key].includes(node.id)
-                    ? 'border-[color:var(--accent-cyan)]/40 bg-[color:var(--accent-cyan)]/8 text-[color:var(--text-primary)]'
+                    ? 'border-[color:var(--status-info)]/40 bg-[color:var(--status-info)]/8 text-[color:var(--text-primary)]'
                     : 'border-transparent bg-[color:var(--bg-surface)]/60 text-[color:var(--text-primary)] hover:border-[color:var(--border-muted)]'"
                 >
                   <input
@@ -176,7 +176,7 @@
                     class="rounded border-[color:var(--border-strong)]"
                     :disabled="!canConfigure"
                     @change="toggleSelection(group.key, node.id)"
-                  >
+                  />
                   <span class="min-w-0 truncate">{{ nodeLabel(node) }}</span>
                 </label>
               </div>
@@ -199,7 +199,7 @@
               Базовый профиль
             </div>
             <p class="mt-1 text-xs text-[color:var(--text-muted)]">
-            Режим, цели дня/ночи и лимиты форточек.
+              Режим, цели дня/ночи и лимиты форточек.
             </p>
           </div>
           <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
@@ -208,9 +208,9 @@
               :title="fieldHelp('climate.controlMode')"
             >
               Режим runtime
-              <select
+              <SelectField
                 v-model="climateForm.controlMode"
-                class="input-select mt-1 w-full"
+                class="mt-1 w-full"
                 :disabled="!canConfigure"
               >
                 <option value="auto">
@@ -222,45 +222,45 @@
                 <option value="manual">
                   Manual
                 </option>
-              </select>
+              </SelectField>
             </label>
             <label
               class="text-xs text-[color:var(--text-muted)]"
               :title="fieldHelp('climate.intervalMinutes')"
             >
               Интервал климата (мин)
-              <input
+              <TextField
                 v-model.number="climateForm.intervalMinutes"
                 data-testid="greenhouse-climate-interval"
                 type="number"
                 min="1"
                 max="1440"
-                class="input-field mt-1 w-full"
+                class="mt-1 w-full"
                 :disabled="!canConfigure"
-              >
+              />
             </label>
             <label
               class="text-xs text-[color:var(--text-muted)]"
               :title="fieldHelp('climate.overrideMinutes')"
             >
               Ручной override (мин)
-              <input
+              <TextField
                 v-model.number="climateForm.overrideMinutes"
                 type="number"
                 min="5"
                 max="120"
-                class="input-field mt-1 w-full"
+                class="mt-1 w-full"
                 :disabled="!canConfigure"
-              >
+              />
             </label>
             <label
               class="text-xs text-[color:var(--text-muted)]"
               :title="fieldHelp('climate.useExternalTelemetry')"
             >
               Внешняя телеметрия
-              <select
+              <SelectField
                 v-model="climateForm.useExternalTelemetry"
-                class="input-select mt-1 w-full"
+                class="mt-1 w-full"
                 :disabled="!canConfigure"
               >
                 <option :value="true">
@@ -269,66 +269,66 @@
                 <option :value="false">
                   Игнорировать
                 </option>
-              </select>
+              </SelectField>
             </label>
             <label
               class="text-xs text-[color:var(--text-muted)]"
               :title="fieldHelp('climate.dayTemp')"
             >
               Температура день
-              <input
+              <TextField
                 v-model.number="climateForm.dayTemp"
                 data-testid="greenhouse-climate-day-temp"
                 type="number"
                 min="10"
                 max="35"
                 step="0.5"
-                class="input-field mt-1 w-full"
+                class="mt-1 w-full"
                 :disabled="!canConfigure"
-              >
+              />
             </label>
             <label
               class="text-xs text-[color:var(--text-muted)]"
               :title="fieldHelp('climate.nightTemp')"
             >
               Температура ночь
-              <input
+              <TextField
                 v-model.number="climateForm.nightTemp"
                 type="number"
                 min="10"
                 max="35"
                 step="0.5"
-                class="input-field mt-1 w-full"
+                class="mt-1 w-full"
                 :disabled="!canConfigure"
-              >
+              />
             </label>
             <label
               class="text-xs text-[color:var(--text-muted)]"
               :title="fieldHelp('climate.dayHumidity')"
             >
               Влажность день
-              <input
+              <TextField
                 v-model.number="climateForm.dayHumidity"
                 type="number"
                 min="30"
                 max="90"
-                class="input-field mt-1 w-full"
+                class="mt-1 w-full"
                 :disabled="!canConfigure"
-              >
+              />
             </label>
             <label
               class="text-xs text-[color:var(--text-muted)]"
               :title="fieldHelp('climate.nightHumidity')"
             >
               Влажность ночь
-              <input
+              <TextField
                 v-model.number="climateForm.nightHumidity"
                 type="number"
                 min="30"
                 max="90"
-                class="input-field mt-1 w-full"
+                class="mt-1 w-full"
                 :disabled="!canConfigure"
-              >
+              />
             </label>
             <p
               data-testid="air-vpd-caption"
@@ -341,152 +341,152 @@
               :title="fieldHelp('climate.vpdMinKpa')"
             >
               VPD min, кПа
-              <input
+              <TextField
                 data-testid="greenhouse-climate-vpd-min"
                 type="number"
                 min="0.1"
                 max="3"
                 step="0.01"
-                class="input-field mt-1 w-full"
-                :value="optionalKpaValue('vpdMinKpa')"
+                class="mt-1 w-full"
+                :model-value="optionalKpaValue('vpdMinKpa')"
                 :disabled="!canConfigure"
                 @input="setOptionalKpa('vpdMinKpa', $event)"
-              >
+              />
             </label>
             <label
               class="text-xs text-[color:var(--text-muted)]"
               :title="fieldHelp('climate.vpdMaxKpa')"
             >
               VPD max, кПа
-              <input
+              <TextField
                 data-testid="greenhouse-climate-vpd-max"
                 type="number"
                 min="0.1"
                 max="3"
                 step="0.01"
-                class="input-field mt-1 w-full"
-                :value="optionalKpaValue('vpdMaxKpa')"
+                class="mt-1 w-full"
+                :model-value="optionalKpaValue('vpdMaxKpa')"
                 :disabled="!canConfigure"
                 @input="setOptionalKpa('vpdMaxKpa', $event)"
-              >
+              />
             </label>
             <label
               class="text-xs text-[color:var(--text-muted)]"
               :title="fieldHelp('climate.ventMinPercent')"
             >
               Min форточек (%)
-              <input
+              <TextField
                 v-model.number="climateForm.ventMinPercent"
                 type="number"
                 min="0"
                 max="100"
-                class="input-field mt-1 w-full"
+                class="mt-1 w-full"
                 :disabled="!canConfigure"
-              >
+              />
             </label>
             <label
               class="text-xs text-[color:var(--text-muted)]"
               :title="fieldHelp('climate.ventMaxPercent')"
             >
               Max форточек (%)
-              <input
+              <TextField
                 v-model.number="climateForm.ventMaxPercent"
                 type="number"
                 min="0"
                 max="100"
-                class="input-field mt-1 w-full"
+                class="mt-1 w-full"
                 :disabled="!canConfigure"
-              >
+              />
             </label>
             <label
               class="text-xs text-[color:var(--text-muted)]"
               :title="fieldHelp('climate.maxVentStepPct')"
             >
               Макс. шаг форточек за tick (%)
-              <input
+              <TextField
                 v-model.number="climateForm.maxVentStepPct"
                 data-testid="greenhouse-climate-max-step-pct"
                 type="number"
                 min="1"
                 max="100"
-                class="input-field mt-1 w-full"
+                class="mt-1 w-full"
                 :disabled="!canConfigure"
-              >
+              />
             </label>
             <label
               class="text-xs text-[color:var(--text-muted)]"
               :title="fieldHelp('climate.dayStart')"
             >
               День начинается
-              <input
+              <TextField
                 v-model="climateForm.dayStart"
                 type="time"
-                class="input-field mt-1 w-full"
+                class="mt-1 w-full"
                 :disabled="!canConfigure"
-              >
+              />
             </label>
             <label
               class="text-xs text-[color:var(--text-muted)]"
               :title="fieldHelp('climate.nightStart')"
             >
               Ночь начинается
-              <input
+              <TextField
                 v-model="climateForm.nightStart"
                 type="time"
-                class="input-field mt-1 w-full"
+                class="mt-1 w-full"
                 :disabled="!canConfigure"
-              >
+              />
             </label>
             <label
               class="text-xs text-[color:var(--text-muted)]"
               :title="fieldHelp('climate.outsideTempMin')"
             >
               Мин. внешняя t°C
-              <input
+              <TextField
                 v-model.number="climateForm.outsideTempMin"
                 type="number"
                 min="-30"
                 max="45"
-                class="input-field mt-1 w-full"
+                class="mt-1 w-full"
                 :disabled="!canConfigure"
-              >
+              />
             </label>
             <label
               class="text-xs text-[color:var(--text-muted)]"
               :title="fieldHelp('climate.outsideTempMax')"
             >
               Макс. внешняя t°C
-              <input
+              <TextField
                 v-model.number="climateForm.outsideTempMax"
                 type="number"
                 min="-30"
                 max="45"
-                class="input-field mt-1 w-full"
+                class="mt-1 w-full"
                 :disabled="!canConfigure"
-              >
+              />
             </label>
             <label
               class="text-xs text-[color:var(--text-muted)]"
               :title="fieldHelp('climate.outsideHumidityMax')"
             >
               Макс. внешняя влажность (%)
-              <input
+              <TextField
                 v-model.number="climateForm.outsideHumidityMax"
                 type="number"
                 min="20"
                 max="100"
-                class="input-field mt-1 w-full"
+                class="mt-1 w-full"
                 :disabled="!canConfigure"
-              >
+              />
             </label>
             <label
               class="climate-wide-field text-xs text-[color:var(--text-muted)] md:col-span-2"
               :title="fieldHelp('climate.manualOverrideEnabled')"
             >
               Ручной override климата
-              <select
+              <SelectField
                 v-model="climateForm.manualOverrideEnabled"
-                class="input-select mt-1 w-full"
+                class="mt-1 w-full"
                 :disabled="!canConfigure"
               >
                 <option :value="true">
@@ -495,7 +495,7 @@
                 <option :value="false">
                   Выключен
                 </option>
-              </select>
+              </SelectField>
             </label>
           </div>
         </div>
@@ -520,16 +520,16 @@
               :title="fieldHelp(field.helpKey)"
             >
               {{ field.label }}
-              <input
-                :value="numberFieldValue(field.key, field.fallback)"
+              <TextField
+                :model-value="numberFieldValue(field.key, field.fallback)"
                 type="number"
                 :min="field.min"
                 :max="field.max"
                 :step="field.step ?? 1"
-                class="input-field mt-1 w-full"
+                class="mt-1 w-full"
                 :disabled="!canConfigure"
                 @input="setNumberField(field.key, $event)"
-              >
+              />
             </label>
           </div>
         </div>
@@ -554,16 +554,16 @@
               :title="fieldHelp(field.helpKey)"
             >
               {{ field.label }}
-              <input
-                :value="numberFieldValue(field.key, field.fallback)"
+              <TextField
+                :model-value="numberFieldValue(field.key, field.fallback)"
                 type="number"
                 :min="field.min"
                 :max="field.max"
                 :step="field.step ?? 1"
-                class="input-field mt-1 w-full"
+                class="mt-1 w-full"
                 :disabled="!canConfigure"
                 @input="setNumberField(field.key, $event)"
-              >
+              />
             </label>
           </div>
         </div>
@@ -588,16 +588,16 @@
               :title="fieldHelp(field.helpKey)"
             >
               {{ field.label }}
-              <input
-                :value="numberFieldValue(field.key, field.fallback)"
+              <TextField
+                :model-value="numberFieldValue(field.key, field.fallback)"
                 type="number"
                 :min="field.min"
                 :max="field.max"
                 :step="field.step ?? 1"
-                class="input-field mt-1 w-full"
+                class="mt-1 w-full"
                 :disabled="!canConfigure"
                 @input="setNumberField(field.key, $event)"
-              >
+              />
             </label>
           </div>
         </div>
@@ -620,9 +620,9 @@
               :title="fieldHelp('climate.targetPolicy')"
             >
               Источник целей
-              <select
+              <SelectField
                 v-model="climateForm.targetPolicy"
-                class="input-select mt-1 w-full"
+                class="mt-1 w-full"
                 :disabled="!canConfigure"
               >
                 <option value="greenhouse_targets">
@@ -634,21 +634,21 @@
                 <option value="active_zones_strictest">
                   Самые строгие зоны
                 </option>
-              </select>
+              </SelectField>
             </label>
             <label
               class="text-xs text-[color:var(--text-muted)]"
               :title="fieldHelp('climate.primaryZoneId')"
             >
               Основная зона
-              <input
-                :value="nullableNumberFieldValue('primaryZoneId')"
+              <TextField
+                :model-value="nullableNumberFieldValue('primaryZoneId')"
                 type="number"
                 min="1"
-                class="input-field mt-1 w-full"
+                class="mt-1 w-full"
                 :disabled="!canConfigure || climateForm.targetPolicy !== 'primary_zone'"
                 @input="setNullableNumberField('primaryZoneId', $event)"
-              >
+              />
             </label>
             <label
               v-for="field in orientationFields"
@@ -657,25 +657,25 @@
               :title="fieldHelp(field.helpKey)"
             >
               {{ field.label }}
-              <input
-                :value="nullableNumberFieldValue(field.key)"
+              <TextField
+                :model-value="nullableNumberFieldValue(field.key)"
                 type="number"
                 min="0"
                 max="359.999"
                 step="0.1"
-                class="input-field mt-1 w-full"
+                class="mt-1 w-full"
                 :disabled="!canConfigure"
                 @input="setNullableNumberField(field.key, $event)"
-              >
+              />
             </label>
             <label
               class="text-xs text-[color:var(--text-muted)]"
               :title="fieldHelp('climate.manualEmergencyOverrideEnabled')"
             >
               Аварийное переопределение
-              <select
+              <SelectField
                 v-model="climateForm.manualEmergencyOverrideEnabled"
-                class="input-select mt-1 w-full"
+                class="mt-1 w-full"
                 :disabled="!canConfigure"
               >
                 <option :value="true">
@@ -684,7 +684,7 @@
                 <option :value="false">
                   Выключен
                 </option>
-              </select>
+              </SelectField>
             </label>
           </div>
         </div>
@@ -712,6 +712,10 @@
 </template>
 
 <script setup lang="ts">
+import SelectField from '@/Components/SelectField.vue'
+
+import TextField from '@/Components/TextField.vue'
+
 import { computed, ref } from 'vue'
 import { ToggleField } from '@/Components/Shared/Primitives'
 import type { ClimateFormState } from '@/composables/zoneAutomationTypes'

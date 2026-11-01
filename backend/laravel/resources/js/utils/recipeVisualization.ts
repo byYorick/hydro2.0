@@ -126,10 +126,10 @@ const NUTRITION_LABELS: Record<VisualNutritionComponent['key'], string> = {
 }
 
 export const NUTRITION_COLORS: Record<VisualNutritionComponent['key'], string> = {
-  npk: 'var(--accent-green)',
-  calcium: 'var(--accent-cyan)',
-  magnesium: 'var(--accent-amber)',
-  micro: 'var(--accent-lime)',
+  npk: 'var(--status-ok)',
+  calcium: 'var(--status-info)',
+  magnesium: 'var(--status-warning)',
+  micro: 'var(--series-lime)',
 }
 
 const IRRIGATION_SYSTEM_LABELS: Record<string, string> = {
@@ -554,11 +554,11 @@ export function productLabel(component: VisualNutritionComponent): string {
 
 /** Палитра сегментов таймлайна: цвета повторяются по кругу для длинных рецептов. */
 export const PHASE_COLORS = [
-  'var(--accent-green)',
-  'var(--accent-cyan)',
-  'var(--accent-amber)',
-  'var(--accent-lime)',
-  'var(--accent-red)',
+  'var(--status-ok)',
+  'var(--status-info)',
+  'var(--status-warning)',
+  'var(--series-lime)',
+  'var(--status-critical)',
 ] as const
 
 export function phaseColor(index: number): string {

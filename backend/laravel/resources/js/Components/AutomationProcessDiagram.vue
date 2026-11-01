@@ -610,19 +610,19 @@
 
       <ul class="diagram-legend">
         <li>
-          <span class="legend-dot legend-dot--flow" />
+          <span class="legend-dot legend-dot--flow"></span>
           Поток активен
         </li>
         <li>
-          <span class="legend-dot legend-dot--valve" />
+          <span class="legend-dot legend-dot--valve"></span>
           Клапан открыт
         </li>
         <li>
-          <span class="legend-dot legend-dot--dose" />
+          <span class="legend-dot legend-dot--dose"></span>
           Активный дозатор
         </li>
         <li>
-          <span class="legend-dot legend-dot--idle" />
+          <span class="legend-dot legend-dot--idle"></span>
           Ожидание
         </li>
       </ul>
@@ -1002,13 +1002,13 @@ function handlePumpLeave(event: MouseEvent): void {
 }
 
 .pipe-line--active {
-  stroke: var(--accent-cyan, #06b6d4);
+  stroke: var(--status-info, #06b6d4);
   stroke-width: 3;
 }
 
 .flow-dot {
-  fill: var(--accent-cyan, #06b6d4);
-  filter: drop-shadow(0 0 3px color-mix(in srgb, var(--accent-cyan, #06b6d4) 65%, transparent));
+  fill: var(--status-info, #06b6d4);
+  filter: drop-shadow(0 0 3px color-mix(in srgb, var(--status-info, #06b6d4) 65%, transparent));
   animation: flow-dot-pulse 1s linear infinite;
 }
 
@@ -1025,13 +1025,13 @@ function handlePumpLeave(event: MouseEvent): void {
 }
 
 .valve--active {
-  fill: color-mix(in srgb, var(--accent-green, #22c55e) 18%, var(--surface-card, #f8fafc));
-  stroke: var(--accent-green, #16a34a);
+  fill: color-mix(in srgb, var(--status-ok, #22c55e) 18%, var(--surface-card, #f8fafc));
+  stroke: var(--status-ok, #16a34a);
 }
 
 .pump-body--active {
-  fill: color-mix(in srgb, var(--accent-cyan, #06b6d4) 16%, var(--surface-card, #f8fafc));
-  stroke: var(--accent-cyan, #0891b2);
+  fill: color-mix(in srgb, var(--status-info, #06b6d4) 16%, var(--surface-card, #f8fafc));
+  stroke: var(--status-info, #0891b2);
 }
 
 .pump-rotor {
@@ -1056,16 +1056,16 @@ function handlePumpLeave(event: MouseEvent): void {
 }
 
 .pump-rotor--active .pump-rotor-blades {
-  stroke: var(--accent-cyan, #0891b2);
+  stroke: var(--status-info, #0891b2);
 }
 
 .pump-rotor--active .pump-rotor-hub {
-  fill: var(--accent-cyan, #0891b2);
+  fill: var(--status-info, #0891b2);
 }
 
 .correction-block--active {
-  fill: color-mix(in srgb, var(--accent-violet, #7c3aed) 12%, var(--surface-card, #f8fafc));
-  stroke: var(--accent-violet, #7c3aed);
+  fill: color-mix(in srgb, var(--series-violet, #a78bfa) 12%, var(--surface-card, #f8fafc));
+  stroke: var(--series-violet, #a78bfa);
 }
 
 .equipment-label {
@@ -1103,22 +1103,22 @@ function handlePumpLeave(event: MouseEvent): void {
 }
 
 .dose-pump--ph {
-  stroke: color-mix(in srgb, var(--accent-violet, #7c3aed) 55%, var(--border-muted));
+  stroke: color-mix(in srgb, var(--series-violet, #a78bfa) 55%, var(--border-muted));
 }
 
 .dose-pump--ec {
-  stroke: color-mix(in srgb, var(--accent-cyan, #0891b2) 55%, var(--border-muted));
+  stroke: color-mix(in srgb, var(--status-info, #0891b2) 55%, var(--border-muted));
 }
 
 .dose-pump--running {
-  fill: color-mix(in srgb, var(--accent-violet, #7c3aed) 45%, transparent);
-  stroke: var(--accent-violet, #7c3aed);
+  fill: color-mix(in srgb, var(--series-violet, #a78bfa) 45%, transparent);
+  stroke: var(--series-violet, #a78bfa);
   animation: dose-pulse 1.2s ease-in-out infinite;
 }
 
 .dose-pump--ec.dose-pump--running {
-  fill: color-mix(in srgb, var(--accent-cyan, #0891b2) 45%, transparent);
-  stroke: var(--accent-cyan, #0891b2);
+  fill: color-mix(in srgb, var(--status-info, #0891b2) 45%, transparent);
+  stroke: var(--status-info, #0891b2);
 }
 
 .dose-text {
@@ -1148,7 +1148,7 @@ function handlePumpLeave(event: MouseEvent): void {
 }
 
 .arrow-right--active {
-  stroke: var(--accent-cyan, #06b6d4);
+  stroke: var(--status-info, #06b6d4);
 }
 
 .diagram-legend {
@@ -1177,15 +1177,15 @@ function handlePumpLeave(event: MouseEvent): void {
 }
 
 .legend-dot--flow {
-  background: var(--accent-cyan, #06b6d4);
+  background: var(--status-info, #06b6d4);
 }
 
 .legend-dot--valve {
-  background: var(--accent-green, #22c55e);
+  background: var(--status-ok, #22c55e);
 }
 
 .legend-dot--dose {
-  background: var(--accent-violet, #7c3aed);
+  background: var(--series-violet, #a78bfa);
 }
 
 .legend-dot--idle {
@@ -1238,9 +1238,9 @@ function handlePumpLeave(event: MouseEvent): void {
 }
 
 .irr-snapshot__chip--on {
-  border-color: color-mix(in srgb, var(--accent-green) 50%, transparent);
+  border-color: color-mix(in srgb, var(--status-ok) 50%, transparent);
   color: var(--text-primary);
-  background: color-mix(in srgb, var(--accent-green) 12%, transparent);
+  background: color-mix(in srgb, var(--status-ok) 12%, transparent);
 }
 
 .details-tooltip {

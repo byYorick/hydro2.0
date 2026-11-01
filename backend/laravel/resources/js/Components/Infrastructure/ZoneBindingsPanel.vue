@@ -24,7 +24,7 @@
 
     <div
       v-else-if="error"
-      class="text-sm text-red-500"
+      class="text-sm text-status-critical"
     >
       {{ error }}
     </div>
@@ -42,13 +42,14 @@
           {{ role.label }}
           <span
             v-if="role.required"
-            class="text-red-400"
+            class="text-status-critical"
           >*</span>
         </div>
-        <select
+        <SelectField
           v-model="assignments[role.key]"
-          class="input-select h-8 text-xs flex-1"
+          class="flex-1"
           :disabled="!canManage"
+          input-class="h-8 text-xs"
         >
           <option value="">
             — не назначено —
@@ -60,19 +61,19 @@
           >
             {{ node.name }} ({{ node.uid }})
           </option>
-        </select>
+        </SelectField>
       </div>
     </div>
 
     <div
       v-if="saveError"
-      class="text-sm text-red-500"
+      class="text-sm text-status-critical"
     >
       {{ saveError }}
     </div>
     <div
       v-if="saveSuccess"
-      class="text-sm text-green-500"
+      class="text-sm text-status-ok"
     >
       Привязки сохранены
     </div>
@@ -80,6 +81,8 @@
 </template>
 
 <script setup lang="ts">
+import SelectField from '@/Components/SelectField.vue'
+
 import { ref, reactive, computed, onMounted } from 'vue'
 import Button from '@/Components/Button.vue'
 import { api } from '@/services/api'

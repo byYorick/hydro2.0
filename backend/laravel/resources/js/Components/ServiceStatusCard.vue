@@ -99,9 +99,9 @@ function getStatusDotClass(status: string, statusType: string): string {
   if (statusType === 'ws') {
     switch (status) {
       case 'connected':
-        return 'bg-[color:var(--accent-green)]'
+        return 'bg-[color:var(--status-ok)]'
       case 'disconnected':
-        return 'bg-[color:var(--accent-red)]'
+        return 'bg-[color:var(--status-critical)]'
       default:
         return 'bg-[color:var(--text-dim)]'
     }
@@ -110,11 +110,11 @@ function getStatusDotClass(status: string, statusType: string): string {
   if (statusType === 'mqtt') {
     switch (status) {
       case 'online':
-        return 'bg-[color:var(--accent-green)]'
+        return 'bg-[color:var(--status-ok)]'
       case 'offline':
-        return 'bg-[color:var(--accent-red)]'
+        return 'bg-[color:var(--status-critical)]'
       case 'degraded':
-        return 'bg-[color:var(--accent-amber)]'
+        return 'bg-[color:var(--status-warning)]'
       default:
         return 'bg-[color:var(--text-dim)]'
     }
@@ -123,9 +123,9 @@ function getStatusDotClass(status: string, statusType: string): string {
   // service status
   switch (status) {
     case 'ok':
-      return 'bg-[color:var(--accent-green)]'
+      return 'bg-[color:var(--status-ok)]'
     case 'fail':
-      return 'bg-[color:var(--accent-red)]'
+      return 'bg-[color:var(--status-critical)]'
     default:
       return 'bg-[color:var(--text-dim)]'
   }
@@ -171,9 +171,9 @@ function getStatusTextClass(status: string, statusType: string): string {
   if (statusType === 'ws') {
     switch (status) {
       case 'connected':
-        return 'text-[color:var(--accent-green)]'
+        return 'text-[color:var(--status-ok)]'
       case 'disconnected':
-        return 'text-[color:var(--accent-red)]'
+        return 'text-[color:var(--status-critical)]'
       default:
         return 'text-[color:var(--text-dim)]'
     }
@@ -182,11 +182,11 @@ function getStatusTextClass(status: string, statusType: string): string {
   if (statusType === 'mqtt') {
     switch (status) {
       case 'online':
-        return 'text-[color:var(--accent-green)]'
+        return 'text-[color:var(--status-ok)]'
       case 'offline':
-        return 'text-[color:var(--accent-red)]'
+        return 'text-[color:var(--status-critical)]'
       case 'degraded':
-        return 'text-[color:var(--accent-amber)]'
+        return 'text-[color:var(--status-warning)]'
       default:
         return 'text-[color:var(--text-dim)]'
     }
@@ -195,9 +195,9 @@ function getStatusTextClass(status: string, statusType: string): string {
   // service status
   switch (status) {
     case 'ok':
-      return 'text-[color:var(--accent-green)]'
+      return 'text-[color:var(--status-ok)]'
     case 'fail':
-      return 'text-[color:var(--accent-red)]'
+      return 'text-[color:var(--status-critical)]'
     default:
       return 'text-[color:var(--text-dim)]'
 }

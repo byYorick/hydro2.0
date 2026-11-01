@@ -163,10 +163,10 @@
             required
           >
             <div class="flex gap-2">
-              <input
+              <TextField
                 type="datetime-local"
-                class="block w-full h-8 rounded-lg border border-[var(--border-muted)] bg-[var(--bg-surface)] text-[var(--text-primary)] px-2.5 text-sm font-mono outline-none transition-[border-color,box-shadow,background-color] duration-150 focus:border-brand focus:ring-2 focus:ring-brand-soft focus-visible:border-brand focus-visible:ring-2 focus-visible:ring-brand-soft"
-                :value="plantingLocalValue"
+               
+                :model-value="plantingLocalValue"
                 @input="onPlantingChange(($event.target as HTMLInputElement).value)"
               />
               <Button
@@ -193,13 +193,14 @@
             label="Заметки"
             class="md:col-span-2"
           >
-            <textarea
-              class="block w-full min-h-[72px] rounded-lg border border-[var(--border-muted)] bg-[var(--bg-surface)] text-[var(--text-primary)] px-2.5 py-1.5 text-sm outline-none transition-[border-color,box-shadow,background-color] duration-150 focus:border-brand focus:ring-2 focus:ring-brand-soft focus-visible:border-brand focus-visible:ring-2 focus-visible:ring-brand-soft resize-y"
-              :value="notes ?? ''"
+            <TextField
+              multiline
+             
+              :model-value="notes ?? ''"
               maxlength="2000"
               rows="3"
               @input="onNotesChange(($event.target as HTMLTextAreaElement).value)"
-            ></textarea>
+            />
           </Field>
         </div>
       </ShellCard>
@@ -238,6 +239,8 @@
 </template>
 
 <script setup lang="ts">
+import TextField from '@/Components/TextField.vue'
+
 import { computed, ref } from 'vue'
 import { api } from '@/services/api'
 import { useToast } from '@/composables/useToast'

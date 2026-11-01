@@ -326,13 +326,13 @@
                   </span>
                 </label>
 
-                <select
+                <SelectField
                   v-else-if="field.type === 'enum'"
                   :id="`correction-config-${currentTab}-${field.path}`"
-                  :value="String(getByPath(currentForm, field.path) ?? '')"
+                  :model-value="String(getByPath(currentForm, field.path) ?? '')"
                   :data-testid="`correction-config-${currentTab}-${field.path}`"
-                  class="input-select settings-control--select"
                   :disabled="Boolean(field.readonly)"
+                  input-class="settings-control--select"
                   @change="setByPath(currentForm, field.path, ($event.target as HTMLSelectElement).value)"
                 >
                   <option
@@ -342,19 +342,18 @@
                   >
                     {{ option }}
                   </option>
-                </select>
+                </SelectField>
 
-                <input
+                <TextField
                   v-else
                   :id="`correction-config-${currentTab}-${field.path}`"
-                  :value="String(getByPath(currentForm, field.path) ?? '')"
+                  :model-value="String(getByPath(currentForm, field.path) ?? '')"
                   :data-testid="`correction-config-${currentTab}-${field.path}`"
                   :type="field.type === 'string' ? 'text' : 'number'"
                   :step="field.step ?? (field.type === 'integer' ? 1 : 'any')"
                   :min="field.min"
                   :max="field.max"
                   :disabled="Boolean(field.readonly)"
-                  class="input-field"
                   :class="field.type === 'string' ? 'settings-control--text font-mono' : 'settings-control--num text-right'"
                   @input="handleScalarInput(currentForm, field, $event)"
                 />
@@ -696,21 +695,21 @@
           </header>
           <div class="px-4 py-3 flex flex-col gap-3">
             <Field label="Название">
-              <input
+              <TextField
                 v-model="newPresetName"
                 type="text"
-                :class="inputCls"
                 placeholder="Hydro · Tomato · v3"
                 data-testid="correction-config-new-preset-name"
               />
             </Field>
             <Field label="Описание">
-              <textarea
+              <TextField
                 v-model="newPresetDescription"
-                :class="[inputCls, 'min-h-[80px] resize-y']"
+                multiline
+                input-class="min-h-[80px]"
                 placeholder="Когда использовать этот пресет, какие цели"
                 data-testid="correction-config-new-preset-description"
-              ></textarea>
+              />
             </Field>
           </div>
           <footer class="flex items-center gap-2 px-4 py-3 border-t border-[var(--border-muted)] justify-end">
@@ -736,6 +735,10 @@
 </template>
 
 <script setup lang="ts">
+import SelectField from '@/Components/SelectField.vue'
+
+import TextField from '@/Components/TextField.vue'
+
 import { computed, onMounted, ref, watch } from 'vue'
 import Button from '@/Components/Button.vue'
 import SettingsFieldRow from '@/Components/Settings/SettingsFieldRow.vue'
@@ -765,9 +768,6 @@ const emit = defineEmits<{ (e: 'saved'): void }>()
 const CORRECTION_NAMESPACE = 'zone.correction'
 const automationConfig = useAutomationConfig()
 const { loading } = automationConfig
-
-const inputCls =
-  'w-full px-2.5 py-1.5 rounded-md border border-[var(--border-muted)] bg-[var(--bg-surface)] text-sm text-[var(--text-primary)] focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/40 disabled:opacity-55'
 
 const menuItemClass =
   'block w-full text-left px-3 py-1.5 text-[12px] text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] disabled:opacity-45 disabled:cursor-not-allowed'

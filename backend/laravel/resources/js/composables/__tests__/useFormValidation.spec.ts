@@ -46,7 +46,7 @@ describe('useFormValidation (P3-3)', () => {
     const { getErrorClasses } = useFormValidation(form)
 
     const classes = getErrorClasses('name', 'base-class')
-    expect(classes).toContain('border-[color:var(--accent-red)]')
+    expect(classes).toContain('border-[color:var(--status-critical)]')
     expect(classes).toContain('bg-[color:var(--badge-danger-bg)]')
   })
 

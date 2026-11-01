@@ -11,8 +11,8 @@
         <p
           class="text-sm font-medium"
           :class="okCount === totalCount && totalCount > 0
-            ? 'text-[color:var(--accent-green)]'
-            : 'text-[color:var(--accent-amber)]'"
+            ? 'text-[color:var(--status-ok)]'
+            : 'text-[color:var(--status-warning)]'"
           data-testid="dashboard-admin-health-count"
         >
           <template v-if="loaded">
@@ -34,7 +34,7 @@
           <span
             class="h-1.5 w-1.5 rounded-full"
             :class="dotClass(service.status)"
-          />
+          ></span>
           {{ service.label }}
         </li>
       </ul>
@@ -43,7 +43,7 @@
         v-if="blockedCount > 0"
         class="rounded-xl border border-[color:var(--badge-danger-border)] bg-[color:var(--badge-danger-bg)] p-3"
       >
-        <div class="text-sm font-medium text-[color:var(--accent-red)]">
+        <div class="text-sm font-medium text-[color:var(--status-critical)]">
           Автоматика остановлена: {{ blockedCount }}
         </div>
         <p class="mt-1 text-xs text-[color:var(--text-muted)]">
@@ -108,10 +108,10 @@ function pillClass(status: string): string {
 
 function dotClass(status: string): string {
   if (status === 'ok') {
-    return 'bg-[color:var(--accent-green)]'
+    return 'bg-[color:var(--status-ok)]'
   }
   if (status === 'fail') {
-    return 'bg-[color:var(--accent-red)]'
+    return 'bg-[color:var(--status-critical)]'
   }
   return 'bg-[color:var(--text-dim)]'
 }

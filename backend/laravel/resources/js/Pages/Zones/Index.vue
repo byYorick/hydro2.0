@@ -30,7 +30,7 @@
             <div class="ui-kpi-label">
               Активные
             </div>
-            <div class="ui-kpi-value text-[color:var(--accent-green)]">
+            <div class="ui-kpi-value text-status-ok">
               {{ runningCount }}
             </div>
           </div>
@@ -46,7 +46,7 @@
             <div class="ui-kpi-label">
               Предупреждение
             </div>
-            <div class="ui-kpi-value text-[color:var(--accent-amber)]">
+            <div class="ui-kpi-value text-status-warning">
               {{ warningCount }}
             </div>
           </div>
@@ -54,7 +54,7 @@
             <div class="ui-kpi-label">
               Тревога
             </div>
-            <div class="ui-kpi-value text-[color:var(--accent-red)]">
+            <div class="ui-kpi-value text-status-critical">
               {{ alarmCount }}
             </div>
           </div>
@@ -62,7 +62,7 @@
             <div class="ui-kpi-label">
               Всего
             </div>
-            <div class="ui-kpi-value text-[color:var(--accent-cyan)]">
+            <div class="ui-kpi-value text-status-info">
               {{ totalZones }}
             </div>
           </div>
@@ -71,51 +71,49 @@
 
       <div class="surface-card border border-[color:var(--border-muted)] rounded-2xl p-4 shadow-[var(--shadow-card)]">
         <div class="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2">
-          <div class="flex items-center gap-2 flex-1 sm:flex-none">
-            <label class="text-sm text-[color:var(--text-muted)] shrink-0">Статус:</label>
-            <select
-              v-model="status"
-              class="input-select h-10 flex-1 sm:w-auto sm:min-w-[160px]"
-              data-testid="zones-filter-status"
-            >
-              <option value="">
-                Все
-              </option>
-              <option value="RUNNING">
-                Запущено
-              </option>
-              <option value="PAUSED">
-                Приостановлено
-              </option>
-              <option value="WARNING">
-                Предупреждение
-              </option>
-              <option value="ALARM">
-                Тревога
-              </option>
-            </select>
-          </div>
-          <div class="flex items-center gap-2 flex-1 sm:flex-none">
-            <label class="text-sm text-[color:var(--text-muted)] shrink-0">Поиск:</label>
-            <input
-              v-model="query"
-              placeholder="Имя или культура..."
-              class="input-field h-10 flex-1 sm:w-64"
-              data-testid="zones-filter-query"
-            />
-          </div>
+          <SelectField
+            v-model="status"
+            inline
+            label="Статус"
+            class="flex-1 sm:w-auto sm:min-w-[220px]"
+            data-testid="zones-filter-status"
+          >
+            <option value="">
+              Все
+            </option>
+            <option value="RUNNING">
+              Запущено
+            </option>
+            <option value="PAUSED">
+              Приостановлено
+            </option>
+            <option value="WARNING">
+              Предупреждение
+            </option>
+            <option value="ALARM">
+              Тревога
+            </option>
+          </SelectField>
+          <TextField
+            v-model="query"
+            inline
+            label="Поиск"
+            placeholder="Имя или культура..."
+            class="flex-1 sm:w-72"
+            data-testid="zones-filter-query"
+          />
           <div class="flex items-center gap-2 flex-1 sm:flex-none">
             <button
               class="h-10 px-3 rounded-lg border text-sm transition-colors flex items-center gap-1.5 bg-[color:var(--bg-surface-strong)]"
               :class="showOnlyFavorites
-                ? 'border-[color:var(--badge-warning-border)] text-[color:var(--accent-amber)] shadow-[0_0_0_1px_var(--badge-warning-border)]'
+                ? 'border-[color:var(--badge-warning-border)] text-[color:var(--status-warning)] shadow-[0_0_0_1px_var(--badge-warning-border)]'
                 : 'border-[color:var(--border-muted)] text-[color:var(--text-primary)] hover:border-[color:var(--border-strong)]'"
               data-testid="zones-filter-favorites"
               @click="showOnlyFavorites = !showOnlyFavorites"
             >
               <svg
                 class="w-4 h-4"
-                :class="showOnlyFavorites ? 'fill-[color:var(--accent-amber)]' : ''"
+                :class="showOnlyFavorites ? 'fill-[color:var(--status-warning)]' : ''"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -150,7 +148,7 @@
               >
                 <svg
                   class="w-4 h-4 transition-colors"
-                  :class="isZoneFavorite(row.id) ? 'text-[color:var(--accent-amber)] fill-[color:var(--accent-amber)]' : 'text-[color:var(--text-dim)]'"
+                  :class="isZoneFavorite(row.id) ? 'text-[color:var(--status-warning)] fill-[color:var(--status-warning)]' : 'text-[color:var(--text-dim)]'"
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
@@ -165,7 +163,7 @@
               </button>
               <Link
                 :href="`/zones/${row.id}`"
-                class="text-[color:var(--accent-cyan)] hover:underline truncate min-w-0 font-semibold"
+                class="text-[color:var(--status-info)] hover:underline truncate min-w-0 font-semibold"
               >
                 {{ row.name || '-' }}
               </Link>
@@ -231,6 +229,8 @@ import { router, Link, usePage } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import ZoneComparisonModal from '@/Components/ZoneComparisonModal.vue'
 import Button from '@/Components/Button.vue'
+import SelectField from '@/Components/SelectField.vue'
+import TextField from '@/Components/TextField.vue'
 import Badge, { type BadgeVariant } from '@/Components/Badge.vue'
 import DataTableV2, { type DataTableColumn } from '@/Components/DataTableV2.vue'
 import Pagination from '@/Components/Pagination.vue'

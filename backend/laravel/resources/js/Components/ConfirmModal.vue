@@ -2,8 +2,8 @@
   <Modal
     :open="open"
     :title="title"
-    @close="$emit('close')"
     hide-default-cancel
+    @close="$emit('close')"
   >
     <slot>
       <div class="text-sm text-[color:var(--text-muted)]">
@@ -14,13 +14,15 @@
       <Button
         size="sm"
         variant="secondary"
+        type="button"
         @click="$emit('close')"
       >
         {{ cancelText }}
       </Button>
-      <Button 
-        size="sm" 
+      <Button
+        size="sm"
         :variant="confirmVariant"
+        type="button"
         :disabled="loading || confirmDisabled"
         @click="$emit('confirm')"
       >

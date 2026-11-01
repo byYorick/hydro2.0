@@ -43,7 +43,7 @@
     </div>
 
     <div class="settings-row__control">
-      <slot />
+      <slot></slot>
     </div>
   </div>
 </template>

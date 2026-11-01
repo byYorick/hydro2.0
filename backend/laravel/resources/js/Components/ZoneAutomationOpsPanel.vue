@@ -99,11 +99,11 @@
           >недоступны в режиме <code>auto</code> (кроме gate solution_change)</span>
           <span
             v-else-if="automationControlMode === 'auto'"
-            class="text-emerald-500 dark:text-emerald-400"
+            class="text-status-ok"
           >gate-шаги solution_change доступны в <code>auto</code></span>
           <span
             v-else
-            class="text-emerald-500 dark:text-emerald-400"
+            class="text-status-ok"
           >доступны в режиме <code>{{ automationControlMode }}</code></span>
         </p>
         <div

@@ -18,7 +18,7 @@
         type="button"
         class="h-5 px-2 rounded text-[10px] font-semibold uppercase tracking-wide border transition-colors"
         :class="layoutMode === mode.value
-          ? 'border-[color:var(--accent-cyan)] text-[color:var(--accent-cyan)] bg-[color:var(--bg-elevated)]'
+          ? 'border-[color:var(--status-info)] text-[color:var(--status-info)] bg-[color:var(--bg-elevated)]'
           : 'border-transparent text-[color:var(--text-dim)] hover:border-[color:var(--border-strong)] hover:text-[color:var(--text-muted)]'"
         @click="layoutMode = mode.value"
       >

@@ -82,14 +82,14 @@
             required
             :hint="`UID: ${generatedUid}`"
           >
-            <TextInput
+            <TextField
               v-model="newGhName"
               placeholder="Berry"
               maxlength="120"
             />
           </Field>
           <Field label="Часовой пояс">
-            <TextInput
+            <TextField
               v-model="newGhTimezone"
               placeholder="Europe/Moscow"
               maxlength="64"
@@ -103,7 +103,7 @@
             />
           </Field>
           <Field label="Описание">
-            <TextInput
+            <TextField
               v-model="newGhDescription"
               placeholder="Главная теплица"
               maxlength="255"
@@ -169,14 +169,14 @@
             label="Название зоны"
             required
           >
-            <TextInput
+            <TextField
               v-model="newZoneName"
               placeholder="Zone A"
               maxlength="120"
             />
           </Field>
           <Field label="Описание">
-            <TextInput
+            <TextField
               v-model="newZoneDescription"
               placeholder="Front launch zone"
               maxlength="255"
@@ -242,7 +242,7 @@ import { generateUid } from '@/utils/transliterate'
 import { useToast } from '@/composables/useToast'
 import { useLaunchPreferences } from '@/composables/useLaunchPreferences'
 import Button from '@/Components/Button.vue'
-import TextInput from '@/Components/TextInput.vue'
+import TextField from '@/Components/TextField.vue'
 import {
   Field,
   Select,

@@ -18,22 +18,22 @@
         </div>
         <div class="flex flex-wrap items-center justify-end gap-1">
           <span class="swim-pill">
-            <span class="swim-dot bg-[color:var(--accent-green)]"></span> OK
+            <span class="swim-dot bg-[color:var(--status-ok)]"></span> OK
           </span>
           <span class="swim-pill">
-            <span class="swim-dot bg-[color:var(--accent-red)]"></span> FAIL
+            <span class="swim-dot bg-[color:var(--status-critical)]"></span> FAIL
           </span>
           <span class="swim-pill">
             <span class="swim-dot bg-[color:var(--text-dim)]"></span> SKIP
           </span>
           <span class="swim-pill">
-            <span class="swim-dot bg-[color:var(--accent-cyan)]"></span> RUN
+            <span class="swim-dot bg-[color:var(--status-info)]"></span> RUN
           </span>
           <span class="swim-pill">
-            <span class="swim-dot bg-[color:var(--accent-amber)]"></span> WARN
+            <span class="swim-dot bg-[color:var(--status-warning)]"></span> WARN
           </span>
           <span class="swim-pill">
-            <span class="swim-plan-diamond bg-[color:var(--accent-amber)]"></span> PLAN
+            <span class="swim-plan-diamond bg-[color:var(--status-warning)]"></span> PLAN
           </span>
         </div>
       </div>
@@ -67,11 +67,11 @@
         </div>
         <div class="swim-track relative h-8 rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]/40">
           <div
-            class="absolute top-[-4px] bottom-[-4px] z-10 w-px bg-[color:var(--accent-cyan)] shadow-[0_0_12px_color-mix(in_srgb,var(--accent-cyan)_45%,transparent)]"
+            class="absolute top-[-4px] bottom-[-4px] z-10 w-px bg-[color:var(--status-info)] shadow-[0_0_12px_color-mix(in_srgb,var(--status-info)_45%,transparent)]"
             style="left: 50%"
           ></div>
           <div
-            class="absolute left-1/2 top-1/2 z-10 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[color:var(--accent-cyan)]"
+            class="absolute left-1/2 top-1/2 z-10 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[color:var(--status-info)]"
           ></div>
           <div
             v-for="(point, index) in lane.runs"
@@ -93,7 +93,7 @@
       <div class="flex justify-between">
         <span>{{ rulerLabels[0] }}</span>
         <span>{{ rulerLabels[1] }}</span>
-        <span class="font-semibold text-[color:var(--accent-cyan)]">{{ rulerLabels[2] }} ●</span>
+        <span class="font-semibold text-[color:var(--status-info)]">{{ rulerLabels[2] }} ●</span>
         <span>{{ rulerLabels[3] }}</span>
         <span>{{ rulerLabels[4] }}</span>
       </div>
@@ -119,11 +119,11 @@ const props = withDefaults(defineProps<Props>(), {
 })
 
 const STATUS_COLOR: Record<LaneHistoryStatus, string> = {
-  ok: 'var(--accent-green)',
-  err: 'var(--accent-red)',
+  ok: 'var(--status-ok)',
+  err: 'var(--status-critical)',
   skip: 'var(--text-dim)',
-  run: 'var(--accent-cyan)',
-  warn: 'var(--accent-amber)',
+  run: 'var(--status-info)',
+  warn: 'var(--status-warning)',
 }
 
 function defaultFormatDateTime(value: string | null | undefined): string {
@@ -170,7 +170,7 @@ function pointTitle(laneName: string, point: LaneHistoryPoint): string {
 
 function pointClass(point: LaneHistoryPoint): string {
   if (point.kind === 'planned') {
-    return 'swim-point--planned h-2.5 w-2.5 border-amber-200/50'
+    return 'swim-point--planned h-2.5 w-2.5 border-status-warning'
   }
   if (point.s === 'run') {
     return 'h-4 w-[18px]'
@@ -190,7 +190,7 @@ function pointStyle(point: LaneHistoryPoint): Record<string, string> {
   }
   const shadow =
     point.s === 'run'
-      ? '0 0 0 3px color-mix(in srgb, var(--accent-cyan) 25%, transparent)'
+      ? '0 0 0 3px color-mix(in srgb, var(--status-info) 25%, transparent)'
       : 'none'
   return {
     ...baseLeft,

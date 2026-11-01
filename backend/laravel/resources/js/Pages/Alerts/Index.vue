@@ -10,10 +10,10 @@
       <FilterBar>
         <div class="flex items-center gap-2 flex-1 sm:flex-none">
           <label class="text-sm text-[color:var(--text-muted)] shrink-0">Статус:</label>
-          <select
+          <SelectField
             v-model="statusFilter"
             data-testid="alerts-filter-active"
-            class="input-select flex-1 sm:w-auto sm:min-w-[160px]"
+            class="flex-1 sm:w-auto sm:min-w-[160px]"
           >
             <option value="active">
               Только активные
@@ -24,15 +24,15 @@
             <option value="all">
               Все
             </option>
-          </select>
+          </SelectField>
         </div>
 
         <div class="flex items-center gap-2 flex-1 sm:flex-none">
           <label class="text-sm text-[color:var(--text-muted)] shrink-0">Зона:</label>
-          <select
+          <SelectField
             v-model="zoneIdFilter"
             data-testid="alerts-filter-zone"
-            class="input-select flex-1 sm:w-auto sm:min-w-[180px]"
+            class="flex-1 sm:w-auto sm:min-w-[180px]"
           >
             <option value="">
               Все зоны
@@ -44,15 +44,15 @@
             >
               {{ zone.name }}
             </option>
-          </select>
+          </SelectField>
         </div>
 
         <div class="flex items-center gap-2 flex-1 sm:flex-none">
           <label class="text-sm text-[color:var(--text-muted)] shrink-0">Критичность:</label>
-          <select
+          <SelectField
             v-model="severityFilter"
             data-testid="alerts-filter-severity"
-            class="input-select flex-1 sm:w-auto sm:min-w-[150px]"
+            class="flex-1 sm:w-auto sm:min-w-[150px]"
           >
             <option value="">
               Все
@@ -69,17 +69,17 @@
             <option value="info">
               {{ translateAlertSeverity('info') }}
             </option>
-          </select>
+          </SelectField>
         </div>
 
-        <div class="flex items-center gap-2 flex-1 sm:flex-none">
-          <label class="text-sm text-[color:var(--text-muted)] shrink-0">Поиск:</label>
-          <input
-            v-model="searchQuery"
-            placeholder="тип / код / сообщение"
-            class="input-field flex-1 sm:w-60"
-          />
-        </div>
+        <TextField
+          v-model="searchQuery"
+          inline
+          label="Поиск"
+          placeholder="тип / код / сообщение"
+          class="flex-1 sm:w-72"
+          aria-label="Поиск тревог"
+        />
 
         <div class="flex flex-wrap items-center gap-2">
           <button
@@ -87,9 +87,9 @@
             class="h-9 px-3 rounded-lg border text-xs font-semibold transition-colors"
             data-testid="alerts-filter-process-stopping"
             :class="processStoppingOnly
-              ? 'border-[color:var(--accent-red)] text-[color:var(--accent-red)] bg-[color:var(--bg-elevated)]'
+              ? 'border-[color:var(--status-critical)] text-[color:var(--status-critical)] bg-[color:var(--bg-elevated)]'
               : isOperator
-                ? 'border-[color:var(--accent-red)]/60 text-[color:var(--accent-red)] bg-[color:var(--bg-elevated)] hover:border-[color:var(--accent-red)]'
+                ? 'border-[color:var(--status-critical)]/60 text-[color:var(--status-critical)] bg-[color:var(--bg-elevated)] hover:border-[color:var(--status-critical)]'
                 : 'border-[color:var(--border-muted)] text-[color:var(--text-dim)] hover:border-[color:var(--border-strong)]'"
             @click="processStoppingOnly = !processStoppingOnly"
           >
@@ -101,7 +101,7 @@
             class="h-9 px-3 rounded-lg border text-xs font-semibold transition-colors"
             data-testid="alerts-preset-agronomy-domain"
             :class="agronomyDomainPreset
-              ? 'border-[color:var(--accent-cyan)] text-[color:var(--accent-cyan)] bg-[color:var(--bg-elevated)]'
+              ? 'border-[color:var(--status-info)] text-[color:var(--status-info)] bg-[color:var(--bg-elevated)]'
               : 'border-[color:var(--border-muted)] text-[color:var(--text-dim)] hover:border-[color:var(--border-strong)]'"
             @click="agronomyDomainPreset = !agronomyDomainPreset"
           >
@@ -111,7 +111,7 @@
             type="button"
             class="h-9 px-3 rounded-lg border text-xs font-semibold transition-colors"
             :class="recentOnly
-              ? 'border-[color:var(--accent-cyan)] text-[color:var(--accent-cyan)] bg-[color:var(--bg-elevated)]'
+              ? 'border-[color:var(--status-info)] text-[color:var(--status-info)] bg-[color:var(--bg-elevated)]'
               : 'border-[color:var(--border-muted)] text-[color:var(--text-dim)] hover:border-[color:var(--border-strong)]'"
             @click="recentOnly = !recentOnly"
           >
@@ -121,7 +121,7 @@
             type="button"
             class="h-9 px-3 rounded-lg border text-xs font-semibold transition-colors"
             :class="alarmsOnly
-              ? 'border-[color:var(--accent-amber)] text-[color:var(--accent-amber)] bg-[color:var(--bg-elevated)]'
+              ? 'border-[color:var(--status-warning)] text-[color:var(--status-warning)] bg-[color:var(--bg-elevated)]'
               : 'border-[color:var(--border-muted)] text-[color:var(--text-dim)] hover:border-[color:var(--border-strong)]'"
             @click="alarmsOnly = !alarmsOnly"
           >
@@ -133,7 +133,7 @@
             class="h-9 px-3 rounded-lg border text-xs font-semibold transition-colors"
             data-testid="alerts-extra-filters-toggle"
             :class="extraFiltersOpen
-              ? 'border-[color:var(--accent-cyan)] text-[color:var(--accent-cyan)] bg-[color:var(--bg-elevated)]'
+              ? 'border-[color:var(--status-info)] text-[color:var(--status-info)] bg-[color:var(--bg-elevated)]'
               : 'border-[color:var(--border-muted)] text-[color:var(--text-dim)] hover:border-[color:var(--border-strong)]'"
             @click="extraFiltersOpen = !extraFiltersOpen"
           >
@@ -148,10 +148,10 @@
         >
           <div class="flex items-center gap-2 flex-1 sm:flex-none">
             <label class="text-sm text-[color:var(--text-muted)] shrink-0">Источник:</label>
-            <select
+            <SelectField
               v-model="sourceFilter"
               data-testid="alerts-filter-source"
-              class="input-select flex-1 sm:w-auto sm:min-w-[150px]"
+              class="flex-1 sm:w-auto sm:min-w-[150px]"
             >
               <option value="">
                 Все
@@ -165,15 +165,15 @@
               <option value="node">
                 {{ translateAlertSource('node') }}
               </option>
-            </select>
+            </SelectField>
           </div>
 
           <div class="flex items-center gap-2 flex-1 sm:flex-none">
             <label class="text-sm text-[color:var(--text-muted)] shrink-0">Категория:</label>
-            <select
+            <SelectField
               v-model="categoryFilter"
               data-testid="alerts-filter-category"
-              class="input-select flex-1 sm:w-auto sm:min-w-[170px]"
+              class="flex-1 sm:w-auto sm:min-w-[170px]"
             >
               <option value="">
                 Все
@@ -199,18 +199,18 @@
               <option value="other">
                 other
               </option>
-            </select>
+            </SelectField>
           </div>
 
           <div class="flex items-center gap-2 flex-1 sm:flex-none">
             <label class="text-sm text-[color:var(--text-muted)] shrink-0">Скрытие повторов, сек</label>
-            <input
+            <TextField
               v-model.number="toastSuppressionSec"
               type="number"
               min="0"
               max="600"
               step="5"
-              class="input-field w-24"
+              class="w-24"
               data-testid="alerts-filter-suppression"
             />
           </div>
@@ -230,7 +230,7 @@
           >
             <input
               type="checkbox"
-              class="h-4 w-4 accent-[color:var(--accent-cyan)]"
+              class="h-4 w-4 accent-[color:var(--status-info)]"
               :checked="allVisibleSelected"
               @change="toggleSelectAll"
             />
@@ -308,7 +308,7 @@
         <button
           v-if="displayedAlertSectionCounts.activeTotal > 0"
           type="button"
-          class="inline-flex items-center gap-1.5 rounded-full border border-[color:var(--accent-cyan)] bg-[color:var(--bg-elevated)] px-2.5 py-1 text-xs font-semibold text-[color:var(--accent-cyan)] transition-opacity hover:opacity-90"
+          class="inline-flex items-center gap-1.5 rounded-full border border-[color:var(--status-info)] bg-[color:var(--bg-elevated)] px-2.5 py-1 text-xs font-semibold text-[color:var(--status-info)] transition-opacity hover:opacity-90"
           data-testid="alerts-count-active-total"
           @click="scrollToFirstActiveSection"
         >
@@ -409,111 +409,111 @@
                 row-clickable
                 @row-click="openDetails"
               >
-              <template #cell-select="{ row }">
-                <input
-                  type="checkbox"
-                  class="h-4 w-4 accent-[color:var(--accent-cyan)]"
-                  :checked="selectedIds.has(row.id)"
-                  :disabled="isResolved(row)"
-                  @change="toggleSelection(row)"
-                  @click.stop
-                />
-              </template>
+                <template #cell-select="{ row }">
+                  <input
+                    type="checkbox"
+                    class="h-4 w-4 accent-[color:var(--status-info)]"
+                    :checked="selectedIds.has(row.id)"
+                    :disabled="isResolved(row)"
+                    @change="toggleSelection(row)"
+                    @click.stop
+                  />
+                </template>
 
-              <template #cell-severity="{ row }">
-                <div class="flex items-center gap-2">
-                  <span
-                    class="h-8 w-1 rounded-full"
-                    :class="severityRailClass(row)"
-                    aria-hidden="true"
-                  ></span>
+                <template #cell-severity="{ row }">
+                  <div class="flex items-center gap-2">
+                    <span
+                      class="h-8 w-1 rounded-full"
+                      :class="severityRailClass(row)"
+                      aria-hidden="true"
+                    ></span>
+                    <Badge
+                      :variant="severityBadgeVariant(row)"
+                      size="sm"
+                    >
+                      {{ severityLabel(row) }}
+                    </Badge>
+                  </div>
+                </template>
+
+                <template #cell-type="{ row }">
+                  <div class="min-w-0">
+                    <span
+                      class="truncate block max-w-[320px] text-[color:var(--text-primary)] font-medium"
+                      data-testid="alert-human-title"
+                    >
+                      {{ humanTitle(row) }}
+                    </span>
+                    <span
+                      v-if="row.code"
+                      class="mt-0.5 block truncate font-mono text-[11px] text-[color:var(--text-dim)]"
+                    >
+                      {{ row.code }}
+                    </span>
+                  </div>
+                </template>
+
+                <template #cell-process="{ row }">
                   <Badge
-                    :variant="severityBadgeVariant(row)"
+                    v-if="processStoppingKind(row)"
+                    variant="danger"
+                    size="sm"
+                    :data-testid="`alert-process-stop-badge-${row.id}`"
+                    :data-process-stopping-kind="processStoppingKind(row)"
+                  >
+                    {{ PROCESS_STOPPING_BADGE_LABEL[processStoppingKind(row)!] }}
+                  </Badge>
+                  <span
+                    v-else
+                    class="text-[color:var(--text-dim)]"
+                  >
+                    —
+                  </span>
+                </template>
+
+                <template #cell-zone="{ row }">
+                  <Link
+                    v-if="row.zone_id"
+                    class="truncate block max-w-[220px] text-[color:var(--status-info)] font-medium hover:underline"
+                    :href="zoneAlertsTabUrl(row.zone_id)"
+                    :data-testid="`alert-zone-link-${row.id}`"
+                    @click.stop
+                  >
+                    {{ zoneLabel(row) }}
+                  </Link>
+                  <span
+                    v-else
+                    class="truncate block max-w-[220px]"
+                  >
+                    —
+                  </span>
+                </template>
+
+                <template #cell-created_at="{ row }">
+                  {{ formatDate(row.created_at) }}
+                </template>
+
+                <template #cell-status="{ row }">
+                  <Badge
+                    :variant="statusBadgeVariant(row)"
                     size="sm"
                   >
-                    {{ severityLabel(row) }}
+                    {{ translateStatus(row.status) }}
                   </Badge>
-                </div>
-              </template>
+                </template>
 
-              <template #cell-type="{ row }">
-                <div class="min-w-0">
-                  <span
-                    class="truncate block max-w-[320px] text-[color:var(--text-primary)] font-medium"
-                    data-testid="alert-human-title"
+                <template #row-actions="{ row }">
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    :data-testid="`alert-resolve-btn-${row.id}`"
+                    :disabled="isResolved(row)"
+                    @click.stop="openResolve(row)"
                   >
-                    {{ humanTitle(row) }}
-                  </span>
-                  <span
-                    v-if="row.code"
-                    class="mt-0.5 block truncate font-mono text-[11px] text-[color:var(--text-dim)]"
-                  >
-                    {{ row.code }}
-                  </span>
-                </div>
-              </template>
-
-              <template #cell-process="{ row }">
-                <Badge
-                  v-if="processStoppingKind(row)"
-                  variant="danger"
-                  size="sm"
-                  :data-testid="`alert-process-stop-badge-${row.id}`"
-                  :data-process-stopping-kind="processStoppingKind(row)"
-                >
-                  {{ PROCESS_STOPPING_BADGE_LABEL[processStoppingKind(row)!] }}
-                </Badge>
-                <span
-                  v-else
-                  class="text-[color:var(--text-dim)]"
-                >
-                  —
-                </span>
-              </template>
-
-              <template #cell-zone="{ row }">
-                <Link
-                  v-if="row.zone_id"
-                  class="truncate block max-w-[220px] text-[color:var(--accent-cyan)] font-medium hover:underline"
-                  :href="zoneAlertsTabUrl(row.zone_id)"
-                  :data-testid="`alert-zone-link-${row.id}`"
-                  @click.stop
-                >
-                  {{ zoneLabel(row) }}
-                </Link>
-                <span
-                  v-else
-                  class="truncate block max-w-[220px]"
-                >
-                  —
-                </span>
-              </template>
-
-              <template #cell-created_at="{ row }">
-                {{ formatDate(row.created_at) }}
-              </template>
-
-              <template #cell-status="{ row }">
-                <Badge
-                  :variant="statusBadgeVariant(row)"
-                  size="sm"
-                >
-                  {{ translateStatus(row.status) }}
-                </Badge>
-              </template>
-
-              <template #row-actions="{ row }">
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  :data-testid="`alert-resolve-btn-${row.id}`"
-                  :disabled="isResolved(row)"
-                  @click.stop="openResolve(row)"
-                >
-                  Отметить как решённый
-                </Button>
-              </template>
-            </DataTableV2>
+                    Отметить как решённый
+                  </Button>
+                </template>
+              </DataTableV2>
             </div>
           </section>
         </template>
@@ -553,6 +553,8 @@
 </template>
 
 <script setup lang="ts">
+import SelectField from '@/Components/SelectField.vue'
+
 import { computed, ref } from 'vue'
 import { Link } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
@@ -564,6 +566,7 @@ import ConfirmModal from '@/Components/ConfirmModal.vue'
 import DataTableV2 from '@/Components/DataTableV2.vue'
 import FilterBar from '@/Components/FilterBar.vue'
 import PageHeader from '@/Components/PageHeader.vue'
+import TextField from '@/Components/TextField.vue'
 import { useRole } from '@/composables/useRole'
 import { formatAlertHumanTitle, translateAlertSeverity, translateAlertSource, translateStatus } from '@/utils/i18n'
 import {
@@ -742,7 +745,8 @@ function severitySortWeight(alert: AlertRecord): number {
 
 function severityBadgeVariant(alert: AlertRecord): BadgeVariant {
   const severity = severityValue(alert)
-  if (severity === 'critical' || severity === 'error') return 'danger'
+  if (severity === 'critical') return 'critical'
+  if (severity === 'error') return 'danger'
   if (severity === 'warning') return 'warning'
   if (severity === 'info') return 'info'
   return 'neutral'

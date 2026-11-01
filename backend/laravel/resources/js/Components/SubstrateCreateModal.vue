@@ -13,10 +13,9 @@
         </div>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div>
-            <label class="block text-xs text-[color:var(--text-muted)] mb-1">Код (английский) <span class="text-red-500">*</span></label>
-            <input
+            <label class="block text-xs text-[color:var(--text-muted)] mb-1">Код (английский) <span class="text-status-critical">*</span></label>
+            <TextField
               v-model="form.code"
-              class="input-field"
               placeholder="coco_perlite_70_30"
             />
             <p class="text-[11px] text-[color:var(--text-muted)] mt-0.5">
@@ -24,10 +23,9 @@
             </p>
           </div>
           <div>
-            <label class="block text-xs text-[color:var(--text-muted)] mb-1">Название <span class="text-red-500">*</span></label>
-            <input
+            <label class="block text-xs text-[color:var(--text-muted)] mb-1">Название <span class="text-status-critical">*</span></label>
+            <TextField
               v-model="form.name"
-              class="input-field"
               placeholder="Кокос + Перлит 70/30"
             />
           </div>
@@ -43,7 +41,7 @@
           <div class="flex items-center gap-3">
             <div
               class="text-sm font-bold"
-              :class="Math.abs(ratioSum - 100) <= 0.01 ? 'text-[color:var(--accent-green)]' : 'text-[color:var(--badge-warning-text)]'"
+              :class="Math.abs(ratioSum - 100) <= 0.01 ? 'text-[color:var(--status-ok)]' : 'text-[color:var(--badge-warning-text)]'"
             >
               {{ ratioSum.toFixed(1) }}%
             </div>
@@ -101,35 +99,36 @@
         >
           <div>
             <label class="block text-[10px] text-[color:var(--text-muted)] mb-0.5">Код</label>
-            <input
+            <TextField
               v-model="comp.name"
-              class="input-field !text-xs"
+              class="!text-xs"
               placeholder="coco"
             />
           </div>
           <div>
             <label class="block text-[10px] text-[color:var(--text-muted)] mb-0.5">Название</label>
-            <input
+            <TextField
               v-model="comp.label"
-              class="input-field !text-xs"
+              class="!text-xs"
               placeholder="Кокос"
             />
           </div>
           <div>
             <label class="block text-[10px] text-[color:var(--text-muted)] mb-0.5 text-center">Доля, %</label>
-            <input
+            <TextField
               v-model.number="comp.ratio_pct"
               type="number"
               min="0"
               max="100"
               step="0.1"
-              class="input-field hide-spin !text-xs text-center"
+              class="hide-spin !text-xs"
+              input-class="text-center"
             />
           </div>
           <button
             v-if="form.components.length > 1"
             type="button"
-            class="h-[2.6rem] px-2 text-sm text-[color:var(--text-muted)] hover:text-red-500"
+            class="h-[2.6rem] px-2 text-sm text-[color:var(--text-muted)] hover:text-status-critical"
             title="Удалить компонент"
             @click="removeComponent(idx)"
           >
@@ -153,7 +152,7 @@
             v-for="sys in SYSTEM_OPTIONS"
             :key="sys.value"
             class="flex items-center gap-1.5 rounded-md border border-[color:var(--border-muted)] px-2 py-1 cursor-pointer text-xs hover:bg-[color:var(--bg-muted)]"
-            :class="{ 'bg-emerald-50 dark:bg-emerald-900/20 border-[color:var(--accent-green)]': form.applicable_systems.includes(sys.value) }"
+            :class="{ 'bg-emerald-50 dark:bg-emerald-900/20 border-[color:var(--status-ok)]': form.applicable_systems.includes(sys.value) }"
           >
             <input
               type="checkbox"
@@ -170,12 +169,13 @@
       <!-- Заметки -->
       <div>
         <label class="block text-xs text-[color:var(--text-muted)] mb-1">Заметки</label>
-        <textarea
+        <TextField
           v-model="form.notes"
+          multiline
           rows="2"
-          class="input-field !h-auto !py-2"
+          class="!h-auto !py-2"
           placeholder="Например: перед посадкой замочить на 12 часов"
-        ></textarea>
+        />
       </div>
     </div>
 
@@ -192,6 +192,8 @@
 </template>
 
 <script setup lang="ts">
+import TextField from '@/Components/TextField.vue'
+
 import { computed, reactive, ref, watch } from 'vue'
 import Modal from '@/Components/Modal.vue'
 import Button from '@/Components/Button.vue'
@@ -326,8 +328,8 @@ async function submit(): Promise<void> {
   gap: 0.35rem;
   padding: 0.35rem 0.75rem;
   border-radius: 0.55rem;
-  background: color-mix(in srgb, var(--accent-green) 10%, transparent);
-  color: var(--accent-green);
+  background: color-mix(in srgb, var(--status-ok) 10%, transparent);
+  color: var(--status-ok);
   font-size: 0.72rem;
   font-weight: 600;
   border: 1px solid transparent;
@@ -335,7 +337,7 @@ async function submit(): Promise<void> {
   transition: background 0.15s, transform 0.08s;
 }
 .soft-btn:hover {
-  background: color-mix(in srgb, var(--accent-green) 18%, transparent);
+  background: color-mix(in srgb, var(--status-ok) 18%, transparent);
 }
 .soft-btn:active {
   transform: scale(0.97);

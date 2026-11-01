@@ -145,33 +145,33 @@ const wrapperClass = computed(() => {
 
 /* Варианты статусов */
 .status-indicator.status-success {
-  border-color: var(--accent-green);
+  border-color: var(--status-ok);
   background: var(--badge-success-bg);
 }
 
 .status-indicator.status-success .status-indicator-inner {
-  background: var(--accent-green);
-  box-shadow: 0 0 4px var(--accent-green);
+  background: var(--status-ok);
+  box-shadow: 0 0 4px var(--status-ok);
 }
 
 .status-indicator.status-warning {
-  border-color: var(--accent-amber);
+  border-color: var(--status-warning);
   background: var(--badge-warning-bg);
 }
 
 .status-indicator.status-warning .status-indicator-inner {
-  background: var(--accent-amber);
-  box-shadow: 0 0 4px var(--accent-amber);
+  background: var(--status-warning);
+  box-shadow: 0 0 4px var(--status-warning);
 }
 
 .status-indicator.status-danger {
-  border-color: var(--accent-red);
+  border-color: var(--status-critical);
   background: var(--badge-danger-bg);
 }
 
 .status-indicator.status-danger .status-indicator-inner {
-  background: var(--accent-red);
-  box-shadow: 0 0 4px var(--accent-red);
+  background: var(--status-critical);
+  box-shadow: 0 0 4px var(--status-critical);
 }
 
 .status-indicator.status-neutral {
@@ -184,13 +184,13 @@ const wrapperClass = computed(() => {
 }
 
 .status-indicator.status-info {
-  border-color: var(--accent-cyan);
+  border-color: var(--status-info);
   background: var(--badge-info-bg);
 }
 
 .status-indicator.status-info .status-indicator-inner {
-  background: var(--accent-cyan);
-  box-shadow: 0 0 4px var(--accent-cyan);
+  background: var(--status-info);
+  box-shadow: 0 0 4px var(--status-info);
 }
 
 /* Пульсация для критичных статусов */

@@ -8,7 +8,7 @@
   >
     <div
       v-if="generalError"
-      class="mb-3 rounded-xl border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-400"
+      class="mb-3 rounded-xl border border-[color:var(--status-critical)] bg-[color:var(--status-critical-soft)] px-3 py-2 text-xs text-status-critical"
     >
       {{ generalError }}
     </div>
@@ -40,7 +40,7 @@
           </div>
           <p
             v-if="fieldError('task_type')"
-            class="mt-1 text-xs text-red-400"
+            class="mt-1 text-xs text-status-critical"
           >
             {{ fieldError('task_type') }}
           </p>
@@ -48,7 +48,7 @@
 
         <div
           v-if="showNonExecutableWarning"
-          class="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200/90"
+          class="rounded-xl border border-status-warning bg-status-warning-soft px-3 py-2 text-xs text-status-warning"
         >
           На AE3 этот тип появится в плане, но без автоматического запуска.
         </div>
@@ -93,8 +93,8 @@
               type="button"
               class="rounded-full border px-2.5 py-1 text-xs transition motion-reduce:transition-none"
               :class="selectedDays.includes(day.value)
-                ? 'border-[color:var(--accent-cyan)] bg-[color-mix(in_srgb,var(--accent-cyan)_18%,transparent)] text-[color:var(--text-primary)]'
-                : 'border-[color:var(--border-muted)] text-[color:var(--text-dim)] hover:border-[color-mix(in_srgb,var(--accent-cyan)_40%,transparent)]'"
+                ? 'border-[color:var(--status-info)] bg-[color-mix(in_srgb,var(--status-info)_18%,transparent)] text-[color:var(--text-primary)]'
+                : 'border-[color:var(--border-muted)] text-[color:var(--text-dim)] hover:border-[color-mix(in_srgb,var(--status-info)_40%,transparent)]'"
               :data-testid="`manual-schedule-weekday-${day.value}`"
               @click="toggleDay(day.value)"
             >
@@ -131,15 +131,14 @@
 
         <div v-if="form.schedule_kind === 'time'">
           <label class="mb-1 block text-xs text-[color:var(--text-muted)]">Время запуска (UTC)</label>
-          <input
+          <TextField
             v-model="form.time_at"
             type="time"
-            class="input-field"
             data-testid="manual-schedule-time-at"
-          >
+          />
           <p
             v-if="fieldError('time_at')"
-            class="mt-1 text-xs text-red-400"
+            class="mt-1 text-xs text-status-critical"
           >
             {{ fieldError('time_at') }}
           </p>
@@ -151,20 +150,18 @@
         >
           <div>
             <label class="mb-1 block text-xs text-[color:var(--text-muted)]">Интервал</label>
-            <input
+            <TextField
               v-model.number="intervalValue"
               type="number"
               :min="intervalMinValue"
               :max="intervalMaxValue"
-              class="input-field"
               data-testid="manual-schedule-interval"
-            >
+            />
           </div>
           <div>
             <label class="mb-1 block text-xs text-[color:var(--text-muted)]">Единица</label>
-            <select
+            <SelectField
               v-model="intervalUnit"
-              class="input-field"
               data-testid="manual-schedule-interval-unit"
             >
               <option value="minutes">
@@ -173,14 +170,14 @@
               <option value="hours">
                 ч
               </option>
-            </select>
+            </SelectField>
           </div>
           <p class="col-span-2 text-[10px] text-[color:var(--text-dim)]">
             = {{ form.interval_sec ?? 0 }} с
           </p>
           <p
             v-if="fieldError('interval_sec')"
-            class="col-span-2 text-xs text-red-400"
+            class="col-span-2 text-xs text-status-critical"
           >
             {{ fieldError('interval_sec') }}
           </p>
@@ -192,23 +189,21 @@
         >
           <div>
             <label class="mb-1 block text-xs text-[color:var(--text-muted)]">Начало (UTC)</label>
-            <input
+            <TextField
               v-model="form.window_start"
               type="time"
-              class="input-field"
-            >
+            />
           </div>
           <div>
             <label class="mb-1 block text-xs text-[color:var(--text-muted)]">Конец (UTC)</label>
-            <input
+            <TextField
               v-model="form.window_end"
               type="time"
-              class="input-field"
-            >
+            />
           </div>
           <p
             v-if="fieldError('window_start') || fieldError('window_end')"
-            class="col-span-2 text-xs text-red-400"
+            class="col-span-2 text-xs text-status-critical"
           >
             {{ fieldError('window_start') || fieldError('window_end') }}
           </p>
@@ -216,18 +211,17 @@
 
         <div v-if="form.schedule_kind === 'once'">
           <label class="mb-1 block text-xs text-[color:var(--text-muted)]">Дата и время (UTC)</label>
-          <input
+          <TextField
             v-model="runAtLocal"
             type="datetime-local"
-            class="input-field"
             data-testid="manual-schedule-run-at"
-          >
+          />
           <p class="mt-1 text-[10px] text-[color:var(--text-dim)]">
             Сработает один раз в указанный момент. Время вводится в UTC, не в локальном часовом поясе браузера.
           </p>
           <p
             v-if="fieldError('run_at')"
-            class="mt-1 text-xs text-red-400"
+            class="mt-1 text-xs text-status-critical"
           >
             {{ fieldError('run_at') }}
           </p>
@@ -236,29 +230,25 @@
         <div v-if="form.task_type === 'irrigation'">
           <label class="mb-1 block text-xs text-[color:var(--text-muted)]">Длительность полива</label>
           <div class="grid grid-cols-[1fr_auto] gap-2">
-            <input
+            <TextField
               v-model.number="durationValue"
               type="number"
               :min="durationMinValue"
               :max="durationMaxValue"
-              class="input-field"
               data-testid="manual-schedule-duration"
-            >
-            <select
-              v-model="durationUnit"
-              class="input-field"
-            >
+            />
+            <SelectField v-model="durationUnit">
               <option value="seconds">
                 сек
               </option>
               <option value="minutes">
                 мин
               </option>
-            </select>
+            </SelectField>
           </div>
           <p
             v-if="fieldError('payload.duration_sec')"
-            class="mt-1 text-xs text-red-400"
+            class="mt-1 text-xs text-status-critical"
           >
             {{ fieldError('payload.duration_sec') }}
           </p>
@@ -266,13 +256,12 @@
 
         <div>
           <label class="mb-1 block text-xs text-[color:var(--text-muted)]">Подпись (необязательно)</label>
-          <input
+          <TextField
             v-model="form.label"
             type="text"
             maxlength="255"
-            class="input-field"
             placeholder="Например: вечерний полив"
-          >
+          />
         </div>
 
         <label class="flex items-center gap-2 text-xs text-[color:var(--text-muted)]">
@@ -281,20 +270,20 @@
             role="switch"
             :aria-checked="form.enabled"
             class="relative h-5 w-9 rounded-full transition motion-reduce:transition-none"
-            :class="form.enabled ? 'bg-[color:var(--accent-green)]' : 'bg-[color:var(--border-muted)]'"
+            :class="form.enabled ? 'bg-[color:var(--status-ok)]' : 'bg-[color:var(--border-muted)]'"
             data-testid="manual-schedule-enabled-toggle"
             @click="form.enabled = !form.enabled"
           >
             <span
               class="absolute top-0.5 h-4 w-4 rounded-full bg-white transition motion-reduce:transition-none"
               :class="form.enabled ? 'left-[18px]' : 'left-0.5'"
-            />
+            ></span>
           </button>
           Активно
         </label>
         <p
           v-if="fieldError('enabled')"
-          class="mt-1 text-xs text-red-400"
+          class="mt-1 text-xs text-status-critical"
         >
           {{ fieldError('enabled') }}
         </p>
@@ -340,7 +329,7 @@
 
     <p
       v-if="!isValid && validationHint"
-      class="mt-3 text-xs text-amber-400/90"
+      class="mt-3 text-xs text-status-warning"
       data-testid="manual-schedule-validation-hint"
     >
       {{ validationHint }}
@@ -360,6 +349,10 @@
 </template>
 
 <script setup lang="ts">
+import SelectField from '@/Components/SelectField.vue'
+
+import TextField from '@/Components/TextField.vue'
+
 import { computed, reactive, ref, watch } from 'vue'
 import Button from '@/Components/Button.vue'
 import Modal from '@/Components/Modal.vue'
@@ -516,14 +509,14 @@ function taskCardClass(option: (typeof taskOptions)[number]): string {
   const selected = form.task_type === option.value
   const accentMap: Record<string, string> = {
     cyan: 'border-cyan-500/50 bg-cyan-500/10',
-    amber: 'border-amber-500/50 bg-amber-500/10',
+    amber: 'border-status-warning bg-status-warning-soft',
     green: 'border-emerald-500/50 bg-emerald-500/10',
-    blue: 'border-sky-500/50 bg-sky-500/10',
+    blue: 'border-status-info bg-status-info-soft',
     violet: 'border-violet-500/50 bg-violet-500/10',
     slate: 'border-slate-500/50 bg-slate-500/10',
   }
   return selected
-    ? `${accentMap[option.accent] ?? 'border-[color:var(--accent-cyan)]'} ring-1 ring-[color:var(--accent-cyan)]/30`
+    ? `${accentMap[option.accent] ?? 'border-[color:var(--status-info)]'} ring-1 ring-[color:var(--status-info)]/30`
     : 'border-[color:var(--border-muted)] hover:border-[color:var(--border-muted)]/80'
 }
 

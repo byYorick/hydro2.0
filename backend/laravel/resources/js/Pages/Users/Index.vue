@@ -10,15 +10,12 @@
     >
       <Card class="mb-4">
         <div class="mb-3 flex flex-wrap items-center gap-2">
-          <input
+          <TextField
             v-model="searchQuery"
             placeholder="Поиск по имени/email..."
-            class="input-field w-64"
+            class="w-64"
           />
-          <select
-            v-model="roleFilter"
-            class="input-select"
-          >
+          <SelectField v-model="roleFilter">
             <option value="">
               Все роли
             </option>
@@ -31,7 +28,7 @@
             <option value="viewer">
               Наблюдатель
             </option>
-          </select>
+          </SelectField>
           <Button
             size="sm"
             :disabled="loading.load"
@@ -143,16 +140,16 @@
     <Modal
       :open="showCreateModal || editingUser !== null"
       title="Пользователь"
-      @close="closeModal"
       hide-default-cancel
+      @close="closeModal"
     >
       <div class="space-y-3">
         <div>
           <label class="text-sm text-[color:var(--text-muted)]">Имя</label>
-          <input
+          <TextField
             v-model="userForm.name"
-            class="input-field mt-1"
-            :class="formErrors.name ? 'border-[color:var(--accent-red)] bg-[color:var(--bg-elevated)]' : ''"
+            class="mt-1"
+            :class="formErrors.name ? 'border-[color:var(--status-critical)] bg-[color:var(--bg-elevated)]' : ''"
           />
           <div
             v-if="formErrors.name"
@@ -163,11 +160,11 @@
         </div>
         <div>
           <label class="text-sm text-[color:var(--text-muted)]">Email</label>
-          <input
+          <TextField
             v-model="userForm.email"
             type="email"
-            class="input-field mt-1"
-            :class="formErrors.email ? 'border-[color:var(--accent-red)] bg-[color:var(--bg-elevated)]' : ''"
+            class="mt-1"
+            :class="formErrors.email ? 'border-[color:var(--status-critical)] bg-[color:var(--bg-elevated)]' : ''"
           />
           <div
             v-if="formErrors.email"
@@ -178,11 +175,11 @@
         </div>
         <div>
           <label class="text-sm text-[color:var(--text-muted)]">Пароль</label>
-          <input
+          <TextField
             v-model="userForm.password"
             type="password"
-            class="input-field mt-1"
-            :class="formErrors.password ? 'border-[color:var(--accent-red)] bg-[color:var(--bg-elevated)]' : ''"
+            class="mt-1"
+            :class="formErrors.password ? 'border-[color:var(--status-critical)] bg-[color:var(--bg-elevated)]' : ''"
             :placeholder="editingUser ? 'Оставьте пустым, чтобы не менять' : 'Минимум 8 символов'"
           />
           <div
@@ -194,10 +191,10 @@
         </div>
         <div>
           <label class="text-sm text-[color:var(--text-muted)]">Роль</label>
-          <select
+          <SelectField
             v-model="userForm.role"
-            class="input-select mt-1"
-            :class="formErrors.role ? 'border-[color:var(--accent-red)] bg-[color:var(--bg-elevated)]' : ''"
+            class="mt-1"
+            :class="formErrors.role ? 'border-[color:var(--status-critical)] bg-[color:var(--bg-elevated)]' : ''"
           >
             <option value="viewer">
               Наблюдатель
@@ -208,7 +205,7 @@
             <option value="admin">
               Администратор
             </option>
-          </select>
+          </SelectField>
           <div
             v-if="formErrors.role"
             class="text-xs text-[color:var(--badge-danger-text)] mt-1"
@@ -240,8 +237,8 @@
     <Modal
       :open="deletingUser !== null"
       title="Удалить пользователя?"
-      @close="deletingUser = null"
       hide-default-cancel
+      @close="deletingUser = null"
     >
       <div class="text-sm text-[color:var(--text-muted)]">
         Вы уверены, что хотите удалить пользователя <strong>{{ deletingUser?.name }}</strong>?
@@ -269,6 +266,10 @@
 </template>
 
 <script setup lang="ts">
+import SelectField from '@/Components/SelectField.vue'
+
+import TextField from '@/Components/TextField.vue'
+
 import { computed, reactive, ref, watch, onMounted } from 'vue'
 import { usePage } from '@inertiajs/vue3'
 import type { AxiosError } from 'axios'

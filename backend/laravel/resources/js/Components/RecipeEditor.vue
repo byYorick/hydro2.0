@@ -38,10 +38,9 @@
         v-if="plantMode === 'select'"
         class="grid gap-2 md:grid-cols-[1fr_auto]"
       >
-        <select
+        <SelectField
           id="recipe-plant"
           v-model.number="form.plant_id"
-          class="input-field"
           :disabled="plantsLoading"
         >
           <option :value="null">
@@ -54,7 +53,7 @@
           >
             {{ plant.name }}
           </option>
-        </select>
+        </SelectField>
         <Button
           size="sm"
           variant="secondary"
@@ -71,25 +70,22 @@
         <div class="grid grid-cols-1 md:grid-cols-3 gap-2">
           <div>
             <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">Название растения</label>
-            <input
+            <TextField
               v-model="newPlantName"
-              class="input-field"
               placeholder="Томат Черри"
             />
           </div>
           <div>
             <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">Вид (species)</label>
-            <input
+            <TextField
               v-model="newPlantSpecies"
-              class="input-field"
               placeholder="Solanum lycopersicum"
             />
           </div>
           <div>
             <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">Сорт (variety)</label>
-            <input
+            <TextField
               v-model="newPlantVariety"
-              class="input-field"
               placeholder="Cherry"
             />
           </div>
@@ -130,11 +126,11 @@
       >
         {{ recipeName }}
       </div>
-      <input
+      <TextField
         id="recipe-description"
         v-model="recipeLabel"
         data-testid="recipe-name-input"
-        class="input-field mt-1"
+        class="mt-1"
         placeholder="Veg+Bloom, зима 2026..."
       />
     </div>
@@ -148,9 +144,9 @@
         Система подготовки раствора и полива
       </div>
       <div class="max-w-lg">
-        <select
+        <SelectField
           v-model="recipeIrrigationMode"
-          class="input-field w-full"
+          class="w-full"
         >
           <option value="SUBSTRATE">
             Проточная (2 бака)
@@ -158,7 +154,7 @@
           <option value="RECIRC">
             Рециркуляция (3 бака)
           </option>
-        </select>
+        </SelectField>
         <div class="mt-1.5 text-[12px] text-[color:var(--text-muted)] leading-snug space-y-0.5">
           <p v-if="recipeIrrigationMode === 'SUBSTRATE'">
             <span class="font-semibold text-[color:var(--text-primary)]">2 бака</span> — для субстратного полива (кокос, минвата, грунт):
@@ -187,7 +183,7 @@
         </div>
         <button
           type="button"
-          class="text-[11px] text-[color:var(--accent-cyan)] hover:underline"
+          class="text-[11px] text-[color:var(--status-info)] hover:underline"
           data-testid="recipe-editor-preview-toggle"
           @click="previewOpen = !previewOpen"
         >
@@ -218,21 +214,22 @@
           <div class="flex items-end gap-4">
             <div>
               <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">Название</label>
-              <input
+              <TextField
                 v-model="phase.name"
                 :data-testid="`phase-name-input-${index}`"
-                class="input-field !w-40"
+                class="!w-40"
                 placeholder="VEG / BLOOM"
               />
             </div>
             <div>
               <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">Длительность (дни:часы)</label>
-              <input
-                :value="durationDisplay(phase)"
+              <TextField
+                :model-value="durationDisplay(phase)"
                 :data-testid="`phase-duration-input-${index}`"
                 type="text"
                 placeholder="0 : 00"
-                class="input-field !w-24 text-center tracking-widest"
+                class="!w-24"
+                input-class="text-center tracking-widest"
                 @change="setDurationFromString(phase, ($event.target as HTMLInputElement).value)"
               />
             </div>
@@ -261,7 +258,7 @@
               Удалить
             </Button>
             <div class="flex flex-col items-center">
-              <span class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-[color:var(--accent-primary)]/10 text-[11px] font-bold text-[color:var(--accent-primary)]">{{ index + 1 }}</span>
+              <span class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-[color:var(--series-primary)]/10 text-[11px] font-bold text-[color:var(--series-primary)]">{{ index + 1 }}</span>
               <span class="text-[8px] text-[color:var(--text-dim)] mt-0.5">фаза</span>
             </div>
           </div>
@@ -278,9 +275,9 @@
           >
             <div>
               <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">Тип системы полива</label>
-              <select
+              <SelectField
                 v-model="phase.irrigation_system_type"
-                class="input-field w-full"
+                class="w-full"
               >
                 <template v-if="recipeIrrigationMode === 'SUBSTRATE'">
                   <option value="drip_tape">
@@ -304,14 +301,14 @@
                     Аэропоника
                   </option>
                 </template>
-              </select>
+              </SelectField>
             </div>
             <div>
               <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">Субстрат</label>
               <div class="flex gap-2">
-                <select
+                <SelectField
                   v-model="phase.substrate_type"
-                  class="input-field flex-1 min-w-0"
+                  class="flex-1 min-w-0"
                   :disabled="substrateOptions(phase).length === 0"
                 >
                   <option
@@ -321,7 +318,7 @@
                   >
                     {{ opt.label }}
                   </option>
-                </select>
+                </SelectField>
                 <button
                   type="button"
                   class="pill-btn"
@@ -432,11 +429,12 @@
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-lg">
             <div>
               <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">Интервал между поливами (ЧЧ:ММ)</label>
-              <input
-                :value="intervalDisplay(phase)"
+              <TextField
+                :model-value="intervalDisplay(phase)"
                 type="text"
                 placeholder="00 : 00"
-                class="input-field !w-32 text-center tracking-widest"
+                class="!w-32"
+                input-class="text-center tracking-widest"
                 @change="setIntervalFromString(phase, ($event.target as HTMLInputElement).value)"
               />
               <p class="text-[12px] text-[color:var(--text-muted)] mt-1 leading-snug">
@@ -445,11 +443,12 @@
             </div>
             <div>
               <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">Длительность полива (ММ:СС)</label>
-              <input
-                :value="durationIrrigDisplay(phase)"
+              <TextField
+                :model-value="durationIrrigDisplay(phase)"
                 type="text"
                 placeholder="00 : 00"
-                class="input-field !w-28 text-center tracking-widest"
+                class="!w-28"
+                input-class="text-center tracking-widest"
                 @change="setDurationIrrigFromString(phase, ($event.target as HTMLInputElement).value)"
               />
               <p class="text-[12px] text-[color:var(--text-muted)] mt-1 leading-snug">
@@ -691,9 +690,9 @@
           <div class="flex flex-wrap gap-2">
             <div>
               <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">Режим питания</label>
-              <select
+              <SelectField
                 v-model="phase.nutrient_mode"
-                class="input-field !min-w-[200px]"
+                class="!min-w-[200px]"
               >
                 <option value="ratio_ec_pid">
                   PID по EC + доли
@@ -704,7 +703,7 @@
                 <option value="dose_ml_l_only">
                   Фикс. доза мл/л
                 </option>
-              </select>
+              </SelectField>
               <p class="text-[12px] text-[color:var(--text-muted)] mt-1 leading-snug">
                 <template v-if="phase.nutrient_mode === 'ratio_ec_pid'">
                   PID-регулятор по EC, доза распределяется по долям компонентов
@@ -719,9 +718,9 @@
             </div>
             <div v-if="phase.nutrient_mode !== 'dose_ml_l_only'">
               <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">Режим дозирования</label>
-              <select
+              <SelectField
                 v-model="phase.nutrient_ec_dosing_mode"
-                class="input-field !min-w-[200px]"
+                class="!min-w-[200px]"
               >
                 <option value="sequential">
                   Последовательный
@@ -729,7 +728,7 @@
                 <option value="parallel">
                   Параллельный
                 </option>
-              </select>
+              </SelectField>
               <p class="text-[12px] text-[color:var(--text-muted)] mt-1 leading-snug">
                 <template v-if="phase.nutrient_ec_dosing_mode === 'parallel'">
                   Ca, Mg, Micro дозируются одновременно в одном окне коррекции
@@ -787,7 +786,7 @@
             <div class="text-right">
               <div
                 class="text-sm font-bold"
-                :class="Math.abs(nutrientRatioSum(phase) - 100) <= 0.01 ? 'text-[color:var(--accent-green)]' : 'text-[color:var(--badge-warning-text)]'"
+                :class="Math.abs(nutrientRatioSum(phase) - 100) <= 0.01 ? 'text-[color:var(--status-ok)]' : 'text-[color:var(--badge-warning-text)]'"
               >
                 {{ nutrientRatioSum(phase).toFixed(1) }}%
               </div>
@@ -1090,51 +1089,46 @@
           <div class="grid grid-cols-1 md:grid-cols-2 gap-3 max-w-xl">
             <div>
               <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">Мин. температура раствора, °C</label>
-              <input
+              <TextField
                 type="number"
                 step="0.1"
-                class="input-field"
-                :value="cropDayInputValue(phase.solution_temp_min)"
+                :model-value="cropDayInputValue(phase.solution_temp_min)"
                 @input="setCropDayNumber(phase, 'solution_temp_min', $event)"
               />
             </div>
             <div>
               <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">Макс. температура раствора, °C</label>
-              <input
+              <TextField
                 type="number"
                 step="0.1"
-                class="input-field"
-                :value="cropDayInputValue(phase.solution_temp_max)"
+                :model-value="cropDayInputValue(phase.solution_temp_max)"
                 @input="setCropDayNumber(phase, 'solution_temp_max', $event)"
               />
             </div>
             <div>
               <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">Удержание выхода за пределы, сек</label>
-              <input
+              <TextField
                 type="number"
                 step="1"
-                class="input-field"
-                :value="cropDayInputValue(phase.solution_health_breach_hold_sec)"
+                :model-value="cropDayInputValue(phase.solution_health_breach_hold_sec)"
                 @input="setCropDayNumber(phase, 'solution_health_breach_hold_sec', $event)"
               />
             </div>
             <div>
               <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">Возраст раствора до рекомендации, дни</label>
-              <input
+              <TextField
                 type="number"
                 step="1"
-                class="input-field"
-                :value="cropDayInputValue(phase.solution_max_age_days)"
+                :model-value="cropDayInputValue(phase.solution_max_age_days)"
                 @input="setCropDayNumber(phase, 'solution_max_age_days', $event)"
               />
             </div>
             <div>
               <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">Объём доливов до рекомендации, мл</label>
-              <input
+              <TextField
                 type="number"
                 step="1"
-                class="input-field"
-                :value="cropDayInputValue(phase.solution_refresh_after_topup_ml)"
+                :model-value="cropDayInputValue(phase.solution_refresh_after_topup_ml)"
                 @input="setCropDayNumber(phase, 'solution_refresh_after_topup_ml', $event)"
               />
             </div>
@@ -1178,20 +1172,18 @@
             </div>
             <div>
               <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">Старт дня</label>
-              <input
+              <TextField
                 v-model="phase.lighting_start_time"
                 type="time"
-                class="input-field"
               />
             </div>
             <div class="col-span-2">
               <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">DLI, моль/м²·сутки</label>
-              <input
+              <TextField
                 data-testid="recipe-phase-dli-target"
                 type="number"
                 step="0.01"
-                class="input-field"
-                :value="cropDayInputValue(phase.dli_target)"
+                :model-value="cropDayInputValue(phase.dli_target)"
                 @input="setCropDayNumber(phase, 'dli_target', $event)"
               />
               <p class="text-[12px] text-[color:var(--text-muted)] mt-1 mb-0 leading-snug">
@@ -1233,6 +1225,10 @@
 </template>
 
 <script setup lang="ts">
+import SelectField from '@/Components/SelectField.vue'
+
+import TextField from '@/Components/TextField.vue'
+
 import { computed, ref, watch } from 'vue'
 import Button from '@/Components/Button.vue'
 import RecipeEditorProductField from '@/Components/RecipeEditorProductField.vue'
@@ -1570,7 +1566,7 @@ const previewSummary = computed(() => summarizeRecipePhases(previewPhases.value)
   justify-content: center;
   border-left: 1px solid var(--border-muted);
   border-right: 1px solid var(--border-muted);
-  background: color-mix(in srgb, var(--accent-green) 6%, var(--bg-elevated));
+  background: color-mix(in srgb, var(--status-ok) 6%, var(--bg-elevated));
 }
 .target-row__input {
   width: 100%;
@@ -1602,15 +1598,15 @@ const previewSummary = computed(() => summarizeRecipePhases(previewPhases.value)
   width: 2.6rem;
   height: 2.6rem;
   border-radius: 0.85rem;
-  background: color-mix(in srgb, var(--accent-green) 12%, transparent);
-  color: var(--accent-green);
-  border: 1px solid color-mix(in srgb, var(--accent-green) 25%, transparent);
+  background: color-mix(in srgb, var(--status-ok) 12%, transparent);
+  color: var(--status-ok);
+  border: 1px solid color-mix(in srgb, var(--status-ok) 25%, transparent);
   cursor: pointer;
   transition: background 0.15s, border-color 0.15s, transform 0.08s;
 }
 .pill-btn:hover {
-  background: color-mix(in srgb, var(--accent-green) 20%, transparent);
-  border-color: color-mix(in srgb, var(--accent-green) 45%, transparent);
+  background: color-mix(in srgb, var(--status-ok) 20%, transparent);
+  border-color: color-mix(in srgb, var(--status-ok) 45%, transparent);
 }
 .pill-btn:active {
   transform: scale(0.94);
@@ -1623,8 +1619,8 @@ const previewSummary = computed(() => summarizeRecipePhases(previewPhases.value)
   gap: 0.4rem;
   padding: 0.4rem 0.85rem;
   border-radius: 0.6rem;
-  background: color-mix(in srgb, var(--accent-green) 8%, transparent);
-  color: var(--accent-green);
+  background: color-mix(in srgb, var(--status-ok) 8%, transparent);
+  color: var(--status-ok);
   font-size: 0.75rem;
   font-weight: 600;
   border: 1px solid transparent;
@@ -1632,7 +1628,7 @@ const previewSummary = computed(() => summarizeRecipePhases(previewPhases.value)
   transition: background 0.15s, color 0.15s, transform 0.08s;
 }
 .soft-btn:hover {
-  background: color-mix(in srgb, var(--accent-green) 16%, transparent);
+  background: color-mix(in srgb, var(--status-ok) 16%, transparent);
 }
 .soft-btn:active {
   transform: scale(0.97);
@@ -1675,15 +1671,15 @@ const previewSummary = computed(() => summarizeRecipePhases(previewPhases.value)
   transition: left 0.2s ease, background 0.2s ease;
 }
 .md-switch input:checked + .md-switch__track {
-  background: color-mix(in srgb, var(--accent-green) 45%, transparent);
+  background: color-mix(in srgb, var(--status-ok) 45%, transparent);
 }
 .md-switch input:checked + .md-switch__track .md-switch__thumb {
   left: calc(100% - 1.15rem);
-  background: var(--accent-green);
-  box-shadow: 0 1px 4px color-mix(in srgb, var(--accent-green) 40%, transparent);
+  background: var(--status-ok);
+  box-shadow: 0 1px 4px color-mix(in srgb, var(--status-ok) 40%, transparent);
 }
 .md-switch input:focus-visible + .md-switch__track {
-  outline: 2px solid color-mix(in srgb, var(--accent-green) 40%, transparent);
+  outline: 2px solid color-mix(in srgb, var(--status-ok) 40%, transparent);
   outline-offset: 2px;
 }
 .md-switch__label {
@@ -1693,7 +1689,7 @@ const previewSummary = computed(() => summarizeRecipePhases(previewPhases.value)
   min-width: 2rem;
 }
 .md-switch input:checked ~ .md-switch__label {
-  color: var(--accent-green);
+  color: var(--status-ok);
 }
 
 /* EC breakdown — карточка */
@@ -1701,7 +1697,7 @@ const previewSummary = computed(() => summarizeRecipePhases(previewPhases.value)
   border: 1px solid var(--border-muted);
   border-radius: 0.75rem;
   padding: 0.75rem;
-  background: color-mix(in srgb, var(--accent-green) 3%, var(--bg-elevated));
+  background: color-mix(in srgb, var(--status-ok) 3%, var(--bg-elevated));
   display: flex;
   flex-direction: column;
   gap: 0.6rem;
@@ -1725,8 +1721,8 @@ const previewSummary = computed(() => summarizeRecipePhases(previewPhases.value)
 .ec-breakdown-card__total {
   font-size: 0.85rem;
   font-weight: 700;
-  color: var(--accent-green);
-  background: color-mix(in srgb, var(--accent-green) 12%, transparent);
+  color: var(--status-ok);
+  background: color-mix(in srgb, var(--status-ok) 12%, transparent);
   padding: 0.15rem 0.55rem;
   border-radius: 0.35rem;
 }
@@ -1781,7 +1777,7 @@ const previewSummary = computed(() => summarizeRecipePhases(previewPhases.value)
   color: var(--text-muted);
 }
 .ec-flow-stage__icon {
-  color: var(--accent-green);
+  color: var(--status-ok);
   font-size: 0.7rem;
 }
 .ec-flow-stage__label {
@@ -1816,15 +1812,15 @@ const previewSummary = computed(() => summarizeRecipePhases(previewPhases.value)
   justify-content: center;
   font-size: 1rem;
   font-weight: 700;
-  color: var(--accent-green);
-  background: color-mix(in srgb, var(--accent-green) 6%, transparent);
+  color: var(--status-ok);
+  background: color-mix(in srgb, var(--status-ok) 6%, transparent);
   border: none;
   cursor: pointer;
   transition: background 0.15s, transform 0.08s;
   user-select: none;
 }
 .stepper__btn:hover {
-  background: color-mix(in srgb, var(--accent-green) 15%, transparent);
+  background: color-mix(in srgb, var(--status-ok) 15%, transparent);
 }
 .stepper__btn:active {
   transform: scale(0.92);
@@ -1866,8 +1862,8 @@ const previewSummary = computed(() => summarizeRecipePhases(previewPhases.value)
   justify-content: center;
   font-size: 1.1rem;
   font-weight: 700;
-  color: var(--accent-green);
-  background: color-mix(in srgb, var(--accent-green) 10%, transparent);
+  color: var(--status-ok);
+  background: color-mix(in srgb, var(--status-ok) 10%, transparent);
   border: none;
   border-radius: 50%;
   margin: 0 0.15rem;
@@ -1876,7 +1872,7 @@ const previewSummary = computed(() => summarizeRecipePhases(previewPhases.value)
   transition: background 0.15s, transform 0.1s;
 }
 .target-row__btn:hover {
-  background: color-mix(in srgb, var(--accent-green) 20%, transparent);
+  background: color-mix(in srgb, var(--status-ok) 20%, transparent);
 }
 .target-row__btn:active {
   transform: scale(0.9);
