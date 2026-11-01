@@ -308,7 +308,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 
 ### 10.2 Диагностика зоны / AE / irrigation
 
-- Skills/commands: `two-tank-debug`, `zone-state`, `zone-audit`, `fix-stuck-zone`  
+- Skills/commands: `two-tank-debug`, `zone-state`, `zone-audit`, `fix-stuck-zone`; проектные Grok skills: `.grok/skills/hydro2-*` (см. `tools/cursor_skills.sh`)  
 - Состояние: `zone_workflow_state`, `zone_events`, active task, intents  
 - Не чистить БД «наугад» без подтверждения  
 

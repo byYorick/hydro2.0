@@ -1,0 +1,33 @@
+{
+  "skill_name": "two-tank-debug",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Зона 12 зависла в tank_filling уже 40 минут. Разберись.",
+      "expected_output": "Спрашивает/использует zone_id=12, читает workflow_phase/stage из hydro_dev, не делает destructive без подтверждения.",
+      "expectations": [
+        "Uses hydro_dev psql path with credentials guidance",
+        "Inspects workflow_phase and stage",
+        "Does not run destructive fixes without confirmation"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "На fill пошли dose на pump_acid — это норма?",
+      "expected_output": "Нет: на fill канон Ca-only (pump_b); pH на fill не канон.",
+      "expectations": [
+        "States fill chemistry is Ca-only / pump_b",
+        "Flags acid/base on fill as drift"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Для e2e realhw на test_node используй этот skill и hydro_dev:5432",
+      "expected_output": "Указывает, что e2e realhw = hydro_e2e:5433 и другой гайд; этот skill для hydro_dev.",
+      "expectations": [
+        "Distinguishes hydro_e2e:5433 from hydro_dev:5432",
+        "Points to REALHW guide or tests/e2e"
+      ]
+    }
+  ]
+}
