@@ -327,10 +327,24 @@ def test_within_band_skip_and_other_task_type_do_not_emit_irrigation_block():
         assert "solution_temp_blocked" not in codes
 
 
+def _automation_engine_error_catalog_path() -> Path:
+    """Каталог сервиса: в образе `/app/error_codes.json`, локально рядом с пакетом.
+
+    Тест лежит в ``tests/unit/``, поэтому фиксированный ``parents[1]`` смотрит в
+    ``tests/`` и не находит файл на CI-раннере (вне Docker).
+    """
+    docker_path = Path("/app/error_codes.json")
+    if docker_path.is_file():
+        return docker_path
+    for parent in Path(__file__).resolve().parents:
+        candidate = parent / "error_codes.json"
+        if candidate.is_file():
+            return candidate
+    raise FileNotFoundError("automation-engine error_codes.json not found")
+
+
 def test_crop_day_codes_exist_in_error_catalog():
-    path = Path("/app/error_codes.json")
-    if not path.is_file():
-        path = Path(__file__).resolve().parents[1] / "error_codes.json"
+    path = _automation_engine_error_catalog_path()
     catalog = json.loads(path.read_text(encoding="utf-8"))
     by_code = {row["code"]: row for row in catalog["codes"]}
     for code in (

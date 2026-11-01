@@ -66,6 +66,10 @@ class NodeControllerTest extends TestCase
 
     public function test_nodes_index_exposes_pending_bind_fields(): void
     {
+        Http::fake([
+            'history-logger:9300/*' => Http::response(['status' => 'ok'], 200),
+        ]);
+
         // agronomist видит unassigned/pending (ZoneAccessHelper::canViewUnassignedNodes)
         $user = User::factory()->create(['role' => 'agronomist']);
         $zone = Zone::factory()->create();
@@ -88,6 +92,10 @@ class NodeControllerTest extends TestCase
 
     public function test_nodes_index_new_only_includes_pending_excludes_assigned(): void
     {
+        Http::fake([
+            'history-logger:9300/*' => Http::response(['status' => 'ok'], 200),
+        ]);
+
         $user = User::factory()->create(['role' => 'agronomist']);
         $zone = Zone::factory()->create();
         $pending = DeviceNode::factory()->create([
