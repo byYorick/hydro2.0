@@ -1,0 +1,41 @@
+{
+  "skill_name": "hydro2-mqtt-security",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Добавь HMAC-проверку входящего config на ESP32 по аналогии с командами — она же уже в спеке?",
+      "expected_output": "Уточняет: config HMAC planned/not implemented; можно планировать, но не выдавать за текущий канон runtime.",
+      "expectations": [
+        "States config HMAC is planned/not implemented",
+        "States commands HMAC is canon"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Какой формат topic для команды на channel pump_a?",
+      "expected_output": "hydro/{gh}/{zone}/{node}/{channel}/{message_type} со ссылкой на MQTT_NAMESPACE.",
+      "expectations": [
+        "Uses hydro/{gh}/{zone}/{node}/{channel}/{message_type}",
+        "Cites MQTT_NAMESPACE or MQTT_SPEC_FULL"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Узел отвечает ERROR invalid_signature. Кто подписывает и где секрет?",
+      "expected_output": "HL подписывает; node_secret в NodeConfig; skew 10s.",
+      "expectations": [
+        "Mentions history-logger signing",
+        "Mentions node_secret and 10s skew"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "Можно ли ослабить ACL в mosquitto.dev.conf чтобы Laravel публиковал команды напрямую?",
+      "expected_output": "Нет — нарушение hard rules; publish только HL.",
+      "expectations": [
+        "Rejects Laravel MQTT publish",
+        "Defers to hard rules"
+      ]
+    }
+  ]
+}
