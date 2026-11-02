@@ -87,12 +87,12 @@ export function useAutomationRuntimeSettings(showToast: ToastHandler) {
   }
   if (typeof window !== 'undefined') {
     window.addEventListener('beforeunload', beforeUnload)
-    window.addEventListener('inertia:before', beforeVisit)
+    document.addEventListener('inertia:before', beforeVisit)
   }
   onBeforeUnmount(() => {
     if (typeof window !== 'undefined') {
       window.removeEventListener('beforeunload', beforeUnload)
-      window.removeEventListener('inertia:before', beforeVisit)
+      document.removeEventListener('inertia:before', beforeVisit)
     }
   })
   return { sections, draft, loading, saving, resetting, busy, error, errors, dirtyCount, canSave, updatedAt, load, save, reset, discard }

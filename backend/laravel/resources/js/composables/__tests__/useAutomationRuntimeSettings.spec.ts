@@ -80,7 +80,7 @@ describe('useAutomationRuntimeSettings', () => {
     await state.load({ silent: true })
     const visit = () => {
       const event = new Event('inertia:before', { cancelable: true })
-      window.dispatchEvent(event)
+      document.dispatchEvent(event)
       return event.defaultPrevented
     }
     expect(visit()).toBe(false)
