@@ -6,7 +6,7 @@ vi.mock('@/Components/Modal.vue', () => ({
   default: {
     name: 'Modal',
     props: ['open', 'title', 'size'],
-    template: '<div v-if="open"><slot /><slot name="footer" /></div>',
+    template: '<div v-if="open"><button @click="$emit(\'close\')">Отмена</button><slot /><slot name="footer" /></div>',
   },
 }))
 
@@ -126,13 +126,13 @@ function createProps(overrides: Record<string, unknown> = {}) {
 }
 
 describe('ZoneAutomationEditWizard.vue', () => {
-  it('показывает текст унификации с мастером запуска и монтирует AutomationStep', () => {
+  it('показывает назначение профиля зоны и монтирует редактор', () => {
     const wrapper = mount(ZoneAutomationEditWizard, {
       props: createProps(),
     })
 
-    expect(wrapper.text()).toContain('шаг')
-    expect(wrapper.text()).toContain('«Автоматика»')
+    expect(wrapper.text()).toContain('водный контур')
+    expect(wrapper.findComponent({ name: 'Modal' }).props('title')).toBe('Профиль зоны')
     expect(wrapper.text()).toContain('мастере запуска')
     expect(wrapper.find('[data-testid="automation-step-stub"]').exists()).toBe(true)
   })
@@ -142,7 +142,7 @@ describe('ZoneAutomationEditWizard.vue', () => {
       props: createProps(),
     })
 
-    const saveButton = wrapper.findAll('button').find((button) => button.text() === 'Сохранить')
+    const saveButton = wrapper.findAll('button').find((button) => button.text() === 'Сохранить и применить')
     expect(saveButton).toBeTruthy()
     await saveButton!.trigger('click')
 
@@ -156,5 +156,25 @@ describe('ZoneAutomationEditWizard.vue', () => {
     expect(payload.waterForm.tanksCount).toBe(2)
     expect(payload.waterForm.enableDrainControl).toBe(false)
     expect(payload.zoneClimateForm.enabled).toBe(true)
+  })
+
+  it('предупреждает о потере правок при закрытии и повторной загрузке', async () => {
+    const wrapper = mount(ZoneAutomationEditWizard, { props: createProps() })
+    const step = wrapper.findComponent({ name: 'AutomationStep' })
+    step.vm.$emit('update:profile', {
+      ...automationProfileDefaults,
+      waterForm: { ...automationProfileDefaults.waterForm, durationSeconds: 321 },
+      lightingForm: automationProfileDefaults.lightingForm,
+      zoneClimateForm: { enabled: true },
+    })
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    await wrapper.findAll('button').find(button => button.text() === 'Отмена')!.trigger('click')
+    expect(wrapper.emitted('close')).toBeUndefined()
+    await wrapper.findAll('button').find(button => button.text() === 'Перечитать с сервера')!.trigger('click')
+    expect(confirm).toHaveBeenCalledTimes(2)
+    confirm.mockReturnValue(true)
+    await wrapper.findAll('button').find(button => button.text() === 'Отмена')!.trigger('click')
+    expect(wrapper.emitted('close')).toHaveLength(1)
+    confirm.mockRestore()
   })
 })

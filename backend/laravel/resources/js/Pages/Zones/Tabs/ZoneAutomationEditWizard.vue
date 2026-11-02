@@ -1,25 +1,20 @@
 <template>
   <Modal
     :open="open"
-    title="Редактирование автоматизации зоны"
+    title="Профиль зоны"
     size="xlarge"
-    @close="$emit('close')"
+    @close="requestClose"
   >
     <div class="space-y-4">
       <div class="rounded-2xl border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] px-4 py-3 text-xs text-[color:var(--text-dim)]">
         <p class="m-0">
-          Тот же интерфейс, что шаг
-          <strong class="text-[color:var(--text-primary)]">«Автоматика»</strong>
-          в мастере запуска цикла: контур, привязки нод, полив, коррекция, климат зоны, свет.
+          Настройте водный контур, узлы, полив, коррекцию и свет. Изменения сохраняются и применяются к зоне после нажатия кнопки ниже.
         </p>
         <p class="mt-2 mb-0">
           Общий климат теплицы редактируется на уровне теплицы.
         </p>
-        <p
-          data-testid="zone-irrigation-strategy-caption"
-          class="mt-2 mb-0"
-        >
-          task поливает по расписанию. smart_soil_v1 без свежей влажности пропускает полив и не помечает задачу сбоем.
+        <p class="mt-2 mb-0">
+          Цели pH и EC для текущего цикла задаются в рецепте.
         </p>
       </div>
 
@@ -55,6 +50,7 @@
       <Button
         type="button"
         variant="outline"
+        :disabled="isApplying"
         @click="reloadAutomationEditor"
       >
         Перечитать с сервера
@@ -64,7 +60,7 @@
         :disabled="isApplying"
         @click="emitApply"
       >
-        {{ isApplying ? 'Отправка...' : 'Сохранить' }}
+        {{ isApplying ? 'Сохраняем...' : 'Сохранить и применить' }}
       </Button>
     </template>
   </Modal>
@@ -133,16 +129,36 @@ const draftWaterForm = reactive<WaterFormState>({ ...props.waterForm })
 const draftLightingForm = reactive<LightingFormState>({ ...props.lightingForm })
 const draftZoneClimateForm = reactive<ZoneClimateFormState>({ ...props.zoneClimateForm })
 const automationStepKey = ref(0)
+const loadedProfile = ref<string | null>(null)
+
+function currentProfile(): string {
+  return JSON.stringify({ water: draftWaterForm, lighting: draftLightingForm, climate: draftZoneClimateForm })
+}
+
+function hasUnsavedChanges(): boolean {
+  return loadedProfile.value !== null && currentProfile() !== loadedProfile.value
+}
+
+function allowDiscard(): boolean {
+  return !hasUnsavedChanges() || window.confirm('Несохранённые изменения профиля зоны будут потеряны. Продолжить?')
+}
+
+function requestClose(): void {
+  if (!props.isApplying && allowDiscard()) emit('close')
+}
 
 function onAutomationProfileSync(profile: AutomationProfile): void {
   Object.assign(draftWaterForm, profile.waterForm as WaterFormState)
   Object.assign(draftLightingForm, profile.lightingForm as LightingFormState)
   Object.assign(draftZoneClimateForm, profile.zoneClimateForm as ZoneClimateFormState)
+  if (loadedProfile.value === null) loadedProfile.value = currentProfile()
   stepError.value = null
 }
 
 function reloadAutomationEditor(): void {
+  if (!allowDiscard()) return
   stepError.value = null
+  loadedProfile.value = null
   automationStepKey.value += 1
 }
 
@@ -295,6 +311,7 @@ function syncDraftFromProps(): void {
 }
 
 function emitApply(): void {
+  if (props.isApplying) return
   normalizeWaterRuntimeFields(draftWaterForm)
   syncWorkflowByTopology(draftWaterForm)
 
@@ -363,6 +380,7 @@ watch(
     if (isOpen) {
       syncDraftFromProps()
       stepError.value = null
+      loadedProfile.value = null
       automationStepKey.value += 1
     }
   },

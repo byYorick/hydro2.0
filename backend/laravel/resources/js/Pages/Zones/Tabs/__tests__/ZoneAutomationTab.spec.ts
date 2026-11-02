@@ -804,7 +804,7 @@ describe('ZoneAutomationTab.vue', () => {
     expect(agronomist.find('[data-testid="automation-runtime-payload"]').exists()).toBe(false)
     await openTechnicalDetails(agronomist)
     expect(agronomist.find('[data-testid="automation-technical-details-body"]').exists()).toBe(true)
-    expect(agronomist.text()).toContain('logic_profile')
+    expect(agronomist.text()).toContain('Сохранённые настройки оборудования')
     expect(agronomist.find('[data-testid="automation-runtime-payload"]').exists()).toBe(false)
 
     const showJson = agronomist.findAll('button').find((btn) => btn.text() === 'Показать payload JSON')
@@ -827,7 +827,7 @@ describe('ZoneAutomationTab.vue', () => {
 
     expect(operator.find('[data-testid="automation-runtime-payload"]').exists()).toBe(false)
     expect(operator.find('[data-testid="automation-technical-details-body"]').exists()).toBe(false)
-    expect(operator.text()).not.toContain('logic_profile')
+    expect(operator.text()).not.toContain('Сохранённые настройки оборудования')
   })
 
 })

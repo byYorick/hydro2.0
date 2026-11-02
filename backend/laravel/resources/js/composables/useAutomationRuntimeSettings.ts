@@ -11,13 +11,13 @@ interface RuntimeDocument extends AutomationDocument {
 export function useAutomationRuntimeSettings(showToast: ToastHandler) {
   // This editor owns error messages; avoid duplicate global + local toasts.
   const config = useAutomationConfig()
-  const document = ref<RuntimeDocument | null>(null)
+  const runtimeDocument = ref<RuntimeDocument | null>(null)
   const draft = ref<RuntimeDraft>({})
   const loading = ref(false)
   const saving = ref(false)
   const resetting = ref(false)
   const error = ref<string | null>(null)
-  const sections = computed(() => document.value?.snapshot?.sections ?? [])
+  const sections = computed(() => runtimeDocument.value?.snapshot?.sections ?? [])
   const items = computed(() => runtimeItems(sections.value))
   const dirtyCount = computed(() => items.value.filter(item => isRuntimeFieldDirty(item, draft.value[item.key])).length)
   const errors = computed(() => Object.fromEntries(items.value.flatMap(item => {
@@ -26,14 +26,14 @@ export function useAutomationRuntimeSettings(showToast: ToastHandler) {
   })))
   const busy = computed(() => loading.value || saving.value || resetting.value)
   const canSave = computed(() => !busy.value && dirtyCount.value > 0 && Object.keys(errors.value).length === 0)
-  const updatedAt = computed(() => document.value?.snapshot?.generated_at ?? null)
+  const updatedAt = computed(() => runtimeDocument.value?.snapshot?.generated_at ?? null)
 
   function discard() {
     draft.value = Object.fromEntries(items.value.map(item => [item.key, item.value])) as RuntimeDraft
     error.value = null
   }
   function apply(value: RuntimeDocument) {
-    document.value = value
+    runtimeDocument.value = value
     discard()
   }
   function report(cause: unknown, fallback: string) {

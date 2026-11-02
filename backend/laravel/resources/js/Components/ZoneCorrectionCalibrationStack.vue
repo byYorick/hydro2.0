@@ -13,7 +13,8 @@
       aria-label="Настройки коррекции AE3"
     />
     <section
-      v-if="activeSection === 'readiness' && showRuntimeReadiness"
+      v-if="loadedSections.has('readiness') && showRuntimeReadiness"
+      v-show="activeSection === 'readiness'"
       class="space-y-3"
       aria-label="Готовность коррекции"
     >
@@ -26,7 +27,8 @@
       />
     </section>
     <section
-      v-if="activeSection === 'sensors'"
+      v-if="loadedSections.has('sensors')"
+      v-show="activeSection === 'sensors'"
       class="space-y-3"
       aria-label="Калибровка датчиков"
     >
@@ -39,7 +41,8 @@
       />
     </section>
     <section
-      v-if="activeSection === 'pumps'"
+      v-if="loadedSections.has('pumps')"
+      v-show="activeSection === 'pumps'"
       class="space-y-3"
       aria-label="Калибровка насосов"
     >
@@ -54,7 +57,8 @@
       />
     </section>
     <section
-      v-if="activeSection === 'process'"
+      v-if="loadedSections.has('process')"
+      v-show="activeSection === 'process'"
       id="zone-process-calibration-panel-shared"
       class="space-y-3"
       aria-label="Калибровка процесса"
@@ -68,7 +72,8 @@
       />
     </section>
     <section
-      v-if="activeSection === 'pid'"
+      v-if="loadedSections.has('pid')"
+      v-show="activeSection === 'pid'"
       id="zone-pid-config-panel-shared"
       aria-label="Коэффициенты PID"
     >
@@ -80,13 +85,15 @@
       />
     </section>
     <section
-      v-if="activeSection === 'history'"
+      v-if="loadedSections.has('history')"
+      v-show="activeSection === 'history'"
       aria-label="История PID"
     >
       <PidLogsTable :zone-id="zoneId" />
     </section>
     <section
-      v-if="activeSection === 'limits'"
+      v-if="loadedSections.has('limits')"
+      v-show="activeSection === 'limits'"
       aria-label="Параметры коррекции"
     >
       <p class="mb-3 text-sm text-[color:var(--text-muted)]">
@@ -130,6 +137,8 @@ const emit = defineEmits<{
 }>()
 const { canEdit } = useRole()
 const activeSection = ref(props.showRuntimeReadiness ? 'readiness' : 'sensors')
+const loadedSections = ref(new Set([activeSection.value]))
+watch(activeSection, section => loadedSections.value.add(section), { flush: 'sync' })
 const sections = computed(() => [
   ...(props.showRuntimeReadiness ? [{ id: 'readiness', label: 'Готовность' }] : []),
   { id: 'sensors', label: 'Датчики' }, { id: 'pumps', label: 'Насосы' },
@@ -144,5 +153,8 @@ function handleAuthorityUpdated() { authorityRefreshSeq.value += 1; emit('author
 onMounted(() => {
   if (window.location.hash === '#zone-pid-config-panel-shared') activeSection.value = 'pid'
 })
-watch(() => props.zoneId, () => { activeSection.value = props.showRuntimeReadiness ? 'readiness' : 'sensors' })
+watch(() => props.zoneId, () => {
+  activeSection.value = props.showRuntimeReadiness ? 'readiness' : 'sensors'
+  loadedSections.value = new Set([activeSection.value])
+})
 </script>

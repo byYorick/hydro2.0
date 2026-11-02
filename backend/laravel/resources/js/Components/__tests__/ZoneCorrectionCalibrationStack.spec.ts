@@ -8,7 +8,7 @@ const permission = vi.hoisted(() => ({ edit: true }))
 vi.mock('@/composables/useRole', () => ({ useRole: () => ({ canEdit: computed(() => permission.edit) }) }))
 const stubs = {
   CorrectionRuntimeReadinessCard: { name: 'Readiness', emits: ['focus-pid-config', 'focus-process-calibration'], template: '<div data-testid="readiness" />' },
-  PidConfigForm: { name: 'PidConfigForm', props: ['zoneId', 'disabled', 'phaseTargets'], template: '<div data-testid="pid-editor" />' },
+  PidConfigForm: { name: 'PidConfigForm', props: ['zoneId', 'disabled', 'phaseTargets'], template: '<div data-testid="pid-editor"><input data-testid="pid-draft" /></div>' },
   PidLogsTable: { template: '<div data-testid="pid-history" />' },
   SensorCalibrationStatus: { template: '<div data-testid="sensors" />' },
   PumpCalibrationsPanel: { template: '<div data-testid="pumps" />' },
@@ -27,8 +27,22 @@ describe('AE3 correction workspace', () => {
     expect(wrapper.find('[data-testid="pid-editor"]').exists()).toBe(false)
     await wrapper.findAll('button').find(button => button.text() === 'PID')!.trigger('click')
     expect(wrapper.find('[data-testid="pid-editor"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="readiness"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="readiness"]').isVisible()).toBe(false)
     expect(wrapper.find('[data-testid="sensors"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('сохраняет черновик открытой формы при переключении разделов коррекции', async () => {
+    const wrapper = mountStack()
+    const select = (label: string) => wrapper.findAll('button').find(button => button.text() === label)!.trigger('click')
+    await select('PID')
+    await wrapper.get('[data-testid="pid-draft"]').setValue('0.42')
+    await select('Процесс')
+    expect(wrapper.get('[data-testid="pid-editor"]').isVisible()).toBe(false)
+    await select('PID')
+    expect((wrapper.get('[data-testid="pid-draft"]').element as HTMLInputElement).value).toBe('0.42')
+    await wrapper.setProps({ zoneId: 43 })
+    expect(wrapper.find('[data-testid="pid-editor"]').exists()).toBe(false)
     wrapper.unmount()
   })
 

@@ -154,8 +154,7 @@
                   :default-open="true"
                 >
                   <p class="text-xs text-[color:var(--text-dim)] leading-relaxed">
-                    Документ автоматики зоны в БД (<code class="text-[11px] text-[color:var(--text-muted)]">zone.logic_profile</code>).
-                    Климат теплицы — отдельно на странице теплицы; канонические pH/EC цикла — в фазе рецепта и в разделе «Раствор».
+                    Сохранённые настройки оборудования и полива этой зоны. Климат теплицы настраивается на её странице, цели pH и EC цикла — в рецепте.
                   </p>
                   <AutomationProfileCard
                     :can-configure-automation="canConfigureAutomation"
@@ -181,9 +180,7 @@
                           Применение профиля автоматики
                         </p>
                         <p class="text-xs text-[color:var(--text-dim)] mt-0.5">
-                          Профиль сначала сохраняется в БД, затем отправляется <code class="text-[11px]">GROWTH_CYCLE_CONFIG</code>
-                          (<code class="text-[11px]">mode=adjust</code>, <code class="text-[11px]">profile_mode</code>).
-                          Сетпоинты pH/EC фазы рецепта этим действием не меняются — используйте live edit фазы или редактор рецепта.
+                          Сохранит изменения профиля и передаст их зоне. Цели pH и EC действующего цикла меняются в рецепте или через правку фазы.
                         </p>
                       </div>
                       <div class="text-xs text-[color:var(--text-muted)] shrink-0">
@@ -201,17 +198,17 @@
                           :disabled="!canConfigureAutomation || isApplyingProfile || isSyncingAutomationLogicProfile"
                         >
                           <option value="setup">
-                            setup
+                            Подготовка
                           </option>
                           <option value="working">
-                            working
+                            Работа
                           </option>
                         </SelectField>
                       </label>
                       <div class="text-xs text-[color:var(--text-muted)]">
-                        <span v-if="isSyncingAutomationLogicProfile">Синхронизация профиля с бэкендом...</span>
-                        <span v-else-if="lastAutomationLogicSyncAt">Профиль в БД обновлён: {{ formatDateTime(lastAutomationLogicSyncAt) }}</span>
-                        <span v-else>Профиль в БД ещё не синхронизирован</span>
+                        <span v-if="isSyncingAutomationLogicProfile">Сохраняем профиль...</span>
+                        <span v-else-if="lastAutomationLogicSyncAt">Профиль обновлён: {{ formatDateTime(lastAutomationLogicSyncAt) }}</span>
+                        <span v-else>Профиль ещё не обновлялся</span>
                       </div>
                     </div>
 
@@ -221,15 +218,15 @@
                         :disabled="!canConfigureAutomation || isApplyingProfile || isSyncingAutomationLogicProfile"
                         @click="applyAutomationProfile"
                       >
-                        {{ isApplyingProfile ? 'Отправка профиля...' : (isSyncingAutomationLogicProfile ? 'Сохранение профиля...' : 'Применить профиль автоматики') }}
+                        {{ isApplyingProfile ? 'Применяем профиль...' : (isSyncingAutomationLogicProfile ? 'Сохраняем профиль...' : 'Применить профиль к зоне') }}
                       </Button>
                       <Button
                         size="sm"
                         variant="secondary"
-                        :disabled="isApplyingProfile || isSyncingAutomationLogicProfile"
+                        :disabled="!canConfigureAutomation || isApplyingProfile || isSyncingAutomationLogicProfile"
                         @click="resetToRecommended"
                       >
-                        Восстановить рекомендуемые значения
+                        Подставить рекомендуемые значения
                       </Button>
                     </div>
                   </div>

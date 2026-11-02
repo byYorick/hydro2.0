@@ -3,11 +3,11 @@
     class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-4 space-y-3"
     data-testid="config-changes-timeline"
   >
-    <header class="flex items-center justify-between gap-2">
+    <header class="flex flex-wrap items-center justify-between gap-2">
       <h3 class="text-base font-semibold text-[color:var(--text-primary)]">
         История изменений конфигурации
       </h3>
-      <div class="flex items-center gap-2 text-xs">
+      <div class="flex min-w-0 flex-wrap items-center gap-2 text-xs">
         <SelectField
           v-model="selectedNamespace"
           data-testid="config-changes-namespace"

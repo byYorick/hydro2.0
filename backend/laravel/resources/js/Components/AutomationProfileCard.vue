@@ -3,26 +3,18 @@
     <div class="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
       <div>
         <p class="text-[11px] uppercase tracking-[0.24em] text-[color:var(--text-dim)]">
-          Профиль автоматики зоны
+          Текущие настройки
         </p>
         <h2 class="text-xl font-semibold mt-1 text-[color:var(--text-primary)]">
-          Вода, контур коррекции, zonal climate и досветка
+          Профиль зоны
         </h2>
         <div class="text-sm text-[color:var(--text-muted)] mt-1 max-w-3xl space-y-2">
-          <p>
-            Макроклимат теплицы настраивается на странице теплицы. Здесь — сводка authority-профиля зоны в БД
-            (полив, досветка, опциональный zonal climate, параметры водного контура), без дублирования климатического профиля теплицы.
-          </p>
-          <p>
-            Канонические целевые pH/EC <span class="text-[color:var(--text-primary)]">активной фазы рецепта</span>
-            задаются в рецепте и в блоке «Коррекция и калибровка» / live edit фазы; цифры в карточке «контур pH/EC»
-            — из профиля автоматики зоны и могут с ними не совпадать.
-          </p>
+          <p>Водный контур, полив, климат зоны и свет. Цели pH и EC действующего цикла берутся из рецепта.</p>
         </div>
       </div>
       <div class="flex flex-wrap items-center gap-2">
         <Badge :variant="canConfigureAutomation ? 'success' : 'warning'">
-          {{ canConfigureAutomation ? 'Режим настройки (агроном)' : 'Режим оператора' }}
+          {{ canConfigureAutomation ? 'Можно редактировать' : 'Только просмотр' }}
         </Badge>
         <Badge variant="info">
           Телеметрия: {{ telemetryLabel }}
@@ -40,38 +32,38 @@
     <div class="ui-kpi-grid md:grid-cols-2 xl:grid-cols-4 mt-4">
       <article class="ui-kpi-card">
         <div class="ui-kpi-label">
-          Zonal climate
+          Климат зоны
         </div>
         <div class="ui-kpi-value !text-lg">
           {{ zoneClimateEnabled ? 'вкл.' : 'выкл.' }}
         </div>
         <div class="ui-kpi-hint">
-          Флаг подсистемы в профиле зоны; узлы CO₂ и прикорневой вентиляции привязываются в мастере. Не путать с климатом теплицы.
+          Климат теплицы настраивается на странице теплицы.
         </div>
       </article>
 
       <article class="ui-kpi-card">
         <div class="ui-kpi-label">
-          Водный узел
+          Вода и полив
         </div>
         <div class="ui-kpi-value !text-lg">
-          {{ waterForm.tanksCount }} бака · {{ waterForm.systemType }}
+          {{ waterForm.tanksCount }} бака · {{ systemTypeLabel }}
         </div>
         <div class="ui-kpi-hint">
-          Топология и диагностика из профиля зоны: {{ waterTopologyLabel }} · diag {{ waterForm.diagnosticsIntervalMinutes }} мин
+          {{ waterTopologyLabel }} · Проверка каждые {{ waterForm.diagnosticsIntervalMinutes }} мин
         </div>
       </article>
 
       <article class="ui-kpi-card">
         <div class="ui-kpi-label">
-          Контур pH / EC (профиль)
+          pH и EC воды
         </div>
         <div class="ui-kpi-value !text-lg">
           pH {{ waterForm.targetPh.toFixed(2) }} · EC {{ waterForm.targetEc.toFixed(1) }}
         </div>
         <div class="ui-kpi-hint">
-          Ориентиры и допуски из профиля зоны: pH ±{{ phToleranceAbs.toFixed(2) }} ({{ phPct }}%)
-          · EC ±{{ ecToleranceAbs.toFixed(2) }} ({{ ecPct }}%). Сетпоинты цикла — из фазы рецепта.
+          Значения профиля: pH ±{{ phToleranceAbs.toFixed(2) }} ({{ phPct }}%), EC ±{{ ecToleranceAbs.toFixed(2) }} ({{ ecPct }}%).
+          Для цикла действуют цели из рецепта.
         </div>
       </article>
 
@@ -80,10 +72,10 @@
           Досветка
         </div>
         <div class="ui-kpi-value !text-lg">
-          {{ lightingForm.luxDay }} lux
+          {{ lightingForm.luxDay }} лк
         </div>
         <div class="ui-kpi-hint">
-          Расписание из профиля зоны: {{ lightingForm.scheduleStart }}–{{ lightingForm.scheduleEnd }} · каждые {{ lightingForm.intervalMinutes }} мин
+          {{ lightingForm.scheduleStart }}–{{ lightingForm.scheduleEnd }} · каждые {{ lightingForm.intervalMinutes }} мин
         </div>
       </article>
     </div>
@@ -106,6 +98,7 @@ interface Props {
 }
 
 const props = defineProps<Props>()
+const systemTypeLabel = computed(() => ({ drip: 'Капельный', substrate_trays: 'Лотки', nft: 'NFT' })[props.waterForm.systemType] ?? props.waterForm.systemType)
 
 defineEmits<{
   (e: 'edit'): void
