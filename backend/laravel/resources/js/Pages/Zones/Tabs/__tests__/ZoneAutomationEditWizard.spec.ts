@@ -135,6 +135,7 @@ describe('ZoneAutomationEditWizard.vue', () => {
     expect(wrapper.findComponent({ name: 'Modal' }).props('title')).toBe('Профиль зоны')
     expect(wrapper.text()).toContain('мастере запуска')
     expect(wrapper.find('[data-testid="automation-step-stub"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="zone-profile-error"]').exists()).toBe(false)
   })
 
   it('санитизирует payload waterForm перед emit apply', async () => {

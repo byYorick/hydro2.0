@@ -41,6 +41,8 @@
       <p
         v-if="stepError"
         class="text-xs text-status-critical"
+        role="alert"
+        data-testid="zone-profile-error"
       >
         {{ stepError }}
       </p>
@@ -123,7 +125,7 @@ const props = withDefaults(defineProps<Props>(), {
 })
 const automationDefaults = useAutomationDefaults()
 
-const stepError = reactive<{ value: string | null }>({ value: null })
+const stepError = ref<string | null>(null)
 const draftClimateForm = reactive<ClimateFormState>({ ...props.climateForm })
 const draftWaterForm = reactive<WaterFormState>({ ...props.waterForm })
 const draftLightingForm = reactive<LightingFormState>({ ...props.lightingForm })
