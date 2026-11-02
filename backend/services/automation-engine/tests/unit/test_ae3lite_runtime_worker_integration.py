@@ -638,11 +638,8 @@ async def test_runtime_worker_wakes_itself_for_delayed_pending_task() -> None:
         )
         assert lease_rows == []
     finally:
-        wake_task = getattr(worker, "_wake_task", None)
-        if wake_task is not None and not wake_task.done():
-            wake_task.cancel()
-            with suppress(asyncio.CancelledError):
-                await wake_task
+        if worker is not None:
+            await worker.shutdown(grace_sec=0.0)
         await _cleanup(prefix)
 
 

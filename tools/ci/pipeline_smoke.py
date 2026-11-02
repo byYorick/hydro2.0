@@ -87,6 +87,8 @@ async def main():
     runner = PipelineRunner({'api_token': os.environ['CI_PIPELINE_API_TOKEN']})
     try:
         await runner.setup()
+        now_s = int(time.time())
+        runner.context.update(TIMESTAMP_S=now_s, TIMESTAMP_MS=now_s * 1000)
         if not runner.mqtt.connected:
             raise AssertionError('MQTT must be connected for pipeline smoke')
         runner.mqtt.subscribe('hydro/#')

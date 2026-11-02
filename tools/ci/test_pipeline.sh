@@ -31,4 +31,5 @@ docker run --rm --network "$network" \
   -e LARAVEL_URL=http://laravel -e AUTOMATION_ENGINE_HOST=automation-engine \
   -e AUTOMATION_ENGINE_API_PORT=9505 -e MQTT_HOST=mosquitto -e MQTT_PORT=1883 \
   -e DB_HOST=postgres -e DB_PORT=5432 -e DB_DATABASE=hydro_e2e -e DB_USERNAME=hydro -e DB_PASSWORD=hydro_e2e \
-  -w /repo/tests/e2e hydro-ci-pipeline-runner python /repo/tools/ci/pipeline_smoke.py
+  -w /repo/tests/e2e hydro-ci-pipeline-runner sh -c \
+  'python -m unittest discover -s tests -p test_mqtt_probe_buffer.py && python /repo/tools/ci/pipeline_smoke.py'
