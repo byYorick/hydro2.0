@@ -1,5 +1,9 @@
 """Late asyncio finalizers must not restart logging threads during shutdown."""
 import logging
+import os
+import subprocess
+import sys
+import textwrap
 from unittest.mock import Mock
 
 from common import logging_setup, service_logs
@@ -24,3 +28,24 @@ def test_forwarding_does_not_start_threads_at_interpreter_shutdown(monkeypatch):
     monkeypatch.setattr(service_logs.threading, 'Thread', thread)
     service_logs.send_service_log('test', 'error', 'late finalizer')
     thread.assert_not_called()
+
+
+def test_pending_task_finalizer_allows_process_to_exit():
+    # Reproduce the Python 3.11 CI hang after all pytest assertions passed.
+    code = textwrap.dedent('''
+        import asyncio
+        from common.logging_setup import install_asyncio_exception_handler
+        install_asyncio_exception_handler('shutdown-regression')
+        loop = asyncio.new_event_loop()
+        async def pending():
+            await asyncio.Future()
+        task = loop.create_task(pending())
+        loop.run_until_complete(asyncio.sleep(0))
+    ''')
+    result = subprocess.run(
+        [sys.executable, '-c', code], capture_output=True, text=True, timeout=10,
+        env={**os.environ, 'HISTORY_LOGGER_API_TOKEN': 'shutdown-test',
+             'LARAVEL_API_URL': 'http://127.0.0.1:1'},
+    )
+    assert result.returncode == 0, result.stderr
+    assert 'Task was destroyed but it is pending!' in result.stderr
