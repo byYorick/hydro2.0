@@ -480,7 +480,8 @@ async def test_recovery_operator_and_old_token_do_not_touch_new_generation() -> 
             workflow_repository=object(),
             lease_repository=lease_repo,
         )
-        await operator._fail_active_task(task=stale_view, now=now, reason="old token")
+        with pytest.raises(RuntimeError, match="operator_unblock_task_transition_failed"):
+            await operator._fail_active_task(task=stale_view, now=now, reason="old token")
         await operator._release_lease(task=stale_view, now=now)
 
         escalated = await escalate_foreign_lease_stale_task(
