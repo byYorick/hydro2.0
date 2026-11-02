@@ -9,6 +9,7 @@ if ($zoneId <= 0 || getenv('APP_ENV') !== 'testing') {
     throw new RuntimeException('This driver requires an isolated testing database and a fixture zone.');
 }
 $now = Carbon\CarbonImmutable::now('UTC');
+$traceId = 'ci-pipeline-'.bin2hex(random_bytes(8));
 $schedule = new App\Services\AutomationScheduler\ScheduleItem(
     zoneId: $zoneId,
     taskType: 'diagnostics',
@@ -18,13 +19,16 @@ $context = new App\Services\AutomationScheduler\ScheduleCycleContext(
     cfg: ['api_url' => 'http://automation-engine:9505', 'timeout_sec' => 10, 'due_grace_sec' => 15,
         'expires_after_sec' => 600, 'active_task_ttl_sec' => 600],
     headers: ['Accept' => 'application/json', 'Authorization' => 'Bearer '.getenv('PY_API_TOKEN'),
-        'X-Scheduler-Id' => 'laravel-scheduler'],
-    traceId: 'ci-pipeline-'.bin2hex(random_bytes(8)),
+        'X-Scheduler-Id' => 'laravel-scheduler', 'X-Trace-Id' => $traceId],
+    traceId: $traceId,
     cycleNow: $now, lastRunByTaskName: [], reconciledBusyness: [], zoneWorkflowPhases: [],
 );
 $result = $app->make(App\Services\AutomationScheduler\ScheduleDispatcher::class)->dispatch(
     zoneId: $zoneId, schedule: $schedule, triggerTime: $now,
-    scheduleKey: $schedule->scheduleKey, context: $context, writeLog: static function (): void {},
+    scheduleKey: $schedule->scheduleKey, context: $context,
+    writeLog: static function (string $name, string $status, array $details): void {
+        fwrite(STDERR, json_encode(compact('name', 'status', 'details')).PHP_EOL);
+    },
 );
 if (! $result['dispatched']) {
     throw new RuntimeException(json_encode($result));

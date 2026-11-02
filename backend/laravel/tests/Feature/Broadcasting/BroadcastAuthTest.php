@@ -37,7 +37,7 @@ class BroadcastAuthTest extends TestCase
     {
         $user = User::factory()->create(['role' => 'operator']);
         $zone = \App\Models\Zone::factory()->create();
-        $user->zones()->attach($zone->id);
+        $user->zones()->syncWithoutDetaching($zone->id);
 
         $response = $this->actingAs($user)->postJson('/broadcasting/auth', [
             'channel_name' => "private-hydro.commands.{$zone->id}",

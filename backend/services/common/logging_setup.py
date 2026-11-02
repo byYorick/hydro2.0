@@ -122,6 +122,11 @@ def _build_asyncio_exception_handler(
     forward_to_service_logs: bool,
 ) -> Any:
     def _handler(loop: asyncio.AbstractEventLoop, context: Dict[str, Any]) -> None:
+        if sys.is_finalizing():
+            # Logging streams can already be closed. Preserve stderr diagnostics
+            # through asyncio without starting a forwarding thread at shutdown.
+            loop.default_exception_handler(context)
+            return
         message = context.get("message") or "Необработанное исключение в asyncio"
         exception = context.get("exception")
         context_payload = {k: v for k, v in context.items() if k != "exception"}

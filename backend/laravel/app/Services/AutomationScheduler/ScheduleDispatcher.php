@@ -124,9 +124,10 @@ class ScheduleDispatcher
             });
 
             foreach ($preparedByIndex as $index => $_prepared) {
+                $response = $poolResults[(string) $index] ?? null;
                 $responses[$index] = [
-                    'response' => $poolResults[(string) $index] ?? null,
-                    'error' => null,
+                    'response' => $response instanceof Response ? $response : null,
+                    'error' => $response instanceof \Throwable ? $response->getMessage() : null,
                 ];
             }
         } catch (\Throwable $poolError) {

@@ -186,7 +186,7 @@ class ChannelAuthorizationTest extends TestCase
     {
         $user = User::factory()->create(['role' => 'operator']);
         $zones = \App\Models\Zone::factory()->count(3)->create();
-        $user->zones()->attach($zones->pluck('id')->all());
+        $user->zones()->syncWithoutDetaching($zones->pluck('id')->all());
 
         foreach ($zones as $zone) {
             $response = $this->actingAs($user)->postJson('/broadcasting/auth', [
@@ -205,7 +205,7 @@ class ChannelAuthorizationTest extends TestCase
     {
         $user = User::factory()->create(['role' => 'operator']);
         $zones = \App\Models\Zone::factory()->count(3)->create();
-        $user->zones()->attach($zones->pluck('id')->all());
+        $user->zones()->syncWithoutDetaching($zones->pluck('id')->all());
 
         foreach ($zones as $zone) {
             $response = $this->actingAs($user)->postJson('/broadcasting/auth', [
