@@ -477,8 +477,9 @@ legacy/compat knob. Для two-tank prepare **канон — sequential nutrient
 - `single` (default) — один pump на весь EC контур (legacy / SUBSTRATE без компонентов).
 - `multi_sequential` — **deprecated для prepare owner**; допускается только как legacy batch
   последовательности импульсов внутри одного `corr_dose_ec` (не заменяет pipeline FSM).
-- `multi_parallel` — gap делится по `ec_component_ratios` и компоненты дозируются **одним batch**
-  через `history-logger`. **Fail-closed:** distinct `(node_uid, channel)` per компонент —
+- `multi_parallel` — gap делится по `ec_component_ratios` и компоненты передаются **одним batch**
+  в `SequentialCommandGateway`; gateway исполняет команды последовательно, дожидаясь terminal `DONE`
+  каждой команды через `history-logger`. **Fail-closed:** distinct `(node_uid, channel)` per компонент —
   `_assert_distinct_parallel_actuators`.
 
 **`ec_excluded_components` (канон 2026-07-22):**
@@ -858,7 +859,7 @@ attempt counters, `wait_until`, pipeline phase и PID state сохраняютс
 
 **Status: MVP implemented (detect + event + fail window).** Полный компенсационный путь (enqueue `irrigation_recovery`) — **out-of-scope MVP / v2+**.
 
-Для EC-коррекции, где дозирование идет батчем по компонентам (`npk -> calcium -> magnesium -> micro` в `multi_sequential`, либо параллельный `multi_parallel`), действует fail-safe правило:
+Для EC-коррекции, где дозирование идет батчем по компонентам (`npk -> calcium -> magnesium -> micro` в `multi_sequential` и `multi_parallel`; оба режима исполняются последовательно gateway), действует fail-safe правило:
 
 1. Если компонент `N` завершился ошибкой после успешной дозировки предыдущих компонентов (`0..N-1`):
    - batch немедленно прерывается;

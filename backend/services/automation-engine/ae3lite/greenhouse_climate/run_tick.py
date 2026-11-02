@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 import time
+from uuid import uuid4
 import uuid
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -866,7 +867,9 @@ async def run_greenhouse_climate_tick(
     lease_ttl_sec: int = _DEFAULT_LEASE_TTL_SEC,
 ) -> dict[str, Any]:
     tick_started = time.monotonic()
-    lease_owner = resolve_greenhouse_lease_owner(worker_owner=worker_owner)
+    # One owner per execution, not per process: a second tick from the same
+    # worker must not renew or release the first tick's lease.
+    lease_owner = f"{resolve_greenhouse_lease_owner(worker_owner=worker_owner)[:51]}:{uuid4().hex[:12]}"
     await _ensure_state_row(greenhouse_id)
 
     claimed = await fetch(

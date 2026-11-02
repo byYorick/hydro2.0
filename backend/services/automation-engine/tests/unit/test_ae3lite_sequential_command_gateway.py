@@ -26,6 +26,10 @@ from ae3_preflight_helpers import patch_fetch_zone_nodes_diagnostics
 @pytest.fixture(autouse=True)
 def _ae3_online_zone_nodes_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
     patch_fetch_zone_nodes_diagnostics(monkeypatch)
+    monkeypatch.setattr(
+        "ae3lite.infrastructure.gateways.sequential_command_gateway._utcnow",
+        lambda: NOW,
+    )
 
 from ae3lite.domain.entities.planned_command import PlannedCommand
 from ae3lite.domain.errors import CommandPublishError, ErrorCodes, TaskExecutionError, TaskTerminalStateReached
@@ -1250,6 +1254,25 @@ async def test_run_batch_rejects_dose_before_publish_when_stage_budget_is_insuff
     assert result["required_stage_budget_sec"] == pytest.approx(8.0)
     assert command_repo.created_ids == []
     assert history_logger.calls == []
+
+
+@pytest.mark.asyncio
+async def test_run_batch_rechecks_stage_budget_after_first_dose(monkeypatch: pytest.MonkeyPatch):
+    from unittest.mock import AsyncMock
+
+    task = _make_task()
+    task.workflow.stage_deadline_at = NOW + timedelta(seconds=20)
+    gw = _make_gw(command_poll_margin_sec=3.0, command_stage_stop_reserve_sec=3.0)
+    run_one = AsyncMock(return_value={"success": True, "task": task, "command_statuses": []})
+    monkeypatch.setattr(gw, "_run_command", run_one)
+    times = iter([NOW, NOW + timedelta(seconds=15)])
+    monkeypatch.setattr(sequential_command_gateway_module, "_utcnow", lambda: next(times))
+
+    result = await gw.run_batch(task=task, commands=[_dose(duration_ms=5000), _dose(duration_ms=5000)], now=NOW)
+
+    assert result["error_code"] == ErrorCodes.AE3_COMMAND_STAGE_BUDGET_INSUFFICIENT
+    assert result["remaining_stage_sec"] == pytest.approx(5.0)
+    assert run_one.await_count == 1
 
 
 @pytest.mark.asyncio

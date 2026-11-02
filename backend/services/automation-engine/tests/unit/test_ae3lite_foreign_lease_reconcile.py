@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -15,6 +16,7 @@ from ae3lite.application.services.foreign_lease_reconcile import (
     task_reconcile_age_sec,
 )
 from ae3lite.domain.entities import AutomationTask
+from ae3lite.application.use_cases.waiting_command_reconcile import WaitingCommandReconcileUseCase
 
 _NOW = datetime(2026, 1, 1, 12, 0, 0)
 
@@ -134,3 +136,34 @@ async def test_resolve_foreign_active_lease_allows_when_no_foreign_block() -> No
 
     assert action == ForeignLeaseAction.ALLOW
     assert ctx is None
+
+
+@pytest.mark.asyncio
+async def test_waiting_command_reconcile_does_not_touch_foreign_live_task() -> None:
+    task = _task(
+        status="waiting_command",
+        claimed_at=_NOW - timedelta(seconds=30),
+        updated_at=_NOW - timedelta(seconds=30),
+    )
+    task_repo = SimpleNamespace(list_waiting_command_for_reconcile=AsyncMock(return_value=[task]))
+    lease_repo = SimpleNamespace(get=AsyncMock(return_value=SimpleNamespace(
+        owner="worker-a", leased_until=_NOW + timedelta(minutes=10),
+    )))
+    startup_recovery = SimpleNamespace(
+        reconcile_waiting_command_task=AsyncMock(return_value=("failed", None, task)),
+    )
+    use_case = WaitingCommandReconcileUseCase(
+        task_repository=task_repo,
+        lease_repository=lease_repo,
+        startup_recovery_use_case=startup_recovery,
+    )
+
+    skipped = await use_case.run(now=_NOW, worker_owner="worker-b")
+    assert skipped.skipped_lease_tasks == 1
+    assert skipped.failed_tasks == 0
+    startup_recovery.reconcile_waiting_command_task.assert_not_awaited()
+
+    lease_repo.get.return_value = None
+    resumed = await use_case.run(now=_NOW, worker_owner="worker-b")
+    assert resumed.failed_tasks == 1
+    startup_recovery.reconcile_waiting_command_task.assert_awaited_once()

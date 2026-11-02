@@ -102,6 +102,7 @@ class OperatorUnblockZoneUseCase:
     async def _fail_safe_shutdown(self, *, task: Any, now: datetime) -> dict[str, Any]:
         from ae3lite.application.services.correction_interrupt_safety import (
             attempt_task_fail_safe_shutdown,
+            emit_task_fail_safe_failure_alert,
         )
 
         try:
@@ -118,7 +119,12 @@ class OperatorUnblockZoneUseCase:
                 getattr(task, "zone_id", None),
                 exc_info=True,
             )
+            await emit_task_fail_safe_failure_alert(task=task, reason="exception", source="operator_unblock")
             return {"attempted": True, "success": False, "reason": "exception"}
+        if not result.success:
+            await emit_task_fail_safe_failure_alert(
+                task=task, reason=str(result.reason or "unknown"), source="operator_unblock",
+            )
         return {
             "attempted": bool(getattr(result, "attempted", False)),
             "success": bool(getattr(result, "success", False)),
@@ -126,17 +132,28 @@ class OperatorUnblockZoneUseCase:
         }
 
     async def _fail_active_task(self, *, task: Any, now: datetime, reason: str | None) -> None:
-        fail_fn = getattr(self._task_repository, "fail_for_recovery", None)
-        if not callable(fail_fn):
-            return
         task_id = int(getattr(task, "id", 0) or 0)
         if task_id <= 0:
-            return
+            raise RuntimeError("operator_unblock_task_id_missing")
         message = "Оператор разблокировал зону"
         if reason:
             message = f"{message}: {reason}"
-        try:
-            await fail_fn(
+        if str(getattr(task, "status", "") or "").strip().lower() == "pending":
+            fail_fn = getattr(self._task_repository, "fail_pending_or_active_for_recovery", None)
+            if not callable(fail_fn):
+                raise RuntimeError("operator_unblock_pending_transition_unavailable")
+            failed = await fail_fn(
+                task_id=task_id,
+                error_code=ErrorCodes.OPERATOR_UNBLOCKED,
+                error_message=message,
+                now=now,
+                claim_generation=int(getattr(task, "claim_generation", 0) or 0),
+            )
+        else:
+            fail_fn = getattr(self._task_repository, "fail_for_recovery", None)
+            if not callable(fail_fn):
+                raise RuntimeError("operator_unblock_active_transition_unavailable")
+            failed = await fail_fn(
                 task_id=task_id,
                 error_code=ErrorCodes.OPERATOR_UNBLOCKED,
                 error_message=message,
@@ -144,12 +161,10 @@ class OperatorUnblockZoneUseCase:
                 owner=str(getattr(task, "claimed_by", "") or ""),
                 claim_generation=int(getattr(task, "claim_generation", 0) or 0),
             )
-        except Exception:
-            _logger.warning(
-                "operator_unblock: fail_for_recovery failed task_id=%s",
-                task_id,
-                exc_info=True,
-            )
+        if failed is None:
+            # A claim generation changed under us. Preserve workflow/intent state
+            # so the operator can retry against the current owner.
+            raise RuntimeError(f"operator_unblock_task_transition_failed: task_id={task_id}")
 
     async def _release_lease(self, *, task: Any, now: datetime) -> None:
         if self._lease_repository is None:

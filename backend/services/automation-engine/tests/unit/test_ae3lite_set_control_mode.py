@@ -28,6 +28,12 @@ class _TaskRepository:
         )
         return self._active_task
 
+    async def fail_pending_or_active_for_recovery(self, *, task_id, error_code, error_message, now, claim_generation=0) -> object:
+        self.fail_calls.append(
+            {"task_id": task_id, "error_code": error_code, "error_message": error_message, "now": now}
+        )
+        return self._active_task
+
 
 async def test_set_control_mode_updates_zone_and_active_snapshot(monkeypatch) -> None:
     executed: list[tuple[str, tuple[object, ...]]] = []
@@ -119,3 +125,61 @@ async def test_set_control_mode_manual_publishes_fail_safe_stop_before_failing_i
     assert repo.fail_calls
     assert repo.fail_calls[0]["error_code"] == "control_mode_switched_to_manual"
     assert repo.fail_calls[0]["task_id"] == 42
+
+
+async def test_set_control_mode_cancels_pending_task(monkeypatch) -> None:
+    audit = AsyncMock()
+    monkeypatch.setattr("ae3lite.application.use_cases.set_control_mode.create_zone_event", audit)
+    monkeypatch.setattr(
+        "ae3lite.application.services.correction_interrupt_safety.load_irrig_fail_safe_actuators",
+        AsyncMock(return_value=()),
+    )
+    pending = SimpleNamespace(id=44, zone_id=7, status="pending", claimed_by=None,
+                              claim_generation=0, topology="two_tank", current_stage="startup")
+    repo = _TaskRepository(active_task=pending)
+    use_case = SetControlModeUseCase(
+        task_repository=repo,
+        execute_fn=AsyncMock(return_value="UPDATE 1"),
+        fetch_fn=AsyncMock(return_value=[{"control_mode": "auto"}]),
+        command_gateway=SimpleNamespace(run_publish_only_batch=AsyncMock()),
+    )
+    assert await use_case.run(zone_id=7, control_mode="manual", now=NOW) == "manual"
+    assert repo.fail_calls[0]["task_id"] == 44
+    assert audit.await_args.args[2]["active_task_action"] == "cancelled"
+
+
+async def test_set_control_mode_manual_retry_retries_failed_cancellation(monkeypatch) -> None:
+    import pytest
+    monkeypatch.setattr("ae3lite.application.services.correction_interrupt_safety.load_irrig_fail_safe_actuators",
+                        AsyncMock(return_value=()))
+    pending = SimpleNamespace(id=45, zone_id=7, status="pending", claimed_by=None,
+                              claim_generation=0, topology="two_tank", current_stage="startup")
+    repo = _TaskRepository(active_task=pending)
+    repo.fail_pending_or_active_for_recovery = AsyncMock(side_effect=[None, pending])
+    execute_fn = AsyncMock(return_value="UPDATE 1")
+    use_case = SetControlModeUseCase(
+        task_repository=repo, execute_fn=execute_fn,
+        fetch_fn=AsyncMock(side_effect=[[{"control_mode": "auto"}], [{"control_mode": "manual"}]]),
+        command_gateway=SimpleNamespace(run_publish_only_batch=AsyncMock()),
+    )
+    with pytest.raises(RuntimeError, match="control_mode_task_transition_failed"):
+        await use_case.run(zone_id=7, control_mode="manual", now=NOW)
+    assert await use_case.run(zone_id=7, control_mode="manual", now=NOW) == "manual"
+    assert repo.fail_pending_or_active_for_recovery.await_count == 2
+    execute_fn.assert_awaited_once()
+
+
+async def test_set_control_mode_manual_noop_without_task_keeps_audit_idempotent(monkeypatch) -> None:
+    audit = AsyncMock()
+    monkeypatch.setattr("ae3lite.application.use_cases.set_control_mode.create_zone_event", audit)
+    repo = _TaskRepository()
+    execute_fn = AsyncMock()
+    use_case = SetControlModeUseCase(
+        task_repository=repo,
+        execute_fn=execute_fn,
+        fetch_fn=AsyncMock(return_value=[{"control_mode": "manual"}]),
+    )
+    assert await use_case.run(zone_id=7, control_mode="manual", now=NOW) == "manual"
+    execute_fn.assert_not_awaited()
+    assert repo.calls == []
+    audit.assert_not_awaited()

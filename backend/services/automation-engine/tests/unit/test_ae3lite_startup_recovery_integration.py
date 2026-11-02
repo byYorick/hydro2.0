@@ -1129,8 +1129,8 @@ async def test_waiting_command_reconcile_poll_stage_done_does_not_complete_task(
 
 
 @pytest.mark.asyncio
-async def test_waiting_command_reconcile_progresses_done_despite_foreign_active_lease() -> None:
-    """Terminal DONE must reconcile before foreign-lease gate (H3)."""
+async def test_waiting_command_reconcile_waits_for_foreign_lease_before_progressing_done() -> None:
+    """A foreign owner may still be updating this task even after command DONE."""
     prefix = f"ae3-wc-reconcile-foreign-lease-{uuid4().hex}"
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     reconcile_use_case, _recovery, task_repo, _command_repo, _workflow_repo = (
@@ -1172,8 +1172,15 @@ async def test_waiting_command_reconcile_progresses_done_despite_foreign_active_
         result = await reconcile_use_case.run(now=now + timedelta(seconds=3), worker_owner="worker-a")
 
         updated_task = await task_repo.get_by_id(task_id=task_id)
-        assert result.skipped_lease_tasks == 0
-        assert result.progressed_tasks == 1
+        assert result.skipped_lease_tasks == 1
+        assert result.progressed_tasks == 0
+        assert updated_task is not None
+        assert updated_task.status == "waiting_command"
+
+        await execute("DELETE FROM ae_zone_leases WHERE zone_id = $1", zone_id)
+        resumed = await reconcile_use_case.run(now=now + timedelta(seconds=4), worker_owner="worker-a")
+        updated_task = await task_repo.get_by_id(task_id=task_id)
+        assert resumed.progressed_tasks == 1
         assert updated_task is not None
         assert updated_task.status == "pending"
         assert updated_task.current_stage == "clean_fill_start"
@@ -1302,13 +1309,8 @@ async def test_waiting_command_reconcile_escalates_foreign_lease_when_stale() ->
         assert result.failed_tasks == 1
         assert updated_task is not None
         assert updated_task.status == "failed"
-        # Reconcile-first: in-flight SENT + stale updated_at → poll deadline may fire before lease escalate.
-        assert updated_task.error_code in {
-            "ae3_foreign_lease_stale",
-            "ae3_command_poll_deadline_exceeded",
-        }
-        if updated_task.error_code == "ae3_foreign_lease_stale":
-            assert len(alerts.calls) == 1
+        assert updated_task.error_code == "ae3_foreign_lease_stale"
+        assert len(alerts.calls) == 1
     finally:
         await _cleanup(prefix)
 

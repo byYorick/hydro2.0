@@ -469,7 +469,7 @@ async def test_greenhouse_climate_tick_intent_to_done_updates_state() -> None:
 
 
 @pytest.mark.asyncio
-async def test_greenhouse_climate_busy_lease_returns_intent_to_pending() -> None:
+async def test_greenhouse_climate_busy_lease_from_same_worker_returns_intent_to_pending() -> None:
     from ae3lite.greenhouse_climate.run_tick import resolve_greenhouse_lease_owner, run_greenhouse_climate_tick
 
     prefix = f"gh-busy-{uuid.uuid4().hex[:12]}"
@@ -514,7 +514,7 @@ async def test_greenhouse_climate_busy_lease_returns_intent_to_pending() -> None
             greenhouse_id=greenhouse_id,
             idempotency_key=idem,
             history_logger_client=fake_hl,
-            worker_owner="worker-b",
+            worker_owner="worker-a",
         )
         assert result["reason"] == "greenhouse_climate_busy"
         rows = await fetch(
@@ -577,6 +577,21 @@ async def test_recover_stale_greenhouse_running_intent_requeues_pending() -> Non
             idem,
             stale_at,
         )
+
+        await execute(
+            """
+            INSERT INTO greenhouse_automation_leases (greenhouse_id, owner, leased_until, updated_at)
+            VALUES ($1, 'pytest-active-tick', $2, $3)
+            """,
+            greenhouse_id,
+            now + timedelta(minutes=2),
+            now,
+        )
+        guarded = await recover_stale_greenhouse_automation(now=now, stale_running_ttl_sec=600)
+        assert guarded == {"requeued_intents": 0, "failed_intents": 0, "failed_tasks": 0}
+        rows = await fetch("SELECT status FROM greenhouse_automation_intents WHERE id = $1", intent_id)
+        assert rows and rows[0]["status"] == "running"
+        await execute("DELETE FROM greenhouse_automation_leases WHERE greenhouse_id = $1", greenhouse_id)
 
         result = await recover_stale_greenhouse_automation(now=now, stale_running_ttl_sec=600)
         assert result["requeued_intents"] == 1
