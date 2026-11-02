@@ -64,7 +64,7 @@
           variant="primary"
           data-testid="pid-config-save"
           class="w-full sm:w-auto"
-          :disabled="loading || disabled || !phaseTargetAvailable"
+          :disabled="loading || disabled || !phaseTargetAvailable || Boolean(validationError)"
         >
           {{
             loading
@@ -82,10 +82,18 @@
       :items="presetPillItems"
       :model-value="selectedPresetKey"
       :description="selectedPresetDescription"
-      :disabled="presetSwitching || loading"
+      :disabled="disabled || presetSwitching || loading"
       test-id="pid-config-preset-strip"
       @select="onPresetPillClick"
     />
+    <p
+      v-if="validationError"
+      class="text-sm text-status-critical"
+      role="alert"
+      data-testid="pid-config-validation-error"
+    >
+      {{ validationError }}
+    </p>
 
     <!-- LOOP TABS -->
     <div class="flex gap-0.5 border-b border-[var(--border-muted)]">
@@ -184,6 +192,7 @@
             </span>
           </template>
           <TextField
+            :disabled="disabled || loading"
             :value="phaseTargetDisplay"
             data-testid="pid-config-input-target"
             type="number"
@@ -209,6 +218,7 @@
           </template>
           <TextField
             v-model.number="form.dead_zone"
+            :disabled="disabled || loading"
             type="number"
             step="0.01"
             min="0"
@@ -231,6 +241,7 @@
           </template>
           <TextField
             v-model.number="form.close_zone"
+            :disabled="disabled || loading"
             type="number"
             step="0.01"
             min="0"
@@ -253,6 +264,7 @@
           </template>
           <TextField
             v-model.number="form.far_zone"
+            :disabled="disabled || loading"
             type="number"
             step="0.01"
             min="0"
@@ -288,6 +300,7 @@
           </template>
           <TextField
             v-model.number="form.zone_coeffs.close.kp"
+            :disabled="disabled || loading"
             type="number"
             step="0.1"
             min="0"
@@ -309,6 +322,7 @@
           </template>
           <TextField
             v-model.number="form.zone_coeffs.close.ki"
+            :disabled="disabled || loading"
             type="number"
             step="0.01"
             min="0"
@@ -330,6 +344,7 @@
           </template>
           <TextField
             v-model.number="form.zone_coeffs.close.kd"
+            :disabled="disabled || loading"
             type="number"
             step="0.01"
             min="0"
@@ -365,6 +380,7 @@
           </template>
           <TextField
             v-model.number="form.zone_coeffs.far.kp"
+            :disabled="disabled || loading"
             type="number"
             step="0.1"
             min="0"
@@ -386,6 +402,7 @@
           </template>
           <TextField
             v-model.number="form.zone_coeffs.far.ki"
+            :disabled="disabled || loading"
             type="number"
             step="0.01"
             min="0"
@@ -407,6 +424,7 @@
           </template>
           <TextField
             v-model.number="form.zone_coeffs.far.kd"
+            :disabled="disabled || loading"
             type="number"
             step="0.01"
             min="0"
@@ -443,6 +461,7 @@
           </template>
           <TextField
             v-model.number="form.max_integral"
+            :disabled="disabled || loading"
             type="number"
             step="1"
             min="1"
@@ -491,6 +510,7 @@
 </template>
 
 <script setup lang="ts">
+import { DEFAULT_CONFIGS, cloneConfig, normalizeConfig, pidConfigError } from '@/utils/pidConfigDraft'
 import { computed, onMounted, ref, watch } from 'vue'
 import Button from '@/Components/Button.vue'
 import ConfirmModal from '@/Components/ConfirmModal.vue'
@@ -557,29 +577,6 @@ function fieldHelp(key: string): string {
   return FIELD_HELP[key] ?? 'Параметр PID-контура коррекции.'
 }
 
-const DEFAULT_CONFIGS: Record<'ph' | 'ec', PidConfig> = {
-  ph: {
-    dead_zone: 0.04,
-    close_zone: 0.18,
-    far_zone: 0.65,
-    zone_coeffs: {
-      close: { kp: 0.18, ki: 0.01, kd: 0.0 },
-      far: { kp: 0.28, ki: 0.015, kd: 0.0 },
-    },
-    max_integral: 12.0,
-  },
-  ec: {
-    dead_zone: 0.06,
-    close_zone: 0.25,
-    far_zone: 0.9,
-    zone_coeffs: {
-      close: { kp: 0.35, ki: 0.02, kd: 0.0 },
-      far: { kp: 0.55, ki: 0.03, kd: 0.0 },
-    },
-    max_integral: 20.0,
-  },
-}
-
 const selectedType = ref<'ph' | 'ec'>('ph')
 const { open: confirmOpen, title: confirmTitle, message: confirmMessage, ask, close: closeConfirm, confirm: acceptConfirm } = useConfirmDialog()
 const confirmed = ref(false)
@@ -593,6 +590,7 @@ const runtimeTuningBundle = ref<RuntimeTuningBundlePayload | null>(null)
 const selectedPresetKey = ref('system_default')
 
 const form = ref<PidConfig>(cloneConfig(DEFAULT_CONFIGS.ph))
+const validationError = computed(() => pidConfigError(form.value))
 const lastSavedForm = ref<PidConfig>(cloneConfig(DEFAULT_CONFIGS.ph))
 const openSections = ref<Set<string>>(new Set(['zones']))
 
@@ -661,45 +659,12 @@ function toggleSection(key: string, event: Event): void {
 }
 
 async function onPresetPillClick(key: PresetPillKey): Promise<void> {
+  if (props.disabled || loading.value) return
   if (!runtimeTuningBundle.value || key === null) return
   const presetKey = String(key)
   if (selectedPresetKey.value === presetKey) return
   selectedPresetKey.value = presetKey
   await applySelectedPreset()
-}
-
-function cloneConfig(config: PidConfig): PidConfig {
-  return JSON.parse(JSON.stringify(config)) as PidConfig
-}
-
-function toNumberOr(value: unknown, fallback: number): number {
-  const numeric = Number(value)
-  return Number.isFinite(numeric) ? numeric : fallback
-}
-
-function normalizeConfig(raw: Partial<PidConfig> | null | undefined, type: 'ph' | 'ec'): PidConfig {
-  const defaults = DEFAULT_CONFIGS[type]
-  const closeRaw: Partial<PidConfig['zone_coeffs']['close']> = raw?.zone_coeffs?.close ?? {}
-  const farRaw: Partial<PidConfig['zone_coeffs']['far']> = raw?.zone_coeffs?.far ?? {}
-
-  return {
-    dead_zone: toNumberOr(raw?.dead_zone, defaults.dead_zone),
-    close_zone: toNumberOr(raw?.close_zone, defaults.close_zone),
-    far_zone: toNumberOr(raw?.far_zone, defaults.far_zone),
-    zone_coeffs: {
-      close: {
-        kp: toNumberOr(closeRaw.kp, defaults.zone_coeffs.close.kp),
-        ki: toNumberOr(closeRaw.ki, defaults.zone_coeffs.close.ki),
-        kd: toNumberOr(closeRaw.kd, defaults.zone_coeffs.close.kd),
-      },
-      far: {
-        kp: toNumberOr(farRaw.kp, defaults.zone_coeffs.far.kp),
-        ki: toNumberOr(farRaw.ki, defaults.zone_coeffs.far.ki),
-        kd: toNumberOr(farRaw.kd, defaults.zone_coeffs.far.kd),
-      },
-    },
-    max_integral: toNumberOr(raw?.max_integral, defaults.max_integral),
-  }
 }
 
 async function loadConfig() {
@@ -826,6 +791,8 @@ async function hydratePhaseTargets(): Promise<void> {
 }
 
 async function onSubmit() {
+  if (props.disabled || loading.value) return
+  if (validationError.value) return
   if (!phaseTargetAvailable.value) {
     logger.warn('[PidConfigForm] Refusing to save PID config without recipe phase target', {
       zoneId: props.zoneId,

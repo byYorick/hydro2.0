@@ -8,16 +8,28 @@
       :horizon="horizon"
       :loading="loading"
       :error="error"
-      :counters="executionCounters"
-      :executable-windows-count="nextExecutableWindows.length"
       :has-active-run="Boolean(activeRun)"
       :control-mode="workspace?.control?.control_mode"
       :control-mode-label="controlModeLabel"
       :status-variant="statusVariant"
+      :updated-label="updatedAt ? formatDateTime(updatedAt) : null"
+      @manage-schedules="activeView = 'schedules'"
       @change-horizon="changeHorizon"
       @refresh="refreshWorkspace"
     />
 
+    <Tabs
+      v-model="activeView"
+      :tabs="viewTabs"
+      list-role="group"
+      aria-label="Разделы планировщика"
+    />
+    <KpiRow
+      :counters="executionCounters"
+      :executable-windows-count="executableWindows.length"
+      :runtime="workspace?.control?.automation_runtime"
+      :window-type-count="windowTypeCount"
+    />
     <CockpitLayout>
       <template #left>
         <HeroCountdown
@@ -40,34 +52,65 @@
       </template>
 
       <template #center>
-        <KpiRow
-          :counters="executionCounters"
-          :executable-windows-count="nextExecutableWindows.length"
-          :runtime="workspace?.control?.automation_runtime"
-          :window-type-count="windowTypeCount"
-        />
         <SwimlaneTimeline
+          v-if="activeView === 'overview'"
           :lanes="lanesHistory"
           :horizon="horizon"
           :format-date-time="formatDateTime"
         />
+        <ManualSchedulesSection
+          v-show="activeView === 'schedules'"
+          :zone-id="zoneId"
+          :schedules="manualSchedules"
+          :loading="loading"
+          :can-manage="canManageManualSchedules"
+          :lane-label="laneLabel"
+          :executable-task-types="workspace?.capabilities?.executable_task_types ?? []"
+          :plan-windows="workspace?.plan?.windows ?? []"
+          @changed="refreshWorkspace"
+        />
         <RecentRunsTable
-          :runs="recentRuns"
-          :selected-id="selectedExecution?.execution_id ?? null"
+          v-if="activeView !== 'schedules'"
+          :runs="activeView === 'history' ? recentRuns : recentRuns.slice(0, 5)"
+          :show-filters="activeView === 'history'"
+          :selected-id="selectedExecutionId"
           :lane-label="laneLabel"
           :decision-label="decisionLabelForRun"
+          @visible-runs="navigationRuns = $event"
           @select="selectExecution"
         />
       </template>
 
       <template #right>
+        <p
+          v-if="detailLoading && activeView !== 'schedules'"
+          role="status"
+          class="p-4 text-sm text-[color:var(--text-muted)]"
+        >
+          Загружаем детали выполнения…
+        </p>
+        <div
+          v-if="detailError && activeView !== 'schedules'"
+          role="alert"
+          class="rounded-xl border border-status-critical p-3 text-sm text-status-critical"
+        >
+          {{ detailError }}
+          <Button
+            v-if="selectedExecutionId"
+            size="sm"
+            variant="ghost"
+            @click="selectExecution(selectedExecutionId)"
+          >
+            Повторить загрузку
+          </Button>
+        </div>
         <SchedulerAttentionPanel
           v-if="attentionAlerts.length > 0 || attentionStatus.length > 0"
           :alert-items="attentionAlerts"
           :status-items="attentionStatus"
         />
         <CausalChainPanel
-          v-if="selectedExecution"
+          v-if="selectedExecution && activeView !== 'schedules'"
           :run="selectedExecution"
           :error-text="selectedExecutionErrorMessage"
           :format-date-time="formatDateTime"
@@ -79,44 +122,41 @@
       </template>
     </CockpitLayout>
 
-    <ManualSchedulesSection
-      class="mx-2 mb-3 md:mx-3"
-      :zone-id="zoneId"
-      :schedules="manualSchedules"
-      :loading="loading"
-      :can-manage="canManageManualSchedules"
-      :lane-label="laneLabel"
-      :executable-task-types="workspace?.capabilities?.executable_task_types ?? []"
-      :plan-windows="workspace?.plan?.windows ?? []"
-      @changed="refreshWorkspace"
-    />
-
-    <SchedulerDiagnostics
-      :can-diagnose="canDiagnose"
-      :diagnostics-available="Boolean(workspace?.capabilities?.diagnostics_available)"
-      :diagnostics-loading="diagnosticsLoading"
-      :diagnostics-error="diagnosticsError"
-      :diagnostics="diagnostics"
-      :status-variant="statusVariant"
-      :status-label="statusLabel"
-      :lane-label="laneLabel"
-      :format-date-time="formatDateTime"
-    />
+    <details
+      v-if="canDiagnose && workspace?.capabilities?.diagnostics_available"
+      class="rounded-xl border border-[color:var(--border-muted)] p-3"
+      @toggle="onDiagnosticsToggle"
+    >
+      <summary class="cursor-pointer text-sm font-medium">
+        Диагностика планировщика
+      </summary>
+      <SchedulerDiagnostics
+        :can-diagnose="canDiagnose"
+        :diagnostics-available="Boolean(workspace?.capabilities?.diagnostics_available)"
+        :diagnostics-loading="diagnosticsLoading"
+        :diagnostics-error="diagnosticsError"
+        :diagnostics="diagnostics"
+        :status-variant="statusVariant"
+        :status-label="statusLabel"
+        :lane-label="laneLabel"
+        :format-date-time="formatDateTime"
+      />
+    </details>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { router } from '@inertiajs/vue3'
 import { useRole } from '@/composables/useRole'
 import { useToast } from '@/composables/useToast'
 import { useZoneScheduleWorkspace } from '@/composables/useZoneScheduleWorkspace'
 import { resolveHumanErrorMessage } from '@/utils/errorCatalog'
 import type { ZoneAutomationTabProps } from '@/composables/zoneAutomationTypes'
-import type { ChainStep, ExecutionRun, LaneHistory } from '@/composables/zoneScheduleWorkspaceTypes'
+import type { ExecutionRun, LaneHistory } from '@/composables/zoneScheduleWorkspaceTypes'
 import { deriveLaneHistory } from '@/composables/deriveLaneHistory'
 import { useSchedulerHotkeys } from '@/composables/useSchedulerHotkeys'
-import { subscribeToExecutionChain, type SchedulerChainSubscription } from '@/ws/schedulerChainChannel'
+import { useSchedulerExecutionChain } from '@/composables/useSchedulerExecutionChain'
 import SchedulerHeader from '@/Components/Scheduler/SchedulerHeader.vue'
 import SchedulerAttentionPanel from '@/Components/Scheduler/SchedulerAttentionPanel.vue'
 import SchedulerDiagnostics from '@/Components/Scheduler/SchedulerDiagnostics.vue'
@@ -130,6 +170,9 @@ import RecentRunsTable from '@/Components/Scheduler/Cockpit/RecentRunsTable.vue'
 import CausalChainPanel from '@/Components/Scheduler/Cockpit/CausalChainPanel.vue'
 import ManualSchedulesSection from '@/Components/Scheduler/ManualSchedulesSection.vue'
 import { api } from '@/services/api'
+import Tabs from '@/Components/Tabs.vue'
+import Button from '@/Components/Button.vue'
+import { deriveRunEndAt, readRunDurationSec } from '@/utils/schedulerRunTime'
 
 const props = defineProps<ZoneAutomationTabProps>()
 
@@ -139,6 +182,8 @@ const {
   horizon,
   workspace,
   selectedExecution,
+  selectedExecutionId,
+  detailError,
   diagnostics,
   loading,
   diagnosticsLoading,
@@ -148,20 +193,19 @@ const {
   activeRun,
   executionCounters,
   nextExecutableWindows,
+  executableWindows,
+  updatedAt,
+  detailLoading,
   configOnlyLanes,
   manualSchedules,
   attentionAlerts,
   attentionStatus,
-  fetchWorkspace,
-  fetchAutomationState,
+  refreshWorkspace: refreshWorkspaceData,
   fetchDiagnostics,
   selectExecution,
   clearSelectedExecution,
   setHorizon,
   clearDiagnostics,
-  clearPollTimer,
-  schedulePoll,
-  handleVisibilityChange,
   formatDateTime,
   formatRelativeTrigger,
   statusVariant,
@@ -170,9 +214,22 @@ const {
   laneLabel,
   workflowStageLabel,
   decisionLabel,
-} = useZoneScheduleWorkspace(props, { showToast })
+} = useZoneScheduleWorkspace(props)
 
+useSchedulerExecutionChain(() => props.zoneId, selectedExecution, workspace)
 const zoneId = computed(() => props.zoneId)
+const activeView = ref('overview')
+const navigationRuns = ref<ExecutionRun[]>([])
+const diagnosticsOpen = ref(false)
+const viewTabs = computed(() => [
+  { id: 'overview', label: 'Обзор', testId: 'scheduler-view-overview' },
+  { id: 'schedules', label: 'Расписания', badge: manualSchedules.value.length, testId: 'scheduler-view-schedules' },
+  { id: 'history', label: 'История', badge: recentRuns.value.length, testId: 'scheduler-view-history' },
+])
+function onDiagnosticsToggle(event: Event) {
+  diagnosticsOpen.value = (event.target as HTMLDetailsElement).open
+  if (diagnosticsOpen.value) void fetchDiagnostics()
+}
 
 const canManageManualSchedules = computed(() => role.value === 'agronomist' || role.value === 'admin')
 
@@ -195,7 +252,7 @@ const configOnlyLanesLabels = computed(() =>
 
 const windowTypeCount = computed(() => {
   const seen = new Set<string>()
-  for (const w of nextExecutableWindows.value) {
+  for (const w of executableWindows.value) {
     if (w.task_type) seen.add(w.task_type)
   }
   return seen.size
@@ -217,54 +274,6 @@ const activeStageLabel = computed<string | null>(() => {
     null
   )
 })
-
-function parseIso(value: string | null | undefined): Date | null {
-  if (!value) return null
-  const parsed = new Date(value)
-  return Number.isNaN(parsed.getTime()) ? null : parsed
-}
-
-function readRunDurationSec(run: ExecutionRun): number | null {
-  if (typeof run.requested_duration_sec === 'number' && Number.isFinite(run.requested_duration_sec) && run.requested_duration_sec > 0) {
-    return run.requested_duration_sec
-  }
-
-  const config = run.decision_config as Record<string, unknown> | null | undefined
-  if (!config || typeof config !== 'object') {
-    return null
-  }
-
-  const candidates: unknown[] = [
-    config.requested_duration_sec,
-    config.duration_sec,
-    config.max_duration_sec,
-    config.timeout_sec,
-  ]
-
-  for (const candidate of candidates) {
-    if (typeof candidate === 'number' && Number.isFinite(candidate) && candidate > 0) {
-      return candidate
-    }
-  }
-
-  return null
-}
-
-function deriveRunEndAt(run: ExecutionRun): Date | null {
-  // due_at in AE3 is the next stage wake deadline, not end-of-run — prefer duration.
-  const durationSec = readRunDurationSec(run)
-  const startAt =
-    parseIso(run.accepted_at) ??
-    parseIso(run.scheduled_for) ??
-    parseIso(run.created_at) ??
-    parseIso(run.updated_at)
-
-  if (durationSec !== null && startAt) {
-    return new Date(startAt.getTime() + durationSec * 1000)
-  }
-
-  return parseIso(run.expires_at)
-}
 
 const activeEndAt = computed<string | null>(() => {
   const run = activeRun.value
@@ -333,37 +342,12 @@ function handleOpenEvents(executionId: string): void {
   router.visit(`/zones/${props.zoneId}?tab=events&execution_id=${executionId}`)
 }
 
-function chainStepKey(step: ChainStep): string {
-  return `${step.step ?? ''}|${step.ref ?? ''}|${step.at ?? ''}`
-}
-
-function appendUniqueChainStep(chain: ChainStep[] | undefined, step: ChainStep): ChainStep[] {
-  const current = chain ?? []
-  const key = chainStepKey(step)
-  if (current.some((item) => chainStepKey(item) === key)) {
-    return current
-  }
-  return [...current, step]
-}
-
-function applyChainStep(executionId: string, step: ChainStep): void {
-  if (selectedExecution.value?.execution_id === executionId) {
-    selectedExecution.value = {
-      ...selectedExecution.value,
-      chain: appendUniqueChainStep(selectedExecution.value.chain, step),
-    }
-  }
-  if (workspace.value?.execution?.active_run?.execution_id === executionId) {
-    const active = workspace.value.execution.active_run
-    active.chain = appendUniqueChainStep(active.chain, step)
-  }
-}
-
 function moveSelection(delta: 1 | -1): void {
-  const runs = recentRuns.value
+  if (activeView.value === 'schedules') return
+  const runs = navigationRuns.value
   if (runs.length === 0) return
 
-  const currentId = selectedExecution.value?.execution_id ?? null
+  const currentId = selectedExecutionId.value
   const currentIndex = currentId
     ? runs.findIndex((run) => run.execution_id === currentId)
     : -1
@@ -385,7 +369,8 @@ useSchedulerHotkeys({
   onNext: () => moveSelection(1),
   onPrev: () => moveSelection(-1),
   onOpen: () => {
-    const first = selectedExecution.value ?? recentRuns.value[0]
+    if (activeView.value === 'schedules') return
+    const first = selectedExecution.value ?? navigationRuns.value[0]
     if (first) {
       selectExecution(first.execution_id)
     }
@@ -398,18 +383,6 @@ useSchedulerHotkeys({
   },
 })
 
-let chainSubscription: SchedulerChainSubscription | null = null
-
-function resubscribeChain(): void {
-  chainSubscription?.unsubscribe()
-  chainSubscription = null
-  const zoneId = props.zoneId
-  if (zoneId === null || zoneId === undefined) return
-  chainSubscription = subscribeToExecutionChain(zoneId, {
-    onStep: (executionId, step) => applyChainStep(executionId, step),
-  })
-}
-
 function changeHorizon(nextHorizon: '24h' | '7d'): void {
   if (horizon.value === nextHorizon) return
   setHorizon(nextHorizon)
@@ -417,42 +390,16 @@ function changeHorizon(nextHorizon: '24h' | '7d'): void {
 }
 
 async function refreshWorkspace(): Promise<void> {
-  await Promise.all([
-    fetchWorkspace(),
-    fetchAutomationState({ silent: true }),
-  ])
-
-  if (canDiagnose.value && workspace.value?.capabilities?.diagnostics_available) {
+  await refreshWorkspaceData()
+  if (diagnosticsOpen.value && canDiagnose.value && workspace.value?.capabilities?.diagnostics_available) {
     await fetchDiagnostics({ silent: true })
-  } else {
-    clearDiagnostics()
-  }
-
-  schedulePoll()
+  } else { clearDiagnostics() }
 }
-
-onMounted(() => {
-  void refreshWorkspace()
-  resubscribeChain()
-  if (import.meta.env.MODE !== 'test' && typeof document !== 'undefined') {
-    document.addEventListener('visibilitychange', handleVisibilityChange)
-  }
-})
-
-onUnmounted(() => {
-  clearPollTimer()
-  chainSubscription?.unsubscribe()
-  chainSubscription = null
-  if (typeof document !== 'undefined') {
-    document.removeEventListener('visibilitychange', handleVisibilityChange)
-  }
-})
 
 watch(
   () => props.zoneId,
   () => {
-    void refreshWorkspace()
-    resubscribeChain()
+    diagnosticsOpen.value = false
   },
 )
 </script>

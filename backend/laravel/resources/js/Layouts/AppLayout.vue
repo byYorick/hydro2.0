@@ -114,7 +114,7 @@
             </div>
           </div>
 
-          <main class="flex-1 flex flex-col min-h-0 relative z-10">
+          <main class="flex-1 flex flex-col min-h-0 min-w-0 relative z-10">
             <!-- Header Status Bar -->
             <div class="shrink-0">
               <HeaderStatusBar />

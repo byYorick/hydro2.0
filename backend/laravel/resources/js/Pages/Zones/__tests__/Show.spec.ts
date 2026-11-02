@@ -87,14 +87,6 @@ vi.mock('@/Components/MultiSeriesTelemetryChart.vue', () => ({
   },
 }))
 
-vi.mock('@/Components/PhaseProgress.vue', () => ({
-  default: { 
-    name: 'PhaseProgress', 
-    props: ['zone'],
-    template: '<div class="phase-progress">Phase Progress</div>',
-  },
-}))
-
 vi.mock('@/Components/ZoneDevicesVisualization.vue', () => ({
   default: { 
     name: 'ZoneDevicesVisualization', 
@@ -150,14 +142,6 @@ vi.mock('@/Components/NodeConfigModal.vue', () => ({
     props: ['show', 'node', 'zone'],
     emits: ['close'],
     template: '<div v-if="show" class="node-config-modal">Node Config</div>',
-  },
-}))
-
-vi.mock('@/Components/AutomationEngine.vue', () => ({
-  default: { 
-    name: 'AutomationEngine', 
-    props: ['zone'],
-    template: '<div class="automation-engine">Automation</div>',
   },
 }))
 
@@ -371,15 +355,6 @@ vi.mock('@/composables/useZones', () => ({
   }),
 }))
 
-vi.mock('@/composables/useApi', () => ({
-  useApi: () => ({
-    api: {
-      get: axiosGetMock,
-      post: axiosPostMock,
-    },
-  }),
-}))
-
 vi.mock('@/composables/useWebSocket', () => ({
   useWebSocket: () => ({
     subscribeToZoneCommands: vi.fn(() => () => {}),
@@ -393,23 +368,6 @@ vi.mock('@/composables/useErrorHandler', () => ({
   useErrorHandler: () => ({
     handleError: vi.fn(),
   }),
-}))
-
-vi.mock('@/composables/useOptimisticUpdate', () => ({
-  useOptimisticUpdate: () => ({
-    performUpdate: vi.fn(async (_id: string, options: any) => {
-      if (options?.applyUpdate) options.applyUpdate()
-      if (options?.syncWithServer) {
-        const result = await options.syncWithServer()
-        if (options?.onSuccess) options.onSuccess(result)
-        return result
-      }
-      if (options?.onSuccess) options.onSuccess({})
-      return {}
-    }),
-    update: vi.fn(),
-  }),
-  createOptimisticZoneUpdate: vi.fn(),
 }))
 
 vi.mock('@/composables/useModal', () => ({
@@ -677,20 +635,20 @@ describe('Zones/Show.vue', () => {
     expect(wrapper.text()).toContain('ONLINE')
   })
 
-  it('показывает блок автоматики только на вкладке устройств', async () => {
+  it('показывает переход к единому редактору PID на вкладке устройств', async () => {
     const wrapper = mount(ZonesShow)
 
     const devicesTabButton = wrapper.find('[data-testid="zone-more-tab-devices"]')
     expect(devicesTabButton.exists()).toBe(true)
     await devicesTabButton.trigger('click')
     await nextTick()
-    expect(wrapper.text()).toContain('Automation')
+    expect(wrapper.text()).toContain('Настройки коррекции и PID')
 
     const eventsTabButton = wrapper.find('[role="tablist"]').findAll('button').find((button) => button.text().includes('История работ'))
     expect(eventsTabButton).toBeTruthy()
     await eventsTabButton?.trigger('click')
     await nextTick()
-    expect(wrapper.text()).not.toContain('Automation')
+    expect(wrapper.text()).not.toContain('Настройки коррекции и PID')
   })
 
   it('отображает секцию событий на overview', () => {
@@ -959,7 +917,7 @@ describe('Zones/Show.vue', () => {
 
     expect(tablist.text()).toContain('Узлы')
     expect(tablist.text()).toContain('Процесс')
-    expect(wrapper.text()).toContain('Automation')
+    expect(wrapper.text()).toContain('Настройки коррекции и PID')
   })
 
   it('показывает «Обзор» среди основных вкладок админа, дефолт — Тревоги', () => {

@@ -21,14 +21,6 @@ vi.mock('@/utils/logger', () => ({
   },
 }))
 
-vi.mock('@/composables/useApi', () => ({
-  useApi: vi.fn(() => ({
-    api: {
-      get: vi.fn(() => Promise.resolve({ data: { status: 'ok', data: {} } })),
-    },
-  })),
-}))
-
 // Мокаем window.Echo для тестов
 const mockEcho = {
   private: vi.fn((channel: string) => ({

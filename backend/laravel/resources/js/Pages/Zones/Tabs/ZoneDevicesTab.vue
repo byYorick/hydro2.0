@@ -38,17 +38,24 @@
       />
     </div>
     <div class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-xl p-2">
-      <AutomationEngine
-        :zone-id="zone.id"
-        :can-manage="canManageDevices"
-      />
+      <div class="flex flex-wrap items-center justify-between gap-3 p-3">
+        <p class="text-sm text-[color:var(--text-muted)]">
+          Калибровка, коэффициенты PID и история коррекции находятся в разделе «Раствор».
+        </p>
+        <Link
+          :href="`/zones/${zone.id}?tab=automation&auto=solution#zone-pid-config-panel-shared`"
+          class="btn btn-secondary text-sm"
+        >
+          Настройки коррекции и PID
+        </Link>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import Button from '@/Components/Button.vue'
-import AutomationEngine from '@/Components/AutomationEngine.vue'
+import { Link } from '@inertiajs/vue3'
 import ZoneDevicesVisualization from '@/Components/ZoneDevicesVisualization.vue'
 import UnassignedNodeErrorsWidget from '@/Components/UnassignedNodeErrorsWidget.vue'
 import ZoneBindingsPanel from '@/Components/Infrastructure/ZoneBindingsPanel.vue'

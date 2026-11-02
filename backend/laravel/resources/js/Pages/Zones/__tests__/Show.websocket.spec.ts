@@ -4,6 +4,12 @@ import { nextTick, reactive } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 import { __resetManagedChannelEventsForTests } from '@/ws/managedChannelEvents'
 
+const showStubs = {
+  AppLayout: true, Card: true, Button: true, Badge: true, ZoneTargets: true,
+  ZoneTelemetryChart: true, MultiSeriesTelemetryChart: true,
+  ZoneDevicesVisualization: true, PidConfigForm: true,
+}
+
 const wsStateListeners: Array<(state: string) => void> = []
 const mockEchoPrivate = vi.fn()
 const mockEchoLeave = vi.fn()
@@ -47,10 +53,6 @@ vi.mock('@/Pages/Zones/ZoneTelemetryChart.vue', () => ({
 
 vi.mock('@/Components/MultiSeriesTelemetryChart.vue', () => ({
   default: { name: 'MultiSeriesTelemetryChart', template: '<div class="multi-chart">Multi Chart</div>' },
-}))
-
-vi.mock('@/Components/PhaseProgress.vue', () => ({
-  default: { name: 'PhaseProgress', template: '<div class="phase-progress">Phase Progress</div>' },
 }))
 
 vi.mock('@/Components/ZoneDevicesVisualization.vue', () => ({
@@ -257,18 +259,7 @@ describe('Zones/Show.vue - WebSocket Integration', () => {
   it('should subscribe to zone commands WebSocket channel on mount', async () => {
     const wrapper = mount(ShowComponent, {
       global: {
-        stubs: {
-          AppLayout: true,
-          Card: true,
-          Button: true,
-          Badge: true,
-          ZoneTargets: true,
-          ZoneTelemetryChart: true,
-          MultiSeriesTelemetryChart: true,
-          PhaseProgress: true,
-          ZoneDevicesVisualization: true,
-          PidConfigForm: true,
-        },
+        stubs: showStubs,
       },
     })
 
@@ -323,18 +314,7 @@ describe('Zones/Show.vue - WebSocket Integration', () => {
 
     const wrapper = mount(ShowComponent, {
       global: {
-        stubs: {
-          AppLayout: true,
-          Card: true,
-          Button: true,
-          Badge: true,
-          ZoneTargets: true,
-          ZoneTelemetryChart: true,
-          MultiSeriesTelemetryChart: true,
-          PhaseProgress: true,
-          ZoneDevicesVisualization: true,
-          PidConfigForm: true,
-        },
+        stubs: showStubs,
       },
     })
 
@@ -375,18 +355,7 @@ describe('Zones/Show.vue - WebSocket Integration', () => {
 
     const wrapper = mount(ShowComponent, {
       global: {
-        stubs: {
-          AppLayout: true,
-          Card: true,
-          Button: true,
-          Badge: true,
-          ZoneTargets: true,
-          ZoneTelemetryChart: true,
-          MultiSeriesTelemetryChart: true,
-          PhaseProgress: true,
-          ZoneDevicesVisualization: true,
-          PidConfigForm: true,
-        },
+        stubs: showStubs,
       },
     })
 
@@ -421,18 +390,7 @@ describe('Zones/Show.vue - WebSocket Integration', () => {
 
     const wrapper = mount(ShowComponent, {
       global: {
-        stubs: {
-          AppLayout: true,
-          Card: true,
-          Button: true,
-          Badge: true,
-          ZoneTargets: true,
-          ZoneTelemetryChart: true,
-          MultiSeriesTelemetryChart: true,
-          PhaseProgress: true,
-          ZoneDevicesVisualization: true,
-          PidConfigForm: true,
-        },
+        stubs: showStubs,
       },
     })
 
@@ -494,18 +452,7 @@ describe('Zones/Show.vue - WebSocket Integration', () => {
 
     const wrapper = mount(ShowComponent, {
       global: {
-        stubs: {
-          AppLayout: true,
-          Card: true,
-          Button: true,
-          Badge: true,
-          ZoneTargets: true,
-          ZoneTelemetryChart: true,
-          MultiSeriesTelemetryChart: true,
-          PhaseProgress: true,
-          ZoneDevicesVisualization: true,
-          PidConfigForm: true,
-        },
+        stubs: showStubs,
       },
     })
 
@@ -650,18 +597,7 @@ describe('Zones/Show.vue - WebSocket Integration', () => {
 
     const wrapper = mount(ShowComponent, {
       global: {
-        stubs: {
-          AppLayout: true,
-          Card: true,
-          Button: true,
-          Badge: true,
-          ZoneTargets: true,
-          ZoneTelemetryChart: true,
-          MultiSeriesTelemetryChart: true,
-          PhaseProgress: true,
-          ZoneDevicesVisualization: true,
-          PidConfigForm: true,
-        },
+        stubs: showStubs,
       },
     })
 
@@ -703,18 +639,7 @@ describe('Zones/Show.vue - WebSocket Integration', () => {
 
     const wrapper = mount(ShowComponent, {
       global: {
-        stubs: {
-          AppLayout: true,
-          Card: true,
-          Button: true,
-          Badge: true,
-          ZoneTargets: true,
-          ZoneTelemetryChart: true,
-          MultiSeriesTelemetryChart: true,
-          PhaseProgress: true,
-          ZoneDevicesVisualization: true,
-          PidConfigForm: true,
-        },
+        stubs: showStubs,
       },
     })
 
@@ -751,18 +676,7 @@ describe('Zones/Show.vue - WebSocket Integration', () => {
 
     const wrapper = mount(ShowComponent, {
       global: {
-        stubs: {
-          AppLayout: true,
-          Card: true,
-          Button: true,
-          Badge: true,
-          ZoneTargets: true,
-          ZoneTelemetryChart: true,
-          MultiSeriesTelemetryChart: true,
-          PhaseProgress: true,
-          ZoneDevicesVisualization: true,
-          PidConfigForm: true,
-        },
+        stubs: showStubs,
       },
     })
 
@@ -807,18 +721,7 @@ describe('Zones/Show.vue - WebSocket Integration', () => {
 
     const wrapper = mount(ShowComponent, {
       global: {
-        stubs: {
-          AppLayout: true,
-          Card: true,
-          Button: true,
-          Badge: true,
-          ZoneTargets: true,
-          ZoneTelemetryChart: true,
-          MultiSeriesTelemetryChart: true,
-          PhaseProgress: true,
-          ZoneDevicesVisualization: true,
-          PidConfigForm: true,
-        },
+        stubs: showStubs,
       },
     })
 
@@ -840,18 +743,7 @@ describe('Zones/Show.vue - WebSocket Integration', () => {
 
     const wrapper = mount(ShowComponent, {
       global: {
-        stubs: {
-          AppLayout: true,
-          Card: true,
-          Button: true,
-          Badge: true,
-          ZoneTargets: true,
-          ZoneTelemetryChart: true,
-          MultiSeriesTelemetryChart: true,
-          PhaseProgress: true,
-          ZoneDevicesVisualization: true,
-          PidConfigForm: true,
-        },
+        stubs: showStubs,
       },
     })
 

@@ -68,17 +68,23 @@ describe('AutomationRuntimeFieldsForm', () => {
     expect(wrapper.text()).not.toContain('Допуск опоздания задачи')
   })
 
-  it('отмечает параметры, отличающиеся от значения по умолчанию', async () => {
+  it('отделяет сохранённые overrides от несохранённых правок', async () => {
     const wrapper = mountForm()
 
     await wrapper.get('[data-testid="automation-runtime-advanced-toggle"]').trigger('click')
 
     expect(
       wrapper
-        .get('[data-testid="settings-automation-field-automation_engine.scheduler_lock_key-changed"]')
+        .find('[data-testid="settings-automation-field-automation_engine.scheduler_lock_key-changed"]')
         .exists(),
-    ).toBe(true)
+    ).toBe(false)
+    expect(wrapper.get('[data-testid="automation-runtime-overrides-count"]').text()).toContain('1')
+    expect(wrapper.find('[data-testid="automation-runtime-changed-count"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="settings-automation-engine-input-automation_engine.scheduler_due_grace_sec"]').setValue('42')
     expect(wrapper.get('[data-testid="automation-runtime-changed-count"]').text()).toContain('1')
+    await wrapper.get('[data-testid="automation-runtime-filter-changed"]').trigger('click')
+    expect(wrapper.text()).toContain('Допуск опоздания задачи')
+    expect(wrapper.text()).not.toContain('Ключ блокировки')
   })
 
   it('передаёт изменения поля наверх', async () => {

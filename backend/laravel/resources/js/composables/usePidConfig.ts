@@ -11,7 +11,6 @@ import type {
   PidConfigWithMeta,
   PidLog,
   PumpCalibration,
-  RelayAutotuneStatus,
 } from '@/types/PidConfig'
 
 const PID_NAMESPACE_MAP: Record<'ph' | 'ec', string> = {
@@ -188,53 +187,6 @@ export function usePidConfig(showToast?: ToastHandler) {
     }
   }
 
-  async function startRelayAutotune(zoneId: number, pidType: 'ph' | 'ec'): Promise<void> {
-    loading.value = true
-    error.value = null
-
-    try {
-      await api.zones.startRelayAutotune(zoneId, { pid_type: pidType })
-    } catch (err) {
-      error.value = err instanceof Error ? err : new Error('Unknown error')
-      handleError(err)
-      throw err
-    } finally {
-      loading.value = false
-    }
-  }
-
-  async function getRelayAutotuneStatus(zoneId: number, pidType: 'ph' | 'ec'): Promise<RelayAutotuneStatus> {
-    loading.value = true
-    error.value = null
-
-    try {
-      const payload = await api.zones.getRelayAutotuneStatus<RelayAutotuneStatus | { data?: RelayAutotuneStatus }>(
-        zoneId,
-        { pid_type: pidType },
-      )
-
-      const candidate = payload && !Array.isArray(payload) && 'data' in (payload as Record<string, unknown>)
-        ? (payload as { data?: RelayAutotuneStatus }).data
-        : (payload as RelayAutotuneStatus | null)
-
-      if (candidate) {
-        return candidate
-      }
-
-      return {
-        zone_id: zoneId,
-        pid_type: pidType,
-        status: 'idle',
-      }
-    } catch (err) {
-      error.value = err instanceof Error ? err : new Error('Unknown error')
-      handleError(err)
-      throw err
-    } finally {
-      loading.value = false
-    }
-  }
-
   return {
     loading,
     error,
@@ -244,7 +196,5 @@ export function usePidConfig(showToast?: ToastHandler) {
     getPidLogs,
     getPumpCalibrations,
     updatePumpCalibration,
-    startRelayAutotune,
-    getRelayAutotuneStatus,
   }
 }
