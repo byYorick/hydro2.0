@@ -60,6 +60,7 @@
       <Button
         type="button"
         :disabled="isApplying"
+        class="w-full sm:w-auto"
         @click="emitApply"
       >
         {{ isApplying ? 'Сохраняем...' : 'Сохранить и применить' }}

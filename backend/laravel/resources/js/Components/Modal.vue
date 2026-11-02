@@ -32,7 +32,7 @@
         <div class="mb-4 text-sm text-[color:var(--text-muted)]">
           <slot></slot>
         </div>
-        <div class="flex justify-end gap-2">
+        <div class="flex flex-wrap justify-end gap-2">
           <Button
             v-if="!hideDefaultCancel"
             variant="secondary"
