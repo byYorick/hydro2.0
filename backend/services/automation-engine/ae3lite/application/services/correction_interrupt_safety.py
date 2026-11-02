@@ -34,6 +34,7 @@ from ae3lite.application.runtime_event_contract import with_runtime_event_contra
 from ae3lite.domain.entities.planned_command import PlannedCommand
 from ae3lite.domain.services.zone_node_availability import TWO_TANK_REQUIRED_NODE_TYPES
 from ae3lite.infrastructure.metrics import inc_observability_write_failed
+from ae3lite.infrastructure.metrics import FLOW_STOP_FAILED
 from common.biz_alerts import send_biz_alert
 from common.db import create_zone_event, fetch
 
@@ -52,6 +53,32 @@ DEFAULT_PENDING_VERIFY_LOOKBACK_HOURS = 24
 
 # Dose actuators (EC/pH pumps) are not represented in irrig IRR_STATE_SNAPSHOT.
 DOSE_ACTUATORS_UNVERIFIABLE_REASON = "dose_actuators_unverifiable_via_irr_state"
+
+
+async def emit_task_fail_safe_failure_alert(*, task: Any, reason: str, source: str) -> None:
+    """Surface an unconfirmed operator/control-mode stop to the operator."""
+    normalized_reason = str(reason or "unknown")
+    if normalized_reason.startswith("unsupported_topology:") or normalized_reason == "no_irrig_actuators":
+        return
+    stage = str(getattr(task, "current_stage", "") or "unknown")
+    FLOW_STOP_FAILED.labels(stage=stage).inc()
+    try:
+        await send_biz_alert(
+            zone_id=int(task.zone_id),
+            code="biz_flow_stop_failed_hardware_may_be_active",
+            severity="critical",
+            message="Не удалось подтвердить остановку flow-path; оборудование может оставаться активным",
+            details={
+                "task_id": int(getattr(task, "id", 0) or 0),
+                "stage": stage,
+                "reason": normalized_reason,
+                "source": source,
+            },
+            scope_parts=(f"stage:{stage}",),
+        )
+    except Exception:
+        inc_observability_write_failed(kind="biz_alert")
+        _logger.warning("AE3 fail-safe alert failed zone_id=%s task_id=%s", task.zone_id, task.id, exc_info=True)
 
 # Канонический набор irrig-каналов для fail-safe OFF. pump_main остаётся первым в batch.
 # ExecuteTaskUseCase.FAIL_SAFE_SHUTDOWN_CHANNELS — ссылка на этот же кортеж.

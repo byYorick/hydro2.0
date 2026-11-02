@@ -537,6 +537,22 @@ async def test_attempt_task_fail_safe_shutdown_publishes_for_already_failed_task
 
 
 @pytest.mark.asyncio
+async def test_failed_operator_stop_emits_critical_alert(monkeypatch) -> None:
+    from ae3lite.application.services.correction_interrupt_safety import emit_task_fail_safe_failure_alert
+
+    send_alert = AsyncMock(return_value=True)
+    monkeypatch.setattr(
+        "ae3lite.application.services.correction_interrupt_safety.send_biz_alert",
+        send_alert,
+    )
+    task = SimpleNamespace(id=9, zone_id=1, current_stage="irrigation_check")
+    await emit_task_fail_safe_failure_alert(task=task, reason="publish_failed", source="operator_unblock")
+    assert send_alert.await_args.kwargs["code"] == "biz_flow_stop_failed_hardware_may_be_active"
+    assert send_alert.await_args.kwargs["severity"] == "critical"
+    assert send_alert.await_args.kwargs["details"]["task_id"] == 9
+
+
+@pytest.mark.asyncio
 async def test_worker_unsafe_attempts_fail_safe_before_escalate(monkeypatch) -> None:
     from ae3lite.runtime.worker import Ae3RuntimeWorker
 

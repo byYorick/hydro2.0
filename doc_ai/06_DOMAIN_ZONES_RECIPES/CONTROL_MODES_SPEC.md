@@ -202,9 +202,11 @@ diagnostics) пропускается с reason `control_mode_manual` (skip, н�
 ### 6.2. `auto → manual` или `semi → manual`
 
 - Audit: `CONTROL_MODE_CHANGED` event
-- Активные tasks **немедленно cancel'яются** через `CancelTaskOnControlModeChangeUseCase`:
-  - AE3 эмитит graceful stop-команды (set_relay false для всех valves/pump в snapshot)
-  - Task переходит в `failed` с `error_code=control_mode_switched_to_manual`
+- Активные tasks (`pending`, `claimed`, `running`, `waiting_command`) отменяются через
+  `SetControlModeUseCase`: AE3 отправляет fail-safe OFF через history-logger, затем
+  переводит task в `failed` с `error_code=control_mode_switched_to_manual`.
+- CAS-промах при отмене возвращает ошибку; повторная установка `manual` повторяет
+  отмену. Сбой отправки OFF создаёт critical business alert.
 - Future scheduler intents для зоны игнорируются (Laravel side-check на `control_mode`)
 
 ### 6.3. `manual → auto` или `manual → semi`

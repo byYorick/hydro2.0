@@ -1826,7 +1826,7 @@ class CorrectionHandler(BaseStageHandler):
         dose_context = self._dose_accounting_context(task=task, plan=plan, corr=corr, pid_type="ec")
         if seq and is_parallel:
             # multi_parallel: отправляем ВСЕ dose-команды за один batch.
-            # Все компоненты (Ca, Mg, Micro) дозируются одновременно.
+            # Gateway исполняет batch по одной команде и ждёт DONE перед следующей.
             batch_cmds: list[PlannedCommand] = []
             for idx, item in enumerate(seq):
                 comp = str(item.get("component") or "").strip().lower()

@@ -70,6 +70,33 @@ class WaitingCommandReconcileUseCase:
                 WAITING_COMMAND_RECONCILE.labels(outcome="skipped_inflight").inc()
                 continue
 
+            foreign_action, foreign_ctx = await resolve_foreign_active_lease(
+                lease_repository=self._lease_repository,
+                zone_id=int(task.zone_id),
+                worker_owner=worker_owner,
+                task=task,
+                now=now,
+                escalate_sec=self._foreign_lease_skip_escalate_sec,
+            )
+            if foreign_action == ForeignLeaseAction.SKIP:
+                skipped_lease_tasks += 1
+                record_foreign_lease_skip(recovery_source="waiting_command_reconcile")
+                WAITING_COMMAND_RECONCILE.labels(outcome="skipped_lease").inc()
+                continue
+            if foreign_action == ForeignLeaseAction.ESCALATE:
+                failed = await escalate_foreign_lease_stale_task(
+                    task_repository=self._task_repository,
+                    alert_repository=self._alert_repository,
+                    task=task,
+                    now=now,
+                    recovery_source="waiting_command_reconcile",
+                    lease_context=foreign_ctx,
+                )
+                if failed is not None:
+                    failed_tasks += 1
+                    WAITING_COMMAND_RECONCILE.labels(outcome="failed").inc()
+                continue
+
             try:
                 outcome, terminal_outcome, _observability_task = (
                     await self._startup_recovery.reconcile_waiting_command_task(
@@ -96,33 +123,6 @@ class WaitingCommandReconcileUseCase:
                     progressed_tasks += 1
                 elif outcome == "failed":
                     failed_tasks += 1
-                continue
-
-            foreign_action, foreign_ctx = await resolve_foreign_active_lease(
-                lease_repository=self._lease_repository,
-                zone_id=int(task.zone_id),
-                worker_owner=worker_owner,
-                task=task,
-                now=now,
-                escalate_sec=self._foreign_lease_skip_escalate_sec,
-            )
-            if foreign_action == ForeignLeaseAction.SKIP:
-                skipped_lease_tasks += 1
-                record_foreign_lease_skip(recovery_source="waiting_command_reconcile")
-                WAITING_COMMAND_RECONCILE.labels(outcome="skipped_lease").inc()
-                continue
-            if foreign_action == ForeignLeaseAction.ESCALATE:
-                failed = await escalate_foreign_lease_stale_task(
-                    task_repository=self._task_repository,
-                    alert_repository=self._alert_repository,
-                    task=task,
-                    now=now,
-                    recovery_source="waiting_command_reconcile",
-                    lease_context=foreign_ctx,
-                )
-                if failed is not None:
-                    failed_tasks += 1
-                    WAITING_COMMAND_RECONCILE.labels(outcome="failed").inc()
                 continue
 
             WAITING_COMMAND_RECONCILE.labels(outcome=outcome).inc()

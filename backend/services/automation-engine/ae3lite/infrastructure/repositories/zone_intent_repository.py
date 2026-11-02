@@ -768,6 +768,19 @@ class PgZoneIntentRepository:
         )
         return _affected_rows(result) > 0
 
+    async def requeue_claimed_intent(self, *, intent_id: int, now: datetime) -> bool:
+        """Return a reactive intent to pending after a task-creation busy race."""
+        result = await execute(
+            """
+            UPDATE zone_automation_intents
+            SET status = 'pending', claimed_at = NULL, updated_at = $2
+            WHERE id = $1 AND status = 'claimed'
+            """,
+            intent_id,
+            now,
+        )
+        return _affected_rows(result) > 0
+
     async def mark_terminal(
         self,
         *,
