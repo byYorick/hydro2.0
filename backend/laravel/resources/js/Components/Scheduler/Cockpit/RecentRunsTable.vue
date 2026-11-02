@@ -6,16 +6,44 @@
     <header class="mb-2 flex items-center justify-between gap-2">
       <div class="flex flex-wrap items-center gap-2">
         <h4 class="m-0 text-[12px] font-semibold text-[color:var(--text-primary)]">
-          Недавние исполнения
+          История запусков
         </h4>
         <Badge
           variant="neutral"
           size="xs"
         >
-          клик → цепочка решений
+          Выберите запуск, чтобы открыть детали
         </Badge>
       </div>
     </header>
+
+    <div
+      v-if="showFilters"
+      class="mb-3 grid gap-2 sm:grid-cols-2"
+    >
+      <TextField
+        v-model="query"
+        type="search"
+        aria-label="Поиск запусков"
+        placeholder="Номер, задача или причина"
+        data-testid="scheduler-history-search"
+      />
+      <SelectField
+        v-model="statusFilter"
+        aria-label="Статус запуска"
+        data-testid="scheduler-history-status"
+      >
+        <option value="all">
+          Все статусы
+        </option><option value="active">
+          В работе
+        </option><option value="failed">
+          С ошибкой
+        </option><option value="completed">
+          Завершены
+        </option>
+      </SelectField>
+    </div>
 
     <div class="overflow-x-auto">
       <div
@@ -23,22 +51,22 @@
         :style="gridStyle"
       >
         <span>ID</span>
-        <span>Lane</span>
-        <span>Decision</span>
-        <span>cw · шагов</span>
-        <span>Δ</span>
+        <span>Задача</span>
+        <span>Решение</span>
+        <span>Статус</span>
+        <span>Время</span>
         <span class="sr-only">Выбор</span>
       </div>
 
       <div
-        v-if="runs.length === 0"
+        v-if="visibleRuns.length === 0"
         class="rounded-b-xl border border-t-0 border-[color:var(--border-muted)] px-2 py-3 text-[11px] text-[color:var(--text-muted)]"
       >
-        Пока нет исполнений.
+        {{ runs.length ? 'По выбранным условиям запусков нет.' : 'Пока нет исполнений.' }}
       </div>
 
       <button
-        v-for="run in runs"
+        v-for="run in visibleRuns"
         :key="run.execution_id"
         type="button"
         class="row-hover grid min-w-[650px] w-full items-center gap-0 border-0 bg-transparent px-2 py-2 text-left text-[color:var(--text-primary)] transition-colors"
@@ -65,7 +93,7 @@
           >{{ chemistryLabel(run) }}</span>
         </span>
         <span class="truncate font-mono text-[10px] text-[color:var(--text-muted)]">
-          {{ chainSummary(run) }}
+          {{ statusLabel(run.status) }}
         </span>
         <span class="font-mono tabular-nums text-[11px] text-[color:var(--text-dim)]">
           {{ durationLabel(run) }}
@@ -80,8 +108,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import Badge from '@/Components/Badge.vue'
+import TextField from '@/Components/TextField.vue'
+import SelectField from '@/Components/SelectField.vue'
+import { statusLabel } from '@/utils/schedulerLabels'
 import type { ExecutionRun } from '@/composables/zoneScheduleWorkspaceTypes'
 
 interface Props {
@@ -90,6 +121,7 @@ interface Props {
   laneLabel?: (taskType: string | null | undefined) => string
   decisionLabel?: (run: ExecutionRun) => string
   formatDuration?: (run: ExecutionRun) => string
+  showFilters?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -101,11 +133,25 @@ const props = withDefaults(defineProps<Props>(), {
     return outcome ? `${outcome}${reason}` : 'UNKNOWN'
   },
   formatDuration: undefined,
+  showFilters: false,
 })
 
-defineEmits<{
+const emit = defineEmits<{
   select: [executionId: string]
+  'visible-runs': [runs: ExecutionRun[]]
 }>()
+const query = ref('')
+const statusFilter = ref('all')
+const visibleRuns = computed(() => props.runs.filter(run => {
+  if (!props.showFilters) return true
+  const status = String(run.status).toLowerCase()
+  if (statusFilter.value === 'active' && !run.is_active) return false
+  if (statusFilter.value === 'failed' && !['failed', 'fail', 'error'].includes(status)) return false
+  if (statusFilter.value === 'completed' && !['completed', 'complete', 'done'].includes(status)) return false
+  const term = query.value.trim().toLocaleLowerCase('ru')
+  return !term || [run.execution_id, props.laneLabel(run.schedule_task_type ?? run.task_type), props.decisionLabel(run), run.error_code, run.human_error_message].some(value => String(value ?? '').toLocaleLowerCase('ru').includes(term))
+}))
+watch(visibleRuns, runs => emit('visible-runs', runs), { immediate: true })
 
 const gridStyle = computed(() => ({
   gridTemplateColumns: '80px 120px minmax(0, 1fr) 140px 60px 20px',
@@ -133,12 +179,6 @@ function chemistryClass(run: ExecutionRun): string {
   return run.chemistry_outcome === 'targets_achieved'
     ? 'text-status-ok'
     : 'text-status-warning'
-}
-
-function chainSummary(run: ExecutionRun): string {
-  const cw = run.correlation_id ?? '—'
-  const length = run.timeline?.length ?? run.timeline_preview?.length ?? 0
-  return length > 0 ? `${cw} · ${length} шагов` : cw
 }
 
 function durationLabel(run: ExecutionRun): string {

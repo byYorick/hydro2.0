@@ -85,9 +85,6 @@ vi.mock('@/Components/SensorCalibrationStatus.vue', () => ({
   default: { name: 'SensorCalibrationStatus', template: '<div />' },
 }))
 
-vi.mock('@/Components/RelayAutotuneTrigger.vue', () => ({
-  default: { name: 'RelayAutotuneTrigger', template: '<div />' },
-}))
 
 vi.mock('@/Components/ZonePumpCalibrationSettingsCard.vue', () => ({
   default: { name: 'ZonePumpCalibrationSettingsCard', template: '<div />' },
@@ -210,18 +207,14 @@ function defaultStateResponse(zoneId = 42) {
 
 async function selectInnerSection(
   wrapper: VueWrapper,
-  id: 'solution' | 'actions' | 'process',
+  id: 'solution' | 'actions' | 'process' | 'settings',
 ): Promise<void> {
   await wrapper.get(`[data-testid="automation-inner-tab-${id}"]`).trigger('click')
   await flushPromises()
 }
 
 async function openTechnicalDetails(wrapper: VueWrapper): Promise<void> {
-  const toggle = wrapper.find('[data-testid="automation-technical-details-toggle"]')
-  if (toggle.exists()) {
-    await toggle.trigger('click')
-    await flushPromises()
-  }
+  await selectInnerSection(wrapper, 'settings')
 }
 
 describe('ZoneAutomationTab.vue', () => {
@@ -439,26 +432,25 @@ describe('ZoneAutomationTab.vue', () => {
     await editButton!.trigger('click')
     await flushPromises()
 
-    const dayTempInput = wrapper.find('input[type="number"]')
-    expect(dayTempInput.exists()).toBe(true)
-    await dayTempInput.setValue('30')
-    await flushPromises()
-    expect(vm.climateForm.dayTemp).toBe(23)
-
     const wizard = wrapper.findComponent({ name: 'ZoneAutomationEditWizard' })
+    const originalInterval = vm.waterForm.intervalMinutes
+    ;(wizard.vm as any).draftWaterForm.intervalMinutes = 30
+    await flushPromises()
+    expect(vm.waterForm.intervalMinutes).toBe(originalInterval)
+
     wizard.vm.$emit('close')
     await flushPromises()
-    expect(vm.climateForm.dayTemp).toBe(23)
+    expect(vm.waterForm.intervalMinutes).toBe(originalInterval)
 
     wizard.vm.$emit('apply', {
       climateForm: { ...vm.climateForm, dayTemp: 30 },
-      waterForm: { ...vm.waterForm },
+      waterForm: { ...vm.waterForm, intervalMinutes: 30 },
       lightingForm: { ...vm.lightingForm },
       zoneClimateForm: { ...vm.zoneClimateForm },
     })
     await flushPromises()
 
-    expect(vm.climateForm.dayTemp).toBe(30)
+    expect(vm.waterForm.intervalMinutes).toBe(30)
   })
 
   it('санитизирует поврежденный профиль из localStorage', async () => {
@@ -680,6 +672,8 @@ describe('ZoneAutomationTab.vue', () => {
     })
 
     await flushPromises()
+    await wrapper.get('[aria-label="Настройки коррекции AE3"]').findAll('button').find(button => button.text() === 'Насосы')!.trigger('click')
+    await flushPromises()
     await wrapper.find('[data-testid="mock-open-pump-panel"]').trigger('click')
 
     expect(wrapper.emitted('open-pump-calibration')).toBeTruthy()
@@ -700,6 +694,8 @@ describe('ZoneAutomationTab.vue', () => {
 
     await flushPromises()
 
+    await wrapper.get('[aria-label="Настройки коррекции AE3"]').findAll('button').find(button => button.text() === 'Насосы')!.trigger('click')
+    await flushPromises()
     expect(wrapper.get('[data-testid="mock-pump-save-seq"]').text()).toBe('3')
     expect(wrapper.get('[data-testid="mock-pump-run-seq"]').text()).toBe('5')
   })
@@ -765,6 +761,9 @@ describe('ZoneAutomationTab.vue', () => {
     expect(wrapper.find('[data-testid="automation-section-process"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('Процесс автоматики')
     expect(wrapper.find('[data-testid="automation-technical-details-toggle"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="automation-technical-details-body"]').exists()).toBe(false)
+    await selectInnerSection(wrapper, 'settings')
+    expect(wrapper.get('h1').text()).toBe('Настройки AE3')
     expect(wrapper.find('[data-testid="automation-technical-details-body"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="automation-runtime-payload"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('Показать payload JSON')

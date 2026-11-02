@@ -82,9 +82,18 @@ export function useAutomationRuntimeSettings(showToast: ToastHandler) {
     event.preventDefault()
     event.returnValue = ''
   }
-  if (typeof window !== 'undefined') window.addEventListener('beforeunload', beforeUnload)
+  function beforeVisit(event: Event) {
+    if (dirtyCount.value && !window.confirm('Изменения настроек не сохранены. Покинуть страницу?')) event.preventDefault()
+  }
+  if (typeof window !== 'undefined') {
+    window.addEventListener('beforeunload', beforeUnload)
+    window.addEventListener('inertia:before', beforeVisit)
+  }
   onBeforeUnmount(() => {
-    if (typeof window !== 'undefined') window.removeEventListener('beforeunload', beforeUnload)
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('beforeunload', beforeUnload)
+      window.removeEventListener('inertia:before', beforeVisit)
+    }
   })
   return { sections, draft, loading, saving, resetting, busy, error, errors, dirtyCount, canSave, updatedAt, load, save, reset, discard }
 }

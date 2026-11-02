@@ -73,4 +73,28 @@ describe('useAutomationRuntimeSettings', () => {
     expect(state.draft.value.grace).toBe(45)
     wrapper.unmount()
   })
+
+  it('предупреждает о несохранённых правках при переходе и снимает обработчик при выходе', async () => {
+    const { state, wrapper } = editor()
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    await state.load({ silent: true })
+    const visit = () => {
+      const event = new Event('inertia:before', { cancelable: true })
+      window.dispatchEvent(event)
+      return event.defaultPrevented
+    }
+    expect(visit()).toBe(false)
+    state.draft.value.grace = 42
+    expect(visit()).toBe(true)
+    expect(state.draft.value.grace).toBe(42)
+    confirm.mockReturnValue(true)
+    expect(visit()).toBe(false)
+    confirm.mockReturnValue(false)
+    state.discard()
+    expect(visit()).toBe(false)
+    state.draft.value.grace = 42
+    wrapper.unmount()
+    expect(visit()).toBe(false)
+    confirm.mockRestore()
+  })
 })

@@ -30,6 +30,19 @@ function run(overrides: Partial<ExecutionRun> = {}): ExecutionRun {
 }
 
 describe('RecentRunsTable.vue', () => {
+  it('фильтрует историю по статусу и поиску и сообщает доступные строки для клавиатуры', async () => {
+    const wrapper = mount(RecentRunsTable, { props: { showFilters: true, runs: [
+      run({ execution_id: 'failed-1', status: 'failed', is_active: false }),
+      run({ execution_id: 'done-2', status: 'completed', is_active: false }),
+    ] } })
+    await wrapper.get('[data-testid="scheduler-history-status"]').setValue('failed')
+    expect(wrapper.findAll('[data-testid^="scheduler-runs-row-"]')).toHaveLength(1)
+    expect(wrapper.find('[data-testid="scheduler-runs-row-failed-1"]').exists()).toBe(true)
+    await wrapper.get('[data-testid="scheduler-history-search"]').setValue('nothing')
+    expect(wrapper.text()).toContain('По выбранным условиям запусков нет')
+    expect(wrapper.emitted('visible-runs')?.at(-1)).toEqual([[]])
+    wrapper.unmount()
+  })
   it('рендерит пустое состояние', () => {
     const wrapper = mount(RecentRunsTable, { props: { runs: [] } })
     expect(wrapper.text()).toContain('Пока нет исполнений')

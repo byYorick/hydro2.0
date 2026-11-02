@@ -86,21 +86,3 @@ export interface PumpCalibration {
   is_active: boolean
   calibration_age_days?: number | null
 }
-
-/**
- * Статус relay autotune для зоны.
- */
-export interface RelayAutotuneStatus {
-  zone_id: number
-  pid_type: 'ph' | 'ec'
-  status: 'idle' | 'running' | 'complete' | 'timeout'
-  started_at?: string
-  completed_at?: string
-  result?: PidAutotuneMeta
-  progress?: {
-    cycles_detected: number
-    min_cycles: number
-    elapsed_sec: number
-    max_duration_sec: number
-  }
-}

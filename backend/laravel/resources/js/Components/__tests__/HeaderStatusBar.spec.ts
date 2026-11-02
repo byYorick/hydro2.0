@@ -60,14 +60,6 @@ vi.mock('@/composables/useWebSocket', () => ({
 }))
 
 // Mock useApi
-vi.mock('@/composables/useApi', () => ({
-  useApi: () => ({
-    api: {
-      get: vi.fn().mockResolvedValue({ data: { data: { alerts_count: 0 } } }),
-    },
-  }),
-}))
-
 // Mock logger
 vi.mock('@/utils/logger', () => ({
   logger: {

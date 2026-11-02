@@ -21,13 +21,40 @@
       >
         {{ showAdvanced ? 'Скрыть технические параметры' : `Показать технические параметры (${advancedCount})` }}
       </button>
-      <span class="text-xs text-[color:var(--text-muted)]" data-testid="automation-runtime-overrides-count">Сохранённых настроек: {{ overrideCount }}</span>
+      <span
+        class="text-xs text-[color:var(--text-muted)]"
+        data-testid="automation-runtime-overrides-count"
+      >Сохранённых настроек: {{ overrideCount }}</span>
     </div>
 
-    <Tabs v-model="selectedSection" :tabs="sectionTabs" list-role="group" aria-label="Группы параметров AE3" />
-    <div class="flex flex-wrap items-center gap-2" role="group" aria-label="Фильтр параметров">
-      <Button v-for="filter in filters" :key="filter.id" size="sm" :variant="filterMode === filter.id ? 'secondary' : 'ghost'" :aria-pressed="filterMode === filter.id" :data-testid="`automation-runtime-filter-${filter.id}`" @click="filterMode = filter.id">{{ filter.label }}</Button>
-      <span v-if="changedCount" class="settings-row__changed" data-testid="automation-runtime-changed-count" role="status">Не сохранено: {{ changedCount }}</span>
+    <Tabs
+      v-model="selectedSection"
+      :tabs="sectionTabs"
+      list-role="group"
+      aria-label="Группы параметров AE3"
+    />
+    <div
+      class="flex flex-wrap items-center gap-2"
+      role="group"
+      aria-label="Фильтр параметров"
+    >
+      <Button
+        v-for="filter in filters"
+        :key="filter.id"
+        size="sm"
+        :variant="filterMode === filter.id ? 'secondary' : 'ghost'"
+        :aria-pressed="filterMode === filter.id"
+        :data-testid="`automation-runtime-filter-${filter.id}`"
+        @click="filterMode = filter.id"
+      >
+        {{ filter.label }}
+      </Button>
+      <span
+        v-if="changedCount"
+        class="settings-row__changed"
+        data-testid="automation-runtime-changed-count"
+        role="status"
+      >Не сохранено: {{ changedCount }}</span>
     </div>
 
     <p
@@ -119,8 +146,20 @@
                 :data-testid="`settings-automation-engine-input-${item.key}`"
                 input-class="settings-control--text font-mono"
               />
-              <button v-if="isDirty(item)" type="button" class="mt-1 text-xs text-[color:var(--status-info)]" :disabled="disabled" :aria-label="`Отменить изменение: ${item.label}`" @click="draft[item.key] = item.value as DraftValue">Отменить</button>
-              <span v-else-if="item.source === 'override'" class="block text-xs text-[color:var(--text-muted)]">Сохранённая настройка</span>
+              <button
+                v-if="isDirty(item)"
+                type="button"
+                class="mt-1 text-xs text-[color:var(--status-info)]"
+                :disabled="disabled"
+                :aria-label="`Отменить изменение: ${item.label}`"
+                @click="draft[item.key] = item.value as DraftValue"
+              >
+                Отменить
+              </button>
+              <span
+                v-else-if="item.source === 'override'"
+                class="block text-xs text-[color:var(--text-muted)]"
+              >Сохранённая настройка</span>
             </template>
             <template v-else>
               <span class="settings-row__readonly">{{ formatValue(item.value, item.unit) }}</span>

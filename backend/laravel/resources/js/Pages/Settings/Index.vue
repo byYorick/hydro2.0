@@ -125,6 +125,7 @@
                   variant="secondary"
                   data-testid="settings-automation-engine-refresh"
                   :disabled="automationSettingsBusy || automationSettingsDirtyCount > 0"
+                  :title="automationSettingsDirtyCount ? 'Сначала сохраните или отмените изменения' : undefined"
                   @click="loadAutomationEngineSettings"
                 >
                   {{ automationSettingsLoading ? 'Обновляем...' : 'Обновить' }}
@@ -144,10 +145,28 @@
                 Сохранение не запускает задачи. Новые параметры учитываются следующими запусками планировщика;
                 параметры уже выполняющейся задачи не пересчитываются.
               </p>
-              <p v-if="automationSettingsError" role="alert" class="mb-3 text-sm text-status-critical">{{ automationSettingsError }}</p>
-              <div v-if="automationSettingsDirtyCount" class="mb-3 flex flex-wrap items-center gap-3 rounded-xl border border-[color:var(--status-warning)] p-3" role="status">
+              <p
+                v-if="automationSettingsError"
+                role="alert"
+                class="mb-3 text-sm text-status-critical"
+              >
+                {{ automationSettingsError }}
+              </p>
+              <div
+                v-if="automationSettingsDirtyCount"
+                class="mb-3 flex flex-wrap items-center gap-3 rounded-xl border border-[color:var(--status-warning)] p-3"
+                role="status"
+              >
                 <span class="text-sm">Несохранённых изменений: {{ automationSettingsDirtyCount }}</span>
-                <Button size="sm" variant="ghost" :disabled="automationSettingsBusy" data-testid="settings-automation-engine-discard" @click="discardAutomationSettings">Отменить изменения</Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  :disabled="automationSettingsBusy"
+                  data-testid="settings-automation-engine-discard"
+                  @click="discardAutomationSettings"
+                >
+                  Отменить изменения
+                </Button>
               </div>
               <div
                 v-if="automationEngineSettingsSections.length === 0"

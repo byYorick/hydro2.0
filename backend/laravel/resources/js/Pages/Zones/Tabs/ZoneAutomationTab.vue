@@ -121,53 +121,29 @@
         />
       </div>
 
-      <div class="space-y-3">
+      <div
+        v-if="activeInnerSection === 'settings'"
+        class="space-y-3"
+        data-testid="automation-section-settings"
+      >
         <section
           class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl overflow-hidden"
           data-testid="automation-technical-details"
         >
-          <button
-            v-if="collapseTechnicalDetails"
-            type="button"
-            class="w-full flex items-center justify-between gap-3 p-4 text-left hover:bg-[color:var(--bg-elevated)] transition-colors"
-            data-testid="automation-technical-details-toggle"
-            :aria-expanded="showTechnicalDetails"
-            @click="showTechnicalDetails = !showTechnicalDetails"
-          >
-            <span class="text-base font-semibold text-[color:var(--text-primary)]">
-              Технические детали
-            </span>
-            <svg
-              class="shrink-0 w-4 h-4 text-[color:var(--text-dim)] transition-transform duration-200"
-              :class="showTechnicalDetails ? 'rotate-180' : ''"
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 20 20"
-              fill="currentColor"
-              aria-hidden="true"
-            >
-              <path
-                fill-rule="evenodd"
-                d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"
-                clip-rule="evenodd"
-              />
-            </svg>
-          </button>
-          <div
-            v-else
-            class="px-4 pt-4"
-          >
-            <h2 class="text-sm font-semibold text-[color:var(--text-primary)]">
-              Технические детали
+          <header class="px-4 pt-4">
+            <h2 class="text-sm font-semibold">
+              Настройки AE3 зоны
             </h2>
-          </div>
+            <p class="mt-1 text-xs text-[color:var(--text-muted)]">
+              Профиль оборудования и порядок выполнения. Параметры раствора, калибровка и PID — в разделе «Раствор».
+            </p>
+          </header>
 
           <div
-            v-if="technicalDetailsVisible"
             class="px-4 pb-4 space-y-4"
-            :class="collapseTechnicalDetails ? 'border-t border-[color:var(--border-muted)]' : ''"
             data-testid="automation-technical-details-body"
           >
-            <div :class="collapseTechnicalDetails ? 'pt-4' : 'pt-2'">
+            <div class="pt-4">
               <div class="space-y-3">
                 <h2 class="text-sm font-semibold text-[color:var(--text-primary)] px-0.5">
                   Настройки зоны
@@ -259,7 +235,7 @@
                   </div>
                 </ZoneAutomationAccordionSection>
 
-                <ZoneAutomationAccordionSection title="Настройки Automation Engine">
+                <ZoneAutomationAccordionSection title="Параметры текущего профиля">
                   <template #badge>
                     <Badge variant="info">
                       {{ automationEngineKeySettings.length }} параметров
@@ -267,7 +243,7 @@
                   </template>
 
                   <p class="text-xs text-[color:var(--text-dim)]">
-                    Здесь только low-level runtime параметры AE и zone-level override, которые не должны дублировать верхнеуровневый профиль зоны.
+                    Параметры выполнения, рассчитанные из профиля зоны. Измените профиль, чтобы поменять их; общие параметры планировщика находятся в настройках платформы.
                   </p>
 
                   <section class="space-y-4">
@@ -470,9 +446,10 @@ const sensorCalibrationSettings = useSensorCalibrationSettings()
 const automationDefaults = useAutomationDefaults()
 const automationCommandTemplates = useAutomationCommandTemplates()
 
-type AutomationInnerSection = 'solution' | 'actions' | 'process'
+type AutomationInnerSection = 'solution' | 'actions' | 'process' | 'settings'
 
 const INNER_SECTION_META: Record<AutomationInnerSection, { title: string; description: string }> = {
+  settings: { title: 'Настройки AE3', description: 'Профиль зоны, оборудование и параметры выполнения' },
   solution: {
     title: 'Раствор',
     description: 'Цели фазы, коррекция и live-правки раствора',
@@ -498,7 +475,7 @@ function defaultAutomationInnerSection(role: string): AutomationInnerSection {
 }
 
 function parseAutomationInnerSection(raw: string | null, fallback: AutomationInnerSection): AutomationInnerSection {
-  if (raw === 'solution' || raw === 'actions' || raw === 'process') {
+  if (raw === 'solution' || raw === 'actions' || raw === 'process' || raw === 'settings') {
     return raw
   }
   return fallback
@@ -516,17 +493,10 @@ const innerSectionTabs = [
   { id: 'solution', label: 'Раствор', testId: 'automation-inner-tab-solution' },
   { id: 'actions', label: 'Действия', testId: 'automation-inner-tab-actions' },
   { id: 'process', label: 'Процесс', testId: 'automation-inner-tab-process' },
+  { id: 'settings', label: 'Настройки AE3', testId: 'automation-inner-tab-settings' },
 ]
 const innerSectionTitle = computed(() => INNER_SECTION_META[activeInnerSection.value].title)
 const innerSectionDescription = computed(() => INNER_SECTION_META[activeInnerSection.value].description)
-const collapseTechnicalDetails = computed(() =>
-  ['operator', 'agronomist', 'viewer'].includes(currentUserRole.value),
-)
-const showTechnicalDetails = ref(false)
-const technicalDetailsVisible = computed(() =>
-  collapseTechnicalDetails.value ? showTechnicalDetails.value : true,
-)
-
 function onInnerSectionSelect(value: string): void {
   activeInnerSection.value = parseAutomationInnerSection(value, roleDefaultInnerSection)
 }

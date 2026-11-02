@@ -19,10 +19,6 @@ const mockApi = vi.hoisted(() => ({
   get: vi.fn(() => Promise.resolve({ data: { data: [] } })),
 }))
 
-vi.mock('@/composables/useApi', () => ({
-  useApi: () => ({ api: mockApi }),
-}))
-
 // Mock useCommands
 vi.mock('@/composables/useCommands', () => ({
   useCommands: () => ({

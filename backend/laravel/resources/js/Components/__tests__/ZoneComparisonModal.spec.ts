@@ -55,14 +55,6 @@ vi.mock('@/composables/useTelemetry', () => ({
   })
 }))
 
-vi.mock('@/composables/useApi', () => ({
-  useApi: () => ({
-    api: {
-      get: vi.fn()
-    }
-  })
-}))
-
 const sampleZones: Zone[] = [
   {
     id: 1,
