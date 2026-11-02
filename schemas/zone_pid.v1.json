@@ -46,7 +46,7 @@
       "maximum": 500.0
     }
   },
-  "$comment": "Cross-field constraints (close_zone > dead_zone; far_zone > close_zone) are NOT expressible in standard JSON Schema 2020-12 without the non-standard $data extension. These are enforced in the AE3 Pydantic loader (config/schema/zone_pid.py model_validator) and Laravel AutomationConfigRegistry::validateZonePidPayload(). Schema alone only checks bounds and types.",
+  "$comment": "Cross-field constraints (close_zone > dead_zone; far_zone > close_zone) are NOT expressible in standard JSON Schema 2020-12 without the non-standard $data extension. Laravel ZonePidPayloadValidator::validate() enforces these constraints; the AE3 correction planner also checks zone ordering. Schema alone only checks bounds and types.",
   "$defs": {
     "ZoneGains": {
       "type": "object",

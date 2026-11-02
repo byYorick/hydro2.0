@@ -37,7 +37,7 @@ async function resolveFirstZoneId(page: import('@playwright/test').Page): Promis
 test('AE3 scheduler не запускает irrigation до READY', async ({ page }) => {
   await loginAsAdmin(page)
   const zoneId = await resolveFirstZoneId(page)
-  test.skip(zoneId === null, 'Нет зон в тестовой БД для e2e smoke сценария')
+  expect(zoneId, 'E2E bootstrap must create a zone').not.toBeNull()
 
   let phase: 'setup_pending' | 'ready' = 'setup_pending'
 

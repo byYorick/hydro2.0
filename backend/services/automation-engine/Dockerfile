@@ -15,7 +15,7 @@ RUN if [ "$INSTALL_DEV_DEPS" = "true" ]; then \
     else \
         pip install --no-cache-dir -r ./requirements.txt; \
     fi \
-    && find /usr/local -type d -name '__pycache__' -exec rm -rf {} + 2>/dev/null || true \
+    && (find /usr/local -type d -name '__pycache__' -exec rm -rf {} + 2>/dev/null || true) \
     && rm -rf /root/.cache/pip
 
 COPY common /app/common

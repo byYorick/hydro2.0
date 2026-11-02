@@ -38,6 +38,7 @@ class MQTTProbe:
         self.client: Optional[mqtt.Client] = None
         self.connected = False
         self._message_queue: List[Dict[str, Any]] = []
+        self._last_checked_message_index = 0
         self._subscribed_topics: List[str] = []
     
     def connect(self):
@@ -143,8 +144,6 @@ class MQTTProbe:
         start_time = time.time()
         
         # Отслеживаем индекс последнего проверенного сообщения, чтобы не проверять старые
-        if not hasattr(self, '_last_checked_message_index'):
-            self._last_checked_message_index = len(self._message_queue)
         start_index = self._last_checked_message_index
         
         while True:
@@ -212,4 +211,5 @@ class MQTTProbe:
     def clear_messages(self):
         """Очистить очередь сообщений."""
         self._message_queue.clear()
+        self._last_checked_message_index = 0
 

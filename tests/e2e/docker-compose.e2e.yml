@@ -117,13 +117,13 @@ services:
     - REVERB_ALLOWED_ORIGINS=*
     - MQTT_HOST=mosquitto
     - MQTT_PORT=1883
-    - PY_API_TOKEN=${PY_API_TOKEN:?PY_API_TOKEN is required (run: make ensure-dev-secrets)}
-    - PY_INGEST_TOKEN=${PY_INGEST_TOKEN:?PY_INGEST_TOKEN is required (run: make ensure-dev-secrets)}
-    - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:?LARAVEL_API_TOKEN is required (run: make ensure-dev-secrets)}
+    - 'PY_API_TOKEN=${PY_API_TOKEN:?PY_API_TOKEN is required (run: make ensure-dev-secrets)}'
+    - 'PY_INGEST_TOKEN=${PY_INGEST_TOKEN:?PY_INGEST_TOKEN is required (run: make ensure-dev-secrets)}'
+    - 'LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:?LARAVEL_API_TOKEN is required (run: make ensure-dev-secrets)}'
     - AUTOMATION_ENGINE_API_URL=${AUTOMATION_ENGINE_API_URL:-http://automation-engine:9505}
     # Cutover flags (Laravel scheduler owner)
     - AUTOMATION_LARAVEL_SCHEDULER_ENABLED=${AUTOMATION_LARAVEL_SCHEDULER_ENABLED:-0}
-    - AUTOMATION_LARAVEL_SCHEDULER_API_TOKEN=${AUTOMATION_LARAVEL_SCHEDULER_API_TOKEN:-${PY_INGEST_TOKEN:?PY_INGEST_TOKEN is required (run: make ensure-dev-secrets)}}
+    - 'AUTOMATION_LARAVEL_SCHEDULER_API_TOKEN=${AUTOMATION_LARAVEL_SCHEDULER_API_TOKEN:-${PY_INGEST_TOKEN:?PY_INGEST_TOKEN is required (run: make ensure-dev-secrets)}}'
     - AUTOMATION_GROW_CYCLE_START_DISPATCH_ENABLED=${AUTOMATION_GROW_CYCLE_START_DISPATCH_ENABLED:-1}
     - HYDRO_SEED_PROFILE=${HYDRO_SEED_PROFILE:-lite}
     - PHP_OPCACHE_ENABLE=0
@@ -135,9 +135,9 @@ services:
     - HISTORY_LOGGER_URL=http://history-logger:9300
     - DIGITAL_TWIN_URL=http://digital-twin:8003
     # Must match digital-twin DIGITAL_TWIN_API_TOKEN (Bearer for /simulations/live/*)
-    - DIGITAL_TWIN_API_TOKEN=${DIGITAL_TWIN_API_TOKEN:?DIGITAL_TWIN_API_TOKEN is required (run: make ensure-dev-secrets)}
+    - 'DIGITAL_TWIN_API_TOKEN=${DIGITAL_TWIN_API_TOKEN:?DIGITAL_TWIN_API_TOKEN is required (run: make ensure-dev-secrets)}'
     - NODE_SIM_MANAGER_URL=http://node-sim-manager:9100
-    - NODE_SIM_MANAGER_TOKEN=${NODE_SIM_MANAGER_TOKEN:?NODE_SIM_MANAGER_TOKEN is required (run: make ensure-dev-secrets)}
+    - 'NODE_SIM_MANAGER_TOKEN=${NODE_SIM_MANAGER_TOKEN:?NODE_SIM_MANAGER_TOKEN is required (run: make ensure-dev-secrets)}'
     volumes:
     - ../../backend/laravel:/app
     # Canonical JSON Schemas (repo root) — JsonSchemaValidator + zones:validate-configs
@@ -180,9 +180,9 @@ services:
     - PYTHONPATH=/app
     - NODE_SIM_MANAGER_URL=http://node-sim-manager:9100
     # Без токена DT отклоняет не-localhost вызовы из Laravel (docker network)
-    - DIGITAL_TWIN_API_TOKEN=${DIGITAL_TWIN_API_TOKEN:?DIGITAL_TWIN_API_TOKEN is required (run: make ensure-dev-secrets)}
+    - 'DIGITAL_TWIN_API_TOKEN=${DIGITAL_TWIN_API_TOKEN:?DIGITAL_TWIN_API_TOKEN is required (run: make ensure-dev-secrets)}'
     # DT → node-sim-manager /sessions/* также требует Bearer из docker network
-    - NODE_SIM_MANAGER_TOKEN=${NODE_SIM_MANAGER_TOKEN:?NODE_SIM_MANAGER_TOKEN is required (run: make ensure-dev-secrets)}
+    - 'NODE_SIM_MANAGER_TOKEN=${NODE_SIM_MANAGER_TOKEN:?NODE_SIM_MANAGER_TOKEN is required (run: make ensure-dev-secrets)}'
     depends_on:
       postgres:
         condition: service_healthy
@@ -207,7 +207,7 @@ services:
     - APP_ENV=testing
     - LOG_LEVEL=INFO
     - NODE_SIM_ROOT=/node-sim
-    - NODE_SIM_MANAGER_TOKEN=${NODE_SIM_MANAGER_TOKEN:?NODE_SIM_MANAGER_TOKEN is required (run: make ensure-dev-secrets)}
+    - 'NODE_SIM_MANAGER_TOKEN=${NODE_SIM_MANAGER_TOKEN:?NODE_SIM_MANAGER_TOKEN is required (run: make ensure-dev-secrets)}'
     volumes:
     - ../../tests/node_sim:/node-sim:ro
     depends_on:
@@ -236,13 +236,13 @@ services:
     - PG_USER=${POSTGRES_USER:-hydro}
     - PG_PASS=${POSTGRES_PASSWORD:-hydro_e2e}
     - LARAVEL_API_URL=http://laravel
-    - PY_API_TOKEN=${PY_API_TOKEN:?PY_API_TOKEN is required (run: make ensure-dev-secrets)}
-    - PY_INGEST_TOKEN=${PY_INGEST_TOKEN:?PY_INGEST_TOKEN is required (run: make ensure-dev-secrets)}
+    - 'PY_API_TOKEN=${PY_API_TOKEN:?PY_API_TOKEN is required (run: make ensure-dev-secrets)}'
+    - 'PY_INGEST_TOKEN=${PY_INGEST_TOKEN:?PY_INGEST_TOKEN is required (run: make ensure-dev-secrets)}'
     - TELEMETRY_MAX_AGE_MINUTES=${TELEMETRY_MAX_AGE_MINUTES:-5}
     # Меньше шума infra_telemetry_* в e2e (дубли при nd-* / TRUNCATE); override для production-like окружений
     - TELEMETRY_INFRA_ANOMALY_THROTTLE_SEC=${TELEMETRY_INFRA_ANOMALY_THROTTLE_SEC:-86400}
-    - HISTORY_LOGGER_API_TOKEN=${HISTORY_LOGGER_API_TOKEN:-${PY_INGEST_TOKEN:?PY_INGEST_TOKEN is required (run: make ensure-dev-secrets)}}
-    - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:?LARAVEL_API_TOKEN is required (run: make ensure-dev-secrets)}
+    - 'HISTORY_LOGGER_API_TOKEN=${HISTORY_LOGGER_API_TOKEN:-${PY_INGEST_TOKEN:?PY_INGEST_TOKEN is required (run: make ensure-dev-secrets)}}'
+    - 'LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:?LARAVEL_API_TOKEN is required (run: make ensure-dev-secrets)}'
     - REDIS_HOST=redis
     - REDIS_PORT=6379
     - MQTT_ZONE_FORMAT=uid
@@ -288,8 +288,8 @@ services:
     - PG_USER=${POSTGRES_USER:-hydro}
     - PG_PASS=${POSTGRES_PASSWORD:-hydro_e2e}
     - LARAVEL_API_URL=http://laravel
-    - PY_API_TOKEN=${PY_API_TOKEN:?PY_API_TOKEN is required (run: make ensure-dev-secrets)}
-    - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:?LARAVEL_API_TOKEN is required (run: make ensure-dev-secrets)}
+    - 'PY_API_TOKEN=${PY_API_TOKEN:?PY_API_TOKEN is required (run: make ensure-dev-secrets)}'
+    - 'LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:?LARAVEL_API_TOKEN is required (run: make ensure-dev-secrets)}'
     depends_on:
       mosquitto:
         condition: service_healthy
@@ -357,9 +357,9 @@ services:
     - PG_PASS=${POSTGRES_PASSWORD:-hydro_e2e}
     - AE_DB_DSN=postgresql://${POSTGRES_USER:-hydro}:${POSTGRES_PASSWORD:-hydro_e2e}@postgres:5432/${POSTGRES_DB:-hydro_e2e}
     - LARAVEL_API_URL=http://laravel
-    - PY_API_TOKEN=${PY_API_TOKEN:?PY_API_TOKEN is required (run: make ensure-dev-secrets)}
-    - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:?LARAVEL_API_TOKEN is required (run: make ensure-dev-secrets)}
-    - HISTORY_LOGGER_API_TOKEN=${HISTORY_LOGGER_API_TOKEN:?HISTORY_LOGGER_API_TOKEN is required (run: make ensure-dev-secrets)}
+    - 'PY_API_TOKEN=${PY_API_TOKEN:?PY_API_TOKEN is required (run: make ensure-dev-secrets)}'
+    - 'LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:?LARAVEL_API_TOKEN is required (run: make ensure-dev-secrets)}'
+    - 'HISTORY_LOGGER_API_TOKEN=${HISTORY_LOGGER_API_TOKEN:?HISTORY_LOGGER_API_TOKEN is required (run: make ensure-dev-secrets)}'
     # Ускоренные настройки для E2E тестов
     - MAIN_LOOP_SLEEP_SECONDS=${MAIN_LOOP_SLEEP_SECONDS:-2}
     - INITIAL_BACKOFF_SECONDS=${INITIAL_BACKOFF_SECONDS:-5}

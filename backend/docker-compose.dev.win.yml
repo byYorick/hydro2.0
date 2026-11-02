@@ -61,7 +61,7 @@ services:
       - WEB_DOCUMENT_ROOT=/app/public
       - APP_ENV=local
       - APP_DEBUG=1
-      - APP_KEY=${APP_KEY:?APP_KEY is required (run: make ensure-dev-secrets)}
+      - 'APP_KEY=${APP_KEY:?APP_KEY is required (run: make ensure-dev-secrets)}'
       - SESSION_DRIVER=file
       - CACHE_DRIVER=redis
       - CACHE_STORE=redis
@@ -115,14 +115,14 @@ services:
       # Python services token (must be set via environment variable or .env file)
       # Never commit actual tokens to version control
       # Сервисные токены только из env (make ensure-dev-secrets). Один Bearer на Laravel/AE/history-logger.
-      - PY_API_TOKEN=${PY_API_TOKEN:?PY_API_TOKEN is required (run: make ensure-dev-secrets)}
-      - PY_INGEST_TOKEN=${PY_INGEST_TOKEN:?PY_INGEST_TOKEN is required (run: make ensure-dev-secrets)}
-      - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:?LARAVEL_API_TOKEN is required (run: make ensure-dev-secrets)}
+      - 'PY_API_TOKEN=${PY_API_TOKEN:?PY_API_TOKEN is required (run: make ensure-dev-secrets)}'
+      - 'PY_INGEST_TOKEN=${PY_INGEST_TOKEN:?PY_INGEST_TOKEN is required (run: make ensure-dev-secrets)}'
+      - 'LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:?LARAVEL_API_TOKEN is required (run: make ensure-dev-secrets)}'
       # Как у history-logger: сегмент зоны в MQTT (uid vs zn-id)
       - MQTT_ZONE_FORMAT=${MQTT_ZONE_FORMAT:-uid}
       # Laravel scheduler owner flags
       - AUTOMATION_LARAVEL_SCHEDULER_ENABLED=${AUTOMATION_LARAVEL_SCHEDULER_ENABLED:-0}
-      - AUTOMATION_LARAVEL_SCHEDULER_API_TOKEN=${AUTOMATION_LARAVEL_SCHEDULER_API_TOKEN:-${PY_INGEST_TOKEN:?PY_INGEST_TOKEN is required (run: make ensure-dev-secrets)}}
+      - 'AUTOMATION_LARAVEL_SCHEDULER_API_TOKEN=${AUTOMATION_LARAVEL_SCHEDULER_API_TOKEN:-${PY_INGEST_TOKEN:?PY_INGEST_TOKEN is required (run: make ensure-dev-secrets)}}'
       - AUTOMATION_LARAVEL_SCHEDULER_DISPATCH_INTERVAL_SEC=${AUTOMATION_LARAVEL_SCHEDULER_DISPATCH_INTERVAL_SEC:-60}
       - AUTOMATION_LARAVEL_SCHEDULER_DISPATCH_PARALLELISM=${AUTOMATION_LARAVEL_SCHEDULER_DISPATCH_PARALLELISM:-8}
       - AUTOMATION_LARAVEL_SCHEDULER_LOCK_TTL_SEC=${AUTOMATION_LARAVEL_SCHEDULER_LOCK_TTL_SEC:-55}
@@ -176,8 +176,8 @@ services:
       - PG_PASS=hydro
       - LARAVEL_API_URL=http://laravel
       # Сервисные токены только из env (make ensure-dev-secrets). Один Bearer на Laravel/AE/history-logger.
-      - PY_API_TOKEN=${PY_API_TOKEN:?PY_API_TOKEN is required (run: make ensure-dev-secrets)}
-      - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:?LARAVEL_API_TOKEN is required (run: make ensure-dev-secrets)}
+      - 'PY_API_TOKEN=${PY_API_TOKEN:?PY_API_TOKEN is required (run: make ensure-dev-secrets)}'
+      - 'LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:?LARAVEL_API_TOKEN is required (run: make ensure-dev-secrets)}'
       # Сегмент зоны в MQTT (uid vs zn-id) — должен совпадать с Laravel/history-logger
       - MQTT_ZONE_FORMAT=${MQTT_ZONE_FORMAT:-uid}
     depends_on:
@@ -216,10 +216,10 @@ services:
       - PG_PASS=hydro
       - LARAVEL_API_URL=http://laravel
       # Сервисные токены только из env (make ensure-dev-secrets). Один Bearer на Laravel/AE/history-logger.
-      - PY_API_TOKEN=${PY_API_TOKEN:?PY_API_TOKEN is required (run: make ensure-dev-secrets)}
-      - PY_INGEST_TOKEN=${PY_INGEST_TOKEN:?PY_INGEST_TOKEN is required (run: make ensure-dev-secrets)}
-      - HISTORY_LOGGER_API_TOKEN=${HISTORY_LOGGER_API_TOKEN:-${PY_INGEST_TOKEN:?PY_INGEST_TOKEN is required (run: make ensure-dev-secrets)}}
-      - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:?LARAVEL_API_TOKEN is required (run: make ensure-dev-secrets)}
+      - 'PY_API_TOKEN=${PY_API_TOKEN:?PY_API_TOKEN is required (run: make ensure-dev-secrets)}'
+      - 'PY_INGEST_TOKEN=${PY_INGEST_TOKEN:?PY_INGEST_TOKEN is required (run: make ensure-dev-secrets)}'
+      - 'HISTORY_LOGGER_API_TOKEN=${HISTORY_LOGGER_API_TOKEN:-${PY_INGEST_TOKEN:?PY_INGEST_TOKEN is required (run: make ensure-dev-secrets)}}'
+      - 'LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:?LARAVEL_API_TOKEN is required (run: make ensure-dev-secrets)}'
       - REDIS_HOST=redis
       - REDIS_PORT=6379
     depends_on:
@@ -264,8 +264,8 @@ services:
       - PG_POOL_MAX_SIZE=10
       - LARAVEL_API_URL=http://laravel
       # Сервисные токены только из env (make ensure-dev-secrets). Один Bearer на Laravel/AE/history-logger.
-      - PY_API_TOKEN=${PY_API_TOKEN:?PY_API_TOKEN is required (run: make ensure-dev-secrets)}
-      - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:?LARAVEL_API_TOKEN is required (run: make ensure-dev-secrets)}
+      - 'PY_API_TOKEN=${PY_API_TOKEN:?PY_API_TOKEN is required (run: make ensure-dev-secrets)}'
+      - 'LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:?LARAVEL_API_TOKEN is required (run: make ensure-dev-secrets)}'
     depends_on:
       - mqtt
       - db

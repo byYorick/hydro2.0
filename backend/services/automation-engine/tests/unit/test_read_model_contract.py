@@ -36,7 +36,7 @@ def _candidate_paths() -> tuple[Path, ...]:
     candidates = [Path("/schemas/automation_read_model_schema.json")]  # docker-compose mount
 
     # CI / host: подняться до git root (backend/services/automation-engine → hydro2.0).
-    for depth in (3, 4):
+    for depth in (5,):
         try:
             candidates.append(here.parents[depth] / "schemas" / "automation_read_model_schema.json")
         except IndexError:
@@ -56,7 +56,7 @@ def _load_snapshot() -> dict[str, Any]:
         if candidate.is_file():
             return json.loads(candidate.read_text(encoding="utf-8"))
 
-    pytest.skip(
+    pytest.fail(
         "schemas/automation_read_model_schema.json отсутствует. "
         "Сгенерируй через AutomationReadModelSchemaTest.php c UPDATE_SCHEMA_SNAPSHOT=1."
     )

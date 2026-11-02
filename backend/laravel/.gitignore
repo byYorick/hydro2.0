@@ -23,3 +23,6 @@ yarn-error.log
 # Test results and reports (should not be tracked)
 /test-results/
 /tests/e2e/reports/
+
+/coverage/
+/playwright-report/

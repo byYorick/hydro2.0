@@ -3,6 +3,7 @@
 Используется лёгкий фоновой пост-запрос, чтобы не блокировать основные петли.
 """
 import logging
+import sys
 import threading
 from typing import Any, Dict, Optional
 
@@ -63,6 +64,10 @@ def send_service_log(
         context: Доп. контекст (должен быть JSON-serializable)
         async_mode: отправлять в отдельном потоке, чтобы не блокировать цикл
     """
+    # Asyncio may report pending tasks during the interpreter's final GC.
+    # Starting a thread there can deadlock Python 3.11 during thread shutdown.
+    if sys.is_finalizing():
+        return
     settings = get_settings()
     base_url = getattr(settings, "laravel_api_url", "").rstrip("/")
     token = _build_token(settings)

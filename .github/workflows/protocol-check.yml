@@ -11,10 +11,17 @@ on:
 # сломаться косвенно (через Python handler / Laravel validator / Vue WS
 # subscriber), поэтому `paths:` filter повышает риск регрессии.
 
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   protocol-check:
     name: Protocol Contract Tests
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     
     steps:
       - name: Checkout code

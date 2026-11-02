@@ -5,15 +5,24 @@ name: nightly
 # автоматически в 02:00 UTC, либо руками через workflow_dispatch.
 
 on:
+  pull_request:
+    branches: [main, develop]
   schedule:
     # 02:00 UTC ежедневно.
     - cron: '0 2 * * *'
   workflow_dispatch:
 
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   chaos-tests:
     name: Protocol chaos tests (blocking)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     services:
       postgres:
         image: timescale/timescaledb:2.13.0-pg15
@@ -57,6 +66,7 @@ jobs:
   trivy-docker-images:
     name: Trivy security scan (dev stack)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - name: Trivy filesystem scan (repository)
@@ -64,22 +74,25 @@ jobs:
         with:
           scan-type: 'fs'
           scan-ref: '.'
+          trivyignores: .trivyignore.yaml
           severity: 'CRITICAL,HIGH'
           ignore-unfixed: 'true'
           format: 'table'
-          exit-code: '0'  # non-blocking, чтобы CVE-шум не блокировал release
+          exit-code: '1'
       - name: Trivy config scan (docker-compose / Dockerfile)
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: 'config'
           scan-ref: '.'
+          trivyignores: .trivyignore.yaml
           severity: 'CRITICAL,HIGH'
           format: 'table'
-          exit-code: '0'
+          exit-code: '1'
 
   pip-audit:
     name: Python dependency audit (pip-audit)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -88,8 +101,24 @@ jobs:
       - name: Install pip-audit
         run: pip install pip-audit
       - name: Audit automation-engine
-        run: pip-audit -r backend/services/automation-engine/requirements.txt || true
+        run: pip-audit -r backend/services/automation-engine/requirements.txt
       - name: Audit history-logger
-        run: pip-audit -r backend/services/history-logger/requirements.txt || true
+        run: pip-audit -r backend/services/history-logger/requirements.txt
       - name: Audit mqtt-bridge
-        run: pip-audit -r backend/services/mqtt-bridge/requirements.txt || true
+        run: pip-audit -r backend/services/mqtt-bridge/requirements.txt
+
+  required:
+    name: Security required
+    if: always()
+    needs: [chaos-tests, trivy-docker-images, pip-audit]
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PYCODE'
+          import json, os
+          failed = {name: job['result'] for name, job in json.loads(os.environ['RESULTS']).items() if job['result'] != 'success'}
+          if failed:
+              raise SystemExit(str(failed))
+          PYCODE

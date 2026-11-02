@@ -25,7 +25,7 @@
         "nunomaduro/collision": "^8.0",
         "pestphp/pest": "^3.8",
         "pestphp/pest-plugin": "^3.0",
-        "phpunit/phpunit": "11.5.15",
+        "phpunit/phpunit": "^11.5",
         "spatie/laravel-ignition": "^2.4"
     },
     "autoload": {
@@ -76,6 +76,9 @@
         "allow-plugins": {
             "pestphp/pest-plugin": true,
             "php-http/discovery": true
+        },
+        "platform": {
+            "php": "8.2.30"
         }
     },
     "minimum-stability": "stable",

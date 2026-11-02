@@ -2,7 +2,7 @@ import type { PlaywrightTestConfig } from '@playwright/test'
 
 const config: PlaywrightTestConfig = {
   webServer: {
-    command: 'rm -f public/hot && php artisan e2e:auth-bootstrap --email=agronomist@example.com --role=admin --with-zone >/dev/null 2>&1 || true && php artisan serve --host=127.0.0.1 --port=8010',
+    command: 'rm -f public/hot && php artisan e2e:auth-bootstrap --email=agronomist@example.com --role=admin --with-zone >/dev/null && php artisan serve --host=127.0.0.1 --port=8010',
     port: 8010,
     reuseExistingServer: false,
     timeout: 60000,
@@ -18,6 +18,8 @@ const config: PlaywrightTestConfig = {
   use: {
     baseURL: 'http://127.0.0.1:8010',
     headless: true,
+    trace: 'retain-on-failure',
+    screenshot: 'only-on-failure',
   },
   testDir: 'tests/E2E',
 }

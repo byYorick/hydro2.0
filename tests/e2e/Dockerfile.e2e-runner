@@ -1,7 +1,9 @@
+FROM docker:28-cli AS dockercli
 FROM python:3.11-slim
+COPY --from=dockercli /usr/local/bin/docker /usr/local/bin/docker
 
 RUN apt-get update && \
-    apt-get install -y docker.io docker-compose && \
+    apt-get install -y --no-install-recommends docker.io docker-compose && \
     rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt /e2e/requirements.txt

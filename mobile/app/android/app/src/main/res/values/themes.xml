@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-	<style name="Theme.Material3.DayNight.NoActionBar" parent="Theme.Material3.DayNight.NoActionBar" />
+    <!-- Material 3 content is provided by Jetpack Compose's HydroTheme. -->
+    <style name="Theme.Hydro" parent="android:style/Theme.Material.Light.NoActionBar" />
 </resources>
-
-

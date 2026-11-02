@@ -179,7 +179,6 @@ vi.mock('@inertiajs/vue3', () => ({
   Link: { name: 'Link', props: ['href'], template: '<a :href="href"><slot /></a>' },
 }))
 
-import { mount } from '@vue/test-utils'
 import ZonesShow from '../Show.vue'
 
 describe('Zones/Show.vue - Интеграционные тесты', () => {
