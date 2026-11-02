@@ -15,6 +15,20 @@ class AutomationConfigControllerZonePidTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_invalid_pid_update_preserves_saved_configuration(): void
+    {
+        $admin = User::factory()->create(['role' => 'admin']);
+        $zone = Zone::factory()->create();
+        foreach (['ph', 'ec'] as $type) {
+            $endpoint = "/api/automation-configs/zone/{$zone->id}/zone.pid.{$type}";
+            $before = $this->actingAs($admin)->getJson($endpoint)->assertOk()->json('data.payload');
+            $this->putJson($endpoint, ['payload' => array_replace($before, ['dead_zone' => -1])])
+                ->assertUnprocessable();
+            $after = $this->getJson($endpoint)->assertOk()->json('data.payload');
+            $this->assertSame($before, $after);
+        }
+    }
+
     public function test_show_materializes_missing_zone_pid_document_with_system_defaults(): void
     {
         $admin = User::factory()->create(['role' => 'admin']);

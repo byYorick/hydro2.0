@@ -20,6 +20,7 @@ Safety rails:
 from __future__ import annotations
 
 import os
+import asyncio
 import uuid
 
 _DEFAULT_TEST_DB = "hydro_test"
@@ -80,6 +81,7 @@ os.environ.setdefault("AE_API_TOKEN", "pytest-ae-api-token")
 # ---------------------------------------------------------------------------
 
 import pytest  # noqa: E402
+import pytest_asyncio  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
@@ -105,3 +107,22 @@ def _terminate_ae3_db_pools_after_test():
             pool.terminate()
         except Exception:
             pass
+
+
+@pytest_asyncio.fixture(autouse=True, loop_scope="function")
+async def _cleanup_ae3_background_tasks(_terminate_ae3_db_pools_after_test):
+    """Drain test-owned tasks before pytest closes their function event loop.
+
+    Some unit tests start reconciliation loops without entering the app lifespan.
+    Cancel and await them while the loop and DB pools are still usable. Tasks
+    owned by outer fixtures are preserved and cleaned by those fixtures.
+    """
+    existing = asyncio.all_tasks()
+    yield
+    current = asyncio.current_task()
+    pending = [task for task in asyncio.all_tasks()
+               if task is not current and task not in existing and not task.done()]
+    for task in pending:
+        task.cancel()
+    if pending:
+        await asyncio.gather(*pending, return_exceptions=True)
