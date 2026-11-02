@@ -21,13 +21,13 @@
       >
         {{ showAdvanced ? 'Скрыть технические параметры' : `Показать технические параметры (${advancedCount})` }}
       </button>
-      <span
-        v-if="changedCount > 0"
-        class="settings-row__changed"
-        data-testid="automation-runtime-changed-count"
-      >
-        изменено: {{ changedCount }}
-      </span>
+      <span class="text-xs text-[color:var(--text-muted)]" data-testid="automation-runtime-overrides-count">Сохранённых настроек: {{ overrideCount }}</span>
+    </div>
+
+    <Tabs v-model="selectedSection" :tabs="sectionTabs" list-role="group" aria-label="Группы параметров AE3" />
+    <div class="flex flex-wrap items-center gap-2" role="group" aria-label="Фильтр параметров">
+      <Button v-for="filter in filters" :key="filter.id" size="sm" :variant="filterMode === filter.id ? 'secondary' : 'ghost'" :aria-pressed="filterMode === filter.id" :data-testid="`automation-runtime-filter-${filter.id}`" @click="filterMode = filter.id">{{ filter.label }}</Button>
+      <span v-if="changedCount" class="settings-row__changed" data-testid="automation-runtime-changed-count" role="status">Не сохранено: {{ changedCount }}</span>
     </div>
 
     <p
@@ -35,7 +35,7 @@
       class="text-sm text-[color:var(--text-dim)]"
       data-testid="automation-runtime-empty"
     >
-      Ничего не найдено. Измените запрос или покажите технические параметры.
+      Ничего не найдено. Измените поиск, группу или фильтр параметров.
     </p>
 
     <section
@@ -58,7 +58,7 @@
             :description="item.description"
             :unit="item.unit"
             :field-id="fieldInputId(item.key)"
-            :changed="item.source === 'override'"
+            :changed="isDirty(item)"
             :stacked="!item.editable"
             :test-id="`settings-automation-field-${item.key}`"
           >
@@ -70,6 +70,7 @@
                 <input
                   :id="fieldInputId(item.key)"
                   :checked="Boolean(draft[item.key])"
+                  :disabled="disabled"
                   type="checkbox"
                   class="accent-[color:var(--status-ok)]"
                   :data-testid="`settings-automation-engine-input-${item.key}`"
@@ -83,6 +84,7 @@
                 v-else-if="item.input_type === 'select'"
                 :id="fieldInputId(item.key)"
                 v-model="draft[item.key]"
+                :disabled="disabled"
                 :data-testid="`settings-automation-engine-input-${item.key}`"
                 input-class="settings-control--select"
               >
@@ -99,6 +101,8 @@
                 :id="fieldInputId(item.key)"
                 v-model="draft[item.key]"
                 type="number"
+                :disabled="disabled"
+                :error="errors[item.key]"
                 :step="item.step || 1"
                 :min="item.min"
                 :max="item.max"
@@ -110,9 +114,13 @@
                 :id="fieldInputId(item.key)"
                 v-model="draft[item.key]"
                 type="text"
+                :disabled="disabled"
+                :error="errors[item.key]"
                 :data-testid="`settings-automation-engine-input-${item.key}`"
                 input-class="settings-control--text font-mono"
               />
+              <button v-if="isDirty(item)" type="button" class="mt-1 text-xs text-[color:var(--status-info)]" :disabled="disabled" :aria-label="`Отменить изменение: ${item.label}`" @click="draft[item.key] = item.value as DraftValue">Отменить</button>
+              <span v-else-if="item.source === 'override'" class="block text-xs text-[color:var(--text-muted)]">Сохранённая настройка</span>
             </template>
             <template v-else>
               <span class="settings-row__readonly">{{ formatValue(item.value, item.unit) }}</span>
@@ -130,16 +138,21 @@ import SelectField from '@/Components/SelectField.vue'
 import TextField from '@/Components/TextField.vue'
 
 import { computed, ref, watch } from 'vue'
+import Button from '@/Components/Button.vue'
+import Tabs from '@/Components/Tabs.vue'
 import SettingsFieldRow from '@/Components/Settings/SettingsFieldRow.vue'
+import { isRuntimeFieldDirty } from '@/utils/automationRuntimeDraft'
 import { isSameSettingsDraft, type SettingsDraftValue } from '@/utils/settingsDraft'
 import type { AutomationRuntimeSettingItem, AutomationRuntimeSettingSection } from '@/types/SystemSettings'
 
 type DraftValue = SettingsDraftValue
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   sections: AutomationRuntimeSettingSection[]
   modelValue: Record<string, DraftValue>
-}>()
+  errors?: Record<string, string>
+  disabled?: boolean
+}>(), { errors: () => ({}), disabled: false })
 
 const emit = defineEmits<{
   'update:modelValue': [value: Record<string, DraftValue>]
@@ -147,6 +160,8 @@ const emit = defineEmits<{
 
 const search = ref('')
 const showAdvanced = ref(false)
+const selectedSection = ref('all')
+const filterMode = ref<'all' | 'changed' | 'overrides'>('all')
 const draft = ref<Record<string, DraftValue>>({ ...props.modelValue })
 
 watch(
@@ -174,12 +189,24 @@ const allItems = computed<AutomationRuntimeSettingItem[]>(() =>
 )
 
 const advancedCount = computed(() => allItems.value.filter((item) => item.advanced === true).length)
-const changedCount = computed(() => allItems.value.filter((item) => item.source === 'override').length)
+const overrideCount = computed(() => allItems.value.filter(item => item.source === 'override').length)
+const changedCount = computed(() => allItems.value.filter(isDirty).length)
+const filters = computed(() => [
+  { id: 'all' as const, label: 'Все параметры' },
+  { id: 'changed' as const, label: `Несохранённые (${changedCount.value})` },
+  { id: 'overrides' as const, label: `Сохранённые (${overrideCount.value})` },
+])
+const sectionTabs = computed(() => [{ id: 'all', label: 'Все группы' }, ...props.sections.map(section => ({ id: section.key, label: section.title }))])
+
+function isDirty(item: AutomationRuntimeSettingItem): boolean {
+  return item.editable && isRuntimeFieldDirty(item, draft.value[item.key])
+}
 
 const visibleSections = computed<AutomationRuntimeSettingSection[]>(() => {
   const query = search.value.trim().toLowerCase()
 
   return props.sections
+    .filter(section => query !== '' || selectedSection.value === 'all' || selectedSection.value === section.key)
     .map((section) => ({
       ...section,
       items: (Array.isArray(section.items) ? section.items : []).filter((item) => matches(item, query)),
@@ -188,6 +215,8 @@ const visibleSections = computed<AutomationRuntimeSettingSection[]>(() => {
 })
 
 function matches(item: AutomationRuntimeSettingItem, query: string): boolean {
+  if (filterMode.value === 'changed' && !isDirty(item)) return false
+  if (filterMode.value === 'overrides' && item.source !== 'override') return false
   // Поиск игнорирует скрытие технических параметров: иначе найденное поле «пропадает».
   if (query !== '') {
     return [item.label, item.description, item.key].some(
@@ -195,7 +224,7 @@ function matches(item: AutomationRuntimeSettingItem, query: string): boolean {
     )
   }
 
-  return showAdvanced.value || item.advanced !== true
+  return filterMode.value !== 'all' || showAdvanced.value || item.advanced !== true
 }
 
 function fieldInputId(key: string): string {

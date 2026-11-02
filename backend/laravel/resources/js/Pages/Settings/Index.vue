@@ -106,8 +106,8 @@
           <template v-if="canEditAutomationEngineSettings">
             <SettingsSectionShell
               v-show="activeSection === 'automation'"
-              title="Планировщик задач"
-              description="Как часто система проверяет расписания полива и света и сколько ждёт ответа от движка автоматики."
+              title="Планировщик задач и AE3"
+              description="Общие параметры запуска задач, связи с движком и восстановления расписаний. Настройки раствора и PID находятся на странице зоны."
               icon="⚙️"
               test-id="settings-automation-engine-card"
             >
@@ -115,16 +115,16 @@
                 <Button
                   size="sm"
                   data-testid="settings-automation-engine-save"
-                  :disabled="automationSettingsSaving || automationSettingsLoading || automationSettingsResetting"
+                  :disabled="!canSaveAutomationSettings"
                   @click="saveAutomationEngineSettings"
                 >
-                  {{ automationSettingsSaving ? 'Сохраняем...' : 'Сохранить' }}
+                  {{ automationSettingsSaving ? 'Сохраняем...' : automationSettingsDirtyCount ? `Сохранить (${automationSettingsDirtyCount})` : 'Сохранить' }}
                 </Button>
                 <Button
                   size="sm"
                   variant="secondary"
                   data-testid="settings-automation-engine-refresh"
-                  :disabled="automationSettingsSaving || automationSettingsLoading || automationSettingsResetting"
+                  :disabled="automationSettingsBusy || automationSettingsDirtyCount > 0"
                   @click="loadAutomationEngineSettings"
                 >
                   {{ automationSettingsLoading ? 'Обновляем...' : 'Обновить' }}
@@ -133,13 +133,22 @@
                   size="sm"
                   variant="danger"
                   data-testid="settings-automation-engine-reset"
-                  :disabled="automationSettingsSaving || automationSettingsLoading || automationSettingsResetting"
+                  :disabled="automationSettingsBusy"
                   @click="resetConfirmOpen = true"
                 >
                   {{ automationSettingsResetting ? 'Сбрасываем...' : 'Сбросить' }}
                 </Button>
               </template>
 
+              <p class="mb-3 text-sm text-[color:var(--text-muted)]">
+                Сохранение не запускает задачи. Новые параметры учитываются следующими запусками планировщика;
+                параметры уже выполняющейся задачи не пересчитываются.
+              </p>
+              <p v-if="automationSettingsError" role="alert" class="mb-3 text-sm text-status-critical">{{ automationSettingsError }}</p>
+              <div v-if="automationSettingsDirtyCount" class="mb-3 flex flex-wrap items-center gap-3 rounded-xl border border-[color:var(--status-warning)] p-3" role="status">
+                <span class="text-sm">Несохранённых изменений: {{ automationSettingsDirtyCount }}</span>
+                <Button size="sm" variant="ghost" :disabled="automationSettingsBusy" data-testid="settings-automation-engine-discard" @click="discardAutomationSettings">Отменить изменения</Button>
+              </div>
               <div
                 v-if="automationEngineSettingsSections.length === 0"
                 class="text-sm text-[color:var(--text-dim)]"
@@ -151,6 +160,8 @@
                 v-else
                 v-model="automationSettingsDraft"
                 :sections="automationEngineSettingsSections"
+                :errors="automationSettingsErrors"
+                :disabled="automationSettingsBusy"
               />
             </SettingsSectionShell>
 
@@ -258,6 +269,7 @@ import { logger } from '@/utils/logger'
 import { api } from '@/services/api'
 import { useRole } from '@/composables/useRole'
 import { useAutomationConfig } from '@/composables/useAutomationConfig'
+import { useAutomationRuntimeSettings } from '@/composables/useAutomationRuntimeSettings'
 import { useToast } from '@/composables/useToast'
 import { ERROR_MESSAGES } from '@/constants/messages'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
@@ -307,26 +319,6 @@ watch(visibleSections, (sections) => {
   }
 }, { immediate: true })
 
-const automationEngineSettingsState = ref(null)
-const automationEngineSettingsSections = computed(() => {
-  const sections = automationEngineSettingsState.value?.snapshot?.sections
-  if (!Array.isArray(sections)) return []
-
-  return sections.filter((section) => {
-    return (
-      section &&
-      typeof section === 'object' &&
-      typeof section.key === 'string' &&
-      typeof section.title === 'string' &&
-      Array.isArray(section.items)
-    )
-  })
-})
-const editableAutomationSettingsItems = computed(() => {
-  return automationEngineSettingsSections.value
-    .flatMap((section) => (Array.isArray(section.items) ? section.items : []))
-    .filter((item) => item && item.editable === true && typeof item.key === 'string')
-})
 const alertPoliciesState = ref(null)
 const alertPolicyDraft = reactive({
   ae3_operational_resolution_mode: 'manual_ack',
@@ -337,13 +329,9 @@ const automationConfig = useAutomationConfig(showToast)
 
 const preferencesLoading = ref(false)
 const preferencesSaving = ref(false)
-const automationSettingsLoading = ref(false)
-const automationSettingsSaving = ref(false)
-const automationSettingsResetting = ref(false)
 const alertPoliciesLoading = ref(false)
 const alertPoliciesSaving = ref(false)
 const alertPoliciesResetting = ref(false)
-const automationSettingsDraft = ref({})
 
 const notificationSettings = reactive({
   alertToastSuppressionSec: 30,
@@ -361,19 +349,6 @@ const extractApiError = (error, fallback) => {
   return error?.response?.data?.message || error?.message || fallback
 }
 
-const hydrateAutomationSettingsDraft = () => {
-  const next = {}
-  editableAutomationSettingsItems.value.forEach((item) => {
-    next[item.key] = item.value
-  })
-  automationSettingsDraft.value = next
-}
-
-const applyAutomationSettingsSnapshot = (snapshot) => {
-  automationEngineSettingsState.value = snapshot || null
-  hydrateAutomationSettingsDraft()
-}
-
 const applyAlertPoliciesSnapshot = (document) => {
   alertPoliciesState.value = document || null
   const mode = document?.payload?.ae3_operational_resolution_mode
@@ -383,103 +358,25 @@ const applyAlertPoliciesSnapshot = (document) => {
       : 'manual_ack'
 }
 
-const normalizeAutomationSettingDraftValue = (item, value) => {
-  if (item.type === 'bool') {
-    if (typeof value === 'boolean') return value
-    const lowered = String(value).trim().toLowerCase()
-    return ['1', 'true', 'yes', 'on'].includes(lowered)
-  }
-
-  if (item.type === 'int') {
-    const parsed = Number(value)
-    return Number.isFinite(parsed) ? Math.trunc(parsed) : Number(item.value ?? 0)
-  }
-
-  if (item.type === 'float') {
-    const parsed = Number(value)
-    return Number.isFinite(parsed) ? parsed : Number(item.value ?? 0)
-  }
-
-  return String(value ?? '').trim()
-}
-
-const buildAutomationSettingsPayload = () => {
-  const payload = {}
-  editableAutomationSettingsItems.value.forEach((item) => {
-    payload[item.key] = normalizeAutomationSettingDraftValue(item, automationSettingsDraft.value[item.key])
-  })
-  return payload
-}
-
-const loadAutomationEngineSettings = async (options = {}) => {
-  const silent = options.silent === true
-  automationSettingsLoading.value = true
-  try {
-    const document = await automationConfig.getDocument('system', 0, 'system.runtime')
-    applyAutomationSettingsSnapshot(document || null)
-    if (!silent) {
-      showToast('Параметры automation runtime обновлены', 'success', TOAST_TIMEOUT.NORMAL)
-    }
-  } catch (err) {
-    logger.error('Failed to load automation runtime settings:', err)
-    if (!silent) {
-      showToast(
-        `Ошибка загрузки runtime параметров: ${extractApiError(err, ERROR_MESSAGES.UNKNOWN)}`,
-        'error',
-        TOAST_TIMEOUT.LONG
-      )
-    }
-  } finally {
-    automationSettingsLoading.value = false
-  }
-}
-
-const saveAutomationEngineSettings = async () => {
-  automationSettingsSaving.value = true
-  try {
-    const document = await automationConfig.updateDocument(
-      'system',
-      0,
-      'system.runtime',
-      buildAutomationSettingsPayload()
-    )
-    applyAutomationSettingsSnapshot(document || null)
-    showToast('Глобальные параметры автоматики сохранены и применены', 'success', TOAST_TIMEOUT.NORMAL)
-  } catch (err) {
-    logger.error('Failed to save automation runtime settings:', err)
-    showToast(
-      `Ошибка сохранения runtime параметров: ${extractApiError(err, ERROR_MESSAGES.UNKNOWN)}`,
-      'error',
-      TOAST_TIMEOUT.LONG
-    )
-  } finally {
-    automationSettingsSaving.value = false
-  }
-}
-
+const runtimeSettings = useAutomationRuntimeSettings(showToast)
+const {
+  sections: automationEngineSettingsSections,
+  draft: automationSettingsDraft,
+  loading: automationSettingsLoading,
+  saving: automationSettingsSaving,
+  resetting: automationSettingsResetting,
+  busy: automationSettingsBusy,
+  dirtyCount: automationSettingsDirtyCount,
+  canSave: canSaveAutomationSettings,
+  errors: automationSettingsErrors,
+  error: automationSettingsError,
+  load: loadAutomationEngineSettings,
+  save: saveAutomationEngineSettings,
+  discard: discardAutomationSettings,
+} = runtimeSettings
 const resetConfirmOpen = ref(false)
-
 const confirmResetAutomationEngineSettings = async () => {
-  await resetAutomationEngineSettings()
-  resetConfirmOpen.value = false
-}
-
-const resetAutomationEngineSettings = async () => {
-  automationSettingsResetting.value = true
-  try {
-    const document = await automationConfig.resetDocument('system', 0, 'system.runtime')
-    applyAutomationSettingsSnapshot(document || null)
-    showToast('Override параметры сброшены к значениям env/config', 'success', TOAST_TIMEOUT.NORMAL)
-  } catch (err) {
-    logger.error('Failed to reset automation runtime settings:', err)
-    showToast(
-      `Ошибка сброса runtime параметров: ${extractApiError(err, ERROR_MESSAGES.UNKNOWN)}`,
-      'error',
-      TOAST_TIMEOUT.LONG
-    )
-  } finally {
-    automationSettingsResetting.value = false
-  }
+  if (await runtimeSettings.reset()) resetConfirmOpen.value = false
 }
 
 const loadAlertPolicies = async (options = {}) => {
