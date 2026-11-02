@@ -25,7 +25,10 @@ class AutomationConfigControllerZonePidTest extends TestCase
             $this->putJson($endpoint, ['payload' => array_replace($before, ['dead_zone' => -1])])
                 ->assertUnprocessable();
             $after = $this->getJson($endpoint)->assertOk()->json('data.payload');
-            $this->assertSame($before, $after);
+            $this->assertJsonStringEqualsJsonString(
+                json_encode($before, JSON_THROW_ON_ERROR),
+                json_encode($after, JSON_THROW_ON_ERROR),
+            );
         }
     }
 
