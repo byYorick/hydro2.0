@@ -879,6 +879,11 @@ greenhouse_manual_overrides
 | `greenhouse_automation_state` | read-model для UI и следующего scheduler tick |
 | `greenhouse_manual_overrides` | persistent override с TTL, audit fields и return mode |
 
+Climate tick записывает read-model и terminal intent/task одной транзакцией только
+при действующем lease своего запуска. После потери lease tick прекращает запись:
+`running` intent/task остаются для stale recovery; прежний владелец не может
+перезаписать состояние нового tick.
+
 Обязательные constraints:
 
 1. Не больше одного active intent/task на `greenhouse_id`.
