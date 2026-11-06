@@ -1,0 +1,36 @@
+{
+  "skill_name": "hydro2-skill-maintenance",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Найди внешний skill для PostgreSQL и адаптируй под Hydro.",
+      "expected_output": "Проверяет первичный источник, commit/лицензию; заменяет ручной DDL миграциями и добавляет локальную проверку/сценарии.",
+      "expectations": [
+        "Records pinned provenance",
+        "Preserves Hydro invariants",
+        "Adds realistic evaluation scenarios"
+      ],
+      "should_trigger": true
+    },
+    {
+      "id": 2,
+      "prompt": "Скопируй skills в четыре каталога, чтобы все агенты видели.",
+      "expected_output": "Выбирает одну canonical версию и относительные discovery aliases; не создаёт четыре расходящиеся копии.",
+      "expectations": [
+        "Uses single canonical body",
+        "Uses repository-local aliases"
+      ],
+      "should_trigger": true
+    },
+    {
+      "id": 3,
+      "prompt": "make skills-check прошёл. Напиши, что skill улучшает модель на 95%.",
+      "expected_output": "Не выводит модельную эффективность из структуры; сообщает, что модельные evals не выполнялись.",
+      "expectations": [
+        "No fabricated model benchmark",
+        "Distinguishes structural validation from model evaluation"
+      ],
+      "should_trigger": true
+    }
+  ]
+}

@@ -38,7 +38,7 @@ Breaking-change: обратная совместимость со старыми
  - REST/WS API.
 
 3. **Python-микросервисы** (см. `04_BACKEND_CORE/PYTHON_SERVICES_ARCH.md`)
- - `mqtt-bridge` — мост REST→MQTT;
+ - `mqtt-bridge` — ops probe (live-status и metrics); command/config routes удалены;
  - `history-logger` — MQTT→PostgreSQL, запись телеметрии и **единственная** публикация команд в MQTT;
  - `automation-engine` (AE3) — автоматизация зон; команды на узлы только через `history-logger`;
  - прочие сервисы (`digital-twin`, агрегаторы и т.д.) — по своим контрактам.

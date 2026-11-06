@@ -1463,7 +1463,7 @@ authority-документ `zone.logic_profile` через API `/api/automation-
   - second-step save after a physical run is allowed only when the correlated command reached terminal `DONE`
   - successful save-step returns `200 OK` and does not expose synthetic `job_id`
   - `node_channels.config.pump_calibration` is updated through merge patch, not full overwrite
-  - internal route `history-logger POST /zones/{zone_id}/calibrate-pump` is deprecated and returns `410 Gone`
+  - internal route `history-logger POST /zones/{zone_id}/calibrate-pump` is removed and returns `404 Not Found`; Laravel owns calibration orchestration
 
 ---
 

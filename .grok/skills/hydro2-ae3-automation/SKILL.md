@@ -1,8 +1,10 @@
 ---
 name: hydro2-ae3-automation
-description: Правила automation-engine / ae3lite: task_type, intents, leases, fail-closed, E-STOP/irrigation failsafe. Используй при работах в backend/services/automation-engine, scheduler-dispatch wake, zone_workflow_state, correction planner или новых AE ingress.
-type: domain
-lifecycle: active
+description: "Правила automation-engine / ae3lite: task_type, intents, leases, fail-closed, E-STOP/irrigation failsafe. Используй при работах в backend/services/automation-engine, scheduler-dispatch wake, zone_workflow_state, correction planner или новых AE ingress."
+metadata:
+  type: domain
+  lifecycle: active
+  version: "0.2.0"
 ---
 
 # hydro2-ae3-automation
@@ -40,3 +42,10 @@ lifecycle: active
 - `doc_ai/06_DOMAIN_ZONES_RECIPES/{CORRECTION_CYCLE_SPEC,EFFECTIVE_TARGETS_SPEC,SCHEDULER_ENGINE,SCHEDULER_AE3_NON_IRRIGATION_DISPATCH}.md`
 - `backend/services/automation-engine/AGENT.md`, `ae3lite/`
 - `backend/services/AGENTS.md`
+
+## Актуализация 2026-11-06
+
+- Startup recovery и waiting-command reconciliation реализованы; закрытый startup plan не является операционным заданием.
+- Один DONE step не завершает batch; recovery учитывает stage/execution token и не публикует подтверждённую дозу повторно.
+- Агрохимические цели читаются из активной grow_cycle_phases; automation config — из pinned compiled bundle. Missing/revision mismatch → fail-closed.
+- Irrigation chemistry: pH и один настроенный EC-компонент calcium/npk; pH-only только при irrigation_ec_component=none. Сверяй RuntimePlan и CORRECTION_CYCLE_SPEC, а не старые инструкции pH-only.

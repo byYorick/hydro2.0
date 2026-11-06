@@ -174,7 +174,8 @@ ESP32 → MQTT → Python → PostgreSQL → Laravel → Vue → User
 ИИ должен следить за:
 
 ### 6.1. ESP32 → MQTT
-- telemetry форма строго `{value, ts}`
+- минимальный telemetry payload: `{metric_type, value, ts}`; типы и расширения —
+  в `../03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md` §3, границы JSON Schema — там же
 - status → каждые 60 сек
 - команды → только через Python
 

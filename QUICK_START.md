@@ -2,7 +2,9 @@
 
 ## 📚 Документация
 
-**Единственный source of truth:** `doc_ai/` — все правки только здесь.
+Поведение runtime определяется кодом. Защищённые контракты описаны в `doc_ai/`
+и должны совпадать с реализацией; правила сверки — в
+[`doc_ai/DEV_CONVENTIONS.md`](doc_ai/DEV_CONVENTIONS.md).
 
 ### Ключевые документы
 
@@ -32,9 +34,12 @@
 
 ```bash
 make up
+make migrate
 ```
 
-Опционально: `make up-sim` поднимает digital-twin + node-sim-manager (profile `sim`); `make up-ml` — feature-builder (profile `ml`).
+Опционально: `make up-obs` — мониторинг (profile `obs`);
+`make up-sim` — digital-twin + node-sim-manager (profile `sim`);
+`make up-ml` — feature-builder (profile `ml`). Они не входят в обычный `make up`.
 
 Для полного чистого dev-refresh с удалением volume, сервисных image и пересборкой без cache.
 После `refresh` в local dev в БД остаются только `admin@example.com` и `agronomist@example.com`:
@@ -64,22 +69,25 @@ make logs-laravel   # laravel
 make logs-mqttb     # mqtt-bridge
 ```
 
-Endpoints AE3 для ручной проверки: `POST /zones/{id}/start-cycle`, `POST /zones/{id}/start-irrigation`, `POST /zones/{id}/start-lighting-tick`, `GET /zones/{id}/state`.
+Оператор запускает workflow через Laravel UI/API. Внутренние AE3 ingress требуют
+сервисной авторизации и `X-Trace-Id`; их контракт —
+[`ae3lite.md`](doc_ai/04_BACKEND_CORE/ae3lite.md). Health-check ниже не запускает актуаторы.
 
 ### Проверка работы
 
 ```bash
-# Проверка mqtt-bridge
-curl -X POST http://localhost:9000/bridge/zones/1/commands \
-  -H "Content-Type: application/json" \
-  -d '{
-    "type": "FORCE_IRRIGATION",
-    "params": {"duration_sec": 5},
-    "greenhouse_uid": "gh-1",
-    "node_id": 1,
-    "channel": "pump_in"
-  }'
+# После make up и make migrate; команды выполняются на хосте.
+curl --fail --silent --show-error http://localhost:9300/health
+curl --fail --silent --show-error http://localhost:9405/health/live
+curl --fail --silent --show-error http://localhost:9405/health/ready
+curl --fail --silent --show-error http://localhost:9000/metrics > /dev/null
 ```
+
+Ожидается HTTP 200. При ошибке readiness проверьте миграции и `make logs-core`.
+`mqtt-bridge` — ops probe: его command/config routes удалены и возвращают 404.
+Функциональный запуск полива проверяется отдельно на подготовленной зоне через
+Laravel/AE3, с учётом авторизации, готовности нод и lease gate; см.
+[`REST_API_REFERENCE.md`](doc_ai/04_BACKEND_CORE/REST_API_REFERENCE.md).
 
 ---
 
@@ -116,8 +124,8 @@ hydro2.0/
 
 ## ⚠️ Важные замечания
 
-1. **Документацию правим только в `doc_ai/`** — это единственный source of truth
-2. **При несоответствиях** приводим код/конфиги в соответствие с документацией
+1. **Спецификации системы** находятся в `doc_ai/`; README, quickstart и проектные skills ссылаются на них.
+2. **При несоответствиях** сверяем код и защищённый контракт: исправляем устаревший документ или явно исправляем реализацию по правилам `AGENTS.md`.
 3. **Статусы компонентов** указаны в README файлах (PLANNED, MVP_DONE и т.д.)
 4. **MQTT_EXTERNAL_HOST**: в dev по умолчанию используется `host.docker.internal`;
    для ESP32 в реальной сети укажите IP хоста в `MQTT_EXTERNAL_HOST` (на Linux может

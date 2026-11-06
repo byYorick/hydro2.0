@@ -13,6 +13,10 @@ Breaking-change: обратная совместимость со старыми
 
 ### Основные гайды
 
+#### [PROJECT_SKILLS.md](PROJECT_SKILLS.md)
+Проектные skills для Codex/Cursor/Claude/Grok: сценарии, открытые источники,
+переработка под Hydro, локальная установка и проверка без запуска приложения.
+
 #### [AI_ASSISTANT_DEV_GUIDE.md](AI_ASSISTANT_DEV_GUIDE.md)
 **Общий гайд для ИИ-ассистентов**
 - Принципы работы с ИИ

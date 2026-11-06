@@ -379,10 +379,10 @@ erd:
 	@bash backend/laravel/generate-erd.sh
 
 # ---------------------------------------------------------------------------
-# Cursor Agent Skills (см. tools/cursor_skills.sh, skills-lock.json)
+# Project Agent Skills: offline aliases/checks; optional upstream/MCP отдельно.
 # ---------------------------------------------------------------------------
 
-.PHONY: skills-install skills-check skills-list mcp-setup mcp-check mcp-list
+.PHONY: skills-install skills-check skills-list skills-install-external skills-check-all mcp-setup mcp-check mcp-list
 skills-install:
 	@bash tools/cursor_skills.sh install
 
@@ -391,6 +391,12 @@ skills-check:
 
 skills-list:
 	@bash tools/cursor_skills.sh list
+
+skills-install-external:
+	@bash tools/cursor_skills.sh install-external
+
+skills-check-all:
+	@bash tools/cursor_skills.sh check-all
 
 mcp-setup:
 	@bash tools/cursor_skills.sh mcp-setup

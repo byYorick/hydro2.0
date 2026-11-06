@@ -1,5 +1,10 @@
 # Changelog — hydro2-mqtt-security
 
+## 0.2.0 — 2026-11-06
+
+- Метаданные приведены к Agent Skills; добавлена сверка актуальных контрактов и discovery aliases.
+- Убраны устаревшие предположения, сохранены ограничения Hydro и пропорциональная проверка.
+
 ## 0.1.1 — 2026-11-01
 
 - Исправлен путь к HL: `backend/services/history-logger/command_service.py` (не `commands/`).

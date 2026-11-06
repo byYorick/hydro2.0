@@ -36,7 +36,7 @@ Android использует те же REST-эндпоинты, что и веб
 - `POST /api/nodes/{id}/commands` — локальные команды на узел (калибровка и т.п.)
 
 **Алерты:**
-- `GET /api/alerts` — список алертов (опционально `?zone_id={id}&status={open|acknowledged}`)
+- `GET /api/alerts` — список алертов (опционально `?zone_id={id}&status={ACTIVE|RESOLVED}`)
 - `GET /api/alerts/{id}` — детали алерта
 - `PATCH /api/alerts/{id}/ack` — подтверждение алерта
 
@@ -103,39 +103,43 @@ Android использует те же REST-эндпоинты, что и веб
 
 ## 2. Режим provisioning узлов (первая настройка)
 
-Android-приложение используется для первичной настройки узлов ESP32:
+**Статус на 2026-11-06: Android provisioning — scaffold, сквозная настройка
+несовместима с текущим ESP32 setup portal.** Не выдавать её за рабочую функцию.
+`ProvisioningRepository.kt` отправляет `/api/provision` с `wifi_ssid`,
+`wifi_password`, `backend_base_url`; в текущей прошивке такого маршрута нет.
 
-### 2.1. Процесс настройки
+### 2.1. Текущий рабочий путь через браузер
 
-1. **Сканирование устройств:**
-   - Приложение сканирует Wi-Fi сети с префиксом `HYDRO-NODE-*` или `HYDRO-SETUP`
-   - Используется `WifiManager.scanResults` для поиска доступных узлов
-   - Требуется разрешение `ACCESS_FINE_LOCATION` (Android 6.0+)
+1. Подключитесь к AP узла (`HYDRO-NODE-*` / `HYDRO-SETUP`, по конфигурации устройства).
+2. Откройте `http://192.168.4.1/` и заполните форму сети и MQTT.
+3. Portal отправляет `POST /wifi/connect` с полями `ssid`, `password`,
+   `mqtt_host`, `mqtt_port`. Сейчас `mqtt_host` принимает IPv4; hostname не поддержан.
+4. После успешной валидации узел сохраняет NodeConfig в NVS и перезагружается.
+   Регистрация идёт через `hydro/node_hello`; затем проверяются lifecycle/bind и
+   `config_report` по их контрактам. Успешный POST не равен готовности узла к командам.
 
-2. **Подключение к узлу:**
-   - Пользователь выбирает найденный узел из списка
-   - Приложение подключается к Wi-Fi сети узла (режим AP)
-   - По умолчанию используется IP `192.168.4.1` (стандартный для ESP32 AP mode)
+Пример формы запроса (значения условные, не credentials стенда):
 
-3. **Отправка конфигурации:**
-   - Приложение отправляет POST запрос на `http://192.168.4.1/api/provision` с JSON:
-   ```json
-   {
-     "wifi_ssid": "SSID основной сети",
-     "wifi_password": "пароль Wi-Fi",
-     "backend_base_url": "https://your-backend",
-     "gh_uid": "gh-main",  // опционально
-     "zone_uid": "zone-a",  // опционально
-     "node_name": "Имя узла"
-   }
-   ```
+```json
+{
+  "ssid": "example-network",
+  "password": "example-password",
+  "mqtt_host": "192.168.1.10",
+  "mqtt_port": 1883
+}
+```
 
-4. **Завершение:**
-   - Узел сохраняет настройки в NVS и перезагружается
-   - После успешного подключения к Wi-Fi и MQTT узел сообщает о себе через `hydro/system/announce/{node_uid}`
-   - Приложение показывает сообщение об успехе
+Канон: [WIFI_PROVISIONING_FIRST_RUN.md](../02_HARDWARE_FIRMWARE/WIFI_PROVISIONING_FIRST_RUN.md).
+Код portal: `firmware/nodes/common/components/setup_portal/setup_portal.c`.
 
-### 2.2. Требуемые разрешения
+### 2.2. Что требуется для завершения Android provisioning
+
+Клиент должен согласовать endpoint и поля с portal, передавать MQTT host/port,
+обрабатывать ошибки валидации и отдельно проверять появление/готовность ноды.
+Одна замена URL несовместимость не устраняет. `hydro/system/announce/*` — planned,
+а не действующий канал регистрации. До проверки интеграции используйте путь через браузер.
+
+### 2.3. Требуемые разрешения
 
 В `AndroidManifest.xml`:
 ```xml

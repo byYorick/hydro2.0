@@ -259,7 +259,7 @@ Breaking-change: обратная совместимость со старыми
 - для calibration UX backend добавляет safe projection: `binding_role`, `pump_component`, `pump_calibration`;
 - `channels[*].pump_calibration` читается из активной записи `pump_calibrations` и нужен, чтобы setup wizard / grow-cycle wizard не теряли уже сохранённые calibration после refresh списка нод;
 - source of truth для dosing calibration остаётся `pump_calibrations`; `node_channels.config.pump_calibration` допускается только как денормализованное зеркало для узла.
-- deprecated internal endpoint `history-logger POST /zones/{zone_id}/calibrate-pump` больше не используется и должен возвращать `410 Gone`.
+- internal endpoint `history-logger POST /zones/{zone_id}/calibrate-pump` удалён (404); владельцем calibration orchestration остаётся Laravel.
 
 Контракт manual device-test для `POST /api/nodes/{id}/commands`:
 - production `irrig` actuator-каналы (`pump_main`, `valve_*`, `type=ACTUATOR`) в **ручном** device-test UI публикуются как `cmd=set_relay` (dry-run `duration_ms=3000`);

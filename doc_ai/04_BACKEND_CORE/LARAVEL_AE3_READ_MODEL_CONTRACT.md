@@ -72,7 +72,7 @@ AE3 (automation-engine, Python) читает состояние зоны **на�
    Файл `schemas/automation_read_model_schema.json` обновится.
 5. **Проверь AE3:**
    ```bash
-   make test-ae PYTEST_ARGS="test_read_model_contract.py"
+   make test-ae PYTEST_ARGS="tests/unit/test_read_model_contract.py"
    ```
 6. **Коммит:** миграция + manifest + snapshot в одном PR. CI-job `read-model-contract` валидирует, что они согласованы.
 

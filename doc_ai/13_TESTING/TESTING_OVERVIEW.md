@@ -270,7 +270,7 @@ jobs:
       - name: Run E2E tests
         run: |
           cd tests/e2e
-          python -m runner.e2e_runner scenarios/E01_bootstrap.yaml
+          python -m runner.e2e_runner scenarios/core/E01_bootstrap.yaml
         env:
           LARAVEL_URL: http://localhost:8081
           MQTT_HOST: localhost

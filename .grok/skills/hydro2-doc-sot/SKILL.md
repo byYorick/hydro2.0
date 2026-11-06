@@ -1,31 +1,33 @@
 ---
 name: hydro2-doc-sot
-description: Работа с doc_ai/ как SoT защищённых контрактов Hydro 2.0; code = SoT runtime. Используй перед фичами/рефакторингом контрактов MQTT/HL/AE3/схемы, при drift docs↔code, выборе INDEX/слоя 01–13, спорах «что канон».
-type: meta
-lifecycle: active
+description: "Работа с doc_ai/ как SoT защищённых контрактов Hydro 2.0; code = SoT runtime. Используй перед фичами/рефакторингом контрактов MQTT/HL/AE3/схемы, при drift docs↔code, выборе INDEX/слоя 01–13, спорах «что канон»."
+metadata:
+  type: meta
+  lifecycle: active
+  version: "0.2.0"
 ---
 
-# hydro2-doc-sot
+# Документация и источники истины Hydro 2.0
 
-## Формула SoT
-1. **Поведение runtime — код** (`code = SoT`).
-2. Защищённые контракты (MQTT, команды, схема БД, HL API, AE3 ingress/FSM, retention) — canonical в `doc_ai/`; обязаны совпадать с кодом. Drift → правим docs **или** явно чиним код.
-3. Doc-first — **только** для этих контрактов, не для любой фичи.
-4. Папка `docs/` удалена; материалы в `doc_ai/`.
+## Рабочий процесс
 
-## Hard rules (defer)
-`.grok/rules/hydro-hard-rules.md`, `AGENTS.md`, `doc_ai/DEV_CONVENTIONS.md`.
-Не создавать `.md` без явного запроса (кроме обязательных обновлений контрактов).
+1. Начни с [INDEX](../../../doc_ai/INDEX.md) и 2–3 документов слоя. Корневой AGENTS.md задаёт правила; runtime определяется кодом. Защищённые контракты doc_ai должны совпадать с реализацией.
+2. При drift выпиши точное утверждение, ссылку на код/schema и последствие. Исправь устаревший документ либо явно меняй реализацию в рамках задачи; не подгоняй корректный runtime под старый гайд автоматически.
+3. Различай canonical, guide, plan, superseded и archive. План не становится текущим заданием без запроса, а snapshot статуса не подтверждает развёртывание на железе.
+4. Текстовые примеры проверяй по реальным маршрутам, полям snapshot, путям тестов и Compose-профилям. Не выдавай существование ссылки за правильность содержания.
+5. Для схемы отмечай отдельно нормативный payload, permissive ingest и покрытие JSON Schema. Не скрывай известный разрыв искусственным обещанием прохождения contract tests.
 
-## Override внешних skills
-- **`documentation-guidelines`** — внешний провоцирует создавать/консолидировать docs широко; в Hydro: только `doc_ai/` контракты + явный запрос. Этот skill **побеждает** documentation-guidelines.
-- `docker-local-dev` — не документируй/не поднимай optional сервисы как default.
-- `review-and-ship` — Compatible-With строка при смене протокола/данных.
+## Объём документации
 
-## Навигация
-Старт: `doc_ai/INDEX.md`, `SYSTEM_ARCH_FULL.md`, `ARCHITECTURE_FLOWS.md`, `DEV_CONVENTIONS.md`.
-Слои: `01_SYSTEM` … `13_TESTING` (+ Android `12_`, AI guides `10_`).
+Спецификации системы находятся в doc_ai; README и skills ссылаются на них. Не создавай конкурирующую канонику без необходимости.
+Явный запрос пользователя на новый документ или skill разрешает его создание. Не отказывай со ссылкой на отсутствие запроса, когда он уже дан; обязательные обновления защищённых контрактов также входят в задачу.
+Обычный bugfix не требует нового архитектурного .md. Новые Python-сервисы, AE3 task_type и authority document types не добавляются без явного запроса.
 
-## Источники
-- `doc_ai/{INDEX,DEV_CONVENTIONS,SYSTEM_ARCH_FULL,ARCHITECTURE_FLOWS,README_STRUCTURE}.md`
-- `AGENTS.md`, `GROK.md`, `.grok/rules/hydro-hard-rules.md`
+## Проверка и результат
+
+Проверь локальные ссылки/пути, актуальность команд и diff. Для изменения текста не запускай backend/realhw автоматически.
+Укажи исправленные расхождения, фактическую проверку и оставшиеся ограничения реализации. Не объявляй Android provisioning или PITR реализованными после правки описания.
+
+- [Конвенции](../../../doc_ai/DEV_CONVENTIONS.md)
+- [Структура документации](../../../doc_ai/README_STRUCTURE.md)
+- [Проектные skills и проверка](../../../doc_ai/10_AI_DEV_GUIDES/PROJECT_SKILLS.md)

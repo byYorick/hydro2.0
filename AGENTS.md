@@ -1,8 +1,8 @@
 # AGENTS.md
 # Правила для ИИ‑агентов (Hydro 2.0, весь репозиторий)
 
-**Дата обновления:** 2026-08-24  
-**Версия:** 2.1  
+**Дата обновления:** 2026-11-06
+**Версия:** 2.2
 **Статус:** Основной документ правил для ИИ‑агентов (канон)
 
 ## Цель
@@ -101,6 +101,17 @@
   - `tests/e2e/docker-compose.e2e.yml`
   - `tests/node_sim/Dockerfile`
   - `infra/hil/docker-compose.hil.yml`
+
+## 1.3) Проектные skills
+
+- Каталог сценариев и первичных источников: [PROJECT_SKILLS.md](doc_ai/10_AI_DEV_GUIDES/PROJECT_SKILLS.md).
+- Выбирайте релевантный skill из `.agents/skills/` (Codex), `.claude/skills/`
+  (Claude/Cursor) или `.grok/skills/` (Grok); это aliases одних исходных файлов.
+- `make skills-install` / `make skills-check` работают локально, без загрузки
+  upstream, запуска сервисов или изменения MCP. Порядок и пути задаёт
+  `tools/skills/project-skills.json`.
+- Skills не переопределяют эти правила и не расширяют запрос пользователя.
+  Внешний шаблон адаптируется к текущим контрактам, а не вводит новую канонику.
 
 ## 2) Контракты и совместимость
 

@@ -1,8 +1,10 @@
 ---
 name: hydro2-mqtt-security
-description: MQTT безопасность и топики Hydro 2.0: namespace hydro/{gh}/{zone}/{node}/{channel}/{message_type}, ACL Mosquitto, TLS, node_secret, HMAC команд. Используй при правках протокола, ACL, подписи команд/config, auth узлов или инцидентах invalid_signature/timestamp_expired.
-type: domain
-lifecycle: active
+description: "MQTT безопасность и топики Hydro 2.0: namespace hydro/{gh}/{zone}/{node}/{channel}/{message_type}, ACL Mosquitto, TLS, node_secret, HMAC команд. Используй при правках протокола, ACL, подписи команд/config, auth узлов или инцидентах invalid_signature/timestamp_expired."
+metadata:
+  type: domain
+  lifecycle: active
+  version: "0.2.0"
 ---
 
 # hydro2-mqtt-security
@@ -43,3 +45,10 @@ lifecycle: active
 - `doc_ai/10_AI_DEV_GUIDES/MQTT_TOPICS_SPEC_AI_GUIDE.md`
 - `backend/services/history-logger/command_service.py`
 - `backend/services/mqtt-bridge/*`
+
+## Актуализация 2026-11-06
+
+- Минимальная telemetry: metric_type/value/ts; node/channel берутся из topic.
+- Строгая telemetry JSON Schema и текущий permissive HL ingest имеют разное покрытие: см. MQTT_SPEC_FULL.md §3.2.1. Не объявляй runtime-совместимость по одному паритету зеркал.
+- Первичная настройка ESP32: POST /wifi/connect (ssid/password/mqtt_host/mqtt_port), регистрация hydro/node_hello. Android /api/provision пока несовместим с firmware.
+- Не печатай secrets, полный NodeConfig, .env или раскрытый Compose config в диагностический отчёт.

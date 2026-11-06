@@ -35,7 +35,7 @@ Laravel scheduler-dispatch → AE3 (ae3lite) → history-logger POST /commands �
 
 1. Локальный AGENTS/AGENT в подкаталоге.
 2. 2–3 спеки слоя из `doc_ai/`.
-3. Backend/Python — Docker; firmware — ESP-IDF (`source /home/georgiy/esp/esp-idf/export.sh`).
+3. Backend/Python — Docker; firmware — установленный ESP-IDF (путь из IDF_PATH, без копирования домашнего каталога другого разработчика).
 
 ## Dev shortcuts
 

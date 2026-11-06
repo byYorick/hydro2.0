@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Установка и проверка Cursor Agent Skills для hydro2.0
-# Внешние skills: npx skills add → .agents/skills/ + skills-lock.json
-# Проектные skills: .claude/skills/ (Cursor) и .grok/skills/ (Grok)
+# Установка и проверка проектных Agent Skills Hydro 2.0 (offline по умолчанию).
+# Происхождение адаптаций: tools/skills/project-skills.json.
+# Внешние npx skills и MCP проверяются только отдельными явными командами.
 set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -60,6 +60,11 @@ PROJECT_SKILL_DIRS=(
   .grok/skills/hydro2-firmware-nodes
   .grok/skills/hydro2-frontend-dashboard
   .grok/skills/hydro2-doc-sot
+  .grok/skills/hydro2-laravel-backend
+  .grok/skills/hydro2-postgres-recovery
+  .grok/skills/hydro2-docker-dev
+  .grok/skills/hydro2-systematic-debugging
+  .grok/skills/hydro2-skill-maintenance
 )
 
 log() { printf '==> %s\n' "$*"; }
@@ -107,8 +112,8 @@ validate_project_skill_scaffold() {
 
   validate_skill_md "$skill_md" "$label" || return 1
 
-  grep -qE '^type:[[:space:]]*.+' "$skill_md" || { warn "нет type: в $skill_md"; failed=1; }
-  grep -qE '^lifecycle:[[:space:]]*.+' "$skill_md" || { warn "нет lifecycle: в $skill_md"; failed=1; }
+  grep -qE '^  type:[[:space:]]*.+' "$skill_md" || { warn "нет metadata.type в $skill_md"; failed=1; }
+  grep -qE '^  lifecycle:[[:space:]]*.+' "$skill_md" || { warn "нет metadata.lifecycle в $skill_md"; failed=1; }
   [[ -f "$dir/CHANGELOG.md" ]] || { warn "нет CHANGELOG.md: $label"; failed=1; }
   [[ -f "$dir/evals/evals.json" ]] || { warn "нет evals/evals.json: $label"; failed=1; }
 
@@ -150,18 +155,18 @@ cmd_list() {
   echo ""
 
   if [[ -f "$SKILLS_LOCK" ]] && command -v jq >/dev/null 2>&1; then
-    echo "Установлено (skills-lock.json):"
+    echo "Каталог optional upstream (skills-lock.json; наличие записи не означает установку):"
     jq -r '.skills | keys[]' "$SKILLS_LOCK" 2>/dev/null | sed 's/^/  - /' || true
   elif [[ -d "$AGENTS_SKILLS_DIR" ]]; then
     echo "Установлено (.agents/skills/):"
     find "$AGENTS_SKILLS_DIR" -mindepth 1 -maxdepth 1 -type d -printf '  - %f\n' 2>/dev/null \
       || find "$AGENTS_SKILLS_DIR" -mindepth 1 -maxdepth 1 -type d | sed 's|.*/|  - |'
   else
-    echo "Внешние skills ещё не установлены. Запусти: make skills-install"
+    echo "Внешние skills опциональны. Для их установки: make skills-install-external"
   fi
 }
 
-cmd_install() {
+cmd_install_external() {
   require_npx
   mkdir -p "$AGENTS_SKILLS_DIR"
 
@@ -201,11 +206,8 @@ cmd_install() {
     --copy \
     -y
 
-  log "Установка/обновление .cursor/mcp.json"
-  ensure_project_mcp
-
-  log "Проверка после установки"
-  cmd_check
+  log "Проверка проектных skills (MCP не изменяется)"
+  python3 tools/skills/manage.py check
 }
 
 write_project_mcp_json_to_file() {
@@ -429,7 +431,7 @@ cmd_check() {
     if check_skill_dir "$dir" "$skill"; then
       echo "  OK  $skill"
     else
-      echo "  MISS $skill  (make skills-install)"
+      echo "  MISS $skill  (make skills-install-external)"
       failed=1
     fi
   done < <(all_external_skills)
@@ -438,7 +440,7 @@ cmd_check() {
   # skills-lock.json
   echo "[lockfile]"
   if [[ ! -f "$SKILLS_LOCK" ]]; then
-    warn "нет skills-lock.json — запусти make skills-install"
+    warn "нет skills-lock.json — каталог optional upstream не найден"
     failed=1
   elif command -v jq >/dev/null 2>&1; then
     while IFS= read -r skill; do
@@ -486,9 +488,11 @@ usage() {
 Usage: $(basename "$0") <command>
 
 Commands:
-  install     Установить внешние skills (npx skills add → .agents/skills/)
-  check       Проверить skills + MCP
+  install     Создать локальные discovery aliases (offline, без изменения MCP)
+  check       Проверить проектные skills, eval-сценарии и provenance (offline)
   list        Показать манифест и установленные skills
+  install-external  Опционально установить generic upstream skills через npx
+  check-all   Проверить также optional upstream и MCP prerequisites
   mcp-setup   Записать/обновить .cursor/mcp.json
   mcp-check   Проверить MCP конфигурацию и prerequisites
   mcp-list    Список MCP серверов проекта
@@ -498,8 +502,10 @@ EOF
 main() {
   local cmd="${1:-}"
   case "$cmd" in
-    install)   cmd_install ;;
-    check)     cmd_check ;;
+    install)   python3 tools/skills/manage.py install ;;
+    check)     python3 tools/skills/manage.py check ;;
+    install-external) cmd_install_external ;;
+    check-all) cmd_check ;;
     list)      cmd_list ;;
     mcp-setup) cmd_mcp_setup ;;
     mcp-check) cmd_mcp_check ;;

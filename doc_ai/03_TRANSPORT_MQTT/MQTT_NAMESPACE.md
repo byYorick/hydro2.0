@@ -9,7 +9,7 @@
 
 Frontend и Android **не** обращаются к MQTT напрямую.
 
-**Дата обновления:** 2026-08-02 (`{channel}` = name/channel; `hydro/system/*` planned; topic ids `ph_sensor`/`ec_sensor`).
+**Дата обновления:** 2026-11-06 (границы telemetry JSON Schema; `{channel}` = name/channel; `hydro/system/*` planned).
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 Breaking-change: обратная совместимость со старыми форматами и алиасами не поддерживается.
@@ -84,7 +84,13 @@ Payload (пример):
 ```
 
 > **Важно:** Формат соответствует эталону node-sim. Поля `node_id` и `channel` не включаются в JSON, так как они уже есть в топике. `metric_type` передается в UPPERCASE.
-> Канонические примеры `metric_type`: `PH`, `EC`, `TEMPERATURE`, `HUMIDITY`, `WATER_LEVEL`, `WATER_LEVEL_SWITCH`, `SOIL_MOISTURE`, `SOIL_TEMP`, `WIND_SPEED`, `WIND_DIRECTION`, `OUTSIDE_TEMP`, `OUTSIDE_HUMIDITY`, `OUTSIDE_PRESSURE`, `OUTSIDE_LIGHT`, `RAIN_DETECTED`.
+> Базовые `metric_type`, покрытые текущей JSON Schema: `PH`, `EC`, `TEMPERATURE`, `HUMIDITY`, `CO2`, `LIGHT_INTENSITY`, `WATER_LEVEL`, `WATER_LEVEL_SWITCH`, `SOIL_MOISTURE`, `SOIL_TEMP`, `WIND_SPEED`, `OUTSIDE_TEMP`, `FLOW_RATE`, `PUMP_CURRENT`.
+>
+> `WIND_DIRECTION`, `OUTSIDE_HUMIDITY`, `OUTSIDE_PRESSURE`, `OUTSIDE_LIGHT`, `RAIN_DETECTED`
+> встречаются в weather/climate описаниях, но **не входят** в enum текущей строгой
+> telemetry JSON Schema. Приём произвольной строки HL-моделью не доказывает
+> поддержку конкретным sender/consumer или schema-validator. Границы и известное
+> расхождение схемы с runtime — `MQTT_SPEC_FULL.md` §3.2.1.
 
 ### 2.2. command
 

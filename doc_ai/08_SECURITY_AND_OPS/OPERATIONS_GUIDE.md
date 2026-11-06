@@ -232,7 +232,7 @@ docker compose -f backend/docker-compose.dev.yml exec db \
 **Критерии успеха:**
 - Все компоненты восстановлены
 - Система полностью функциональна
-- Время восстановления ≤ 30 минут
+- Измерены RTO/RPO; целевой RTO ≤30 минут, результат занесён в протокол проверки
 
 **Документирование:**
 - Записать время восстановления
@@ -245,14 +245,12 @@ docker compose -f backend/docker-compose.dev.yml exec db \
 
 **Действия:**
 ```bash
-# Проверка уязвимостей зависимостей
-cd backend/laravel
-composer audit
-npm audit
+# Из корня репозитория, в подготовленном dev-стеке
+docker compose -f backend/docker-compose.dev.yml exec -T laravel composer audit
+docker compose -f backend/docker-compose.dev.yml exec -T laravel npm audit
 
-# Проверка конфигураций
-grep -r "password" .env* | grep -v "^#"
-grep -r "secret" .env* | grep -v "^#"
+# Проверка конфигурации без вывода значений секретов (из корня репозитория)
+docker compose -f backend/docker-compose.dev.yml exec -T laravel php artisan security:check-config
 
 # Проверка прав доступа
 ls -la backend/laravel/.env

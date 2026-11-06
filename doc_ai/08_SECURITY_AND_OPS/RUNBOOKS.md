@@ -11,7 +11,7 @@
 ## 2. БД недоступна
 - Проверить `docker compose ps` и логи `db`.
 - Локально: `docker compose exec db psql -U hydro -d hydro_dev -c '\l'`.
-- Восстановить из бэкапа (см. BACKUP_RESTORE.md).
+- Восстановить из бэкапа (см. [BACKUP_AND_RECOVERY.md](BACKUP_AND_RECOVERY.md)).
 
 ## 3. WebSockets/Realtime не работает
 - Проверить `reverb` конфиг (`config/reverb.php`) и переменные REVERB_*.
@@ -79,7 +79,8 @@ ORDER BY accepted_at ASC;
 
 ## 3.2. Рестарт automation-engine и startup recovery
 
-Канонический план улучшений: `doc_ai/04_BACKEND_CORE/AE3_STARTUP_RECOVERY_IMPROVEMENT_PLAN.md`.
+Действующий контракт: [`ae3lite.md`, §9](../04_BACKEND_CORE/ae3lite.md).
+Startup-recovery plan архивирован; его фазы 1–6 реализованы. Проверено по runtime-коду 2026-11-06.
 
 ### 3.2.1. Нормальный рестарт (deploy / `docker compose restart automation-engine`)
 
@@ -96,14 +97,17 @@ ORDER BY accepted_at ASC;
 
 **Симптом:** зона в `waiting_command`, hint `waiting_command_stuck`, команда ещё не terminal в `commands`.
 
-**Причина:** recovery оставил задачу ждать ответа узла; runtime reconcile (фаза 3 плана) может ещё не быть развёрнут — опрос legacy-команды не идёт, пока задача не `pending`.
+**Разбор:** ожидание ответа узла само по себе не является ошибкой. Текущий worker
+запускает `WaitingCommandReconcileUseCase` и сверяет terminal команды без повторной
+публикации. Если прогресса нет, проверяются связь с узлом, дедлайны, claim/lease
+и ошибки reconcile loop, а не наличие исторической «фазы 3».
 
 **Действия оператора:**
 
 1. Проверить `ae_tasks` (`status`, `current_stage`, `claimed_by`, `updated_at`).
 2. Проверить последнюю строку `ae_commands` + `commands` по `cmd_id` / `external_id` (terminal status).
-3. Если команда **уже DONE** в `commands`, а task всё ещё `waiting_command` / `running` — это инцидент recovery (см. фазу 2 плана); зафиксировать `task_id` и логи AE.
-4. Если команда **ещё in-flight** — проверить связь с узлом (MQTT, питание); подождать janitor AE3 (`stale_task_reconcile`, fail-safe OFF → fail) или вручную fail/restart цикл после устранения причины. Laravel `ae3:reap-stale-tasks` **не** переводит `ae_tasks` в `failed`.
+3. Если команда **уже DONE**, проверьте `planner_step`, `stage_name` и остальные команды batch: один DONE не завершает весь stage. При отсутствии прогресса зафиксируйте `task_id`, `external_id`, дедлайны, lease и ошибки reconcile loop.
+4. Если команда **ещё in-flight** — проверить связь с узлом (MQTT, питание) и дедлайны task/stage; следить за janitor AE3 (`stale_task_reconcile`, fail-safe OFF → fail). Не переводить строки в `failed` ручным SQL и не отправлять повторную дозу. Laravel `ae3:reap-stale-tasks` **не** переводит `ae_tasks` в `failed`.
 5. Проверить `ae_zone_leases` — при stuck после fail не должно блокировать новый цикл.
 6. Прогнать `php artisan ae3:reap-stale-tasks` только для orphan pending intents без `ae_task` и для лога stale tasks; зомби-task reclaim — зона ответственности AE janitor.
 
@@ -111,13 +115,19 @@ ORDER BY accepted_at ASC;
 
 **Симптом:** task `failed`, `error_code=startup_recovery_unconfirmed_command`, workflow rollback в `idle`.
 
-**Типичная причина:** AE упал в `claimed`/`running` между командами (handler не успел перейти на следующий stage).
+**Разбор:** recovery не смог безопасно подтвердить переход/возобновление задачи.
+Точный контекст берётся из `error_message`, `ae_commands` и событий recovery.
+Crash между командами batch не означает обязательный fail: текущий recovery умеет
+возобновлять batch и пропускать подтверждённые DONE steps в границах execution token.
 
-**Действия:** подтвердить в `commands`, что последняя команда stage была DONE; перезапустить цикл зоны; следить за внедрением фазы 2 плана (resume при DONE в БД).
+**Действия:** сохраните идентификаторы task/command, stage и terminal статусы,
+проверьте фактическое состояние оборудования. Новый цикл запускается оператором
+через UI/Laravel после устранения причины и проверки готовности; historical план
+не является инструкцией повторной отправки команд.
 
 ## 4. Playwright E2E падает (webServer)
-- Освободить порт 8000, проверить `php artisan serve` локально.
-- Запустить `php artisan migrate:fresh --seed` перед прогоном.
+- Проверить порт 8010 и `playwright.config.ts` выбранного suite; приложение запускается в проектном Docker-окружении.
+- Проверить отдельную тестовую БД и настройку миграций suite. Не выполнять `migrate:fresh` на dev/prod БД как способ исправить webServer.
 - См. артефакт `playwright-report` в GitHub Actions.
 
 ## 5. Миграции упали на CI
@@ -155,9 +165,10 @@ Breaking-change: обратная совместимость со старыми
 BACKUP_DIR=/backups/postgres/$(ls -t /backups/postgres | head -1)
 DUMP_FILE=$(find $BACKUP_DIR -name "*.dump" | head -1)
 
-# Восстановить
+# Восстановить в отдельную проверочную БД; параметры выбранного кластера настроены заранее.
+# Скрипт удаляет и пересоздаёт DB_NAME, не используйте действующую БД стенда.
 cd backend/scripts/restore
-./postgres_restore.sh $DUMP_FILE
+DB_NAME=hydro_restore_check ./postgres_restore.sh "$DUMP_FILE"
 ```
 
 ### 10.2. Восстановление с проверкой
@@ -165,16 +176,20 @@ cd backend/scripts/restore
 # Список доступных бэкапов
 php artisan backup:list
 
-# Восстановление с проверкой целостности
-BACKUP_DIR=/backups/postgres/YYYYMMDD_HHMMSS
-./postgres_restore.sh $BACKUP_DIR/*.dump --wal-dir /wal_archive
+# Проверка содержимого выбранного custom dump до восстановления
+pg_restore --list /absolute/path/backup.dump
 ```
 
+Само восстановление удаляет и пересоздаёт целевую БД. Для проверки задайте отдельную
+`DB_NAME` и параметры изолированного кластера; порядок — в
+[BACKUP_AND_RECOVERY.md, §9.1](BACKUP_AND_RECOVERY.md).
+
 ### 10.3. Point-in-Time Recovery (PITR)
-1. Восстановить последний полный дамп
-2. Настроить `recovery.conf` (PostgreSQL 12+) или `postgresql.conf`
-3. Поместить WAL файлы в директорию восстановления
-4. Запустить PostgreSQL в режиме recovery
+Требуются физическая base backup и непрерывная цепочка WAL, не логический `pg_dump`.
+В PostgreSQL 16 используются `restore_command`, целевая точка recovery и
+`recovery.signal`; `recovery.conf` не поддерживается. `postgres_restore.sh --wal-dir`
+не выполняет WAL replay. Полный порядок и границы автоматизации — в
+[BACKUP_AND_RECOVERY.md, §9.1](BACKUP_AND_RECOVERY.md).
 
 ---
 
@@ -192,13 +207,15 @@ cd backend/scripts/restore
 
 ### 11.2. После восстановления
 ```bash
-cd backend/laravel
-composer install
-php artisan migrate --force
-php artisan config:clear
-php artisan cache:clear
-php artisan key:generate  # если нужно
+# Из корня репозитория, после восстановления dev-конфигурации:
+docker compose -f backend/docker-compose.dev.yml exec -T laravel php artisan migrate:status
+docker compose -f backend/docker-compose.dev.yml exec -T laravel php artisan config:clear
+docker compose -f backend/docker-compose.dev.yml exec -T laravel php artisan cache:clear
 ```
+
+Сохраняйте восстановленный `APP_KEY`. При его отсутствии восстановите исходный
+ключ из защищённой копии; генерация нового не является шагом восстановления.
+Миграции/зависимости применяются по процедуре выбранной версии приложения.
 
 ---
 

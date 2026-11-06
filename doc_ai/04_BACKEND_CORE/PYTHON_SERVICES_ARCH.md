@@ -1,9 +1,9 @@
 # PYTHON_SERVICES_ARCH.md
 # Архитектура Python-сервисов hydro2.0 (AE3)
 
-**Версия:** 3.8
-**Дата обновления:** 2026-09-30
-**Статус:** Актуально (канонично для runtime; sync 2026-09-30: TopologyPack, `single_tank`, `lighting_tick` в реестре; ранее 2026-08-24: mqtt-bridge = ops leftover, feature-builder = skeleton)
+**Версия:** 3.9
+**Дата обновления:** 2026-11-06
+**Статус:** Актуально (mqtt-bridge command/config routes удалены; feature-builder = skeleton)
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 Breaking-change: HTTP-транспорт задач планировщика удалён из runtime; обратная совместимость не поддерживается.
@@ -68,15 +68,17 @@ Breaking-change: HTTP-транспорт задач планировщика у�
 - команды к узлам — `history-logger` `POST /commands` (порт `9300`);
 - NodeConfig — `history-logger` `POST /nodes/{uid}/config` из Laravel `PublishNodeConfigJob`.
 
-`POST /bridge/{zones|nodes}/commands` отвечают **410** (`endpoint_deprecated_use_history_logger`) и **пока живы до P1** (удаление роутов — отдельная фаза). Не использовать как мост команд.
+Command/config routes `mqtt-bridge` удалены: обращения к ним возвращают **404**.
+Промежуточный ответ `410 endpoint_deprecated_use_history_logger` относится к истории.
+Не использовать этот сервис как мост команд или конфигураций.
 
 | Метод | Путь | Статус |
 |-------|------|--------|
 | GET | `/metrics` | active — ops probe |
 | GET | `/bridge/nodes/{node_uid}/live-status` | active — MQTT live probe |
-| POST | `/bridge/nodes/{node_uid}/config` | **legacy**; канон уже HL `POST /nodes/{uid}/config` (`PublishNodeConfigJob`) |
-| POST | `/bridge/zones/{zone_id}/commands` | **410** (жив до P1) → history-logger |
-| POST | `/bridge/nodes/{node_uid}/commands` | **410** (жив до P1) → history-logger |
+| POST | `/bridge/nodes/{node_uid}/config` | **removed / 404**; канон HL `POST /nodes/{uid}/config` (`PublishNodeConfigJob`) |
+| POST | `/bridge/zones/{zone_id}/commands` | **removed / 404**; запуск workflow через Laravel/AE3 |
+| POST | `/bridge/nodes/{node_uid}/commands` | **removed / 404**; device-команды публикует history-logger |
 
 README: `backend/services/mqtt-bridge/README.md`.
 
