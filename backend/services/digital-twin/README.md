@@ -17,7 +17,7 @@ Python-сервис симуляции и калибровки моделей з
 
 Laravel: `DigitalTwinClient`, `DigitalTwinCalibrateAll` → `/v1/calibrate?...persist=true`.
 
-SoT docs: `doc_ai/09_AI_AND_DIGITAL_TWIN/DIGITAL_TWIN_ENGINE.md`.
+Статус опциональных компонентов: `doc_ai/09_AI_AND_DIGITAL_TWIN/README.md`; интерфейсы этого сервиса описаны ниже.
 
 ## Запуск
 

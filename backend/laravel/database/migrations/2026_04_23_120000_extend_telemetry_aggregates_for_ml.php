@@ -7,10 +7,10 @@ use Illuminate\Support\Facades\Schema;
 return new class extends Migration
 {
     /**
-     * ML_FEATURE_PIPELINE Phase 1: расширение telemetry_agg_1m и telemetry_agg_1h
+     * Расширение telemetry_agg_1m и telemetry_agg_1h
      * полями для обучения моделей прогноза и детекции аномалий.
      *
-     * См. doc_ai/09_AI_AND_DIGITAL_TWIN/ML_FEATURE_PIPELINE.md §5.1 и Приложение C.
+     * Поля перечислены в этой миграции; writer агрегатов — telemetry-aggregator.
      */
     public function up(): void
     {

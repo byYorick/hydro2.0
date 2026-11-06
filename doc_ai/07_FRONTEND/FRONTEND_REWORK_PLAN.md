@@ -1,7 +1,0 @@
-# FRONTEND_REWORK_PLAN.md
-
-**Статус:** `archive` (перенесён)
-
-Полный текст: [`../00_ARCHIVE/PLANS/FRONTEND_REWORK_PLAN.md`](../00_ARCHIVE/PLANS/FRONTEND_REWORK_PLAN.md)
-
-**Актуальный SoT:** [`FRONTEND_ARCH_FULL.md`](FRONTEND_ARCH_FULL.md), [`FRONTEND_UI_UX_SPEC.md`](FRONTEND_UI_UX_SPEC.md).

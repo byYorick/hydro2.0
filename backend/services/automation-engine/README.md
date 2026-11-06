@@ -13,7 +13,7 @@
 Task/workflow переходы атомарны; snapshot читает одну committed revision;
 retry команды сохраняет адрес, параметры и cmd_id. Один активный production executor
 остаётся обязательным: проверки БД не заменяют end-to-end fencing MQTT.
-План и результаты: [AE3_EXECUTION_HARDENING_PLAN_FOR_AI_AGENTS](../../../doc_ai/04_BACKEND_CORE/AE3_EXECUTION_HARDENING_PLAN_FOR_AI_AGENTS.md).
+Контракт исполнения и recovery: [ae3lite.md](../../../doc_ai/04_BACKEND_CORE/ae3lite.md).
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 
 ## Актуальный AE3 runtime (2026-03-24)
@@ -32,7 +32,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 ## История изменений
 
 Детальные отчёты о промежуточных этапах декомпозиции и старых refactor-step
-перенесены в архивные материалы `doc_ai/00_ARCHIVE/REPORTS/*`.
+доступны в истории Git; действующий контракт находится в `doc_ai/04_BACKEND_CORE/ae3lite.md`.
 Этот README оставляет только текущее состояние канонического runtime AE3-Lite.
 
 ## 🏗️ Архитектура

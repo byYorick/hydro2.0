@@ -1,22 +1,19 @@
-# 13_TESTING — Тестирование и E2E
+# Тестирование
 
-Документация по стратегии тестирования, E2E-сценариям, симулятору узлов и troubleshooting.
+**Статус:** навигационный guide.
 
-## Документы раздела
+Unit/integration, Python E2E, Playwright и физическая test_node.
 
-- [TESTING_OVERVIEW.md](TESTING_OVERVIEW.md) — обзор подхода к тестированию (unit / integration / E2E)
-- [E2E_GUIDE.md](E2E_GUIDE.md) — подробное руководство по E2E
-- [REALHW_TEST_NODE_AGENT_GUIDE.md](REALHW_TEST_NODE_AGENT_GUIDE.md) — **канон для ИИ:** запуск YAML на физической `test_node`
-- [E2E_SCENARIOS.md](E2E_SCENARIOS.md) — полный список сценариев и Definition of Done
-- [E2E_SETUP.md](E2E_SETUP.md) — настройка окружения для E2E
-- [AUTH_IN_E2E.md](AUTH_IN_E2E.md) — авторизация в E2E (AuthClient, токены)
-- [NODE_SIM.md](NODE_SIM.md) — симулятор узлов (`tests/node_sim/`)
-- [TROUBLESHOOTING.md](TROUBLESHOOTING.md) — диагностика проблем при прогоне тестов
-- [AE3LITE_AUDIT.md](AE3LITE_AUDIT.md) — аудит AE3-Lite от 2026-10-18: баки, коррекция, восстановление и подтверждённые дефекты
+## Документы
 
-## См. также
+- [AUTH_IN_E2E.md](AUTH_IN_E2E.md) — Авторизация в E2E тестах
+- [E2E_GUIDE.md](E2E_GUIDE.md) — E2E Test Guide - Руководство по E2E тестам
+- [E2E_SCENARIOS.md](E2E_SCENARIOS.md) — E2E Сценарии - Полная документация
+- [E2E_SETUP.md](E2E_SETUP.md) — E2E Test Setup - Настройка End-to-End тестового контура
+- [NODE_SIM.md](NODE_SIM.md) — Node Simulator (node_sim) - Документация
+- [REALHW_TEST_NODE_AGENT_GUIDE.md](REALHW_TEST_NODE_AGENT_GUIDE.md) — Realhw test_node — инструкция для ИИ-агента
+- [TESTING_OVERVIEW.md](TESTING_OVERVIEW.md) — Обзор системы тестирования Hydro 2.0
+- [TROUBLESHOOTING.md](TROUBLESHOOTING.md) — Troubleshooting - Решение типовых проблем
 
-- [tests/e2e/AGENTS.md](../../tests/e2e/AGENTS.md) — локальные правила ИИ для `tests/e2e/`
-- [tests/e2e/README.md](../../tests/e2e/README.md) — конкретные команды и P0-набор для smoke
-- [tools/testing/README.md](../../tools/testing/README.md) — runner и вспомогательные скрипты
-- [08_SECURITY_AND_OPS/TESTING_AND_CICD_STRATEGY.md](../08_SECURITY_AND_OPS/TESTING_AND_CICD_STRATEGY.md) — стратегия CI/CD
+Нормативные контракты сверяются с текущим кодом по правилам `AGENTS.md`.
+[Главный индекс](../INDEX.md).

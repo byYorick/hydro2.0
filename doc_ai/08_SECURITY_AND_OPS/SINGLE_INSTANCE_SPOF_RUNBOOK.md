@@ -11,7 +11,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 
 ## 1. Цель
 
-Зафиксировать **осознанные single-instance ограничения** v1 стека и короткие процедуры восстановления без HA-кластера. HA вне скоупа текущего релиза (см. `AUDIT_2026_07_07_RELIABILITY_PLAN.md` R7.2).
+Зафиксировать **осознанные single-instance ограничения** v1 стека и короткие процедуры восстановления без HA-кластера. HA вне скоупа текущего релиза.
 
 ---
 
@@ -109,4 +109,4 @@ Grafana: dashboard **System Overview** → секция **Reliability (R2)**.
 - `SYSTEM_FAILURE_RECOVERY.md` — полная модель L1–L5 recovery
 - `BACKUP_AND_RECOVERY.md` — backup/restore RTO/RPO
 - `RUNBOOKS.md` — операционные процедуры
-- `AUDIT_2026_07_07_RELIABILITY_PLAN.md` — план надёжности R1–R7
+- `BACKUP_AND_RECOVERY.md` — действующий порядок восстановления

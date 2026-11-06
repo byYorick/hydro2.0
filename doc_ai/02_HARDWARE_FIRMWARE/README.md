@@ -1,141 +1,30 @@
-# 02_HARDWARE_FIRMWARE — Железо и прошивки
+# Железо и прошивки
 
-Этот раздел содержит документацию по аппаратной части и прошивкам узлов ESP32.
+**Статус:** навигационный guide.
 
+ESP32, NodeConfig, каналы, диагностика, сеть и аппаратные справочники.
 
-Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
-Breaking-change: обратная совместимость со старыми форматами и алиасами не поддерживается.
+## Документы
 
----
+- [CONFIG_REPORT_HANDLING.md](CONFIG_REPORT_HANDLING.md) — Обработка config_report от ноды
+- [DEVICE_NODE_PROTOCOL.md](DEVICE_NODE_PROTOCOL.md) — Полная спецификация протокола узлов ESP32 (2.0)
+- [ESP32_C_CODING_STANDARDS.md](ESP32_C_CODING_STANDARDS.md) — Стандарты написания прошивки на C под ESP32 (ESP-IDF)
+- [FIRMWARE_STRUCTURE.md](FIRMWARE_STRUCTURE.md) — Полная структура прошивки 2.0 для ESP32
+- [HARDWARE_ARCH_FULL.md](HARDWARE_ARCH_FULL.md) — Полная аппаратная архитектура системы 2.0 (узлы, сенсоры, питание, защита, топология)
+- [NODE_ARCH_FULL.md](NODE_ARCH_FULL.md) — Полная архитектура узлов ESP32 2.0 (Детальный документ)
+- [NODE_CHANNELS_REFERENCE.md](NODE_CHANNELS_REFERENCE.md) — Полный справочник каналов узлов 2.0 (ESP32)
+- [NODE_CONFIG_SPEC.md](NODE_CONFIG_SPEC.md) — Спецификация NodeConfig для ESP32-нод
+- [NODE_DIAGNOSTICS_ENGINE.md](NODE_DIAGNOSTICS_ENGINE.md) — Полный движок диагностики узлов ESP32 в системе 2.0
+- [NODE_INPUT_CONTROLS.md](NODE_INPUT_CONTROLS.md) — Абстракция локального ввода на узле
+- [NODE_LOGIC_FULL.md](NODE_LOGIC_FULL.md) — Полная логика работы узлов ESP32 2.0 (детальный документ)
+- [NODE_OLED_UI_SPEC.md](NODE_OLED_UI_SPEC.md) — Спецификация локального UI на OLED 128×64 для узлов ESP32
+- [OTA_UPDATE_PROTOCOL.md](OTA_UPDATE_PROTOCOL.md) — Полная спецификация OTA-обновления узлов ESP32 для системы 2.0
+- [SDKCONFIG_PROFILES.md](SDKCONFIG_PROFILES.md) — Профили sdkconfig для узлов 2.0
+- [STORAGE_IRRIGATION_NODE_PROD_SPEC.md](STORAGE_IRRIGATION_NODE_PROD_SPEC.md) — Production-спецификация ноды накопления и полива (`storage_irrigation_node`)
+- [TEST_NODE_REAL_HW_PROD_READINESS_SPEC.md](TEST_NODE_REAL_HW_PROD_READINESS_SPEC.md) — Спецификация test_node для доведения реальных нод до боевого режима
+- [TEST_NODE_TO_REAL_NODES_MAPPING_MATRIX.md](TEST_NODE_TO_REAL_NODES_MAPPING_MATRIX.md) — Матрица соответствия `firmware/test_node` и боевых прошивок нод
+- [WIFI_CONNECTIVITY_ENGINE.md](WIFI_CONNECTIVITY_ENGINE.md) — Wi-Fi connectivity runtime для ESP32-нод (2.0)
+- [WIFI_PROVISIONING_FIRST_RUN.md](WIFI_PROVISIONING_FIRST_RUN.md) — Первичная настройка Wi-Fi узла
 
-## 📋 Документы раздела
-
-### Основные документы
-
-#### [NODE_ARCH_FULL.md](NODE_ARCH_FULL.md)
-**Полная архитектура узлов ESP32**
-- Цели и принципы архитектуры
-- Структура прошивки
-- Жизненный цикл узла
-- NodeConfig
-- Каналы узла (SensorChannel, ActuatorChannel)
-- Telemetry и команды
-
-#### [NODE_CHANNELS_REFERENCE.md](NODE_CHANNELS_REFERENCE.md)
-**Справочник каналов узлов**
-- Типы каналов (SENSOR, ACTUATOR, VIRTUAL)
-- Сенсорные каналы (pH, EC, температура, влажность)
-- Разделение domain-ключей и firmware channel id
-- Актуаторные каналы (насосы, клапаны, свет)
-- Форматы payload
-
-#### [NODE_CONFIG_SPEC.md](NODE_CONFIG_SPEC.md)
-**Спецификация NodeConfig**
-- Структура JSON конфигурации
-- Поля конфигурации для каждого типа ноды
-- Валидация конфигурации
-- Процесс загрузки и применения
-
-#### [FIRMWARE_STRUCTURE.md](FIRMWARE_STRUCTURE.md)
-**Структура прошивки**
-- Организация кода
-- Модули и компоненты
-- Общие библиотеки
-
-#### [HARDWARE_ARCH_FULL.md](HARDWARE_ARCH_FULL.md)
-**Аппаратная архитектура**
-- Схемы подключения
-- Датчики и актуаторы
-- Интерфейсы (I2C, SPI, UART)
-
-### Специализированные документы
-
-#### [NODE_LOGIC_FULL.md](NODE_LOGIC_FULL.md)
-Логика работы узлов
-
-#### [NODE_OLED_UI_SPEC.md](NODE_OLED_UI_SPEC.md)
-Спецификация OLED интерфейса
-
-#### [NODE_INPUT_CONTROLS.md](NODE_INPUT_CONTROLS.md)
-Управление через кнопки/энкодеры
-
-#### [NODE_DIAGNOSTICS_ENGINE.md](NODE_DIAGNOSTICS_ENGINE.md)
-Диагностика и мониторинг узлов
-
-#### [DEVICE_NODE_PROTOCOL.md](DEVICE_NODE_PROTOCOL.md)
-Протокол взаимодействия с узлами
-
-#### [CONFIG_REPORT_HANDLING.md](CONFIG_REPORT_HANDLING.md)
-Подтверждение привязки ноды к зоне через `config_report` (fail-closed binding).
-Канон: Laravel публикует NodeConfig через HL; finalize — только после `config_report`.
-(`CONFIG_RESPONSE_HANDLING.md` — superseded stub.)
-
-#### [TEST_NODE_REAL_HW_PROD_READINESS_SPEC.md](TEST_NODE_REAL_HW_PROD_READINESS_SPEC.md)
-Спецификация `firmware/test_node` для HIL/E2E и доведения реальных нод до production-ready режима:
-- фактические каналы и топики;
-- режимы (`configured`/`preconfig`, sensor mode);
-- ограничения runtime и чек-лист для боевого rollout.
-
-#### [TEST_NODE_TO_REAL_NODES_MAPPING_MATRIX.md](TEST_NODE_TO_REAL_NODES_MAPPING_MATRIX.md)
-Матрица соответствия `test_node` и боевых прошивок:
-- сопоставление каналов `test -> real`;
-- сопоставление команд `test -> real`;
-- обязательные адаптеры/алиасы перед production rollout.
-
-#### [STORAGE_IRRIGATION_NODE_PROD_SPEC.md](STORAGE_IRRIGATION_NODE_PROD_SPEC.md)
-Production-спецификация `storage_irrigation_node`:
-- канонический контракт `type=irrig`;
-- GPIO-профиль (фиксированные и динамические пины);
-- режимы, ограничения и checklist для боевого запуска.
-
-### Wi‑Fi и подключение
-
-#### [WIFI_CONNECTIVITY_ENGINE.md](WIFI_CONNECTIVITY_ENGINE.md)
-Движок подключения Wi‑Fi
-
-#### [WIFI_PROVISIONING_FIRST_RUN.md](WIFI_PROVISIONING_FIRST_RUN.md)
-Первичная настройка Wi‑Fi
-
-### Обновления
-
-#### [OTA_UPDATE_PROTOCOL.md](OTA_UPDATE_PROTOCOL.md)
-Протокол OTA-обновлений
-
-### Конфигурация
-
-#### [SDKCONFIG_PROFILES.md](SDKCONFIG_PROFILES.md)
-Профили конфигурации ESP-IDF
-
-### Стандарты кодирования
-
-#### [ESP32_C_CODING_STANDARDS.md](ESP32_C_CODING_STANDARDS.md)
-Стандарты кодирования для ESP32 (`canonical` для C naming)
-
-### Аудиты и задачи
-
-#### [MEMORY_SAFETY_AUDIT.md](MEMORY_SAFETY_AUDIT.md)
-Аудит memory safety прошивок (`guide`)
-
-#### [TASK_INA209_PUMP_NODE.md](TASK_INA209_PUMP_NODE.md)
-Задача по INA209 на pump_node (`plan`)
-
-> `CONFIG_RESPONSE_HANDLING.md` — `superseded` stub; канон ACK — `CONFIG_REPORT_HANDLING.md`.
-
-## 🔗 Связанные разделы
-
-- **[01_SYSTEM](../01_SYSTEM/)** — системная архитектура
-- **[03_TRANSPORT_MQTT](../03_TRANSPORT_MQTT/)** — MQTT протокол
-- **[04_BACKEND_CORE](../04_BACKEND_CORE/)** — backend интеграция
-
----
-
-## 🎯 С чего начать
-
-1. **Разработка новой ноды?** → Начните с [NODE_ARCH_FULL.md](NODE_ARCH_FULL.md)
-2. **Нужны каналы?** → Изучите [NODE_CHANNELS_REFERENCE.md](NODE_CHANNELS_REFERENCE.md)
-3. **Работа с конфигурацией?** → См. [NODE_CONFIG_SPEC.md](NODE_CONFIG_SPEC.md)
-4. **Структура кода?** → Прочитайте [FIRMWARE_STRUCTURE.md](FIRMWARE_STRUCTURE.md)
-
----
-
-**См. также:** [Главный индекс документации](../INDEX.md)
+Нормативные контракты сверяются с текущим кодом по правилам `AGENTS.md`.
+[Главный индекс](../INDEX.md).

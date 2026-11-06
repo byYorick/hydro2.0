@@ -75,7 +75,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 
 ## 7. Освещение: day/night ON/OFF (`lighting_tick`, этап A)
 
-**Связано с:** `EFFECTIVE_TARGETS_SPEC.md` §4.4, `AGRO_AUTONOMY_MASTER_PLAN.md` §A, `SchedulerCycleOrchestrator.php`, `ScheduleDispatcher.php`, `cycle_start_planner.py`.
+**Связано с:** `EFFECTIVE_TARGETS_SPEC.md` §4.4, `SchedulerCycleOrchestrator.php`, `ScheduleDispatcher.php`, `cycle_start_planner.py`.
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 

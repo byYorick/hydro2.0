@@ -72,7 +72,7 @@ updated_at
 - В Backend/AI `greenhouse.uid` — основной внешний идентификатор теплицы.
 - Канонический справочник типа — `greenhouse_types`; `type` остаётся legacy-строкой.
 - `provisioning_token`: **deprecated, pending drop**. Колонка остаётся NOT NULL unique ради seeders/AE/e2e inserts; значение генерируется при create только для constraint, **скрыто в API** (`Greenhouse::$hidden`) и **не используется** для bind узлов (привязка только через UI).
-- `is_system=true` — служебные теплицы (не показывать в обычных списках). Зарезервирована системная теплица `uid='site'` + зона `uid='wx'` как MQTT-якорь для site-level метеостанций (DD-10, см. `GREENHOUSE_CLIMATE_CONTROL_PLAN.md`).
+- `is_system=true` — служебные теплицы (не показывать в обычных списках). Зарезервирована системная теплица `uid='site'` + зона `uid='wx'` как MQTT-якорь для site-level метеостанций (DD-10, см. `GREENHOUSE_CLIMATE_CONTROL_SPEC.md`).
 - `shared_weather_station_node_id` — opt-in теплицы на общую метеостанцию площадки; AE climate tick читает outdoor sensors этого node независимо от `sensors.greenhouse_id` пользовательской теплицы.
 
 ---
@@ -1139,7 +1139,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 ## 6.9. greenhouse_automation_intents / greenhouse_automation_tasks / greenhouse_automation_leases / greenhouse_automation_state / greenhouse_manual_overrides
 
 Таблицы **greenhouse-level** автоматизации (климат крыши), ортогональны `zone_automation_intents` / `ae_tasks`.
-Семантика и алгоритм — `GREENHOUSE_CLIMATE_CONTROL_PLAN.md`.
+Семантика и алгоритм — `GREENHOUSE_CLIMATE_CONTROL_SPEC.md`.
 FK на `greenhouses` используют `ON DELETE RESTRICT`: runtime history не удаляется каскадом без отдельной retention policy.
 
 ### 6.9.1. greenhouse_automation_intents

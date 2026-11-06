@@ -60,3 +60,8 @@ backend/.env.prod
 .agents/skills/*
 !.agents/skills/hydro2-*
 !.agents/skills/two-tank-debug
+
+# Локальные выгрузки браузера и временные результаты проверок
+/output/playwright/
+/test-results/
+/tmp_nsim_*.json

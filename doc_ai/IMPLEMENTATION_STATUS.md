@@ -5,7 +5,7 @@
 **Сверено:** 2026-11-06, runtime-код `28a62e9e`. Это снимок репозитория;
 наличие реализации не подтверждает её установку и приёмку на физическом стенде.
 
-Product-gaps и агро-автономия: [`AGRO_AUTONOMY_MASTER_PLAN.md`](AGRO_AUTONOMY_MASTER_PLAN.md) (`plan`, не SoT runtime).
+Суточный контур: [`CROP_DAY_RUNTIME.md`](04_BACKEND_CORE/CROP_DAY_RUNTIME.md) (`guide` существующей реализации).
 
 Легенда:
 
@@ -56,5 +56,5 @@ HW-стенд / полный HW acceptance нод — **IN_PROGRESS** (не пу
 | `feature-builder` | **frozen skeleton**; не writer витрин в runtime; не часть default `make up` (profile `ml`) |
 | `/admin`, `/admin/zones`, `/admin/recipes` | overlay/дубль Unified Dashboard + Settings; код пока жив (удаление = P4) |
 | AI-карточки (`AIPredictionsSection`, linear `PredictionService`) | overlay/toy, не ML pipeline |
-| `09_AI_AND_DIGITAL_TWIN` | `plan` / engine draft, не default runtime |
+| `09_AI_AND_DIGITAL_TWIN` | guide существующих опциональных компонентов, не default runtime |
 | отдельный Python `scheduler` / `device-registry` / `api-gateway` | деревья сняты; owner — Laravel |

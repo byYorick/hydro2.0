@@ -33,7 +33,7 @@ hydro/{gh}/{zone}/{node}/{message_type}
 Где:
 
 - `{gh}` — UID теплицы (`greenhouses.uid`),
-- `{zone}` — UID зоны (`zones.uid`). Для **greenhouse-only** приводов (например крышные форточки), когда физически нет «своей» зоны, в топике используется UID **anchor-зоны**, выбранной в `greenhouse.logic_profile` (DD-9, см. `GREENHOUSE_CLIMATE_CONTROL_PLAN.md`); иерархия сегментов топика не меняется.
+- `{zone}` — UID зоны (`zones.uid`). Для **greenhouse-only** приводов (например крышные форточки), когда физически нет «своей» зоны, в топике используется UID **anchor-зоны**, выбранной в `greenhouse.logic_profile` (DD-9, см. `GREENHOUSE_CLIMATE_CONTROL_SPEC.md`); иерархия сегментов топика не меняется.
 - `{node}` — UID узла (`nodes.uid`),
 - `{channel}` — имя канала: в NodeConfig — `channels.name` / `channels.channel` (одинаковое значение, напр. `ph_sensor`, `system`, `storage_state`); в БД — `node_channels.channel`. Поле `channels.key` **не используется**. Сегмент нужен только для channel-level сообщений,
 - `{message_type}` — тип сообщения: 

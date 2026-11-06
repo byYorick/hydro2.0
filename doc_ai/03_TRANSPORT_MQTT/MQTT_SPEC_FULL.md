@@ -390,7 +390,7 @@ hydro/{gh}/{zone}/{node}/{channel}/command
 
 ### 5) Позиция привода (roof vent, greenhouse climate)
 
-Каналы `roof_vent_left` / `roof_vent_right` (см. `NODE_CHANNELS_REFERENCE.md`, `GREENHOUSE_CLIMATE_CONTROL_PLAN.md`).
+Каналы `roof_vent_left` / `roof_vent_right` (см. `NODE_CHANNELS_REFERENCE.md`, `GREENHOUSE_CLIMATE_CONTROL_SPEC.md`).
 Сегмент `{zone}` в топике — UID anchor-зоны при greenhouse-only приводе (см. `MQTT_NAMESPACE.md`).
 
 ```json

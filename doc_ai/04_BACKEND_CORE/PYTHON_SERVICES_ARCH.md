@@ -20,7 +20,7 @@ Breaking-change: HTTP-транспорт задач планировщика у�
   автодолив — `POST /zones/{id}/start-solution-topup`,
   подмена раствора — `POST /zones/{id}/start-solution-change`,
   **тик климата теплицы (крыша)** — `POST /greenhouses/{id}/start-climate-tick`
-  (intents `greenhouse_automation_intents`, см. `GREENHOUSE_CLIMATE_CONTROL_PLAN.md`);
+  (intents `greenhouse_automation_intents`, см. `GREENHOUSE_CLIMATE_CONTROL_SPEC.md`);
 - direct SQL read-model в runtime path automation-engine;
 - AE3 LISTEN только `scheduler_intent_terminal` + `ae_zone_event`; terminal статусы команд — **poll**
   (не LISTEN для telemetry/command status).
@@ -90,11 +90,11 @@ README: `backend/services/mqtt-bridge/README.md`.
 
 Канон калибровки: `POST /v1/calibrate/zone/{zone_id}?persist=true` (не legacy `/calibrate/zone/...`).  
 Live: `/simulations/live/start|stop` (связь с `node-sim-manager` `:9100`).  
-Доки: `doc_ai/09_AI_AND_DIGITAL_TWIN/DIGITAL_TWIN_ENGINE.md`, `backend/services/digital-twin/README.md`.
+Доки: `doc_ai/09_AI_AND_DIGITAL_TWIN/README.md`, `backend/services/digital-twin/README.md`.
 
 ### 2.6 `feature-builder` / `node-sim-manager`
 
-- `feature-builder` — **skeleton**, не writer витрин в runtime. Не часть default `make up` (compose profile `ml`, `make up-ml`). Порт **9410** health/metrics; фазы — `ML_FEATURE_PIPELINE.md`. Не расширять без явного запроса.
+- `feature-builder` — **skeleton**, не writer витрин в runtime. Не часть default `make up` (compose profile `ml`, `make up-ml`). Порт **9410** health/metrics; текущий интерфейс — `backend/services/feature-builder/README.md`. Не расширять без явного запроса.
 - `node-sim-manager` — управление node_sim для live-sim / HIL (порт **9100`); не часть default `make up` (profile `sim`).
 
 ---

@@ -62,7 +62,7 @@
   от `(target_ec_night − water_ec)` — см. §10;
 - compiled bundle обязан пересчитываться при `advancePhase`/`setPhase`/`changeRecipeRevision` (см. `RECIPE_ENGINE_FULL.md` §3.3).
 
-Актуализация освещения day/night + гарантированный OFF (2026-07-08, этап A `AGRO_AUTONOMY_MASTER_PLAN.md` §A.1):
+Освещение day/night + гарантированный OFF (актуализация 2026-07-08):
 - в `targets.lighting` для режима `SCHEDULE` канонические поля фотопериода: `on_time`, `off_time`, `brightness` (день), `brightness_night` (ночь, default `0`);
 - вне окна `[on_time, off_time)` целевая яркость = `brightness_night` (обычно `0` — гарантированное выключение);
 - scheduler-dispatch `lighting_tick` передаёт в AE3 `desired_state` (`on`|`off`) и опционально `brightness_pct` — см. §4.4.1 и `SCHEDULER_AE3_NON_IRRIGATION_DISPATCH.md` §7.
@@ -434,7 +434,7 @@ interface SolutionTempTarget {
 }
 ```
 
-**Алерты (этап C.1 `AGRO_AUTONOMY_MASTER_PLAN.md`):**
+**Алерты:**
 - при устойчивом выходе `solution_temp_c` выше `max` N минут → `biz_solution_temp_high`;
 - при устойчивом выходе ниже `min` N минут → `biz_solution_temp_low`;
 - проверка выполняется в `history-logger` на ingest-пути телеметрии (env `SOLUTION_TEMP_ALERT_DELAY_MINUTES`, default `10`).

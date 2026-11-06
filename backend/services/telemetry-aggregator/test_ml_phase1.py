@@ -1,6 +1,6 @@
 """Tests for ML Phase 1 extensions to telemetry-aggregator.
 
-See doc_ai/09_AI_AND_DIGITAL_TWIN/ML_FEATURE_PIPELINE.md §5.1 + Приложение C.
+Schema: backend/laravel/database/migrations/2026_04_23_120000_extend_telemetry_aggregates_for_ml.php.
 """
 from main import AGG_VERSION_CURRENT, _build_agg_1m_query, _build_agg_1h_query
 

@@ -42,5 +42,5 @@ feature_builder_poll_runs_total
 
 ## Ссылки
 
-- Спецификация: `doc_ai/09_AI_AND_DIGITAL_TWIN/ML_FEATURE_PIPELINE.md` §6
+- Текущий состав и ограничения: `doc_ai/09_AI_AND_DIGITAL_TWIN/README.md`
 - Приложение C (решения и корректировки): тот же файл

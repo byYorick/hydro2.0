@@ -182,7 +182,7 @@ Breaking-change: обратная совместимость со старыми
 - `ae3_snapshot_retry_exhausted_total` — исчерпание retry budget
 
 **Greenhouse climate (отдельный runtime):**
-- `greenhouse_climate_*` метрики (см. `GREENHOUSE_CLIMATE_CONTROL_PLAN.md`)
+- `greenhouse_climate_*` метрики (см. `GREENHOUSE_CLIMATE_CONTROL_SPEC.md`)
 
 **Health:** `ae3_health_live`, `ae3_health_ready` (gauge 0/1).
 

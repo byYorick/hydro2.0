@@ -108,8 +108,7 @@ return [
     'digital_twin' => [
         'url' => env('DIGITAL_TWIN_URL', 'http://digital-twin:8003'),
         /*
-         * Bearer token для digital-twin mutating endpoints (см. S1.2 в
-         * AUDIT_2026_05_28_BUGFIX_PLAN.md). Должен совпадать с
+         * Bearer token для digital-twin mutating endpoints. Должен совпадать с
          * `DIGITAL_TWIN_API_TOKEN` на стороне digital-twin сервиса.
          * В production токен обязателен.
          */

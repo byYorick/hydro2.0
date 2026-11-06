@@ -126,7 +126,7 @@ Operator `FORCE_PH_CONTROL` / `FORCE_EC_CONTROL` / `FORCE_LIGHTING` / `FORCE_CLI
 - canonical flow для pump calibration — Laravel `POST /api/zones/{id}/calibrate-pump`
   (backend/AE владеет `run_token`, `zone_events`, `pump_calibrations`); HL — только transport `POST /commands`;
 - устаревший HL-path `POST /zones/{zone_id}/calibrate-pump` **удалён** (ответ `404`, не `410`);
-- **`set_position`** (roof vent, 0..100%): greenhouse climate tick; обязательный `params.position_pct`, опционально `params.max_step_pct` (см. `GREENHOUSE_CLIMATE_CONTROL_PLAN.md`).
+- **`set_position`** (roof vent, 0..100%): greenhouse climate tick; обязательный `params.position_pct`, опционально `params.max_step_pct` (см. `GREENHOUSE_CLIMATE_CONTROL_SPEC.md`).
 
 **Response (200 OK):**
 ```json

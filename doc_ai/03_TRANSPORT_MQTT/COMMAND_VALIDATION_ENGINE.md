@@ -102,7 +102,7 @@ Hard cap = 5 минут на одну команду в history-logger (`_MAX_DU
 0 <= position_pct <= 100
 max_step_pct optional, 0..100
 ```
-Валидация в `history-logger` `POST /commands` (см. `HISTORY_LOGGER_API.md`, `GREENHOUSE_CLIMATE_CONTROL_PLAN.md`).
+Валидация в `history-logger` `POST /commands` (см. `HISTORY_LOGGER_API.md`, `GREENHOUSE_CLIMATE_CONTROL_SPEC.md`).
 
 ### Команда set_relay:
 ```

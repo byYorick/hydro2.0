@@ -342,7 +342,7 @@ Backend → Node
 **Позиция привода (roof vent, greenhouse climate):**
 - `cmd`: `set_position`
 - `params`: обязательный `position_pct` (0..100), опционально `max_step_pct` (0..100)
-- каналы: `roof_vent_left`, `roof_vent_right` (см. `NODE_CHANNELS_REFERENCE.md`, `GREENHOUSE_CLIMATE_CONTROL_PLAN.md`).
+- каналы: `roof_vent_left`, `roof_vent_right` (см. `NODE_CHANNELS_REFERENCE.md`, `GREENHOUSE_CLIMATE_CONTROL_SPEC.md`).
 
 **Тест сенсора канала:**
 - `cmd`: `test_sensor`

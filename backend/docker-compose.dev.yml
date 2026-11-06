@@ -635,7 +635,7 @@ services:
     restart: unless-stopped
 
   # ML Phase 2 — единственный writer в zone_features_5m / ml_labels /
-  # dose_response_events. Подробности: doc_ai/09_AI_AND_DIGITAL_TWIN/ML_FEATURE_PIPELINE.md §6.
+  # dose_response_events. Текущий статус skeleton: backend/services/feature-builder/README.md.
   feature-builder:
     build:
       context: ./services

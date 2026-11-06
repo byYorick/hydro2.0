@@ -115,9 +115,8 @@ Breaking-change: обратная совместимость со старыми
 - **Frontend**: `07_FRONTEND/FRONTEND_ARCH_FULL.md`, `07_FRONTEND/FRONTEND_UI_UX_SPEC.md`
 - **Android**: `12_ANDROID_APP/ANDROID_APP_ARCH.md`, `12_ANDROID_APP/ANDROID_APP_API_INTEGRATION.md`
 - **AI / Digital Twin**:
- - `09_AI_AND_DIGITAL_TWIN/AI_OPTIMIZATION_ENGINE.md`
- - `09_AI_AND_DIGITAL_TWIN/DIGITAL_TWIN_ENGINE.md`
- - `09_AI_AND_DIGITAL_TWIN/ZONE_SIMULATION_ENGINE.md`
+ - `09_AI_AND_DIGITAL_TWIN/README.md` — состав опциональных сервисов и ограничения
+ - `../backend/services/digital-twin/README.md` — текущий интерфейс digital-twin
 - **Гайды для ИИ-агентов**:
  - `10_AI_DEV_GUIDES/*`
 

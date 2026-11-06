@@ -1,7 +1,7 @@
 """
 Water Cycle Engine - управление циркуляцией и сменой воды.
 Реализует логику замкнутого контура и плановой смены раствора.
-Согласно BACKEND_REFACTOR_PLAN.md разделы 10, 12, 13.
+Контракт водного контура: doc_ai/06_DOMAIN_ZONES_RECIPES/WATER_FLOW_ENGINE.md.
 """
 import logging
 from typing import Optional, Dict, Any, List, Tuple
