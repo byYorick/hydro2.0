@@ -1,8 +1,8 @@
 <template>
   <AppLayout>
     <template #default>
-      <div class="space-y-5">
-        <section class="ui-hero space-y-5 p-5 md:p-6">
+      <div class="dashboard-workspace min-w-0 space-y-5">
+        <section class="surface-card space-y-5 p-5 md:p-6">
           <div class="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
             <div class="min-w-0 space-y-1.5">
               <p class="text-[11px] uppercase tracking-[0.28em] text-[color:var(--text-muted)]">
@@ -35,8 +35,8 @@
           </div>
 
           <div
-            class="ui-kpi-grid grid-cols-2 md:grid-cols-3"
-            :class="(summary.zones_blocked ?? 0) > 0 ? 'xl:grid-cols-6' : 'xl:grid-cols-5'"
+            class="ui-kpi-grid dashboard-kpi-grid"
+            :class="{ 'dashboard-kpi-grid--blocked': (summary.zones_blocked ?? 0) > 0 }"
           >
             <div
               class="ui-kpi-card"
@@ -108,7 +108,7 @@
               <div class="ui-kpi-label text-status-critical">
                 Авто остановлено
               </div>
-              <div class="ui-kpi-value text-status-critical animate-pulse">
+              <div class="ui-kpi-value text-status-critical">
                 {{ summary.zones_blocked }}
               </div>
             </div>
@@ -134,11 +134,11 @@
         />
 
         <section class="surface-card rounded-2xl border border-[color:var(--border-muted)] p-3 md:p-4">
-          <div class="flex flex-col gap-3 lg:flex-row lg:items-center">
-            <div class="flex flex-1 flex-col gap-2 sm:flex-row sm:items-center">
+          <div class="dashboard-filters flex min-w-0 flex-col gap-3">
+            <div class="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-center">
               <TextField
                 v-model="query"
-                class="flex-1"
+                class="min-w-0 flex-1"
                 placeholder="Поиск зоны, культуры или теплицы"
                 aria-label="Поиск зоны, культуры или теплицы"
               />
@@ -245,7 +245,7 @@
             <h2 class="text-sm font-semibold text-[color:var(--text-primary)]">
               {{ group.crop }}
             </h2>
-            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            <div class="dashboard-zone-grid">
               <ZoneDashboardCard
                 v-for="zone in group.zones"
                 :key="zone.id"
@@ -259,7 +259,7 @@
 
         <div
           v-else
-          class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4"
+          class="dashboard-zone-grid"
         >
           <ZoneDashboardCard
             v-for="zone in pagedZones"
@@ -496,3 +496,68 @@ function eventKindLabel(kind: string): string {
   return translateEventKind(kind) || kind
 }
 </script>
+
+<style scoped>
+.dashboard-workspace {
+  container: dashboard / inline-size;
+}
+
+.dashboard-zone-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1rem;
+}
+
+.dashboard-kpi-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.dashboard-kpi-grid .ui-kpi-card {
+  min-width: 0;
+  padding: 1rem;
+  border-radius: var(--radius-control);
+  background: var(--bg-surface);
+  box-shadow: none;
+  animation: none;
+}
+
+.dashboard-kpi-grid .ui-kpi-card:hover { transform: none; }
+.dashboard-kpi-grid .ui-kpi-card::after { display: none; }
+
+.dashboard-kpi-grid .ui-kpi-label {
+  font-size: 0.75rem;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.dashboard-kpi-grid .ui-kpi-value {
+  font-family: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+  font-size: 1.875rem;
+}
+
+.dashboard-kpi-grid .text-status-ok { color: var(--status-ok); }
+.dashboard-kpi-grid .text-status-info { color: var(--status-info); }
+.dashboard-kpi-grid .text-status-warning { color: var(--status-warning); }
+.dashboard-kpi-grid .text-status-critical { color: var(--status-critical); }
+
+@container dashboard (min-width: 560px) {
+  .dashboard-kpi-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+@container dashboard (min-width: 760px) {
+  .dashboard-zone-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@container dashboard (min-width: 960px) {
+  .dashboard-kpi-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .dashboard-kpi-grid--blocked { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+}
+
+@container dashboard (min-width: 1100px) {
+  .dashboard-filters { flex-direction: row; align-items: center; }
+}
+
+@container dashboard (min-width: 1360px) {
+  .dashboard-zone-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+</style>
