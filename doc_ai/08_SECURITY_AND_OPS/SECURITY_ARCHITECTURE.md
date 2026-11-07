@@ -88,7 +88,7 @@ ACL (`backend/services/mqtt-bridge/acl`):
 - числа форматируются как в cJSON (int если целое, иначе 15/17 значащих),
 - строки JSON-экранируются, UTF-8, слэши не экранируются.
 
-**Канонический tolerance — 10 секунд** (см. `HMAC_TIMESTAMP_TOLERANCE_SEC` в `firmware/nodes/common/components/node_framework/node_command_handler.c` и `_MAX_TIMESTAMP_SKEW_SEC` в `backend/services/history-logger/commands/command_service.py`).
+**Допустимый offset — не более 10 секунд** (см. `HMAC_TIMESTAMP_TOLERANCE_SEC` в `firmware/nodes/common/components/node_framework/node_command_handler.c` и `_MAX_COMMAND_TS_OFFSET_SEC` в `backend/services/history-logger/command_service.py`). HL формирует `ts`, если он отсутствует, и всегда вычисляет `sig` сервером; caller-подпись не используется.
 
 > История: ранние версии этого документа упоминали «не старше 30 секунд». Это устаревший прицел — реальный firmware/HL контракт `±10 сек`. Точка синхронизации с `COMMAND_VALIDATION_ENGINE.md` §4.1 и §5.1.
 

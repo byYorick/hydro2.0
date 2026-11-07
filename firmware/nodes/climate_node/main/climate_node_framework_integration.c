@@ -282,44 +282,20 @@ static esp_err_t handle_set_pwm(
         return ESP_ERR_INVALID_ARG;
     }
 
+    cJSON *duty_item = cJSON_GetObjectItem(params, "duty");
     cJSON *value_item = cJSON_GetObjectItem(params, "value");
-    if (!cJSON_IsNumber(value_item)) {
+    node_pwm_value_t pwm;
+    if (!node_pwm_decode(duty_item != NULL,
+                         cJSON_IsNumber(duty_item) ? cJSON_GetNumberValue(duty_item) : NAN,
+                         value_item != NULL,
+                         cJSON_IsNumber(value_item) ? cJSON_GetNumberValue(value_item) : NAN,
+                         NODE_PWM_LEGACY_PERCENT_OR_RAW, &pwm)) {
         *response = node_command_handler_create_response(
-            NULL,
-            "ERROR",
-            "invalid_params",
-            "Missing or invalid value (must be number)",
-            NULL
-        );
+            NULL, "ERROR", "invalid_params",
+            "Expected duty in 0..100 percent or a numeric legacy value", NULL);
         return ESP_ERR_INVALID_ARG;
     }
-
-    int pwm_value = (int)cJSON_GetNumberValue(value_item);
-    float duty_percent;
-    
-    // Если значение <= 100, считаем это процентом, иначе 0-255
-    if (pwm_value <= 100) {
-        duty_percent = (float)pwm_value;
-    } else {
-        if (pwm_value < 0) {
-            pwm_value = 0;
-        }
-        if (pwm_value > 255) {
-            pwm_value = 255;
-        }
-        duty_percent = ((float)pwm_value / 255.0f) * 100.0f;
-    }
-
-    if (duty_percent < 0.0f || duty_percent > 100.0f) {
-        *response = node_command_handler_create_response(
-            NULL,
-            "ERROR",
-            "invalid_params",
-            "PWM value must be between 0 and 100 (or 0-255)",
-            NULL
-        );
-        return ESP_ERR_INVALID_ARG;
-    }
+    float duty_percent = pwm.percent;
 
     esp_err_t err = pwm_driver_set_duty_percent(channel, duty_percent);
     if (err != ESP_OK) {
@@ -341,7 +317,7 @@ static esp_err_t handle_set_pwm(
         NULL
     );
 
-    ESP_LOGI(TAG, "PWM %s set to %d (%.1f%%)", channel, pwm_value, duty_percent);
+    ESP_LOGI(TAG, "PWM %s set to %.1f%%", channel, duty_percent);
     return ESP_OK;
 }
 

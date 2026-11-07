@@ -559,6 +559,8 @@ interface LightingTarget {
 | `"on"` | Вход в окно `[on_time, off_time)` и/или interval-тик внутри окна | `set_pwm {duty: brightness_pct}` или `set_relay {state: true}` |
 | `"off"` | Выход из окна (переход `on → off` в `off_time`), в т.ч. в гибридном item | `set_pwm {duty: 0}` или `set_relay {state: false}` |
 
+Таблица описывает выход AE3 planner. Текущие `climate_node`/`test_node` принимают `params.duty` в процентах; legacy `value` сохранён с прежними шкалами. Для старых установленных бинарников требуется обновление firmware — [COMMAND_VALIDATION_ENGINE.md](../03_TRANSPORT_MQTT/COMMAND_VALIDATION_ENGINE.md#команда-set_pwm).
+
 Поля dispatch-payload (см. `StartLightingTickRequest`, `ScheduleDispatcher.php`):
 
 - `desired_state`: `"on"` \| `"off"`, default `"on"` (backward-compat для interval/time-spec без окна).

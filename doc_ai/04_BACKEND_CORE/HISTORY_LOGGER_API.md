@@ -46,7 +46,7 @@ Laravel scheduler-dispatch → REST (9405) → Automation-Engine → REST (9300)
 
 ## 2. Endpoints
 
-### Полный список endpoints (sync с кодом 2026-08-02)
+### Полный список endpoints (сверено с route decorators 2026-11-07)
 
 | Метод | Путь | Назначение |
 |-------|------|-----------|
@@ -65,10 +65,12 @@ Laravel scheduler-dispatch → REST (9405) → Automation-Engine → REST (9300)
 | POST | `/internal/metrics/ws-event` | WebSocket event metrics |
 | GET | `/api/dlq/alerts` | DLQ alerts list (см. §2.1.5) |
 | POST | `/api/dlq/alerts/{dlq_id}/replay` | Replay одного alert из DLQ |
-| DELETE | `/api/dlq/alerts/{id}` | Удаление alert из DLQ |
+| DELETE | `/api/dlq/alerts/{dlq_id}` | Удаление alert из DLQ |
+| DELETE | `/api/dlq/alerts` | Очистка всей DLQ alerts |
 | GET | `/api/dlq/status-updates` | DLQ status updates list |
 | POST | `/api/dlq/status-updates/{dlq_id}/replay` | Replay одного status update |
-| DELETE | `/api/dlq/status-updates/{id}` | Удаление status update из DLQ |
+| DELETE | `/api/dlq/status-updates/{dlq_id}` | Удаление status update из DLQ |
+| DELETE | `/api/dlq/status-updates` | Очистка всей DLQ status updates |
 | GET | `/api/dlq/metrics` | DLQ summary metrics |
 
 Webhook callback (HL → Laravel): `POST {LARAVEL_URL}/api/internal/webhooks/history-logger/execution-event` с HMAC-подписью (`HISTORY_LOGGER_WEBHOOK_SECRET`). Используется для Scheduler Cockpit causal chain. См. §2.7.
@@ -189,7 +191,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 
 ### 2.1.1. POST /zones/{zone_id}/commands
 
-**Описание:** Zone-scoped публикация команды. Используется Laravel `PythonBridgeService` (`backend/laravel/app/Services/PythonBridgeService.php`) для всех команд, инициированных из Laravel.
+**Описание:** Zone-scoped публикация команды. Используется Laravel `PythonBridgeService` (`backend/laravel/app/Services/PythonBridgeService.php`) для zone-scoped device-команд из Laravel; node-scoped путь — §2.1.2.
 
 **URL:** `POST /zones/{zone_id}/commands`
 
@@ -344,7 +346,7 @@ curl -H "Authorization: Bearer $HISTORY_LOGGER_API_TOKEN" \
 | DELETE | `/api/dlq/status-updates/{id}` | Hard delete |
 | GET | `/api/dlq/metrics` | Summary (queue depth, failure rate, oldest entry age) |
 
-Аутентификация: те же правила, что у `/commands` (Bearer token + production-only enforcement).
+Аутентификация: те же правила, что у `/commands`: настроенный Bearer token проверяется во всех окружениях; production требует настроенного токена. Без него вне production допускается только localhost (§9).
 
 ### 2.2. GET /health
 
@@ -476,7 +478,7 @@ High-level product labels (`FORCE_IRRIGATION`, `LIGHT_ON`, `VENT_ON`, `REBOOT`, 
 | `run_pump` | Насос / полив / recirculation | `duration_ms`, опционально volume/flow hints |
 | `dose` | Дозирование pH/EC | `ml` (доменный must — AE3/Laravel; HL sanity при наличии), `duration_ms` (optional) |
 | `set_relay` | Реле on/off | `state` / `on` |
-| `set_pwm` | PWM / яркость / скорость | `duty` / `brightness` / `percent` (по каналу) |
+| `set_pwm` | PWM / яркость / скорость | HL передаёт params без преобразования; `duty` в процентах `0..100` принимают текущие `climate_node` / `test_node`; legacy `value` имеет разные шкалы, см. `../03_TRANSPORT_MQTT/COMMAND_VALIDATION_ENGINE.md` §4.2 |
 | `set_position` | Позиционный привод | позиция / угол (по каналу) |
 | `calibrate` | Калибровка сенсора/насоса | `stage`, `known_ph` / `tds_value` / … |
 | `test_sensor` | Тест SENSOR-канала | по контракту канала |
@@ -651,17 +653,21 @@ ws_broadcast_total / ws_auth_total
 
 ## 7. Обработка ошибок
 
-### 7.1. Коды ошибок
+### 7.1. HTTP-ошибки
 
-| Код | HTTP Status | Описание |
-|-----|-------------|----------|
-| `validation_failed` | 400 | Невалидные данные команды / отсутствует `cmd` / запрещён `type` |
-| `missing_required_params` | 400 | Отсутствуют обязательные параметры (напр. `zone_id`, `channel`) |
-| `invalid_param_value` | 400 | Невалидное значение параметра (sanity bounds) |
-| `unauthorized` | 401 | Отсутствует/некорректен токен |
-| `mqtt_publish_failed` | 500 | Ошибка публикации в MQTT |
-| `db_insert_failed` | 500 | Ошибка записи в БД |
-| `service_unavailable` | 503 | Сервис недоступен |
+HL использует FastAPI `HTTPException`: ответ содержит `detail` (строку или объект), а при Pydantic validation — список ошибок. Единого поля `code` с названиями `validation_failed` / `mqtt_publish_failed` и т.п. в этих routes нет.
+
+| HTTP Status | Условие / фактический `detail` |
+|-------------|-------------------------------|
+| 400 | Отсутствует `cmd`, передан legacy `type`, нет target/channel или нарушен sanity cap; `detail` объясняет конкретную проверку |
+| 401 | `_auth_ingest`: отсутствует/неверен токен или внешний dev-запрос без токена |
+| 404 | Нода не найдена (`Node '...' not found`) |
+| 409 | Коллизия `cmd_id`, неподтверждённый binding, неразрешимый zone UID; lease gate возвращает `detail.error=ae3_zone_lease_held` |
+| 422 | Невалидная форма/типы body по Pydantic |
+| 500 | Publish исчерпал попытки; либо `published_but_status_not_persisted`; в production также отсутствующий ingest token в конфигурации |
+| 503 | Нельзя проверить назначение ноды, получить её secret или сохранить команду до publish |
+
+Для `/ingest/telemetry` дополнительно возможны `413` (лимит payload) и `429` (ingest rate limit). Источники: `command_routes.py`, `commands/{validation,resolution,lease_gate,lifecycle,publisher}.py`, `auth.py`, `ingest_routes.py`.
 
 HL **не** возвращает `unknown_command_type` — enum `cmd` из §3 не enforce на транспорте (каталог — контракт AE3/firmware/MQTT).
 
@@ -669,7 +675,7 @@ HL **не** возвращает `unknown_command_type` — enum `cmd` из §3 
 
 History-logger использует retry для MQTT publish (`MQTT_PUBLISH_RETRY_DELAYS_SEC`, `MAX_PUBLISH_RETRIES=3`):
 - максимум 3 попытки;
-- задержки: **500ms / 1s / 2s**;
+- между тремя попытками две задержки: **500 ms / 1 s**; третий элемент tuple `2 s` при default `MAX_PUBLISH_RETRIES=3` не используется;
 - после исчерпания — статус `SEND_FAILED` (lowercase `failed` запрещён).
 
 ---

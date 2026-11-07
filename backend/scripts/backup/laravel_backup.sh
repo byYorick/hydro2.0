@@ -3,6 +3,7 @@
 # Архивирует .env, storage/app/ota, storage/app/public, composer.lock
 
 set -euo pipefail
+umask 077
 
 # Цвета для вывода
 RED='\033[0;31m'
@@ -57,6 +58,13 @@ if [ -f "${LARAVEL_DIR}/.env" ]; then
     log "Скопирован .env"
 else
     warning ".env файл не найден"
+fi
+
+# Preserve the key actually loaded by Laravel, including config:cache.
+if [ -n "${ACTIVE_APP_KEY:-}" ]; then
+    touch "${TEMP_DIR}/.env"
+    sed -i '/^APP_KEY=/d' "${TEMP_DIR}/.env"
+    printf 'APP_KEY=%s\n' "${ACTIVE_APP_KEY}" >> "${TEMP_DIR}/.env"
 fi
 
 # Копирование storage/app/ota

@@ -782,6 +782,8 @@ runtime = plan.runtime
 
 Контракт Pydantic: `ae3lite/api/contracts.py` → `StartLightingTickRequest`.
 
+Firmware-совместимость: текущие `climate_node` и `test_node` принимают PWM `duty` в процентах из AE3; преобразование в raw выполняет общий firmware decoder. Старые установленные бинарники требуют обновления — см. [COMMAND_VALIDATION_ENGINE.md](../03_TRANSPORT_MQTT/COMMAND_VALIDATION_ENGINE.md#команда-set_pwm).
+
 **Реализовано (2026-08-17):** `desired_state` / `brightness_pct` в HTTP + planner ON/OFF. Laravel: на границе окна фотопериода шлёт `on`/`off` даже если у того же `ScheduleItem` есть `interval_sec`; битый `desired_state` — fail-closed skip (не default ON). См. `SCHEDULER_AE3_NON_IRRIGATION_DISPATCH.md` §7.
 
 ### 7.2.3 `POST /zones/{id}/start-solution-change` (semi-auto v1)

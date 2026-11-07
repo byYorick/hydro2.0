@@ -10,6 +10,7 @@
 #include "setup_portal.h"
 #include "test_node_ui.h"
 #include "node_utils.h"
+#include "node_pwm_command.h"
 #include "esp_log.h"
 #include "esp_random.h"
 #include "esp_timer.h"
@@ -3528,10 +3529,16 @@ static void extract_command_params(cJSON *command_json, pending_command_t *job) 
         }
     }
 
-    cJSON *pwm = cJSON_GetObjectItem(params, "value");
-    if (pwm && cJSON_IsNumber(pwm)) {
+    cJSON *duty = cJSON_GetObjectItem(params, "duty");
+    cJSON *value = cJSON_GetObjectItem(params, "value");
+    node_pwm_value_t pwm;
+    if (node_pwm_decode(duty != NULL,
+                        cJSON_IsNumber(duty) ? cJSON_GetNumberValue(duty) : NAN,
+                        value != NULL,
+                        cJSON_IsNumber(value) ? cJSON_GetNumberValue(value) : NAN,
+                        NODE_PWM_LEGACY_RAW, &pwm)) {
         job->pwm_value_present = true;
-        job->pwm_value = (int)cJSON_GetNumberValue(pwm);
+        job->pwm_value = pwm.raw;
     }
 
     cJSON *ml = cJSON_GetObjectItem(params, "ml");
