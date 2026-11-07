@@ -1,246 +1,221 @@
 <template>
   <ErrorBoundary>
     <div class="app-shell">
-      <div class="min-h-screen text-[color:var(--text-primary)]">
-        <div class="flex h-screen overflow-hidden">
-          <!-- Desktop Sidebar -->
-          <aside
-            class="hidden lg:flex shrink-0 flex-col border-r border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] backdrop-blur-xl glass-panel transition-all duration-300 relative z-20"
-            :class="collapsed ? 'w-16' : 'w-64'"
-          >
-            <!-- Logo -->
-            <div
-              class="h-14 flex items-center border-b border-[color:var(--border-muted)] shrink-0 transition-all duration-300"
-              :class="collapsed ? 'justify-center px-2' : 'px-4 gap-3'"
-            >
-              <div class="h-7 w-7 shrink-0 rounded-lg bg-[linear-gradient(135deg,var(--status-ok),var(--status-info))] shadow-[0_0_0_1px_var(--badge-success-border)]"></div>
-              <Transition name="fade-slide">
-                <div
-                  v-if="!collapsed"
-                  class="min-w-0"
-                >
-                  <div class="text-sm font-semibold tracking-tight leading-none">
-                    hydro 2.0
-                  </div>
-                  <div class="text-[10px] uppercase tracking-[0.2em] text-[color:var(--text-dim)] mt-0.5">
-                    agronomy deck
-                  </div>
-                </div>
-              </Transition>
-            </div>
-
-            <!-- Nav -->
-            <nav
-              id="app-sidebar-nav"
-              class="flex-1 py-2 overflow-y-auto overflow-x-hidden scrollbar-glow transition-all duration-300"
-              :class="collapsed ? 'px-2' : 'px-3'"
-              aria-label="Разделы"
-            >
-              <RoleBasedNavigation :collapsed="collapsed" />
-            </nav>
-
-            <!-- User + Toggle -->
-            <div class="shrink-0 border-t border-[color:var(--border-muted)] p-2 space-y-1">
-              <UserMenu :collapsed="collapsed" />
-              <div :class="collapsed ? 'flex justify-center' : 'flex justify-end'">
-                <button
-                  type="button"
-                  class="p-1.5 rounded-lg text-[color:var(--text-dim)] hover:text-[color:var(--text-primary)] hover:bg-[color:var(--bg-elevated)] transition-colors"
-                  :aria-expanded="!collapsed"
-                  aria-controls="app-sidebar-nav"
-                  :aria-label="collapsed ? 'Развернуть меню' : 'Свернуть меню'"
-                  :title="collapsed ? 'Развернуть меню' : 'Свернуть меню'"
-                  @click="toggleSidebar"
-                >
-                  <svg
-                    class="h-4 w-4 transition-transform duration-300"
-                    :class="collapsed ? 'rotate-180' : ''"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="1.5"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                  >
-                    <path d="M15 18l-6-6 6-6" />
-                  </svg>
-                </button>
-              </div>
-            </div>
-          </aside>
-
-          <!-- Mobile Navigation Menu -->
+      <div class="app-frame">
+        <aside
+          class="app-sidebar hidden shrink-0 flex-col border-r border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] lg:flex"
+          :class="collapsed ? 'w-16' : 'w-56'"
+        >
           <div
-            v-if="showMobileMenu"
-            class="fixed inset-0 z-50 lg:hidden"
-            @click="showMobileMenu = false"
+            class="flex h-16 shrink-0 items-center border-b border-[color:var(--border-muted)]"
+            :class="collapsed ? 'justify-center px-2' : 'gap-3 px-4'"
           >
-            <div class="fixed inset-0 bg-[color:var(--bg-main)] opacity-80 backdrop-blur-sm"></div>
             <div
-              id="mobile-nav"
-              class="fixed left-0 top-0 bottom-0 w-72 bg-[color:var(--bg-surface-strong)] border-r border-[color:var(--border-muted)] glass-panel"
-              @click.stop
+              class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[color:var(--btn-primary-bg)] text-xl font-semibold text-[color:var(--btn-primary-text)]"
+              aria-hidden="true"
             >
-              <div class="h-16 flex items-center justify-between px-4 border-b border-[color:var(--border-muted)]">
-                <span class="text-base font-semibold">hydro 2.0</span>
-                <button
-                  type="button"
-                  class="p-2 rounded-md text-[color:var(--text-dim)] hover:text-[color:var(--text-primary)] hover:bg-[color:var(--bg-elevated)]"
-                  aria-label="Закрыть меню"
-                  @click="showMobileMenu = false"
-                >
-                  <svg
-                    class="h-6 w-6"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      stroke-width="2"
-                      d="M6 18L18 6M6 6l12 12"
-                    />
-                  </svg>
-                </button>
+              h
+            </div>
+            <div
+              v-if="!collapsed"
+              class="min-w-0"
+            >
+              <div class="text-base font-semibold leading-tight tracking-tight">
+                hydro 2.0
               </div>
-              <nav
-                class="p-4 space-y-1 overflow-y-auto"
-                aria-label="Разделы"
-                @click="showMobileMenu = false"
-              >
-                <RoleBasedNavigation />
-              </nav>
+              <div class="mt-0.5 text-[11px] text-[color:var(--text-muted)]">
+                Управление выращиванием
+              </div>
             </div>
           </div>
 
-          <main class="flex-1 flex flex-col min-h-0 relative z-10">
-            <!-- Header Status Bar -->
-            <div class="shrink-0">
-              <HeaderStatusBar />
-            </div>
-
-            <!-- Mobile header -->
-            <header class="h-16 flex items-center justify-between px-4 border-b border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] lg:hidden backdrop-blur-xl shrink-0">
-              <div class="flex items-center gap-3">
-                <button
-                  type="button"
-                  class="p-2 rounded-md text-[color:var(--text-muted)] hover:text-[color:var(--text-primary)] hover:bg-[color:var(--bg-elevated)]"
-                  aria-label="Открыть меню"
-                  :aria-expanded="showMobileMenu"
-                  aria-controls="mobile-nav"
-                  @click="showMobileMenu = !showMobileMenu"
-                >
-                  <svg
-                    class="h-6 w-6"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      stroke-width="2"
-                      d="M4 6h16M4 12h16M4 18h16"
-                    />
-                  </svg>
-                </button>
-                <span class="text-base font-semibold">hydro 2.0</span>
-              </div>
-              <span class="text-xs text-[color:var(--text-dim)] hidden sm:inline">Ctrl+K — Командная палитра</span>
-            </header>
-
-            <div class="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-4 py-3 pb-20 lg:pb-6 space-y-2">
-              <div
-                v-if="showBreadcrumbs"
-                class="glass-panel border border-[color:var(--border-muted)] px-3 py-1.5 rounded-xl shadow-[var(--shadow-card)]"
-              >
-                <Breadcrumbs />
-              </div>
-              <Transition
-                name="page"
-                mode="out-in"
-              >
-                <div :key="$page.url">
-                  <slot></slot>
-                </div>
-              </Transition>
-            </div>
-            <CommandPalette />
-            <ToastContainer />
-            <MobileNavigation />
-          </main>
-
-          <aside
-            class="hidden xl:flex shrink-0 border-l border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] glass-panel flex-col h-screen transition-[width] duration-300 relative z-20"
-            :class="eventsCollapsed ? 'w-12' : 'w-80'"
-            data-testid="events-rail"
+          <nav
+            id="app-sidebar-nav"
+            class="min-h-0 flex-1 overflow-y-auto overflow-x-hidden py-5 scrollbar-thin"
+            :class="collapsed ? 'px-2' : 'px-3'"
+            aria-label="Разделы"
           >
-            <div
-              class="h-16 flex items-center border-b border-[color:var(--border-muted)] shrink-0 gap-2"
-              :class="eventsCollapsed ? 'justify-center px-1' : 'justify-between px-4'"
-            >
-              <span
-                v-if="!eventsCollapsed"
-                class="text-sm text-[color:var(--text-dim)] uppercase tracking-[0.2em]"
-              >события</span>
+            <RoleBasedNavigation :collapsed="collapsed" />
+          </nav>
+
+          <div class="shrink-0 space-y-2 border-t border-[color:var(--border-muted)] p-2">
+            <UserMenu :collapsed="collapsed" />
+            <div :class="collapsed ? 'flex justify-center' : 'flex justify-end'">
               <button
                 type="button"
-                class="p-1.5 rounded-lg text-[color:var(--text-dim)] hover:text-[color:var(--text-primary)] hover:bg-[color:var(--bg-elevated)] transition-colors"
-                :aria-label="eventsCollapsed ? 'Развернуть события' : 'Свернуть события'"
-                :title="eventsCollapsed ? 'Развернуть события' : 'Свернуть события'"
-                data-testid="events-rail-toggle"
-                :aria-expanded="!eventsCollapsed"
-                aria-controls="events-rail-body"
-                @click="toggleEventsRail"
+                class="app-icon-button"
+                :aria-expanded="!collapsed"
+                aria-controls="app-sidebar-nav"
+                :aria-label="collapsed ? 'Развернуть меню' : 'Свернуть меню'"
+                :title="collapsed ? 'Развернуть меню' : 'Свернуть меню'"
+                @click="toggleSidebar"
               >
                 <svg
-                  class="h-4 w-4 transition-transform duration-300"
-                  :class="eventsCollapsed ? '' : 'rotate-180'"
+                  class="h-4 w-4"
+                  :class="collapsed ? 'rotate-180' : ''"
                   viewBox="0 0 24 24"
                   fill="none"
                   stroke="currentColor"
                   stroke-width="1.5"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
                   aria-hidden="true"
                 >
-                  <path d="M9 18l6-6-6-6" />
+                  <path d="m15 18-6-6 6-6" />
                 </svg>
               </button>
             </div>
+          </div>
+        </aside>
 
-            <div
-              v-if="!eventsCollapsed"
-              id="events-rail-body"
-              class="flex-1 min-h-0 flex flex-col overflow-hidden"
-            >
-              <div class="p-4 space-y-4 shrink-0">
-                <FavoritesWidget />
-                <HistoryWidget />
+        <main class="relative z-10 flex min-h-0 min-w-0 flex-1 flex-col">
+          <div class="shrink-0">
+            <HeaderStatusBar />
+          </div>
+          <header class="app-topbar">
+            <div class="flex min-w-0 items-center gap-3">
+              <button
+                type="button"
+                class="app-icon-button lg:hidden"
+                aria-label="Открыть меню"
+                :aria-expanded="showMobileMenu"
+                aria-controls="mobile-nav"
+                @click="showMobileMenu = true"
+              >
+                <svg
+                  class="h-5 w-5"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.5"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                >
+                  <path d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+              </button>
+              <span class="text-base font-semibold lg:hidden">hydro 2.0</span>
+              <div
+                v-if="showBreadcrumbs"
+                class="hidden min-w-0 lg:block"
+              >
+                <Breadcrumbs />
               </div>
-              <div class="flex-1 min-h-0 px-4 pb-4 overflow-hidden">
-                <slot name="context"></slot>
-              </div>
-            </div>
-
-            <div
-              v-else
-              class="flex-1 flex flex-col items-center pt-3 gap-2"
-            >
               <span
-                class="text-[10px] uppercase tracking-[0.18em] text-[color:var(--text-dim)] [writing-mode:vertical-rl] rotate-180 select-none"
-              >события</span>
+                v-else
+                class="hidden text-sm text-[color:var(--text-muted)] lg:inline"
+              >Запуск выращивания</span>
             </div>
-          </aside>
-        </div>
+            <div class="flex shrink-0 items-center gap-2">
+              <button
+                type="button"
+                class="app-icon-button sm:w-auto sm:gap-2 sm:px-3"
+                aria-label="Открыть поиск и командную палитру"
+                title="Поиск и команды (Ctrl+K)"
+                @click="commandPalette?.open()"
+              >
+                <svg
+                  class="h-4 w-4"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.5"
+                  aria-hidden="true"
+                >
+                  <circle
+                    cx="10.5"
+                    cy="10.5"
+                    r="6.5"
+                  /><path d="m16 16 5 5" />
+                </svg>
+                <span class="hidden text-xs sm:inline">Поиск</span>
+                <kbd class="hidden rounded border border-[color:var(--border-muted)] px-1 text-[11px] text-[color:var(--text-muted)] md:inline">Ctrl K</kbd>
+              </button>
+              <button
+                type="button"
+                class="app-icon-button sm:w-auto sm:gap-2 sm:px-3"
+                :aria-label="eventsCollapsed ? contextLabel : 'Закрыть панель'"
+                :title="contextLabel"
+                :aria-expanded="!eventsCollapsed"
+                aria-controls="events-rail-body"
+                data-testid="events-rail-toggle"
+                @click="toggleEventsRail"
+              >
+                <svg
+                  class="h-4 w-4"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.5"
+                  aria-hidden="true"
+                >
+                  <path d="M4 5h16v14H4zM15 5v14M7 9h4M7 13h4" />
+                </svg>
+                <span class="hidden text-xs sm:inline">{{ hasContext ? 'События' : 'Избранное' }}</span>
+              </button>
+            </div>
+          </header>
+
+          <div class="app-page min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain">
+            <Transition
+              name="page"
+              mode="out-in"
+            >
+              <div
+                :key="page.url"
+                class="min-w-0"
+              >
+                <slot></slot>
+              </div>
+            </Transition>
+          </div>
+          <CommandPalette ref="commandPalette" />
+          <ToastContainer />
+          <MobileNavigation
+            :menu-open="showMobileMenu"
+            @open-menu="showMobileMenu = true"
+          />
+        </main>
       </div>
+
+      <Modal
+        id="mobile-nav"
+        :open="showMobileMenu"
+        title="Разделы"
+        placement="left"
+        hide-default-cancel
+        @close="showMobileMenu = false"
+      >
+        <nav
+          aria-label="Все разделы"
+          @click="showMobileMenu = false"
+        >
+          <RoleBasedNavigation />
+        </nav>
+      </Modal>
+      <Modal
+        id="events-rail-body"
+        :open="!eventsCollapsed"
+        :title="contextLabel"
+        placement="right"
+        hide-default-cancel
+        data-testid="events-rail"
+        @close="closeEventsRail"
+      >
+        <div class="flex min-h-full flex-col gap-6">
+          <FavoritesWidget />
+          <HistoryWidget />
+          <div
+            v-if="hasContext"
+            class="flex min-h-0 flex-1 flex-col"
+          >
+            <slot name="context"></slot>
+          </div>
+        </div>
+      </Modal>
     </div>
   </ErrorBoundary>
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch, onMounted } from 'vue'
+import { computed, onMounted, ref, useSlots, watch } from 'vue'
 import { usePage } from '@inertiajs/vue3'
 import CommandPalette from '@/Components/CommandPalette.vue'
 import RoleBasedNavigation from '@/Components/RoleBasedNavigation.vue'
@@ -252,14 +227,18 @@ import MobileNavigation from '@/Components/MobileNavigation.vue'
 import FavoritesWidget from '@/Components/FavoritesWidget.vue'
 import HistoryWidget from '@/Components/HistoryWidget.vue'
 import UserMenu from '@/Components/UserMenu.vue'
+import Modal from '@/Components/Modal.vue'
 import { useKeyboardShortcuts } from '@/composables/useKeyboardShortcuts'
 
 const page = usePage()
+const slots = useSlots()
 const showBreadcrumbs = computed(() => !String(page.url || '').startsWith('/launch'))
+const hasContext = computed(() => Boolean(slots.context))
+const contextLabel = computed(() => hasContext.value ? 'События и избранное' : 'Избранное и история')
 const showMobileMenu = ref(false)
 const collapsed = ref(false)
-const eventsCollapsed = ref(false)
-
+const eventsCollapsed = ref(true)
+const commandPalette = ref<InstanceType<typeof CommandPalette> | null>(null)
 const EVENTS_RAIL_STORAGE_KEY = 'events-rail-collapsed'
 
 function toggleSidebar() {
@@ -272,33 +251,37 @@ function toggleEventsRail() {
   localStorage.setItem(EVENTS_RAIL_STORAGE_KEY, String(eventsCollapsed.value))
 }
 
+function closeEventsRail() {
+  eventsCollapsed.value = true
+  localStorage.setItem(EVENTS_RAIL_STORAGE_KEY, 'true')
+}
+
 onMounted(() => {
   collapsed.value = localStorage.getItem('sidebar-collapsed') === 'true'
-  eventsCollapsed.value = localStorage.getItem(EVENTS_RAIL_STORAGE_KEY) === 'true'
+  eventsCollapsed.value = localStorage.getItem(EVENTS_RAIL_STORAGE_KEY) !== 'false'
   useKeyboardShortcuts()
 })
 
-watch(showMobileMenu, (val) => {
-  if (val) document.body.style.overflow = 'hidden'
-  else document.body.style.overflow = ''
+watch(() => page.url, () => {
+  showMobileMenu.value = false
+  closeEventsRail()
 })
 </script>
 
 <style>
-.fade-slide-enter-active { transition: opacity 0.2s ease, transform 0.2s ease; }
-.fade-slide-leave-active { transition: opacity 0.15s ease, transform 0.15s ease; }
-.fade-slide-enter-from { opacity: 0; transform: translateX(-6px); }
-.fade-slide-leave-to { opacity: 0; transform: translateX(-6px); }
-
-.page-enter-active { transition: opacity 0.2s ease, transform 0.2s ease; }
-.page-leave-active { transition: opacity 0.15s ease, transform 0.15s ease; }
-.page-enter-from { opacity: 0; transform: translateY(4px); }
-.page-enter-to { opacity: 1; transform: translateY(0); }
-.page-leave-from { opacity: 1; transform: translateY(0); }
-.page-leave-to { opacity: 0; transform: translateY(-4px); }
+.page-enter-active { transition: opacity 0.15s ease, transform 0.15s ease; }
+.page-leave-active { transition: opacity 0.1s ease; }
+.page-enter-from { opacity: 0; transform: translateY(3px); }
+.page-leave-to { opacity: 0; }
 
 .scrollbar-thin::-webkit-scrollbar { width: 6px; }
 .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
 .scrollbar-thin::-webkit-scrollbar-thumb { background-color: var(--border-muted); border-radius: 3px; }
 .scrollbar-thin::-webkit-scrollbar-thumb:hover { background-color: var(--border-strong); }
+
+@media (prefers-reduced-motion: reduce) {
+  .page-enter-active,
+  .page-leave-active { transition: none; }
+  .page-enter-from { transform: none; }
+}
 </style>

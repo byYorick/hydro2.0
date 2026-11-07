@@ -493,6 +493,8 @@ function close(): void {
   searchResults.value = { zones: [], nodes: [], recipes: [] }
 }
 
+defineExpose({ open: () => { open.value = true } })
+
 watch(open, (isOpen: boolean) => {
   if (isOpen) {
     nextTick(() => {
