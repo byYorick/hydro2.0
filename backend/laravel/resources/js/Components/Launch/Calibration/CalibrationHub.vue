@@ -409,20 +409,19 @@ function openPumpWizardFromReadiness(): void {
   pumpDrawerOpen.value = true
 }
 
+async function openSensorDrawer(channelId: number | null): Promise<void> {
+  await loadSensorStatus()
+  currentSub.value = 'sensors'
+  forcedSensorChannelId.value = channelId
+  sensorDrawerOpen.value = true
+}
+
 function openSensorWizardFromReadiness(): void {
-  currentSub.value = 'sensors'
-  forcedSensorChannelId.value = null
-  sensorDrawerOpen.value = true
+  void openSensorDrawer(null)
 }
-
-function openSensorDrawerGeneric(): void {
-  openSensorWizardFromReadiness()
-}
-
+const openSensorDrawerGeneric = openSensorWizardFromReadiness
 function onSensorCalibrateFromRow(item: SensorCalibrationOverview): void {
-  currentSub.value = 'sensors'
-  forcedSensorChannelId.value = item.node_channel_id
-  sensorDrawerOpen.value = true
+  void openSensorDrawer(item.node_channel_id)
 }
 
 function onSensorDrawerClose(): void {

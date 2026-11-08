@@ -106,7 +106,7 @@ const ZONE_TAB_LAYOUT_BY_ROLE: Record<UserRole, ZoneTabLayout> = {
     defaultTab: 'cycle',
     primary: [
       tab('cycle', 'Цикл'),
-      tab('automation', 'Раствор'),
+      tab('automation', 'Цели и автоматика'),
       tab('telemetry', 'Телеметрия'),
       tab('alerts', 'Отклонения'),
     ],
@@ -120,7 +120,7 @@ const ZONE_TAB_LAYOUT_BY_ROLE: Record<UserRole, ZoneTabLayout> = {
     defaultTab: 'devices',
     primary: [
       tab('devices'),
-      tab('automation', 'Процесс'),
+      tab('automation', 'Работа процесса'),
       tab('scheduler'),
       tab('events'),
       tab('telemetry'),
@@ -138,7 +138,7 @@ const ZONE_TAB_LAYOUT_BY_ROLE: Record<UserRole, ZoneTabLayout> = {
       tab('events', 'Журнал'),
     ],
     more: [
-      tab('automation', 'Раствор'),
+      tab('automation', 'Цели и автоматика'),
       tab('scheduler'),
       tab('telemetry'),
     ],

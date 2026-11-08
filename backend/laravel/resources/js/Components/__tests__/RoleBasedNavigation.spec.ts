@@ -144,20 +144,20 @@ describe('RoleBasedNavigation', () => {
     expect(hrefs(wrapper)).toContain('/nutrients')
   })
 
-  it('renders engineer items with nodes first', () => {
+  it('renders engineer diagnostics before the equipment catalog', () => {
     const wrapper = mountForRole('engineer')
 
     expect(hrefs(wrapper)).toEqual([
-      '/devices',
       '/',
+      '/devices',
       '/zones',
       '/alerts',
       '/monitoring',
       '/logs',
     ])
-    expect(labels(wrapper)[0]).toBe('Узлы')
+    expect(labels(wrapper)[0]).toBe('Диагностика')
     expect(groupLabels(wrapper)).toEqual(['Работа', 'Система'])
-    expect(wrapper.text()).toContain('Обзор')
+    expect(wrapper.text()).toContain('Диагностика')
     expect(wrapper.text()).toContain('Здоровье системы')
     expect(wrapper.text()).not.toContain('Рецепты')
     expect(wrapper.text()).not.toContain('Запуск')
@@ -187,7 +187,7 @@ describe('RoleBasedNavigation', () => {
     expect(wrapper.text()).not.toContain('Аудит')
     expect(wrapper.text()).not.toContain('Логи')
     expect(wrapper.text()).toContain('Здоровье системы')
-    expect(wrapper.text()).toContain('Узлы')
+    expect(wrapper.text()).toContain('Оборудование')
     expect(wrapper.text()).not.toContain('Рецепты')
     expect(wrapper.text()).not.toContain('Культуры')
     expect(wrapper.text()).not.toContain('Запуск')

@@ -111,4 +111,21 @@ describe('Modal.vue', () => {
 
     wrapper.unmount()
   })
+  it('передаёт Escape верхнему диалогу и сохраняет рабочую область под ним', async () => {
+    const parent = mount(Modal, { props: { open: true, placement: 'workspace', title: 'Рабочая область', hideDefaultCancel: true }, slots: { default: '<input value="Несохранённый ввод" />' }, attachTo: document.body })
+    await nextTick()
+    const input = document.body.querySelector('input') as HTMLInputElement
+    input.focus()
+    const child = mount(Modal, { props: { open: true, title: 'Подтверждение' }, attachTo: document.body })
+    await nextTick()
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    expect(child.emitted('close')).toHaveLength(1)
+    expect(parent.emitted('close')).toBeUndefined()
+    await child.setProps({ open: false })
+    expect(document.activeElement).toBe(input)
+    expect(input.value).toBe('Несохранённый ввод')
+    child.unmount()
+    parent.unmount()
+  })
+
 })

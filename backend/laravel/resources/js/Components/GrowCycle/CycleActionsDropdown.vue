@@ -31,6 +31,7 @@
         v-if="canManage && cycleStatus === 'RUNNING'"
         type="button"
         :disabled="loading.cyclePause"
+        :data-testid="pauseTestId"
         class="dropdown-action"
         @click="$emit('pause')"
       >
@@ -58,6 +59,7 @@
         v-if="canManage && isActive"
         type="button"
         :disabled="loading.nextPhase || nextPhaseDisabled"
+        :data-testid="nextPhaseTestId"
         :title="nextPhaseHint ?? undefined"
         class="dropdown-action"
         :class="phaseReadyBadge ? 'dropdown-action--ready' : ''"
@@ -137,6 +139,8 @@ const props = withDefaults(defineProps<{
   loading: CycleLoadingState
   controlMode?: AutomationControlMode | null
   phaseDurationComplete?: boolean
+  pauseTestId?: string
+  nextPhaseTestId?: string
 }>(), {
   canManageRecipe: false,
 })
