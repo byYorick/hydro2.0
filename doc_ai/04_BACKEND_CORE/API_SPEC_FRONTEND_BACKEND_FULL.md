@@ -1,4 +1,4 @@
-д# API_SPEC_FRONTEND_BACKEND_FULL.md
+# API_SPEC_FRONTEND_BACKEND_FULL.md
 # Полная детальная спецификация API между Frontend и Backend (2.0)
 # **ОБНОВЛЕНО ПОСЛЕ AUTHORITY CUTOVER 2026-03-24**
 
@@ -39,27 +39,27 @@ Breaking-change: обратная совместимость со старыми
 ## 1. Общие принципы API
 
 - Базовый префикс REST-API: `/api`.
-- Все ответы — JSON.
-- Аутентификация — token-based (например, `Authorization: Bearer <token>`).
+- REST-ответы обычно JSON; metrics возвращает Prometheus text, stream endpoints — SSE.
+- Пользовательский API принимает Sanctum Bearer token или web-сессию; служебные endpoints имеют отдельные проверки токена/HMAC.
 - Валидация на backend → фронт получает структурированные ошибки.
 - Локализация сообщений об ошибках — через стандартные механизмы Laravel.
 
 ### 1.1. Требования аутентификации
 
 **Публичные эндпоинты** (не требуют аутентификации):
+- `POST /api/auth/login` — вход (throttle `10,1`)
 - `GET /api/system/health` - проверка здоровья сервиса
-- `GET /api/system/scheduler/metrics` - Prometheus exposition для Laravel scheduler
-- `POST /api/python/ingest/telemetry` - инжест телеметрии (token-based)
-- `POST /api/python/commands/ack` - подтверждение команд (token-based)
-- `POST /api/alerts/webhook` - webhook от Alertmanager
 
 **Service-token / служебные эндпоинты**:
+- `GET /api/system/scheduler/metrics` — `verify.scheduler.metrics`: Bearer `AUTOMATION_LARAVEL_SCHEDULER_METRICS_TOKEN`, если он настроен; без настройки middleware пропускает запрос.
+- `POST /api/python/ingest/telemetry`, `/api/python/commands/ack`, `/api/python/nodes/config-report-observed`, `/api/python/broadcast/telemetry`, `/api/python/alerts` — `PythonIngestController::ensureToken`: `PY_INGEST_TOKEN`, fallback `PY_API_TOKEN`; без настроенного или корректного токена — `401`.
+- `POST /api/alerts/webhook` — `verify.alertmanager.webhook` плюс registration IP whitelist/throttle: Bearer, `X-Webhook-Secret`, Basic password или отдельный allowed-IP путь по конфигурации. Это не анонимный production endpoint.
 - `GET /api/system/config/full` - полная конфигурация (middleware `verify.python.service`: Sanctum или service token)
 
 **Защищенные эндпоинты** (требуют `auth:sanctum`):
 - Все эндпоинты в разделах 3-7, 9-12 требуют аутентификации через Laravel Sanctum
 - Раздел 2 (Auth): `POST /api/auth/logout` и `GET /api/auth/me` требуют аутентификации
-- Раздел 8 (System): `GET /api/system/health` и `GET /api/system/scheduler/metrics` публичные, `GET /api/system/config/full` защищен `verify.python.service`
+- Раздел 8 (System): `GET /api/system/health` публичный; metrics использует `verify.scheduler.metrics`, config — `verify.python.service`.
 - Токен передается в заголовке: `Authorization: Bearer <token>`
 - Токен получается через `POST /api/auth/login`
 
@@ -559,23 +559,16 @@ authority-документ `zone.logic_profile` через API `/api/automation-
   - `subsystems.zone_climate.enabled: bool`
   - `subsystems.zone_climate.execution: {}`
 
-Минимальные поля `subsystems` для `2 бака`:
-- `subsystems.diagnostics.execution.topology = \"two_tank_drip_substrate_trays\"`
-- `subsystems.diagnostics.execution.startup.clean_fill_timeout_sec` (default `1200`)
-- `subsystems.diagnostics.execution.startup.solution_fill_timeout_sec` (default `1800`)
-- `subsystems.diagnostics.execution.startup.level_poll_interval_sec` (default `60`)
-- `subsystems.diagnostics.execution.startup.clean_fill_retry_cycles` (default `1`)
-- `subsystems.irrigation.decision.strategy = "task"|"smart_soil_v1"`
-- `subsystems.irrigation.recovery.enabled` (default `true`)
-- `subsystems.irrigation.recovery.max_continue_attempts`
-- `subsystems.irrigation.safety.stop_on_solution_min`
-- `subsystems.diagnostics.execution.startup.prepare_recirculation_timeout_sec` (default `1200`)
-- `subsystems.irrigation.recovery.max_continue_attempts` (default `5`)
-- `subsystems.irrigation.recovery.degraded_tolerance.ec_pct` (default `20`)
-- `subsystems.irrigation.recovery.degraded_tolerance.ph_pct` (default `10`)
-- `subsystems.diagnostics.execution.dosing_rules.prepare_allowed_components = [\"npk\"]`
-- `subsystems.irrigation.dosing_rules.irrigation_allowed_components = [\"calcium\", \"magnesium\", \"micro\"]`
-- `subsystems.irrigation.dosing_rules.irrigation_forbid_components = [\"npk\"]`
+Распределение настроек для `2 бака` (сверено с `runtime_plan_builder.py`):
+
+- `subsystems.diagnostics.execution.topology = "two_tank_drip_substrate_trays"` выбирает workflow.
+- `subsystems.irrigation.decision.strategy = "task"|"smart_soil_v1"` задаёт стратегию полива.
+- `subsystems.irrigation.execution.irrigation_ec_component = "none"|"calcium"|"npk"` выбирает один EC-компонент на поливе; Mg/Micro на этом этапе запрещены.
+- Таймауты fill и retry, freshness, интервалы опроса и контроллеры читаются из resolved authority `zone.correction` (`base` с `phases.solution_fill|tank_recirc|irrigation` overrides). Сохранять их только в старом `diagnostics.execution.startup.*` недостаточно: это не текущий источник этих полей в builder.
+- В fill разрешён только calcium (`pump_b`), без pH; рециркуляция выполняет `Ca → pH → Mg → pH → NPK → pH → Micro → pH`. Старые `prepare_allowed_components=["npk"]` и `irrigation_allowed_components=["calcium","magnesium","micro"]` не описывают действующий алгоритм.
+- `subsystems.irrigation.recovery` остаётся deprecated compatibility block; post-irrigation chemistry recovery не включается его наличием.
+
+Поля и границы correction authority — [CORRECTION_CYCLE_SPEC.md](../06_DOMAIN_ZONES_RECIPES/CORRECTION_CYCLE_SPEC.md) и [PID_CONFIG_REFERENCE.md](../06_DOMAIN_ZONES_RECIPES/PID_CONFIG_REFERENCE.md). Их production defaults задаёт `ZoneCorrectionConfigCatalog`, а исполняемые значения фиксируются в bundle revision активного grow cycle.
 
 Ограничение:
 - recipe-targets (`ph/ec/...`) не сохраняются в logic-profile.
@@ -1507,7 +1500,7 @@ authority-документ `zone.logic_profile` через API `/api/automation-
 
 ### 8.3. GET /api/system/scheduler/metrics
 
-- **Аутентификация:** Публичный эндпоинт
+- **Аутентификация:** `verify.scheduler.metrics`; при заданном `AUTOMATION_LARAVEL_SCHEDULER_METRICS_TOKEN` требуется соответствующий Bearer token, иначе endpoint доступен без него.
 - **Формат ответа:** `text/plain; version=0.0.4`
 - **Назначение:** Prometheus scrape endpoint для Laravel scheduler.
 - **Источник данных:** персистентные aggregate tables; `scheduler_logs` остаются diagnostics-only и не участвуют в реконструкции `counter`/`histogram`.

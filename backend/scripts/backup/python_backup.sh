@@ -3,6 +3,7 @@
 # Архивирует .env файлы и конфигурации Python сервисов
 
 set -euo pipefail
+umask 077
 
 # Цвета для вывода
 RED='\033[0;31m'
@@ -54,6 +55,19 @@ log "Начало создания бэкапа Python сервисов..."
 # Список сервисов для бэкапа
 SERVICES=("automation-engine" "mqtt-bridge" "history-logger")
 BACKED_UP_SERVICES=()
+
+# Compose supplies the runtime environment for all Python services.
+if [ -n "${DEPLOY_ENV_FILE:-}" ] || [ -n "${DEPLOY_COMPOSE_FILE:-}" ]; then
+    mkdir -p "${TEMP_DIR}/deployment"
+    for source_file in "${DEPLOY_ENV_FILE:-}" "${DEPLOY_COMPOSE_FILE:-}"; do
+        if [ ! -f "${source_file}" ]; then
+            error "Deployment source file is missing: ${source_file}"
+            exit 1
+        fi
+    done
+    cp "${DEPLOY_ENV_FILE}" "${TEMP_DIR}/deployment/compose.env"
+    cp "${DEPLOY_COMPOSE_FILE}" "${TEMP_DIR}/deployment/docker-compose.yml"
+fi
 
 # Копирование конфигураций для каждого сервиса
 for service in "${SERVICES[@]}"; do

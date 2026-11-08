@@ -1,453 +1,83 @@
 # OPERATIONS_GUIDE.md
-# Руководство по эксплуатации системы hydro2.0
+# Эксплуатация Hydro 2.0
 
-Документ описывает ежедневные, еженедельные и ежемесячные операции для поддержания системы в рабочем состоянии.
-
+**Сверено с кодом:** 2026-11-07. Команды dev ниже выполняются из корня репозитория. Production использует `backend/docker-compose.prod.yml` и `backend/.env.prod`; доступность host-портов отличается от dev.
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
-Breaking-change: обратная совместимость со старыми форматами и алиасами не поддерживается.
 
----
+## Ежедневные проверки
 
-## 1. Ежедневные операции
-
-### 1.1. Проверка бэкапов (утром, после 3:30)
-
-**Цель:** Убедиться, что ночной бэкап выполнился успешно.
-
-**Действия:**
 ```bash
-# Проверка списка бэкапов
-php artisan backup:list
+# Dev: состав и состояние контейнеров
+docker compose -f backend/docker-compose.dev.yml ps
+make logs SERVICE=laravel TAIL=100
 
-# Проверка последнего бэкапа
-BACKUP_DIR=/backups/full/$(ls -t /backups/full | head -1)
-ls -lh $BACKUP_DIR
-
-# Проверка manifest
-cat $BACKUP_DIR/manifest.json | jq .
+# Production: использовать отдельный Compose/env
+make prod-ps
+make prod-logs SERVICE=laravel TAIL=100
 ```
 
-**Критерии успеха:**
-- Последний бэкап создан сегодня после 3:00
-- Все компоненты успешно забэкаплены (status: "success" в manifest)
-- Размеры бэкапов соответствуют ожидаемым
+Логи с `-f` следуют за выводом; завершение просмотра — Ctrl+C. Core-стек содержит MQTT, PostgreSQL, Redis, Laravel, history-logger, mqtt-bridge, AE3 и telemetry-aggregator. Monitoring — профиль `obs` (`make up-obs` в dev), simulation/ML — отдельные profiles.
 
-**Действия при ошибке:**
-- Проверить логи: `docker-compose logs laravel | grep backup`
-- Запустить бэкап вручную: `php artisan backup:full`
-- Проверить свободное место на диске
+Dev HTTP-проверки:
 
-### 1.2. Мониторинг системы
-
-**Цель:** Проверить здоровье всех компонентов системы.
-
-**Действия:**
 ```bash
-# Проверка статуса контейнеров
-docker-compose ps
-
-# Проверка здоровья сервисов
-curl http://localhost:8080/api/system/health
-curl http://localhost:9000/metrics  # MQTT bridge
-curl http://localhost:9405/metrics/  # Automation engine
-curl http://localhost:8080/api/system/scheduler/metrics  # метрики Laravel scheduler-dispatch (Prometheus text)
-
-# Проверка Grafana (если доступна)
-# Grafana/Prometheus не в default: COMPOSE_PROFILES=obs или make up-obs.
-curl http://localhost:3000/api/health
+curl -fsS http://localhost:8080/api/system/health
+curl -fsS http://localhost:9300/health
+curl -fsS http://localhost:9405/health/live
+curl -fsS http://localhost:9405/health/ready
 ```
 
-**Критерии успеха:**
-- Все контейнеры в статусе "Up"
-- Health endpoints возвращают 200 OK
-- Метрики собираются корректно
+В production HL/AE/DB/Redis не публикуют эти host-порты. Проверять их нужно внутри Compose-сети или через отдельно настроенный monitoring. `mqtt-bridge` предоставляет `/metrics` и live-status probe; команды публикует только history-logger.
 
-**Действия при ошибке:**
-- Проверить логи проблемного сервиса
-- Перезапустить сервис: `docker-compose restart <service>`
-- См. соответствующий раздел в RUNBOOKS.md
+`/api/system/scheduler/metrics` использует `verify.scheduler.metrics`: при настроенном `AUTOMATION_LARAVEL_SCHEDULER_METRICS_TOKEN` нужен соответствующий Bearer token. UI алертов — `/alerts`; ack переводит ACTIVE в RESOLVED. Доступ к данным определяется ролью и scope пользователя.
 
-### 1.3. Проверка алертов
+## Расписания и хранение
 
-**Цель:** Проверить наличие активных алертов.
+Для просмотра Laravel Schedule в dev:
 
-**Действия:**
-- Открыть UI: http://localhost:8080/alerts
-- Проверить Grafana Alerts: http://localhost:3000/alerting
-- Проверить Alertmanager: http://localhost:9093
-
-**Критерии успеха:**
-- Нет критических алертов
-- Все resolved алерты обработаны
-
-**Действия при алертах:**
-- Изучить детали алерта
-- Выполнить диагностику согласно типу алерта
-- При необходимости — эскалация
-
-### 1.4. Проверка свободного места
-
-**Цель:** Убедиться, что есть достаточно места для бэкапов и логов.
-
-**Действия:**
 ```bash
-# Проверка места на диске
-df -h
-
-# Проверка размера директорий
-du -sh /backups/*
-du -sh /var/lib/docker/volumes/*
+docker compose -f backend/docker-compose.dev.yml exec -T laravel php artisan schedule:list
 ```
 
-**Критерии успеха:**
-- Свободно минимум 20% места на диске с бэкапами
-- Размер бэкапов не превышает ожидаемый
+`Schedule::command` описывает план, а не факт успешного запуска. Проверяйте scheduler process, логи, метрики pending intents/active tasks и результаты jobs. `schedule:test` выполняет выбранное задание и не является просмотром последнего запуска.
 
-**Действия при нехватке места:**
-- Запустить ротацию бэкапов вручную
-- Удалить старые логи
-- Очистить Docker: `docker system prune`
+Фактические jobs из `routes/console.php`:
 
----
+| Job | Расписание / роль |
+|---|---|
+| `telemetry:cleanup-raw` | ежедневно 02:00, default 30d |
+| `logs:cleanup --days=30` | воскресенье 02:00 |
+| `ae3:cleanup-old-tasks --days=90` | ежедневно 03:30 |
+| `backup:full` | ежедневно 03:00; application scope по умолчанию, см. ниже |
+| `rotate_backups.sh` | ежедневно 03:30 из настроенного backup script directory |
 
-## 2. Еженедельные операции
+Непрерывный writer агрегатов — Python telemetry-aggregator. `telemetry:aggregate` и `commands:archive` / `zone-events:archive` не включены в Schedule. Сроки и ограничения — [DATA_RETENTION_POLICY.md](../05_DATA_AND_STORAGE/DATA_RETENTION_POLICY.md).
 
-### 2.1. Проверка ротации бэкапов
+## Проверка бэкапов
 
-**Цель:** Убедиться, что старые бэкапы удаляются согласно политике retention.
+Проверяйте manifest, exit code, состав архивов и пробное восстановление в отдельную БД. Дата файла, успешный zip или запись в Schedule не доказывают восстановимость всей системы.
 
-**Действия:**
-```bash
-# Проверка количества бэкапов
-ls -d /backups/full/* | wc -l
-ls -d /backups/postgres/* | wc -l
+Стандартный dev/prod Compose предоставляет `/scripts/backup` и read-only `/backup-sources`. `backup:full` использует активный Laravel config для БД и APP_KEY; создаёт application backup без Docker daemon. Manifest явно показывает scope и пропущенные компоненты; ошибка запрошенного компонента завершает команду ошибкой. Для включения volume-компонента требуется отдельное подготовленное окружение и `BACKUP_INCLUDE_DOCKER_VOLUMES=true`.
 
-# Проверка возраста старых бэкапов
-find /backups/full -type d -mtime +30
-find /backups/postgres -type d -mtime +30
+`mqtt_backup.sh` сохраняет доступные dev/prod конфиги, обязательные passwords/ACL и certs; deployment env/Compose входят в Python config archive. Архивы закрыты `umask 077`. Per-node secrets находятся в БД/NVS; полный backup не заменяет отдельную копию NVS устройств.
 
-# Проверка WAL архивов
-find /wal_archive -type f -mtime +7
-```
+`backup:database` — отдельная Artisan-команда с собственной ротацией 7d; её наличие не закрывает backup конфигураций и Docker volumes. Порядок и границы восстановления — [BACKUP_AND_RECOVERY.md](BACKUP_AND_RECOVERY.md), диагностика — [RUNBOOKS.md](RUNBOOKS.md).
 
-**Критерии успеха:**
-- Нет бэкапов старше 30 дней (полные)
-- Нет WAL архивов старше 7 дней
-- Ротация выполняется автоматически
+## Еженедельное и ежемесячное обслуживание
 
-**Действия при проблемах:**
-- Запустить ротацию вручную: `./scripts/backup/rotate_backups.sh`
-- Проверить расписание: `php artisan schedule:list`
-- Проверить логи ротации
+- Проверять рост raw/aggregates, логов, DLQ, очередь команд, свободное место и результаты очистки. `telemetry_daily` и archive tables не имеют автоматического TTL.
+- Проверять действующие DB retention jobs: миграции могут пропустить Timescale/pg_cron при отсутствии extension или ошибке.
+- Проверять восстановление выбранного dump в изолированную БД; полный DR — на отдельном стенде. Логический dump вместе с WAL не образует физический PITR.
+- Сверять обновления зависимостей через lockfiles и CI, выполнять Composer/NPM audit в контейнере. Не подменять deployment произвольным `composer update` / `npm update` на работающем сервере.
+- Проверять MQTT ACL/пароли/TLS, токены сервисов и обратную связь от устройств. Открытый порт 8883 не подтверждает, что listener с TLS запущен.
 
-### 2.2. Тестирование восстановления одного компонента
+## Обновление приложения
 
-**Цель:** Убедиться, что бэкапы можно восстановить.
+Развёртывание выполняется из выбранного и проверенного revision; build, миграции и health checks описаны в [FULL_STACK_DEPLOY_DOCKER.md](../04_BACKEND_CORE/FULL_STACK_DEPLOY_DOCKER.md).
 
-**Действия:**
-```bash
-# Выбрать старый тестовый бэкап (не последний!)
-TEST_BACKUP=/backups/postgres/$(ls -t /backups/postgres | tail -1)
+В production основной путь — `make prod-check`, `make prod-up`, `make prod-migrate`, затем проверка readiness и логов. Сохраняйте существующий `APP_KEY` и secrets; `prod-seed` — отдельная bootstrap-операция. Повторно генерировать ключ при обычном deploy/restore нельзя.
 
-# Восстановить в тестовую БД (DB_NAME через env; флага --db-name в скрипте нет)
-docker compose -f backend/docker-compose.dev.yml exec db \
-  psql -U hydro -c "CREATE DATABASE test_restore;"
-DB_NAME=test_restore backend/scripts/restore/postgres_restore.sh "$TEST_BACKUP"/*.dump
+Перед рестартом AE3 проверьте active tasks/commands и владение lease. После рестарта проверяйте recovery/reconcile, а не отправляйте повторную физическую дозу из-за отсутствия прогресса UI. Точные инцидентные процедуры — [RUNBOOKS.md](RUNBOOKS.md).
 
-# Проверить целостность
-docker compose -f backend/docker-compose.dev.yml exec db \
-  psql -U hydro -d test_restore -c "\dt"
-
-# Удалить тестовую БД
-docker compose -f backend/docker-compose.dev.yml exec db \
-  psql -U hydro -c "DROP DATABASE test_restore;"
-```
-
-**Критерии успеха:**
-- Бэкап успешно восстанавливается
-- Данные целостны
-- Время восстановления приемлемо
-
-**Действия при проблемах:**
-- Проверить целостность бэкапа: `php artisan backup:list --verify`
-- Проверить логи восстановления
-- При необходимости — создать новый бэкап
-
-### 2.3. Обзор метрик и производительности
-
-**Цель:** Выявить тренды и потенциальные проблемы.
-
-**Действия:**
-- Открыть Grafana: http://localhost:3000
-- Проверить дашборды:
-  - System Overview
-  - Zone Telemetry
-  - Node Status
-  - Alerts Dashboard
-- Проанализировать тренды за неделю
-
-**Критерии успеха:**
-- Нет аномальных трендов
-- Производительность в норме
-- Нет утечек памяти или ресурсов
-
-**Действия при проблемах:**
-- Изучить детали метрик
-- Проверить логи соответствующих сервисов
-- При необходимости — оптимизация
-
----
-
-## 3. Ежемесячные операции
-
-### 3.1. Полное тестирование Disaster Recovery
-
-**Цель:** Убедиться, что система может быть полностью восстановлена.
-
-**Действия:**
-
-1. **Подготовка тестовой среды**
-   ```bash
-   # Создать тестовую копию docker-compose
-   cp docker-compose.dev.yml docker-compose.test.yml
-   # Изменить порты и имена контейнеров
-   ```
-
-2. **Выполнить полное восстановление**
-   ```bash
-   # Выбрать бэкап месячной давности
-   TEST_BACKUP=/backups/full/$(ls -t /backups/full | tail -1)
-   
-   # Восстановить все компоненты
-   ./scripts/restore/full_restore.sh $TEST_BACKUP
-   ```
-
-3. **Проверить работоспособность**
-   - Запустить все сервисы
-   - Проверить API endpoints
-   - Проверить подключение узлов ESP32
-   - Проверить телеметрию
-
-**Критерии успеха:**
-- Все компоненты восстановлены
-- Система полностью функциональна
-- Измерены RTO/RPO; целевой RTO ≤30 минут, результат занесён в протокол проверки
-
-**Документирование:**
-- Записать время восстановления
-- Записать найденные проблемы
-- Обновить процедуры при необходимости
-
-### 3.2. Аудит безопасности
-
-**Цель:** Проверить безопасность системы.
-
-**Действия:**
-```bash
-# Из корня репозитория, в подготовленном dev-стеке
-docker compose -f backend/docker-compose.dev.yml exec -T laravel composer audit
-docker compose -f backend/docker-compose.dev.yml exec -T laravel npm audit
-
-# Проверка конфигурации без вывода значений секретов (из корня репозитория)
-docker compose -f backend/docker-compose.dev.yml exec -T laravel php artisan security:check-config
-
-# Проверка прав доступа
-ls -la backend/laravel/.env
-ls -la backend/laravel/storage/
-```
-
-**Критерии успеха:**
-- Нет критических уязвимостей
-- Секреты не закоммичены
-- Права доступа корректны
-
-**Действия при проблемах:**
-- Обновить уязвимые зависимости
-- Исправить права доступа
-- Ротация секретов при необходимости
-
-### 3.3. Обновление документации
-
-**Цель:** Поддержать документацию в актуальном состоянии.
-
-**Действия:**
-- Проверить актуальность RUNBOOKS.md
-- Обновить процедуры при изменениях
-- Добавить новые процедуры при необходимости
-- Проверить ссылки на скрипты и команды
-
----
-
-## 4. Процедуры обновления системы
-
-### 4.1. Обновление зависимостей
-
-**Последовательность:**
-
-1. **Создать бэкап перед обновлением**
-   ```bash
-   php artisan backup:full
-   ```
-
-2. **Обновить зависимости**
-   ```bash
-   cd backend/laravel
-   composer update
-   npm update
-   ```
-
-3. **Проверить тесты**
-   ```bash
-   php artisan test
-   npm test
-   ```
-
-4. **Применить миграции (если есть)**
-   ```bash
-   php artisan migrate
-   ```
-
-5. **Перезапустить сервисы**
-   ```bash
-   docker-compose restart
-   ```
-
-### 4.2. Обновление Docker образов
-
-**Последовательность:**
-
-1. **Создать бэкап**
-   ```bash
-   php artisan backup:full
-   ```
-
-2. **Обновить образы**
-   ```bash
-   docker-compose pull
-   docker-compose up -d
-   ```
-
-3. **Проверить работоспособность**
-   ```bash
-   docker-compose ps
-   curl http://localhost:8080/api/system/health
-   ```
-
-### 4.3. Обновление кода приложения
-
-**Последовательность:**
-
-1. **Создать бэкап**
-   ```bash
-   php artisan backup:full
-   ```
-
-2. **Получить обновления**
-   ```bash
-   git pull
-   ```
-
-3. **Обновить зависимости**
-   ```bash
-   composer install
-   npm install
-   ```
-
-4. **Применить миграции**
-   ```bash
-   php artisan migrate
-   ```
-
-5. **Очистить кэши**
-   ```bash
-   php artisan config:clear
-   php artisan cache:clear
-   php artisan view:clear
-   ```
-
-6. **Перезапустить сервисы**
-   ```bash
-   docker-compose restart
-   ```
-
----
-
-## 5. Процедуры масштабирования
-
-### 5.1. Добавление новых зон
-
-**Действия:**
-1. Создать зону через UI или API
-2. Настроить рецепт для зоны
-3. Привязать узлы ESP32
-4. Проверить телеметрию
-
-### 5.2. Добавление новых узлов ESP32
-
-**Действия:**
-1. Прошить узел прошивкой
-2. Настроить Wi-Fi и MQTT
-3. Зарегистрировать узел через API
-4. Проверить подключение и телеметрию
-
-### 5.3. Масштабирование сервисов
-
-**Действия:**
-1. Оценить нагрузку (метрики Prometheus)
-2. Добавить реплики сервисов в docker-compose
-3. Настроить load balancing (если необходимо)
-4. Мониторить производительность
-
----
-
-## 6. Чек-листы
-
-### 6.1. Ежедневный чек-лист
-- [ ] Бэкапы созданы успешно
-- [ ] Все сервисы работают
-- [ ] Нет критических алертов
-- [ ] Достаточно свободного места
-- [ ] Логи не переполнены
-
-### 6.2. Еженедельный чек-лист
-- [ ] Ротация бэкапов работает
-- [ ] Тестирование восстановления выполнено
-- [ ] Метрики проанализированы
-- [ ] Нет аномальных трендов
-
-### 6.3. Ежемесячный чек-лист
-- [ ] Полное тестирование DR выполнено
-- [ ] Аудит безопасности выполнен
-- [ ] Документация обновлена
-- [ ] Все процедуры проверены
-
----
-
-## 7. Контакты и эскалация
-
-**При критических инцидентах:**
-1. Проверить RUNBOOKS.md для быстрых решений
-2. Выполнить диагностику согласно процедурам
-3. При необходимости — восстановление из бэкапа
-4. Эскалация при невозможности решения проблемы
-
-**Логи и мониторинг:**
-- Логи Laravel: `docker-compose logs laravel`
-- Логи Python сервисов: `docker-compose logs <service>`
-- Grafana: http://localhost:3000
-- Prometheus: http://localhost:9090
-- Alertmanager: http://localhost:9093
-
----
-
-## 8. Полезные ссылки
-
-- **RUNBOOKS.md** — быстрые процедуры на случай инцидентов
-- **BACKUP_AND_RECOVERY.md** — детальная информация о бэкапах
-- **SYSTEM_FAILURE_RECOVERY.md** — процедуры восстановления после сбоев
-- **SECURITY_ARCHITECTURE.md** — архитектура безопасности
-
----
-
-# Конец файла OPERATIONS_GUIDE.md
+Добавление зон/нод проходит через Laravel API/UI и подтверждённый binding `config_report`. Увеличение числа экземпляров worker не заменяет проверку single-writer/fencing; ограничения одной инсталляции — [SINGLE_INSTANCE_SPOF_RUNBOOK.md](SINGLE_INSTANCE_SPOF_RUNBOOK.md).

@@ -12,7 +12,7 @@
 - Поведение runtime — код. Защищённые контракты — `doc_ai/` (совпадают с кодом).
 - Doc-first — только контракты, не любая фича.
 - Новые Python-сервисы, новые AE3 `task_type`, новые authority document types — **запрещены без явного запроса**.
-- Default `make up` = core (laravel, mqtt-bridge, history-logger, automation-engine, postgres, redis, mosquitto). Не поднимать digital-twin / feature-builder / node-emulator без запроса.
+- Default `make up` = core (mqtt, db, redis, laravel, mqtt-bridge, history-logger, automation-engine, telemetry-aggregator). Не поднимать digital-twin / feature-builder / node-emulator без запроса.
 
 ## Нельзя
 

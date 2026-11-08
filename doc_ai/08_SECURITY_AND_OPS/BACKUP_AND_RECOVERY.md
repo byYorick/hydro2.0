@@ -5,7 +5,7 @@
 Документ описывает полную стратегию резервного копирования (Backup) 
 и восстановления (Recovery) для гидропонной системы 2.0.
 
-**Сверено:** 2026-11-06. Логический backup/restore реализован скриптами
+**Сверено:** 2026-11-07. Логический backup/restore реализован скриптами
 `backend/scripts/backup/postgres_backup.sh` и `backend/scripts/restore/postgres_restore.sh`.
 Полноценная процедура физического PITR этими скриптами не реализована.
 
@@ -106,15 +106,13 @@ zip -r laravel_backup.zip .env storage/app/ota storage/app/public composer.lock
 
 ## 4.1. Что нужно бэкапить:
 
-- `.env`
-- конфиг nodes secrets (`nodes.json`)
-- конфиги сервисов (`automation-engine`, `history-logger`, `mqtt-bridge`, при наличии)
+- `backend/.env` / `backend/.env.prod` и используемые внешние secret files;
+- конфиги сервисов (`automation-engine`, `history-logger`, `mqtt-bridge`, при наличии);
+- per-node secrets из БД (`nodes.config.node_secret`) и отдельно NVS устройств. Обязательного runtime-файла `nodes.json` нет.
 
 ## 4.2. Команда:
 
-```
-zip python_backup.zip .env secrets/ config/
-```
+`backend/scripts/backup/python_backup.sh` сохраняет service `.env` / config-каталоги и deployment `compose.env` / `docker-compose.yml`, переданные `FullBackupCommand`. Отсутствие заданного deployment source завершает компонент ошибкой. Источник — read-only mounts `/backup-sources`; копии содержат secrets и хранятся с закрытыми правами.
 
 ---
 
@@ -122,15 +120,13 @@ zip python_backup.zip .env secrets/ config/
 
 ## 5.1. Что нужно бэкапить:
 
-- `mosquitto/passwd`
-- `mosquitto/acl`
-- конфиг mosquitto.conf
+- `backend/services/mqtt-bridge/mosquitto.dev.conf` либо `mosquitto.prod.conf`;
+- `backend/services/mqtt-bridge/passwords.txt` и `acl`;
+- production `certs/` и внешний источник сертификатов/ключей, если используется.
 
 ## 5.2. Команда:
 
-```
-zip mqtt_backup.zip mosquitto/passwd mosquitto/acl mosquitto.conf
-```
+Точные источники — mounts сервиса `mqtt` в выбранном Compose. `mqtt_backup.sh` сохраняет имеющиеся dev/prod конфиги, обязательные `passwords.txt` и `acl`, а также `certs/` (включая содержимое symlink targets) и MQTT YAML. Отсутствие обязательных auth/config файлов завершает backup ошибкой; пустой zip не считается успехом. Внешние источники сертификатов/секретов, которые не представлены в этих mounts, сохраняются отдельно.
 
 ---
 
@@ -172,6 +168,11 @@ Production env и секреты сохраняются отдельно в за
 
 Используйте `backend/scripts/backup/full_backup.sh` и компонентные скрипты из
 `backend/scripts/backup/`, предварительно сверив пути, права и целевое окружение.
+Dev/prod Compose монтирует `/scripts/backup` и read-only `/backup-sources` (services, configs, выбранные Compose/env). `config/backup.php` задаёт пути; `FullBackupCommand` передаёт активные DB host/port/name/user/password и `APP_KEY` из Laravel config, в том числе при config cache. Dockerfiles устанавливают `postgresql-client-16`, `zip`, `jq`; клиент соответствует серверу PostgreSQL 16.
+
+Artisan по умолчанию создаёт **application backup**: логический DB dump + Laravel files/активный APP_KEY + Python/deployment config + MQTT. Docker daemon не требуется. `BACKUP_INCLUDE_DOCKER_VOLUMES=true` включает отдельный volume-компонент только в подготовленном окружении с Docker; `--skip-docker` / `--skip-mqtt` реально передаются скрипту. Manifest содержит `scope`, component `success|failed|skipped` и точные счётчики; пропуск MQTT делает scope `partial_application`. Запрошенный компонент с ошибкой или пустым artifact приводит к ненулевому exit code.
+
+Каталоги/архивы создаются с `umask 077`; подпапка полного backup уникальна даже при одновременных запусках. Расписание и наличие файлов всё равно проверяются по manifest и пробному восстановлению.
 Состав, manifest и exit code проверяются после запуска; частично созданный архив
 не считается успешной полной копией. Сырые архивы активных Docker volumes
 не подтверждают согласованность PostgreSQL; БД проверяется по логическому dump
@@ -252,10 +253,10 @@ AE3 и scheduler запускаются после проверки восста
 
 ## 9.4. Восстановление MQTT
 
-```
-unzip mqtt.zip
-docker compose -f backend/docker-compose.dev.yml restart mqtt
-```
+Распакуйте выбранный архив во временный каталог, проверьте его состав и восстановите
+файлы в реальные bind-mount источники выбранного Compose (`services/mqtt-bridge/`).
+Один `unzip mqtt.zip` не обновляет эти источники. Проверьте соответствие dev/prod конфигурации и полноту сертификатов; старые архивы до исправления 2026-11-07 могли не содержать ACL/passwords/prod config/certs. После восстановления полного набора
+перезапустите `mqtt` и проверьте listener, ACL и подключение нод.
 
 ---
 

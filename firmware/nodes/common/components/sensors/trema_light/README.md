@@ -150,7 +150,7 @@ if (trema_light_read(&lux_value)) {
     oled_ui_update_model(&model);
     
     // Публикация телеметрии
-    node_telemetry_publish_sensor("light", METRIC_TYPE_CUSTOM, 
+    node_telemetry_publish_sensor("light", METRIC_TYPE_LIGHT_INTENSITY,
                                   lux_value, "lux", 0, false, true);
 } else {
     // Обработка ошибки

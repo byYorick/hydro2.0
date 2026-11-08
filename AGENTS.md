@@ -22,7 +22,7 @@
   `doc_ai/ARCHITECTURE_FLOWS.md`, `doc_ai/DEV_CONVENTIONS.md`.
 - **Поведение runtime — код** (`code = SoT`). Защищённые контракты (MQTT, команды, схема БД, HL API, AE3 ingress/FSM, retention) — canonical в `doc_ai/`, обязаны совпадать с кодом; при drift правим docs **или** явно чиним код. Doc-first — только для этих контрактов, не для любой фичи. Папка `docs/` удалена.
 - Новые Python-сервисы, новые AE3 `task_type`, новые authority document types — **запрещены без явного запроса** пользователя.
-- Default `make up` = core: laravel, mqtt-bridge, history-logger, automation-engine, postgres, redis, mosquitto (+ prometheus/grafana по желанию). `digital-twin`, `feature-builder`, `node-emulator` — не часть default up.
+- Default `make up` = core: mqtt, db, redis, laravel, mqtt-bridge, history-logger, automation-engine, telemetry-aggregator (+ prometheus/grafana по желанию). `digital-twin`, `feature-builder`, `node-emulator` — не часть default up.
 - Команды к узлам не публикуются напрямую в MQTT из Laravel или automation-engine (только через history-logger):
   единая точка публикации в MQTT — `history-logger`.
 - Базовый поток команд: `Laravel scheduler-dispatch -> Automation-Engine -> History-Logger -> MQTT -> ESP32`.
@@ -62,7 +62,7 @@
 2. Защищённые контракты (MQTT, команды, схема БД, HL API, AE3 ingress/FSM, retention) — canonical в `doc_ai/`; обязаны совпадать с кодом. При drift правим docs **или** явно чиним код.
 3. Doc-first остаётся **только** для изменения этих контрактов, не для любой фичи.
 4. Новые Python-сервисы, новые AE3 `task_type`, новые authority document types — **запрещены без явного запроса** пользователя.
-5. Default `make up` = core: laravel, mqtt-bridge, history-logger, automation-engine, postgres, redis, mosquitto (+ prometheus/grafana по желанию). `digital-twin`, `feature-builder`, `node-emulator` — не часть default up.
+5. Default `make up` = core: mqtt, db, redis, laravel, mqtt-bridge, history-logger, automation-engine, telemetry-aggregator (+ prometheus/grafana по желанию). `digital-twin`, `feature-builder`, `node-emulator` — не часть default up.
 
 - Архитектура и обзор — `doc_ai/SYSTEM_ARCH_FULL.md` и `doc_ai/01_SYSTEM/*` (не подменяют runtime-код).
 - Папка `docs/` удалена; уникальные материалы перенесены в `doc_ai/13_TESTING/`, `doc_ai/12_ANDROID_APP/`, `doc_ai/07_FRONTEND/ui_refs/`.

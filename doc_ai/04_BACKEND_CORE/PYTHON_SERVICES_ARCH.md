@@ -334,13 +334,22 @@ Status: **planned / not implemented** — `POST /zones/{id}/start-relay-autotune
 
 ## 8. Freshness и fail-closed
 
-`effective_ts = COALESCE(sample_ts, updated_at)`
+`zone_snapshot_read_model.py` читает `COALESCE(tl.last_ts, tl.updated_at) AS sample_ts`
+из `telemetry_last`; `sample_ts` — SQL alias/поле DTO, а не колонка таблицы.
 
-Пороги (дефолты):
-- pH/EC: `<= 300s`
-- gating flags (`flow_active/stable/corrections_allowed`): `<= 60s`
-- irr state: `<= 30s`
-- level switches: `<= 120s`
+Порог задаётся resolved `zone.correction` и конкретным stage, а не общей таблицей
+фиксированных TTL. Текущие base defaults в Laravel `ZoneCorrectionConfigCatalog`:
+
+- `timing.telemetry_max_age_sec = 10` — свежесть correction telemetry;
+- `timing.irr_state_max_age_sec = 30` — свежесть IRR snapshot;
+- `timing.level_poll_interval_sec = 10` — период опроса уровней, **не** срок их хранения/свежести.
+
+`base/phases.*` могут переопределять эти значения; `runtime_plan_builder.py` передаёт
+их в runtime plan. Отдельный worker interrupt guard использует
+`correction_interrupt_irr_state_max_age_sec` (default `90` в runtime/env.py).
+Универсальные TTL `300s` для pH/EC, `60s` для gating flags и `120s` для level switches
+текущим кодом не задаются. Проверки observe-window и runtime flags описаны в
+`CORRECTION_CYCLE_SPEC.md`.
 
 Fail-closed:
 - stale critical сигнал -> коррекция/шаг блокируется;

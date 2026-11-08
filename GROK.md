@@ -88,7 +88,7 @@ Laravel и AE **не** публикуют MQTT напрямую.
 ## 4) Dev-команды (Make)
 
 ```bash
-make up              # core: laravel, mqtt-bridge, history-logger, automation-engine, postgres, redis, mosquitto
+make up              # core: mqtt, db, redis, laravel, mqtt-bridge, history-logger, automation-engine, telemetry-aggregator
 make down            # остановить
 make migrate         # миграции + DevBootstrapSeeder
 make seed            # полный seed

@@ -252,6 +252,9 @@ services:
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
       - TELEGRAM_CHAT_IDS=${TELEGRAM_CHAT_IDS:-}
       - BACKUP_DIR=/backups
+      - BACKUP_SOURCE_ROOT=/backup-sources
+      - BACKUP_ENV_FILE=/backup-sources/compose.env
+      - BACKUP_COMPOSE_FILE=/backup-sources/docker-compose.yml
     volumes:
       # Production: образ из Dockerfile, без bind-mount исходников с хоста
       - laravel_storage:/app/storage
@@ -259,6 +262,11 @@ services:
       # Canonical JSON Schemas (repo root) — JsonSchemaValidator + zones:validate-configs
       - ../schemas:/schemas:ro
       - backups_data:/backups
+      - ./scripts/backup:/scripts/backup:ro
+      - ./services:/backup-sources/services:ro
+      - ./configs:/backup-sources/configs:ro
+      - ./.env.prod:/backup-sources/compose.env:ro
+      - ./docker-compose.prod.yml:/backup-sources/docker-compose.yml:ro
     ports:
       - "8080:80"
       - "6001:6001"

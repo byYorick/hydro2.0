@@ -649,7 +649,9 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
-      - run: python3 tools/ci/test_compose_configs.py
+      - run: |
+          python3 tools/ci/test_compose_configs.py
+          python3 tools/ci/test_backups.py
 
   required:
     name: CI required

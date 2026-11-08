@@ -3,8 +3,11 @@ FROM webdevops/php-nginx:8.2
 # Dev-образ: Node (Vite HMR) + Chromium (Dusk/E2E). Production — см. Dockerfile.prod.
 ARG INSTALL_BROWSER_TOOLS=true
 
+COPY scripts/install-postgres-client.sh /usr/local/bin/install-postgres-client
+RUN bash /usr/local/bin/install-postgres-client
+
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends curl ca-certificates gnupg supervisor postgresql-client && \
+    apt-get install -y --no-install-recommends curl ca-certificates gnupg supervisor && \
     if [ "$INSTALL_BROWSER_TOOLS" = "true" ]; then \
         apt-get install -y --no-install-recommends chromium chromium-driver fonts-liberation; \
     fi && \

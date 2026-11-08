@@ -64,7 +64,7 @@ python -m runner.e2e_runner scenarios/core/E01_bootstrap.yaml
 | `./tools/testing/run_e2e.sh` / `… smoke` / `… all` | Infra + **smoke** (не полный YAML) |
 | `./tools/testing/run_e2e.sh test` | YAML-suite из SCENARIOS (~35) |
 | `cd backend/laravel && npm run e2e` | Playwright app suite (**8010**) |
-| `make protocol-check` | Локально: schemas/authority/ae3-lint/…; **MQTT/WS contract pytest — в CI** `.github/workflows/protocol-check.yml` |
+| `make protocol-check` | Проверки schemas/authority/ae3-lint/catalog/i18n и AE crash windows, затем MQTT/WS pytest в Docker; legacy protocol/chaos suites в recipe отмечены non-blocking. В CI также есть `.github/workflows/protocol-check.yml` |
 
 ## Компоненты системы тестирования
 

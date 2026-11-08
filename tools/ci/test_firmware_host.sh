@@ -13,3 +13,13 @@ gcc -std=c11 -Wall -Wextra -Werror -fsanitize=undefined \
   firmware/tests/host/test_estop_lock_policy.c -o "$out/estop"
 "$out/actuator"
 "$out/estop"
+gcc -std=c11 -Wall -Wextra -Werror -fsanitize=undefined \
+  -I firmware/nodes/common/components/node_utils \
+  firmware/tests/host/test_command_wire_values.c -lm -o "$out/command-wire"
+"$out/command-wire"
+gcc -std=c11 -Wall -Wextra -Werror -fsanitize=undefined \
+  -I firmware/nodes/common/components/node_framework/include \
+  firmware/tests/host/test_telemetry_metric_type.c \
+  firmware/nodes/common/components/node_framework/node_metric_type.c \
+  -o "$out/telemetry-metric"
+"$out/telemetry-metric"

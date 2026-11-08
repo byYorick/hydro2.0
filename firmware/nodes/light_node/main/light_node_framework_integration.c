@@ -64,7 +64,7 @@ esp_err_t light_node_publish_telemetry_callback(void *user_ctx) {
         // Публикация освещенности
         esp_err_t err = node_telemetry_publish_sensor(
             "light",
-            METRIC_TYPE_CUSTOM,  // Освещенность пока нет в enum, используем CUSTOM
+            METRIC_TYPE_LIGHT_INTENSITY,
             light_lux,
             "lux",
             0,  // raw value не используется

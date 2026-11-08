@@ -27,7 +27,7 @@ Laravel выполняет роль API Gateway и предоставляет:
 - Авторизация и управление пользователями
 
 ### Python-сервисы
-- `mqtt-bridge` — FastAPI мост REST→MQTT (порт 9000)
+- `mqtt-bridge` — ops probe: metrics/live-status (порт 9000); command/config routes удалены
 - `history-logger` — подписка на MQTT, запись телеметрии в PostgreSQL; **единственная** публикация команд в MQTT (REST + metrics **9300**/`/metrics`)
 - `automation-engine` (AE3) — автоматизация зон, коррекции; device-команды только через REST `history-logger` (REST **9405**, метрики `http://...:9405/metrics/`)
 - расписания поливов/света из фаз рецепта — **Laravel** (`automation:dispatch-schedules`, см. `doc_ai/06_DOMAIN_ZONES_RECIPES/SCHEDULER_ENGINE.md`)
@@ -37,7 +37,7 @@ Laravel выполняет роль API Gateway и предоставляет:
 
 ## Мониторинг
 
-Система мониторинга включает:
+Мониторинг включается профилем `obs` (`make up-obs`); в обычный `make up` не входит. Компоненты:
 
 ### Компоненты
 
@@ -63,9 +63,11 @@ Laravel выполняет роль API Gateway и предоставляет:
 
 - **PostgreSQL + TimescaleDB** — оптимизированное хранение временных рядов
 - **Retention политики**:
-  - Raw данные: 7-30 дней (настраивается)
-  - Агрегированные данные (1m, 1h, daily): до 12 месяцев
-- **Автоматическая агрегация**: Laravel команды `telemetry:cleanup-raw` и `telemetry:aggregate`
+  - Raw `telemetry_samples`: 30 дней по умолчанию
+  - `telemetry_agg_1m`: 30 дней; `telemetry_agg_1h`: 365 дней
+  - `telemetry_daily`: без автоматического TTL
+- **Непрерывная агрегация**: Python `telemetry-aggregator` (core Compose). Laravel `telemetry:aggregate` — ручной seed/backfill, не Schedule; `telemetry:cleanup-raw` ежедневно очищает raw.
+- Источник сроков и ограничений: [`DATA_RETENTION_POLICY.md`](../doc_ai/05_DATA_AND_STORAGE/DATA_RETENTION_POLICY.md).
 
 ### Проверка работоспособности
 
