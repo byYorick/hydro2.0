@@ -77,7 +77,7 @@ const role = computed(() => (page.props.auth as { user?: { role?: string } })?.u
 const primaryPaths: Record<string, string[]> = {
   operator: ['/', '/zones', '/alerts'],
   agronomist: ['/', '/zones', '/recipes'],
-  engineer: ['/devices', '/zones', '/alerts'],
+  engineer: ['/', '/devices', '/zones'],
   admin: ['/', '/alerts', '/users'],
   viewer: ['/', '/zones', '/alerts'],
 }

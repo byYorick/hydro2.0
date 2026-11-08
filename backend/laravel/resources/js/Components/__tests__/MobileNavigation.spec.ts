@@ -32,7 +32,7 @@ describe('MobileNavigation', () => {
   it.each([
     ['operator', ['/', '/zones', '/alerts']],
     ['agronomist', ['/', '/zones', '/recipes']],
-    ['engineer', ['/devices', '/zones', '/alerts']],
+    ['engineer', ['/', '/devices', '/zones']],
     ['admin', ['/', '/alerts', '/users']],
     ['viewer', ['/', '/zones', '/alerts']],
     ['unknown', ['/', '/zones', '/alerts']],

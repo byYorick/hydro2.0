@@ -3,7 +3,7 @@
     <div
       v-if="open"
       class="fixed inset-0 flex"
-      :class="[rootClass, placement === 'center' ? 'items-center justify-center p-4' : placement === 'left' ? 'justify-start' : 'justify-end']"
+      :class="[rootClass, placement === 'center' ? 'items-center justify-center p-4' : placement === 'workspace' ? 'items-center justify-center sm:p-4' : placement === 'left' ? 'justify-start' : 'justify-end']"
       role="presentation"
       data-testid="app-modal-root"
     >
@@ -18,7 +18,9 @@
         class="relative w-full border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] shadow-[var(--shadow-elevated)] focus:outline-none"
         :class="placement === 'center'
           ? ['rounded-2xl p-4 max-h-[90vh] overflow-y-auto', size === 'xlarge' ? 'max-w-6xl' : size === 'large' ? 'max-w-4xl' : 'max-w-lg']
-          : 'flex h-full min-h-0 max-w-sm flex-col'"
+          : placement === 'workspace'
+            ? 'flex h-[100dvh] min-h-0 max-w-5xl flex-col overflow-hidden sm:h-[92dvh] sm:rounded-2xl'
+            : 'flex h-full min-h-0 max-w-sm flex-col'"
         role="dialog"
         aria-modal="true"
         tabindex="-1"
@@ -37,7 +39,7 @@
             v-if="placement !== 'center'"
             type="button"
             class="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-[color:var(--text-muted)] hover:bg-[color:var(--bg-elevated)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[color:var(--status-info)]"
-            aria-label="Закрыть панель"
+            :aria-label="placement === 'workspace' ? 'Закрыть окно' : 'Закрыть панель'"
             @click="emit('close')"
           >
             <svg
@@ -54,13 +56,13 @@
         </div>
         <div
           class="text-sm text-[color:var(--text-muted)]"
-          :class="placement === 'center' ? 'mb-4' : 'min-h-0 flex-1 overflow-y-auto overscroll-contain p-5'"
+          :class="placement === 'center' ? 'mb-4' : placement === 'workspace' ? 'min-h-0 flex-1 overflow-hidden' : 'min-h-0 flex-1 overflow-y-auto overscroll-contain p-5'"
         >
           <slot></slot>
         </div>
         <div
           v-if="!hideDefaultCancel || $slots.footer"
-          class="flex justify-end gap-2"
+          class="flex flex-wrap justify-end gap-2"
           :class="placement !== 'center' ? 'shrink-0 border-t border-[color:var(--border-muted)] p-4' : ''"
         >
           <Button
@@ -88,7 +90,7 @@ interface Props {
   title?: string
   size?: 'default' | 'large' | 'xlarge'
   hideDefaultCancel?: boolean
-  placement?: 'center' | 'left' | 'right'
+  placement?: 'center' | 'left' | 'right' | 'workspace'
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -121,10 +123,15 @@ function focusableElements(): HTMLElement[] {
     return []
   }
   return Array.from(dialogRef.value.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR))
-    .filter((element) => !element.hasAttribute('disabled') && element.tabIndex !== -1)
+    .filter((element) => !element.hasAttribute('disabled') && element.tabIndex !== -1 && !element.closest('[hidden], [inert]'))
 }
 
 function onKeydown(event: KeyboardEvent): void {
+  // Nested dialogs own Escape and focus until they close.
+  const roots = Array.from(document.querySelectorAll<HTMLElement>('[data-testid="app-modal-root"]'))
+  roots.sort((a, b) => (Number.parseInt(getComputedStyle(a).zIndex) || 0) - (Number.parseInt(getComputedStyle(b).zIndex) || 0))
+  const topRoot = roots[roots.length - 1]
+  if (topRoot && !topRoot.contains(dialogRef.value)) return
   if (event.key === 'Escape') {
     event.preventDefault()
     emit('close')
@@ -174,6 +181,7 @@ watch(() => props.open, async (isOpen) => {
 onBeforeUnmount(() => {
   if (typeof window !== 'undefined') {
     window.removeEventListener('keydown', onKeydown)
+      previouslyFocused?.focus()
   }
 })
 

@@ -39,8 +39,10 @@ vi.mock('@/services/api', () => ({
     nutrientProducts: {
       list: nutrientProductsListMock,
     },
+    substrates: { list: vi.fn(async () => []) },
     recipes: {
       getById: recipesGetByIdMock,
+      getActiveUsage: vi.fn(async () => ({count: 1, active_cycles:[{cycle_id: 50, zone_id: 7, zone_name: 'Салат A', revision_number:3}]})),
       create: recipesCreateMock,
       update: recipesUpdateMock,
       createRevision: recipesCreateRevisionMock,
@@ -169,7 +171,7 @@ describe('Recipes/Edit.vue', () => {
   })
 
   it('рендерит recipe через shared editor', async () => {
-    const wrapper = mount(RecipesEdit)
+    const wrapper = mount(RecipesEdit, { global: { stubs: { teleport: true } } })
     await flushPromises()
 
     expect(wrapper.text()).toContain('Редактировать рецепт')
@@ -180,7 +182,7 @@ describe('Recipes/Edit.vue', () => {
   })
 
   it('позволяет добавить фазу', async () => {
-    const wrapper = mount(RecipesEdit)
+    const wrapper = mount(RecipesEdit, { global: { stubs: { teleport: true } } })
     await flushPromises()
 
     await wrapper.get('[data-testid="add-phase-button"]').trigger('click')
@@ -189,8 +191,8 @@ describe('Recipes/Edit.vue', () => {
     expect(wrapper.find('[data-testid="phase-item-1"]').exists()).toBe(true)
   })
 
-  it('сохраняет рецепт и публикует ревизию единым editor flow', async () => {
-    const wrapper = mount(RecipesEdit)
+  it('сохраняет черновик без публикации и переключения циклов', async () => {
+    const wrapper = mount(RecipesEdit, { global: { stubs: { teleport: true } } })
     await flushPromises()
 
     await wrapper.get('[data-testid="save-recipe-button"]').trigger('click')
@@ -217,8 +219,9 @@ describe('Recipes/Edit.vue', () => {
         }),
       }),
     }))
-    expect(recipesPublishRevisionMock).toHaveBeenCalledWith(20)
-    expect(routerVisitMock).toHaveBeenCalledWith('/recipes/1')
+    expect(recipesPublishRevisionMock).not.toHaveBeenCalled()
+    expect(routerVisitMock).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('Черновик сохранён')
   })
 
   it('для published recipe создаёт draft clone и не patch-ит published phase ids', async () => {
@@ -241,7 +244,7 @@ describe('Recipes/Edit.vue', () => {
     })
     recipesCreatePhaseMock.mockResolvedValue({ id: 401 })
 
-    const wrapper = mount(RecipesEdit)
+    const wrapper = mount(RecipesEdit, { global: { stubs: { teleport: true } } })
     await flushPromises()
 
     await wrapper.get('[data-testid="save-recipe-button"]').trigger('click')
@@ -250,22 +253,52 @@ describe('Recipes/Edit.vue', () => {
     expect(recipesCreateRevisionMock).toHaveBeenCalledWith(1, expect.objectContaining({
       clone_from_revision_id: 10,
     }))
-    expect(recipesDeletePhaseMock).toHaveBeenCalledWith(301)
-    expect(recipesCreatePhaseMock).toHaveBeenCalledWith(30, expect.objectContaining({
+    expect(recipesDeletePhaseMock).not.toHaveBeenCalled()
+    expect(recipesCreatePhaseMock).not.toHaveBeenCalled()
+    expect(recipesUpdatePhaseMock).toHaveBeenCalledWith(301, expect.objectContaining({
       phase_index: 0,
       name: 'Seedling',
       ph_target: 5.8,
     }))
     expect(recipesUpdatePhaseMock).not.toHaveBeenCalledWith(101, expect.anything())
-    expect(recipesPublishRevisionMock).toHaveBeenCalledWith(30)
+    expect(recipesPublishRevisionMock).not.toHaveBeenCalled()
   })
 
   it('для агронома открывает простой режим без PID и NFT', async () => {
-    const wrapper = mount(RecipesEdit)
+    const wrapper = mount(RecipesEdit, { global: { stubs: { teleport: true } } })
     await flushPromises()
 
     expect(wrapper.get('[data-testid="recipe-editor-mode-simple"]').exists()).toBe(true)
     expect(wrapper.text()).not.toContain('PID по EC + доли')
     expect(wrapper.text()).not.toContain('NFT (Nutrient Film)')
   })
+  it('публикует только после просмотра области применения и явного подтверждения', async () => {
+    const wrapper = mount(RecipesEdit, { global: { stubs: { teleport: true } } })
+    await flushPromises()
+    const review = wrapper.findAll('button').find(button => button.text() === 'Проверить и опубликовать')!
+    await review.trigger('click')
+    expect(recipesPublishRevisionMock).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('Активные циклы не переключатся')
+    const publish = wrapper.findAll('button').find(button => button.text() === 'Опубликовать ревизию')!
+    await publish.trigger('click')
+    await flushPromises()
+    expect(recipesPublishRevisionMock).toHaveBeenCalledExactlyOnceWith(20)
+    expect(routerVisitMock).toHaveBeenCalledWith('/recipes/1')
+  })
+
+  it('ошибка публикации сохраняет возможность повторить действие с тем же черновиком', async () => {
+    recipesPublishRevisionMock.mockRejectedValueOnce(new Error('publish failed'))
+    const wrapper = mount(RecipesEdit, { global: { stubs: { teleport: true } } })
+    await flushPromises()
+    await wrapper.findAll('button').find(button => button.text() === 'Проверить и опубликовать')!.trigger('click')
+    await wrapper.findAll('button').find(button => button.text() === 'Опубликовать ревизию')!.trigger('click')
+    await flushPromises()
+    expect(routerVisitMock).not.toHaveBeenCalled()
+    expect(recipesCreateRevisionMock).not.toHaveBeenCalled()
+    await wrapper.findAll('button').find(button => button.text() === 'Опубликовать ревизию')!.trigger('click')
+    await flushPromises()
+    expect(recipesPublishRevisionMock).toHaveBeenNthCalledWith(2, 20)
+    expect(routerVisitMock).toHaveBeenCalledWith('/recipes/1')
+  })
+
 })

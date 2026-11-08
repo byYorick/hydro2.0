@@ -29,8 +29,30 @@
         @pause="onCyclePause"
         @next-phase="onNextPhase"
         @open-actions="activeTab = 'automation'"
-        @diagnose="activeTab = 'devices'"
-      />
+        @diagnose="router.visit(`/?nodeZone=${zoneId}&nodes=all`)"
+      >
+        <template
+          v-if="isAgronomist && activeGrowCycle"
+          #cycle-actions
+        >
+          <CycleActionsDropdown
+            :cycle-status="activeGrowCycle.status"
+            :can-manage="canManageCycle"
+            :can-manage-recipe="canManageRecipe"
+            :loading="loading"
+            :control-mode="zone.control_mode"
+            :phase-duration-complete="phaseDurationComplete"
+            pause-test-id="zone-header-pause"
+            next-phase-test-id="zone-header-next-phase"
+            @pause="onCyclePause"
+            @resume="onCycleResume"
+            @harvest="onCycleHarvest"
+            @abort="onCycleAbort"
+            @next-phase="onNextPhase"
+            @change-recipe="onCycleChangeRecipe"
+          />
+        </template>
+      </ZonePageHeader>
       <div class="surface-card relative z-20 flex flex-wrap items-center gap-1 rounded-xl border border-[color:var(--border-muted)] p-1.5">
         <Tabs
           v-model="activeTab"
@@ -96,6 +118,7 @@
       <ZoneCycleTab
         v-else-if="activeTab === 'cycle'"
         :zone="zone"
+        :hide-actions="isAgronomist"
         :variant="variant"
         :active-grow-cycle="activeGrowCycle"
         :can-operate-zone="canOperateZone"
@@ -224,6 +247,9 @@
 import { computed, ref } from 'vue';
 import { router } from '@inertiajs/vue3';
 import AppLayout from "@/Layouts/AppLayout.vue";
+import CycleActionsDropdown from '@/Components/GrowCycle/CycleActionsDropdown.vue';
+import { useRole } from '@/composables/useRole';
+const { isAgronomist } = useRole();
 import Tabs from "@/Components/Tabs.vue";
 import Dropdown from "@/Components/Dropdown.vue";
 import ZonePageHeader from "@/Components/ZonePageHeader.vue";

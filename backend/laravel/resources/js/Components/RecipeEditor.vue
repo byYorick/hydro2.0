@@ -203,15 +203,36 @@
       Фазы роста
     </div>
 
-    <div class="space-y-3">
+    <div
+      class="space-y-3"
+      :class="{ 'recipe-phase-workspace': singlePhase }"
+    >
+      <nav
+        v-if="singlePhase"
+        class="flex gap-2 overflow-x-auto pb-2"
+        aria-label="Выбор фазы рецепта"
+      >
+        <button
+          v-for="(phase, index) in sortedPhases"
+          :key="phase.id || index"
+          type="button"
+          class="btn min-h-11 shrink-0 text-xs"
+          :class="selectedPhase === index ? 'btn-outline' : 'btn-ghost'"
+          :aria-pressed="selectedPhase === index"
+          @click="selectedPhase = index"
+        >
+          {{ index + 1 }}. {{ phase.name || 'Новая фаза' }} · {{ Math.round(phase.duration_hours / 24) }} дн.
+        </button>
+      </nav>
       <section
         v-for="(phase, index) in sortedPhases"
+        v-show="!singlePhase || selectedPhase === index"
         :key="phase.id || index"
         :data-testid="`phase-item-${index}`"
         class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)] p-3 space-y-2.5"
       >
         <div class="flex items-center justify-between gap-2">
-          <div class="flex items-end gap-4">
+          <div class="flex flex-wrap items-end gap-3">
             <div>
               <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">Название</label>
               <TextField
@@ -470,7 +491,7 @@
                 pH
               </div>
               <div class="flex flex-wrap gap-3">
-                <div :class="phase.day_night_enabled ? 'flex-1 min-w-[280px] max-w-sm' : 'w-full max-w-sm'">
+                <div :class="phase.day_night_enabled ? 'w-full min-w-0 sm:min-w-[280px] sm:flex-1 max-w-sm' : 'w-full max-w-sm'">
                   <div
                     v-if="phase.day_night_enabled"
                     class="text-[10px] text-[color:var(--text-dim)] uppercase tracking-wider mb-1"
@@ -521,7 +542,7 @@
                 </div>
                 <div
                   v-if="phase.day_night_enabled"
-                  class="flex-1 min-w-[280px] max-w-sm"
+                  class="w-full min-w-0 sm:min-w-[280px] sm:flex-1 max-w-sm"
                 >
                   <div class="text-[10px] text-[color:var(--text-dim)] uppercase tracking-wider mb-1">
                     ☾ ночь
@@ -576,7 +597,7 @@
                 EC
               </div>
               <div class="flex flex-wrap gap-3">
-                <div :class="phase.day_night_enabled ? 'flex-1 min-w-[280px] max-w-sm' : 'w-full max-w-sm'">
+                <div :class="phase.day_night_enabled ? 'w-full min-w-0 sm:min-w-[280px] sm:flex-1 max-w-sm' : 'w-full max-w-sm'">
                   <div
                     v-if="phase.day_night_enabled"
                     class="text-[10px] text-[color:var(--text-dim)] uppercase tracking-wider mb-1"
@@ -627,7 +648,7 @@
                 </div>
                 <div
                   v-if="phase.day_night_enabled"
-                  class="flex-1 min-w-[280px] max-w-sm"
+                  class="w-full min-w-0 sm:min-w-[280px] sm:flex-1 max-w-sm"
                 >
                   <div class="text-[10px] text-[color:var(--text-dim)] uppercase tracking-wider mb-1">
                     ☾ ночь
@@ -1212,7 +1233,7 @@
         data-testid="save-recipe-bottom-button"
         @click="$emit('save')"
       >
-        Сохранить
+        {{ saveLabel }}
       </Button>
     </div>
 
@@ -1257,6 +1278,8 @@ interface Props {
   substrates?: Substrate[]
   hidePlantSelect?: boolean
   lockedPlantLabel?: string | null
+  singlePhase?: boolean
+  saveLabel?: string
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -1264,6 +1287,8 @@ const props = withDefaults(defineProps<Props>(), {
   substrates: () => [],
   hidePlantSelect: false,
   lockedPlantLabel: null,
+  singlePhase: false,
+  saveLabel: 'Сохранить',
 })
 
 const form = defineModel<RecipeEditorFormState>('form', { required: true })
@@ -1281,6 +1306,10 @@ const { showToast } = useToast()
 const { isAdmin } = useRole()
 const editorMode = ref<'simple' | 'advanced'>(isAdmin.value ? 'advanced' : 'simple')
 const isAdvanced = computed(() => editorMode.value === 'advanced')
+const selectedPhase = ref(0)
+watch(() => form.value.phases.length, (length, previous) => {
+  selectedPhase.value = length > previous ? Math.max(0, length - 1) : Math.min(selectedPhase.value, Math.max(0, length - 1))
+})
 
 const plantMode = ref<'select' | 'create'>('select')
 const newPlantName = ref('')
@@ -1518,7 +1547,7 @@ const sortedPhases = computed<RecipePhaseFormState[]>(() => {
   return [...form.value.phases].sort((left, right) => left.phase_index - right.phase_index)
 })
 
-const previewOpen = ref(true)
+const previewOpen = ref(!props.singlePhase)
 
 const previewPhases = computed(() => buildRecipePhaseVisuals(sortedPhases.value))
 
@@ -1526,6 +1555,13 @@ const previewSummary = computed(() => summarizeRecipePhases(previewPhases.value)
 </script>
 
 <style scoped>
+@media (min-width: 1400px) {
+  .recipe-phase-workspace { display: grid; grid-template-columns: 10rem minmax(0, 1fr); gap: 1rem; align-items: start; }
+  .recipe-phase-workspace > nav { grid-column: 1; flex-direction: column; position: sticky; top: 1rem; }
+  .recipe-phase-workspace > nav button { white-space: normal; text-align: left; justify-content: flex-start; }
+  .recipe-phase-workspace > section { grid-column: 2; grid-row: 1; margin-top: 0; min-width: 0; }
+}
+
 .hide-spin::-webkit-outer-spin-button,
 .hide-spin::-webkit-inner-spin-button {
   -webkit-appearance: none;

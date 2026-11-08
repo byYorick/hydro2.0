@@ -1,400 +1,332 @@
 <template>
-  <Teleport to="body">
-    <transition name="hf-drawer">
-      <div
-        v-if="show"
-        class="fixed inset-0 z-50 flex justify-end bg-black/45 backdrop-blur-sm"
-        @click.self="onClose"
-      >
-        <aside
-          class="w-[min(960px,98vw)] h-screen flex flex-col bg-[var(--bg-surface-strong)] border-l border-[var(--border-muted)] shadow-2xl"
-          role="dialog"
-          aria-modal="true"
+  <Modal
+    :open="show"
+    title="Калибровка насоса"
+    placement="workspace"
+    hide-default-cancel
+    @close="onClose"
+  >
+    <div class="flex h-full min-h-0 flex-col">
+      <div class="shrink-0 space-y-3 border-b border-[color:var(--border-muted)] px-4 py-3 sm:px-6">
+        <div class="flex flex-wrap items-center justify-between gap-2 text-xs">
+          <span class="break-words">Зона #{{ zoneId }} · {{ componentLabel(currentComponent) }} · {{ selectedChannelLabel || 'Канал не привязан' }} <span v-if="form.node_channel_id">· ch{{ form.node_channel_id }}</span></span>
+          <Chip
+            v-if="dirtyBadge"
+            tone="warn"
+          >
+            {{ dirtyBadge }}
+          </Chip>
+        </div>
+        <ol
+          class="grid grid-cols-4 gap-1"
+          aria-label="Этапы калибровки"
         >
-          <header
-            class="flex items-start justify-between gap-3 px-4 py-3 border-b border-[var(--border-muted)]"
+          <li
+            v-for="(label, index) in steps"
+            :key="label"
+            class="rounded-lg px-1.5 py-2 text-center text-[10px] sm:text-xs"
+            :class="step === index ? 'bg-brand-soft font-semibold text-brand-ink' : 'bg-[color:var(--bg-elevated)] text-[color:var(--text-muted)]'"
+            :aria-current="step === index ? 'step' : undefined"
           >
-            <div class="min-w-0">
-              <div class="text-sm font-semibold text-[var(--text-primary)]">
-                Калибровка насоса
-              </div>
-              <div class="font-mono text-[11px] text-[var(--text-dim)] mt-0.5">
-                / зона#{{ zoneId }} / насос / {{ currentComponent }}
-              </div>
-            </div>
-            <div class="flex items-center gap-2">
-              <Chip
-                v-if="dirtyBadge"
-                tone="warn"
-              >
-                {{ dirtyBadge }}
-              </Chip>
-              <button
-                type="button"
-                class="w-7 h-7 inline-flex items-center justify-center rounded-md text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)]"
-                @click="onClose"
-              >
-                <Ic name="x" />
-              </button>
-            </div>
-          </header>
-
-          <div class="flex flex-1 min-h-0">
-            <aside
-              class="w-60 min-w-[240px] shrink-0 border-r border-[var(--border-muted)] bg-[var(--bg-surface)] p-3 flex flex-col gap-3 overflow-y-auto"
-            >
-              <div class="text-[10px] font-bold uppercase tracking-widest text-[var(--text-dim)]">
-                этапы
-              </div>
-              <ol class="list-none m-0 p-0 flex flex-col gap-1.5">
-                <li
-                  v-for="(step, idx) in steps"
-                  :key="step.id"
-                  class="flex items-start gap-2 px-2 py-1.5 rounded-md"
-                  :class="{ 'bg-brand-soft text-brand-ink': step.id === 'measure' }"
-                >
-                  <span
-                    :class="[
-                      'inline-flex items-center justify-center w-5 h-5 rounded-full text-[11px] font-semibold border shrink-0',
-                      isStepDone(step.id)
-                        ? 'bg-growth text-white border-growth'
-                        : step.id === 'measure'
-                          ? 'border-brand text-brand bg-[var(--bg-surface)] ring-2 ring-brand-soft'
-                          : 'bg-[var(--bg-surface)] text-[var(--text-muted)] border-[var(--border-strong)]',
-                    ]"
-                  >
-                    <span v-if="isStepDone(step.id)">✓</span>
-                    <span
-                      v-else
-                      class="font-mono"
-                    >{{ idx + 1 }}</span>
-                  </span>
-                  <span class="flex flex-col leading-tight min-w-0">
-                    <span class="text-sm font-medium">{{ step.title }}</span>
-                    <span class="text-[11px] text-[var(--text-dim)]">{{ step.desc }}</span>
-                  </span>
-                </li>
-              </ol>
-
-              <div class="text-[10px] font-bold uppercase tracking-widest text-[var(--text-dim)] mt-1">
-                контекст
-              </div>
-              <div class="rounded-md border border-[var(--border-muted)] bg-[var(--bg-elevated)] p-2.5 flex flex-col gap-2">
-                <div class="flex items-center justify-between text-xs">
-                  <span class="font-medium">{{ isPhComponent ? 'Контур pH' : 'Контур EC' }}</span>
-                  <span class="font-mono text-[var(--text-dim)]">{{ contextDone }} / {{ contextTotal }}</span>
-                </div>
-                <div class="flex flex-wrap gap-1">
-                  <Chip
-                    v-for="p in contextPills"
-                    :key="p.component"
-                    :tone="p.done ? 'growth' : p.component === form.component ? 'brand' : 'neutral'"
-                  >
-                    <template #icon>
-                      <span
-                        class="inline-block w-1.5 h-1.5 rounded-full"
-                        :class="p.done ? 'bg-growth' : p.component === form.component ? 'bg-brand' : 'bg-[var(--text-dim)]'"
-                      ></span>
-                    </template>
-                    {{ p.label }}<span v-if="p.component === form.component"> · текущий</span>
-                  </Chip>
-                </div>
-              </div>
-            </aside>
-
-            <section class="flex-1 min-w-0 overflow-y-auto p-4 flex flex-col gap-3.5">
-              <div class="flex flex-col gap-3">
-                <div class="flex items-baseline justify-between gap-3 flex-wrap">
-                  <div class="flex items-baseline gap-2">
-                    <span class="font-mono text-2xl font-bold text-[var(--text-dim)]">1.</span>
-                    <div class="text-base font-semibold">
-                      Запуск и замер
-                    </div>
-                  </div>
-                  <Chip
-                    v-if="runToken"
-                    tone="brand"
-                  >
-                    <span class="font-mono">токен запуска {{ runToken.slice(0, 8) }}</span>
-                  </Chip>
-                </div>
-
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-                  <Field label="Компонент">
-                    <div class="h-8 px-2.5 rounded-lg border border-[var(--border-muted)] bg-[var(--bg-elevated)] text-sm font-mono flex items-center">
-                      {{ componentLabel(form.component) }}
-                    </div>
-                  </Field>
-                  <Field label="Канал насоса">
-                    <div class="h-8 px-2.5 rounded-lg border border-[var(--border-muted)] bg-[var(--bg-elevated)] text-sm font-mono flex items-center truncate">
-                      {{ selectedChannelLabel || '— не привязан' }}
-                    </div>
-                  </Field>
-                  <Field label="Длительность (сек)">
-                    <TextField
-                      v-bind="numAttrs"
-                      v-model.number="form.duration_sec"
-                      min="1"
-                      max="60"
-                    />
-                  </Field>
-                </div>
-
-                <ShellCard title="Тестовый запуск">
-                  <template #actions>
-                    <span
-                      v-if="runRecentAgo"
-                      class="text-[11px] text-[var(--text-dim)]"
-                    >
-                      завершён {{ runRecentAgo }} назад
-                    </span>
-                  </template>
-                  <div class="flex items-center gap-2 flex-wrap">
-                    <Button
-                      variant="secondary"
-                      size="md"
-                      :disabled="loadingRun"
-                      @click="runCalibration"
-                    >
-                      {{ loadingRun ? 'Запуск…' : 'Запустить калибровку' }}
-                    </Button>
-                    <span class="font-mono text-xs text-[var(--text-muted)]">
-                      {{ form.duration_sec }} сек · {{ form.component.toUpperCase() }} · ch{{ form.node_channel_id }}
-                    </span>
-                  </div>
-                </ShellCard>
-
-                <ShellCard title="Результат замера">
-                  <template #actions>
-                    <Chip
-                      v-if="!form.actual_ml"
-                      tone="warn"
-                    >
-                      фактический объём обязателен
-                    </Chip>
-                  </template>
-                  <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-                    <Field
-                      label="Фактический объём *"
-                      hint="мл"
-                    >
-                      <TextField
-                        v-bind="numAttrs"
-                        v-model.number="form.actual_ml"
-                        step="0.1"
-                        min="0"
-                      />
-                    </Field>
-                    <Field
-                      label="Температура"
-                      hint="°C, опц."
-                    >
-                      <TextField
-                        v-bind="numAttrs"
-                        v-model.number="form.temperature_c"
-                        step="0.1"
-                      />
-                    </Field>
-                    <Field
-                      label="Объём теста (для k)"
-                      hint="л"
-                    >
-                      <TextField
-                        v-bind="numAttrs"
-                        v-model.number="form.test_volume_l"
-                        step="0.1"
-                        min="0"
-                      />
-                    </Field>
-                    <Field
-                      label="EC до дозы"
-                      hint="mS/cm"
-                    >
-                      <TextField
-                        v-bind="numAttrs"
-                        v-model.number="form.ec_before_ms"
-                        step="0.01"
-                        min="0"
-                      />
-                    </Field>
-                    <Field
-                      label="EC после дозы"
-                      hint="mS/cm"
-                    >
-                      <TextField
-                        v-bind="numAttrs"
-                        v-model.number="form.ec_after_ms"
-                        step="0.01"
-                        min="0"
-                      />
-                    </Field>
-                  </div>
-
-                  <div
-                    v-if="previewVisible"
-                    class="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3 pt-3 border-t border-[var(--border-muted)]"
-                  >
-                    <Stat
-                      label="мл/сек"
-                      :value="formatFloat(previewMlPerSec, 3)"
-                      mono
-                      tone="brand"
-                    />
-                    <Stat
-                      v-if="previewDeltaEc !== null"
-                      label="ΔEC"
-                      :value="(previewDeltaEc >= 0 ? '+' : '') + formatFloat(previewDeltaEc, 3)"
-                      mono
-                    />
-                    <Stat
-                      v-if="previewK !== null"
-                      label="оценка K"
-                      :value="formatFloat(previewK, 6)"
-                      mono
-                    />
-                  </div>
-                </ShellCard>
-
-                <div
-                  v-if="canSave && !savedForCurrent"
-                  :class="[
-                    'rounded-md border px-3 py-2 text-xs',
-                    runToken
-                      ? 'bg-growth-soft border-growth-soft text-growth'
-                      : 'bg-warn-soft border-warn-soft text-warn',
-                  ]"
-                >
-                  <span v-if="runToken">
-                    ✓ Готов к сохранению · токен запуска
-                    <span class="font-mono ml-1">{{ runToken.slice(0, 8) }}</span>
-                  </span>
-                  <span v-else>
-                    ⚠ Запуск не выполнен — калибровка сохранится в режиме
-                    <strong>ручного переопределения</strong>.
-                  </span>
-                </div>
-
-                <div
-                  v-if="savedForCurrent && nextUncalibrated"
-                  class="rounded-md border border-brand bg-gradient-to-b from-[var(--bg-surface)] to-brand-soft p-3 flex flex-col gap-2"
-                >
-                  <div class="text-[11px] font-bold uppercase tracking-widest text-brand-ink">
-                    ✓ {{ form.component.toUpperCase() }} сохранён · следующий некалиброванный
-                  </div>
-                  <div class="flex items-center justify-between gap-3 flex-wrap">
-                    <div class="min-w-0">
-                      <div class="text-sm font-semibold">
-                        {{ nextUncalibrated.label }}
-                      </div>
-                      <div class="text-[11px] text-[var(--text-muted)]">
-                        {{ nextUncalibrated.required ? 'обязательный' : 'опциональный' }}
-                        ·
-                        <span class="font-mono">
-                          {{ nextUncalibrated.doneInPath }}/{{ nextUncalibrated.pathTotal }}
-                        </span>
-                        в контуре {{ nextUncalibrated.group === 'ec' ? 'EC' : 'pH' }}
-                      </div>
-                    </div>
-                    <Button
-                      variant="primary"
-                      size="md"
-                      @click="goToNext"
-                    >
-                      Продолжить с {{ nextUncalibrated.label }} →
-                    </Button>
-                  </div>
-                </div>
-
-                <div
-                  v-else-if="savedForCurrent && !nextUncalibrated"
-                  class="rounded-md border border-growth bg-growth-soft/40 p-3 flex flex-col gap-2"
-                >
-                  <div class="text-[11px] font-bold uppercase tracking-widest text-growth">
-                    ✓ готово
-                  </div>
-                  <div class="flex items-center justify-between gap-3 flex-wrap">
-                    <div class="min-w-0">
-                      <div class="text-sm font-semibold">
-                        Все доступные насосы откалиброваны
-                      </div>
-                      <div class="text-[11px] text-[var(--text-muted)]">
-                        Остались только узлы без привязанного канала или опциональные.
-                      </div>
-                    </div>
-                    <Button
-                      variant="secondary"
-                      size="md"
-                      @click="onClose"
-                    >
-                      Закрыть
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            </section>
-          </div>
-
-          <footer
-            class="flex items-center justify-between gap-3 px-4 py-3 border-t border-[var(--border-muted)] bg-[var(--bg-surface)]"
-          >
-            <Button
-              size="sm"
-              variant="secondary"
-              @click="onClose"
-            >
-              Отмена
-            </Button>
-
-            <div class="flex items-center gap-1.5">
-              <Button
-                size="sm"
-                variant="secondary"
-                :disabled="loadingRun"
-                @click="runCalibration"
-              >
-                {{ runToken ? '↻ повторить запуск' : '▶ запустить' }}
-              </Button>
-              <Button
-                v-if="!savedForCurrent"
-                size="sm"
-                variant="primary"
-                :disabled="loadingSave || !canSave"
-                @click="saveCalibration"
-              >
-                {{ loadingSave ? 'Сохранение…' : 'Сохранить' }}
-              </Button>
-              <Button
-                v-else-if="nextUncalibrated"
-                size="sm"
-                variant="primary"
-                @click="goToNext"
-              >
-                К {{ nextUncalibrated.label }} →
-              </Button>
-              <Button
-                v-else
-                size="sm"
-                variant="primary"
-                @click="onClose"
-              >
-                Закрыть
-              </Button>
-            </div>
-          </footer>
-        </aside>
+            {{ index + 1 }}. {{ label }}
+          </li>
+        </ol>
       </div>
-    </transition>
-  </Teleport>
+      <section
+        class="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 sm:p-6"
+        aria-live="polite"
+      >
+        <div
+          v-if="pendingAction"
+          ref="confirmationRef"
+          tabindex="-1"
+          class="space-y-4 rounded-xl border border-[color:var(--badge-warning-border)] bg-[color:var(--badge-warning-bg)] p-4"
+          role="alert"
+        >
+          <h2 class="font-semibold text-[color:var(--text-primary)]">
+            {{ pendingAction === 'rerun' ? 'Начать новый замер?' : 'Закрыть окно калибровки?' }}
+          </h2>
+          <p>Несохранённый ввод будет отброшен. Закрытие окна не останавливает уже отправленную команду оборудования.</p>
+          <div class="flex flex-wrap gap-2">
+            <Button
+              variant="secondary"
+              @click="pendingAction = null"
+            >
+              Продолжить работу
+            </Button><Button
+              variant="danger"
+              @click="discard"
+            >
+              {{ pendingAction === 'rerun' ? 'Отбросить и запустить' : 'Закрыть без сохранения' }}
+            </Button>
+          </div>
+        </div>
+        <div
+          v-else
+          class="space-y-5"
+        >
+          <p
+            v-if="closeBlocked"
+            class="text-sm text-[color:var(--status-warning)]"
+            role="status"
+          >
+            Идёт сохранение. Дождитесь результата запроса.
+          </p>
+          <template v-if="step === 0">
+            <h2 class="text-lg font-semibold text-[color:var(--text-primary)]">
+              Подготовьте замер
+            </h2>
+            <p class="text-sm">
+              Проверьте выбранный насос, подготовьте мерную ёмкость и убедитесь, что тест допустим для текущего состояния зоны.
+            </p>
+            <div class="grid gap-4 sm:grid-cols-2">
+              <Field
+                label="Длительность теста, с"
+                hint="От 1 до 60 секунд"
+              >
+                <TextField
+                  v-bind="numAttrs"
+                  v-model.number="form.duration_sec"
+                  min="1"
+                  max="60"
+                  :disabled="Boolean(runToken) || form.actual_ml != null"
+                />
+              </Field>
+              <div class="rounded-lg border border-[color:var(--border-muted)] p-3 text-xs">
+                <strong>{{ isPhComponent ? 'Контур pH' : 'Контур EC' }}</strong><p class="mt-2">
+                  Откалибровано {{ contextDone }} из {{ contextTotal }}
+                </p><div class="mt-2 flex flex-wrap gap-1">
+                  <Chip
+                    v-for="pump in contextPills"
+                    :key="pump.component"
+                    :tone="pump.done ? 'growth' : 'neutral'"
+                  >
+                    {{ pump.label }}
+                  </Chip>
+                </div>
+              </div>
+            </div>
+            <p
+              v-if="!canRun"
+              class="text-sm text-[color:var(--status-warning)]"
+            >
+              Нужны привязанный канал насоса и допустимая длительность теста.
+            </p>
+            <p class="rounded-lg bg-[color:var(--bg-elevated)] p-3 text-xs">
+              Тест отправляется отдельной командой. Сохранение калибровки обновляет результат выбранного насоса; цели рецепта не меняются.
+            </p>
+            <Button
+              variant="secondary"
+              :disabled="!canRun || loadingRun || loadingSave"
+              @click="useManualMeasurement"
+            >
+              Использовать внешний замер без запуска
+            </Button>
+          </template>
+          <template v-else-if="step === 1">
+            <h2 class="text-lg font-semibold text-[color:var(--text-primary)]">
+              Введите фактический результат
+            </h2>
+            <p
+              v-if="manualMode"
+              class="rounded-lg border border-[color:var(--badge-warning-border)] bg-[color:var(--badge-warning-bg)] p-3 text-sm"
+            >
+              Ручное переопределение: используется внешний замер за {{ form.duration_sec }} с. Команда запуска из этого окна не отправлялась.
+            </p>
+            <p
+              v-else
+              class="rounded-lg bg-[color:var(--bg-elevated)] p-3 text-sm"
+            >
+              {{ loadingRun ? 'Ожидается ответ на запрос запуска…' : runToken ? 'Запрос запуска принят. Это не подтверждение завершения теста.' : 'Запуск пока не подтверждён. Можно повторить запрос после проверки.' }} Вводите объём после фактической остановки насоса.
+            </p>
+            <div class="grid gap-4 sm:grid-cols-2">
+              <Field
+                label="Измеренный объём, мл"
+                hint="Фактически собранный объём"
+              >
+                <TextField
+                  v-bind="numAttrs"
+                  v-model.number="form.actual_ml"
+                  min="0.1"
+                  step="0.1"
+                  :disabled="loadingSave"
+                />
+              </Field>
+              <Field
+                label="Температура, °C"
+                hint="Необязательно"
+              >
+                <TextField
+                  v-bind="numAttrs"
+                  v-model.number="form.temperature_c"
+                  step="0.1"
+                  :disabled="loadingSave"
+                />
+              </Field>
+            </div>
+            <details
+              v-if="!isPhComponent"
+              class="rounded-lg border border-[color:var(--border-muted)] p-3"
+            >
+              <summary class="cursor-pointer text-sm">
+                Дополнительный расчёт влияния на EC
+              </summary>
+              <div class="mt-4 grid gap-4 sm:grid-cols-3">
+                <Field label="Объём теста, л">
+                  <TextField
+                    v-bind="numAttrs"
+                    v-model.number="form.test_volume_l"
+                    min="0"
+                    step="0.1"
+                  />
+                </Field><Field label="EC до дозы, мСм/см">
+                  <TextField
+                    v-bind="numAttrs"
+                    v-model.number="form.ec_before_ms"
+                    min="0"
+                    step="0.01"
+                  />
+                </Field><Field label="EC после дозы, мСм/см">
+                  <TextField
+                    v-bind="numAttrs"
+                    v-model.number="form.ec_after_ms"
+                    min="0"
+                    step="0.01"
+                  />
+                </Field>
+              </div>
+            </details>
+            <label class="flex min-h-11 items-start gap-3 text-sm"><input
+              v-model="measurementConfirmed"
+              type="checkbox"
+              class="mt-1"
+            />Тест завершён, объём измерен за {{ form.duration_sec }} с.</label>
+            <Button
+              v-if="!manualMode"
+              variant="secondary"
+              :disabled="loadingRun || loadingSave"
+              @click="runCalibration"
+            >
+              Повторить запуск
+            </Button>
+          </template>
+          <template v-else-if="step === 2">
+            <h2 class="text-lg font-semibold text-[color:var(--text-primary)]">
+              Проверьте расчёт
+            </h2>
+            <div class="text-4xl font-semibold tabular-nums text-[color:var(--text-primary)]">
+              {{ formatFloat(previewMlPerSec, 3) }} <span class="text-base font-normal">мл/с</span>
+            </div>
+            <p>{{ form.actual_ml }} мл за {{ form.duration_sec }} с · {{ componentLabel(form.component) }}</p>
+            <div
+              v-if="previewVisible"
+              class="grid gap-3 sm:grid-cols-2"
+            >
+              <Stat
+                v-if="previewDeltaEc !== null"
+                label="ΔEC, мСм/см"
+                :value="formatFloat(previewDeltaEc, 3)"
+                mono
+              /><Stat
+                v-if="previewK !== null"
+                label="Коэффициент влияния на EC"
+                :value="formatFloat(previewK, 4)"
+                mono
+              />
+            </div>
+            <p class="rounded-lg bg-[color:var(--bg-elevated)] p-3 text-sm">
+              Будет сохранён результат для {{ selectedChannelLabel }}. {{ manualMode ? 'Источник — ручное переопределение по внешнему замеру.' : 'Результат связан с запросом запуска.' }}
+            </p>
+          </template>
+          <template v-else>
+            <h2 class="text-lg font-semibold text-[color:var(--text-primary)]">
+              {{ savedForCurrent ? 'Калибровка сохранена' : 'Сохранение результата' }}
+            </h2>
+            <p>{{ componentLabel(form.component) }} · {{ selectedChannelLabel }}</p>
+            <div class="text-3xl font-semibold tabular-nums">
+              {{ formatFloat(previewMlPerSec, 3) }} мл/с
+            </div>
+            <p
+              v-if="savedForCurrent"
+              class="text-[color:var(--status-ok)]"
+            >
+              Сохранение подтверждено сервером.
+            </p>
+            <p
+              v-if="nextUncalibrated"
+              class="text-sm"
+            >
+              Следующий доступный насос: {{ nextUncalibrated.label }}.
+            </p>
+          </template>
+        </div>
+      </section>
+    </div>
+    <template #footer>
+      <template v-if="!pendingAction">
+        <Button
+          v-if="step > 0 && !savedForCurrent"
+          variant="secondary"
+          :disabled="loadingRun || loadingSave"
+          @click="step--"
+        >
+          Назад
+        </Button>
+        <Button
+          v-else
+          variant="secondary"
+          :disabled="loadingSave"
+          @click="onClose"
+        >
+          Закрыть
+        </Button>
+        <span class="mr-auto self-center text-xs">Шаг {{ step + 1 }} из 4</span>
+        <Button
+          v-if="step === 0"
+          :disabled="!canRun || loadingRun || loadingSave"
+          @click="runCalibration"
+        >
+          {{ loadingRun ? 'Отправка…' : 'Запустить замер' }}
+        </Button>
+        <Button
+          v-else-if="step === 1"
+          :disabled="!canSave || loadingRun || loadingSave"
+          @click="step = 2"
+        >
+          Проверить результат
+        </Button>
+        <Button
+          v-else-if="step === 2"
+          :disabled="!canSave || loadingRun || loadingSave"
+          @click="step = 3"
+        >
+          К сохранению
+        </Button>
+        <Button
+          v-else-if="!savedForCurrent"
+          :disabled="!canSave || loadingRun || loadingSave"
+          @click="saveCalibration"
+        >
+          {{ loadingSave ? 'Сохранение…' : 'Сохранить результат' }}
+        </Button>
+        <Button
+          v-else-if="nextUncalibrated"
+          @click="goToNext"
+        >
+          К {{ nextUncalibrated.label }} →
+        </Button>
+      </template>
+    </template>
+  </Modal>
 </template>
 
 <script setup lang="ts">
 import TextField from '@/Components/TextField.vue'
 
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, nextTick, reactive, ref, watch } from 'vue'
 import Button from '@/Components/Button.vue'
 import { Chip, Field, Stat } from '@/Components/Shared/Primitives'
-import ShellCard from '@/Components/Launch/Shell/ShellCard.vue'
-import Ic from '@/Components/Icons/Ic.vue'
+import Modal from '@/Components/Modal.vue'
 import type { Device } from '@/types'
 import type {
   PumpCalibrationComponent,
@@ -445,9 +377,18 @@ const componentOptions: Array<{ value: PumpCalibrationComponent; label: string }
   { value: 'ph_down', label: 'pH Down' },
 ]
 
-const steps = [
-  { id: 'measure' as const, title: 'Запуск, замер, сохранение', desc: 'объём · мл/сек · сохранить' },
-]
+const steps = ['Подготовка', 'Замер', 'Проверка', 'Сохранение']
+const step = ref(0)
+const manualMode = ref(false)
+const measurementConfirmed = ref(false)
+const runRequested = ref(false)
+const runSelection = ref('')
+const baselineSnapshot = ref('')
+const savedSnapshot = ref<string | null>(null)
+const pendingAction = ref<'close' | 'rerun' | null>(null)
+const closeBlocked = ref(false)
+const confirmationRef = ref<HTMLElement | null>(null)
+watch(pendingAction, async value => { if (value) { await nextTick(); confirmationRef.value?.focus() } })
 
 const runToken = ref<string | null>(null)
 const runFinishedAt = ref<number | null>(null)
@@ -473,55 +414,32 @@ const form = reactive<{
 })
 
 watch(
-  () => props.show,
-  (open) => {
-    if (open) {
-      setInitialPumpSelection()
-      runToken.value = null
-      runFinishedAt.value = null
-      form.actual_ml = null
-      form.test_volume_l = null
-      form.ec_before_ms = null
-      form.ec_after_ms = null
-      form.temperature_c = null
-    }
-  },
-  { immediate: true },
-)
-
-watch(
   () => props.runSuccessSeq,
   (seq, prev) => {
-    if (seq !== prev) {
+    if (seq !== prev && props.show && runRequested.value && runSelection.value === selectionKey()) {
       runToken.value = props.lastRunToken ?? null
       runFinishedAt.value = Date.now()
     }
   },
 )
 
-const lastSavedAt = ref<number | null>(null)
-const lastSavedComponent = ref<PumpCalibrationComponent | null>(null)
-void lastSavedAt.value
-
 watch(
   () => props.saveSuccessSeq,
   (seq, prev) => {
-    if (seq !== prev && seq > 0) {
-      lastSavedAt.value = Date.now()
-      lastSavedComponent.value = form.component
-      const next = nextUncalibrated.value
-      if (next) {
-        goToNext()
-      } else {
-        onClose()
-      }
+    if (seq !== prev && seq > 0 && props.show) {
+      savedSnapshot.value = snapshot()
+      baselineSnapshot.value = snapshot()
+      runToken.value = null
+      runRequested.value = false
+      step.value = 3
     }
   },
 )
 
-const savedForCurrent = computed(
-  () => lastSavedComponent.value !== null && lastSavedComponent.value === form.component,
-)
+const savedForCurrent = computed(() => savedSnapshot.value !== null && savedSnapshot.value === snapshot())
+const hasUnsavedChanges = computed(() => baselineSnapshot.value !== snapshot())
+function snapshot(): string { return JSON.stringify(form) }
+function selectionKey(): string { return `${form.component}/${form.node_channel_id}/${form.duration_sec}` }
 
 interface PumpChannelOption {
   id: number
@@ -596,11 +514,11 @@ const canRun = computed(
   () =>
     form.component != null &&
     form.node_channel_id != null &&
-    form.duration_sec > 0,
+    Number.isInteger(form.duration_sec) && form.duration_sec >= 1 && form.duration_sec <= 60,
 )
 
 const canSave = computed(
-  () => canRun.value && typeof form.actual_ml === 'number' && form.actual_ml > 0,
+  () => canRun.value && typeof form.actual_ml === 'number' && Number.isFinite(form.actual_ml) && form.actual_ml > 0 && measurementConfirmed.value && (manualMode.value || Boolean(runToken.value && runSelection.value === selectionKey())),
 )
 
 const previewMlPerSec = computed(() => {
@@ -625,38 +543,49 @@ const previewVisible = computed(
   () => previewMlPerSec.value !== null || previewDeltaEc.value !== null,
 )
 
-const dirtyBadge = computed(() => {
-  if (!form.actual_ml) {
-    return 'не сохранено · объём не указан'
-  }
-  return ''
-})
-
-const runRecentAgo = computed(() => {
-  if (!runFinishedAt.value) return ''
-  const diff = Math.floor((Date.now() - runFinishedAt.value) / 1000)
-  if (diff < 60) return `${diff} сек`
-  return `${Math.floor(diff / 60)} мин`
-})
-
-function isStepDone(id: 'measure'): boolean {
-  return id === 'measure' && savedForCurrent.value
-}
+const dirtyBadge = computed(() => hasUnsavedChanges.value ? 'Есть несохранённый замер' : '')
 
 function formatFloat(v: number | null, digits: number): string {
   if (v === null || !Number.isFinite(v)) return '—'
   return v.toFixed(digits)
 }
 
-function runCalibration() {
-  if (!canRun.value) return
-  const channelId = form.node_channel_id
-  if (channelId == null || channelId <= 0) return
-  emit('start', {
-    component: form.component,
-    node_channel_id: channelId,
-    duration_sec: form.duration_sec,
-  })
+function runCalibration(): void {
+  if (!canRun.value || props.loadingRun || props.loadingSave) return
+  if (form.actual_ml != null || form.ec_before_ms != null || form.ec_after_ms != null) {
+    pendingAction.value = 'rerun'
+    return
+  }
+  performRun()
+}
+
+function clearMeasurement(): void {
+  form.actual_ml = null
+  form.test_volume_l = null
+  form.ec_before_ms = null
+  form.ec_after_ms = null
+  form.temperature_c = null
+  measurementConfirmed.value = false
+}
+
+function performRun(): void {
+  if (!canRun.value || form.node_channel_id == null) return
+  clearMeasurement()
+  runToken.value = null
+  savedSnapshot.value = null
+  manualMode.value = false
+  runRequested.value = true
+  runSelection.value = selectionKey()
+  step.value = 1
+  emit('start', { component: form.component, node_channel_id: form.node_channel_id, duration_sec: form.duration_sec })
+}
+
+function useManualMeasurement(): void {
+  if (!canRun.value || props.loadingRun || props.loadingSave) return
+  manualMode.value = true
+  runRequested.value = false
+  runToken.value = null
+  step.value = 1
 }
 
 interface NextCandidate {
@@ -742,7 +671,12 @@ function goToNext() {
   form.temperature_c = null
   runToken.value = null
   runFinishedAt.value = null
-  lastSavedComponent.value = null
+  savedSnapshot.value = null
+  step.value = 0
+  manualMode.value = false
+  measurementConfirmed.value = false
+  runRequested.value = false
+  baselineSnapshot.value = snapshot()
 }
 
 const selectedChannelLabel = computed(() => {
@@ -791,7 +725,7 @@ function setInitialPumpSelection(): void {
 }
 
 function saveCalibration() {
-  if (!canSave.value) return
+  if (!canSave.value || props.loadingRun || props.loadingSave || savedForCurrent.value) return
   const nodeChannelId = form.node_channel_id
   const actualMl = form.actual_ml
   if (nodeChannelId == null || actualMl == null) return
@@ -816,8 +750,41 @@ function saveCalibration() {
   emit('save', payload)
 }
 
-function onClose() {
+function onClose(): void {
+  if (pendingAction.value) { pendingAction.value = null; return }
+  closeBlocked.value = false
+  if (props.loadingSave) { closeBlocked.value = true; return }
+  if (hasUnsavedChanges.value || runRequested.value || props.loadingRun) { pendingAction.value = 'close'; return }
   emit('close')
 }
+
+function discard(): void {
+  const action = pendingAction.value
+  pendingAction.value = null
+  if (action === 'rerun') performRun()
+  else emit('close')
+}
+
+watch(
+  () => props.show,
+  (open) => {
+    pendingAction.value = null
+    closeBlocked.value = false
+    if (!open) return
+    form.component = props.initialComponent ?? 'npk'
+    form.node_channel_id = null
+    form.duration_sec = 20
+    clearMeasurement()
+    setInitialPumpSelection()
+    runToken.value = null
+    runFinishedAt.value = null
+    savedSnapshot.value = null
+    step.value = 0
+    manualMode.value = false
+    runRequested.value = false
+    baselineSnapshot.value = snapshot()
+  },
+  { immediate: true },
+)
 </script>
 
