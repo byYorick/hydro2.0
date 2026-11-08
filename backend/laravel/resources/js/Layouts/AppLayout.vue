@@ -109,7 +109,7 @@
                 class="app-icon-button sm:w-auto sm:gap-2 sm:px-3"
                 aria-label="Открыть поиск и командную палитру"
                 title="Поиск и команды (Ctrl+K)"
-                @click="commandPalette?.open()"
+                @click="commandPalette?.openPalette()"
               >
                 <svg
                   class="h-4 w-4"
