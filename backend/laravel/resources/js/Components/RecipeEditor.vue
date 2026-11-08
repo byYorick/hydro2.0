@@ -203,30 +203,14 @@
       Фазы роста
     </div>
 
-    <div
-      class="space-y-3"
-      :class="{ 'recipe-phase-workspace': singlePhase }"
+    <RecipePhaseWorkspace
+      v-slot="{ isVisible }"
+      :phases="sortedPhases"
+      :enabled="singlePhase"
     >
-      <nav
-        v-if="singlePhase"
-        class="flex gap-2 overflow-x-auto pb-2"
-        aria-label="Выбор фазы рецепта"
-      >
-        <button
-          v-for="(phase, index) in sortedPhases"
-          :key="phase.id || index"
-          type="button"
-          class="btn min-h-11 shrink-0 text-xs"
-          :class="selectedPhase === index ? 'btn-outline' : 'btn-ghost'"
-          :aria-pressed="selectedPhase === index"
-          @click="selectedPhase = index"
-        >
-          {{ index + 1 }}. {{ phase.name || 'Новая фаза' }} · {{ Math.round(phase.duration_hours / 24) }} дн.
-        </button>
-      </nav>
       <section
         v-for="(phase, index) in sortedPhases"
-        v-show="!singlePhase || selectedPhase === index"
+        v-show="isVisible(index)"
         :key="phase.id || index"
         :data-testid="`phase-item-${index}`"
         class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)] p-3 space-y-2.5"
@@ -1214,7 +1198,7 @@
           </div>
         </div>
       </section>
-    </div>
+    </RecipePhaseWorkspace>
 
     <!-- ── Кнопки внизу ──────────────────────────────────────── -->
     <div class="flex items-center justify-between pt-2">
@@ -1252,6 +1236,8 @@ import TextField from '@/Components/TextField.vue'
 
 import { computed, ref, watch } from 'vue'
 import Button from '@/Components/Button.vue'
+import RecipePhaseWorkspace from '@/Components/RecipePhaseWorkspace.vue'
+import { useRecipeIdentity } from '@/composables/useRecipeIdentity'
 import RecipeEditorProductField from '@/Components/RecipeEditorProductField.vue'
 import RecipePhaseChartsPanel from '@/Components/Recipes/RecipePhaseChartsPanel.vue'
 import RecipePhaseTimeline from '@/Components/Recipes/RecipePhaseTimeline.vue'
@@ -1306,33 +1292,12 @@ const { showToast } = useToast()
 const { isAdmin } = useRole()
 const editorMode = ref<'simple' | 'advanced'>(isAdmin.value ? 'advanced' : 'simple')
 const isAdvanced = computed(() => editorMode.value === 'advanced')
-const selectedPhase = ref(0)
-watch(() => form.value.phases.length, (length, previous) => {
-  selectedPhase.value = length > previous ? Math.max(0, length - 1) : Math.min(selectedPhase.value, Math.max(0, length - 1))
-})
-
 const plantMode = ref<'select' | 'create'>('select')
 const newPlantName = ref('')
 const newPlantSpecies = ref('')
 const newPlantVariety = ref('')
 const creatingPlant = ref(false)
-const recipeLabel = ref(form.value.description || '')
-
-const selectedPlantName = computed(() => {
-  const plant = props.plants.find(p => p.id === form.value.plant_id)
-  return plant?.name ?? ''
-})
-
-const recipeName = computed(() => {
-  const plant = selectedPlantName.value
-  const label = recipeLabel.value.trim()
-  if (plant && label) return `${plant} ${label}`
-  if (plant) return plant
-  return label || ''
-})
-
-watch(recipeName, (name) => { form.value.name = name }, { immediate: true })
-watch(recipeLabel, (label) => { form.value.description = label })
+const { recipeLabel, recipeName } = useRecipeIdentity(form, () => props.plants)
 
 // Дефолтный субстрат для каждого типа полива.
 const DEFAULT_SUBSTRATE_FOR: Record<string, string | null> = {
@@ -1555,13 +1520,6 @@ const previewSummary = computed(() => summarizeRecipePhases(previewPhases.value)
 </script>
 
 <style scoped>
-@media (min-width: 1400px) {
-  .recipe-phase-workspace { display: grid; grid-template-columns: 10rem minmax(0, 1fr); gap: 1rem; align-items: start; }
-  .recipe-phase-workspace > nav { grid-column: 1; flex-direction: column; position: sticky; top: 1rem; }
-  .recipe-phase-workspace > nav button { white-space: normal; text-align: left; justify-content: flex-start; }
-  .recipe-phase-workspace > section { grid-column: 2; grid-row: 1; margin-top: 0; min-width: 0; }
-}
-
 .hide-spin::-webkit-outer-spin-button,
 .hide-spin::-webkit-inner-spin-button {
   -webkit-appearance: none;

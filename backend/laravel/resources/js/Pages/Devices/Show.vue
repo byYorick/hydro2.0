@@ -64,86 +64,17 @@
       </div>
     </div>
 
-    <nav
-      class="mb-4 flex flex-wrap gap-2 border-b border-[color:var(--border-muted)] pb-3"
-      aria-label="Разделы узла"
-    >
-      <button
-        v-for="tab in deviceViewTabs"
-        :key="tab.id"
-        type="button"
-        class="btn min-h-11 px-3 text-xs"
-        :class="deviceView === tab.id ? 'btn-outline' : 'btn-ghost'"
-        :aria-pressed="deviceView === tab.id"
-        @click="deviceView = tab.id"
-      >
-        {{ tab.label }}
-      </button>
-      <Link
-        v-if="linkedZoneId"
-        :href="`/zones/${linkedZoneId}?tab=events`"
-        class="btn btn-ghost min-h-11 text-xs"
-      >
-        События зоны →
-      </Link>
-    </nav>
-    <div
-      v-if="deviceView === 'state'"
-      class="mb-4 grid gap-3 sm:grid-cols-3"
-    >
-      <div class="surface-card p-4">
-        <p class="text-xs text-[color:var(--text-muted)]">
-          Связь с узлом
-        </p><p class="mt-2 text-lg font-semibold">
-          {{ formatDeviceStatus(device.status) }}
-        </p><p class="mt-1 text-xs text-[color:var(--text-muted)]">
-          Последний пакет: {{ formatNodeDate(device.last_heartbeat_at || device.last_seen_at) || 'время неизвестно' }}
-        </p>
-      </div>
-      <div class="surface-card p-4">
-        <p class="text-xs text-[color:var(--text-muted)]">
-          Свежие измерения каналов
-        </p><p class="mt-2 text-lg font-semibold">
-          {{ freshSensorCount }} из {{ sensorChannels.length }}
-        </p><p class="mt-1 text-xs text-[color:var(--text-muted)]">
-          В пределах 5 минут · связь проверяется отдельно
-        </p>
-      </div>
-      <div class="surface-card p-4">
-        <p class="text-xs text-[color:var(--text-muted)]">
-          Калибровка сенсора
-        </p><p class="mt-2 text-lg font-semibold">
-          {{ sensorCalibStatusLoading ? 'Загрузка…' : phSensorCalibrationItems.length ? phSensorCalibrationItems.every(item => item.calibration_status === 'ok') ? 'Действительна' : 'Требует проверки' : 'Нет сводки' }}
-        </p><button
-          type="button"
-          class="mt-2 text-xs text-[color:var(--status-info)] hover:underline"
-          @click="deviceView = 'calibration'"
-        >
-          Открыть калибровку →
-        </button>
-      </div>
-    </div>
-    <div
-      v-if="deviceView === 'calibration' && !showPhSensorCalibrationSection"
-      class="surface-card mb-4 space-y-3 p-5"
-    >
-      <h2 class="font-semibold">
-        Калибровка в контексте зоны
-      </h2><p class="text-sm text-[color:var(--text-muted)]">
-        Для насосов и других сенсоров откройте рабочее пространство зоны: там доступны привязки каналов и результаты калибровки.
-      </p><Link
-        v-if="linkedZoneId"
-        :href="`/zones/${linkedZoneId}?tab=devices`"
-        class="btn btn-outline min-h-11 text-sm"
-      >
-        Открыть оборудование зоны →
-      </Link><p
-        v-else
-        class="text-sm"
-      >
-        Сначала назначьте устройству зону.
-      </p>
-    </div>
+    <DeviceWorkspaceOverview
+      v-model:view="deviceView"
+      :tabs="deviceViewTabs"
+      :zone-id="linkedZoneId"
+      :status-label="formatDeviceStatus(device.status)"
+      :last-packet-label="formatNodeDate(device.last_heartbeat_at || device.last_seen_at) || 'время неизвестно'"
+      :fresh-sensor-count="freshSensorCount"
+      :sensor-count="sensorChannels.length"
+      :calibration-label="sensorCalibStatusLoading ? 'Загрузка…' : phSensorCalibrationItems.length ? phSensorCalibrationItems.every(item => item.calibration_status === 'ok') ? 'Действительна' : 'Требует проверки' : 'Нет сводки'"
+      :calibration-in-zone="!showPhSensorCalibrationSection"
+    />
     <!-- Визуализация связи с зоной -->
     <Card
       v-if="hasZoneAssignment"
@@ -521,6 +452,7 @@ import Button from '@/Components/Button.vue'
 import ConfirmModal from '@/Components/ConfirmModal.vue'
 import NodeLifecycleBadge from '@/Components/NodeLifecycleBadge.vue'
 import DeviceChannelsTable from '@/Pages/Devices/DeviceChannelsTable.vue'
+import DeviceWorkspaceOverview from './DeviceWorkspaceOverview.vue'
 import MultiSeriesTelemetryChart from '@/Components/MultiSeriesTelemetryChart.vue'
 import SensorCalibrationDrawer from '@/Components/Launch/Calibration/SensorCalibrationDrawer.vue'
 import type { BadgeVariant } from '@/Components/Badge.vue'
@@ -536,10 +468,10 @@ import { useDeviceCommandActions } from '@/composables/useDeviceCommandActions'
 import type { Device, DeviceChannel } from '@/types'
 import type { SensorCalibrationOverview, SensorCalibrationSessionOutcome } from '@/types/SensorCalibration'
 import { formatPendingBindAge } from '@/composables/useNodeLifecycle'
-import { translateStatus, translateDeviceType } from '@/utils/i18n'
+import { translateDeviceType } from '@/utils/i18n'
 import { formatTime } from '@/utils/formatTime'
 import { useRole } from '@/composables/useRole'
-import { useUrlState } from '@/composables/useUrlState'
+import { useDeviceWorkspace, formatDeviceStatus } from '@/composables/useDeviceWorkspace'
 
 interface PageProps {
   device?: Device
@@ -550,11 +482,6 @@ interface PageProps {
 const page = usePage<PageProps>()
 const { canConfigureDevices, canCalibrateSensors, canDiagnose } = useRole()
 const device = computed(() => (page.props.device || {}) as Device)
-const deviceViewTabs = computed(() => [
-  { id: 'state', label: 'Состояние' }, { id: 'channels', label: 'Каналы' }, { id: 'telemetry', label: 'Измерения' }, { id: 'calibration', label: 'Калибровка' },
-  ...(canDiagnose.value ? [{ id: 'config', label: 'Конфигурация' }] : []),
-])
-const deviceView = useUrlState({ key: 'view', defaultValue: 'state', parse: value => value && deviceViewTabs.value.some(tab => tab.id === value) ? value : 'state' })
 const channels = computed(() => (device.value.channels || []) as DeviceChannel[])
 const linkedZoneId = computed<number | null>(() => {
   return device.value.zone?.id ?? device.value.zone_id ?? device.value.pending_zone_id ?? null
@@ -628,14 +555,6 @@ function formatUptime(seconds?: number | null): string | null {
     return `${hours}ч ${minutes}м`
   }
   return `${minutes}м`
-}
-
-function formatDeviceStatus(status?: string | null): string {
-  const key = String(status || 'unknown').trim().toUpperCase()
-  if (!key || key === 'UNKNOWN') {
-    return 'Неизвестно'
-  }
-  return translateStatus(key)
 }
 
 function formatHeap(bytes?: number | null): string | null {
@@ -833,15 +752,11 @@ const {
 // Графики телеметрии
 const chartTimeRange = ref<'1H' | '24H' | '7D' | '30D' | 'ALL'>('24H')
 const chartDataByChannel = ref<Record<string, Array<{ ts: number; value: number }>>>({})
-const observationNow = ref(Date.now())
-let observationTimer: ReturnType<typeof setInterval> | undefined
-onMounted(() => { observationTimer = setInterval(() => { observationNow.value = Date.now() }, 30_000) })
-onUnmounted(() => { clearInterval(observationTimer) })
-const freshSensorCount = computed(() => sensorChannels.value.filter(channel => {
-  const points = chartDataByChannel.value[channel.channel] ?? []
-  const latest = points.reduce((at, point) => Number.isFinite(point.ts) ? Math.max(at, point.ts) : at, 0)
-  return latest > 0 && latest <= observationNow.value + 30_000 && observationNow.value - latest <= 300_000
-}).length)
+const { deviceViewTabs, deviceView, freshSensorCount } = useDeviceWorkspace({
+  canDiagnose,
+  channels: () => sensorChannels.value,
+  series: chartDataByChannel,
+})
 
 // Приоритеты метрик для сортировки (меньше = выше приоритет)
 const METRIC_PRIORITY: Record<string, number> = {

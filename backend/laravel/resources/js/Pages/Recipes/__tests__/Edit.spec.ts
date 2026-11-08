@@ -301,4 +301,17 @@ describe('Recipes/Edit.vue', () => {
     expect(routerVisitMock).toHaveBeenCalledWith('/recipes/1')
   })
 
+  it('сохраняет введённые значения при переключении выбранной фазы', async () => {
+    const wrapper = mount(RecipesEdit, { attachTo: document.body, global: { stubs: { teleport: true } } })
+    await flushPromises()
+    await wrapper.get('[data-testid="phase-name-input-0"]').setValue('Изменённая рассада')
+    await wrapper.get('[data-testid="add-phase-button"]').trigger('click')
+    expect(wrapper.get('[data-testid="phase-item-1"]').isVisible()).toBe(true)
+    expect(wrapper.get('[data-testid="phase-item-0"]').isVisible()).toBe(false)
+    await wrapper.findAll('nav button').find(button => button.text().startsWith('1.'))!.trigger('click')
+    expect(wrapper.get('[data-testid="phase-item-0"]').isVisible()).toBe(true)
+    expect((wrapper.get('[data-testid="phase-name-input-0"]').element as HTMLInputElement).value).toBe('Изменённая рассада')
+    wrapper.unmount()
+  })
+
 })
