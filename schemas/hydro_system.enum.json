@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "description": "Снимок канона hydro_system из ADR-0001. implemented=true только у типов, для которых в AE3 есть гидравлический граф. Пустой тип не является явным и остаётся неявной каплей.",
+  "adr": "doc_ai/adr/ADR-0001-hydro-system.md",
+  "canonical": ["drip", "ebb_flow", "nft", "dwc"],
+  "implemented": ["drip"],
+  "needs_review": ["substrate", "substrate_trays", "aeroponics"],
+  "aliases": {
+    "drip": "drip",
+    "drip_tape": "drip",
+    "drip_emitter": "drip",
+    "nft": "nft",
+    "recirc": "nft",
+    "ebb_flow": "ebb_flow",
+    "ebb-and-flow": "ebb_flow",
+    "ebb_and_flow": "ebb_flow",
+    "dwc": "dwc",
+    "substrate": "substrate",
+    "substrate_trays": "substrate_trays",
+    "aeroponics": "aeroponics"
+  },
+  "environment": {
+    "outdoor_only": ["drip"]
+  },
+  "messages": {
+    "hydro_system_not_implemented": "Тип гидропонной системы «{requested}» ещё не исполняется. Запуск полива возможен только для: {supported}.",
+    "hydro_system_unknown": "Тип гидропонной системы «{requested}» не входит в канон. Допустимы: {canonical}.",
+    "hydro_system_needs_review": "Тип «{requested}» оставлен без автоматической подмены. Выберите канон: {canonical}. Пока полив для него не запускается.",
+    "hydro_system_environment_forbidden": "Тип «{requested}» нельзя запустить в среде «{environment}». Снаружи допустима только капля."
+  }
+}

@@ -14,6 +14,7 @@ use App\Models\ZoneEvent;
 use App\Services\AutomationConfigCompiler;
 use App\Services\AutomationConfigRegistry;
 use App\Services\GrowCycle\Support\CorrelationIdResolver;
+use App\Services\HydroponicSystemGuard;
 use App\Services\ZoneService;
 use Carbon\Carbon;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
@@ -33,6 +34,7 @@ class GrowCycleLifecycleService
         private readonly GrowCycleAutomationDispatcher $dispatcher,
         private readonly GrowCycleAutomationCanceller $canceller,
         private readonly CorrelationIdResolver $correlation,
+        private readonly HydroponicSystemGuard $hydroponicSystems,
     ) {}
 
     public function startCycle(GrowCycle $cycle, ?Carbon $plantingAt = null): GrowCycle
@@ -40,6 +42,8 @@ class GrowCycleLifecycleService
         if ($cycle->status !== GrowCycleStatus::PLANNED) {
             throw new \DomainException('Cycle must be in PLANNED status to start');
         }
+
+        $this->hydroponicSystems->assertZoneIrrigationExecutable((int) $cycle->zone_id, $cycle);
 
         $zone = $cycle->zone ?? Zone::query()->find($cycle->zone_id);
         if ($zone) {
@@ -144,6 +148,8 @@ class GrowCycleLifecycleService
         if ($cycle->status !== GrowCycleStatus::PAUSED) {
             throw new \DomainException('Cycle is not paused');
         }
+
+        $this->hydroponicSystems->assertZoneIrrigationExecutable((int) $cycle->zone_id, $cycle);
 
         return DB::transaction(function () use ($cycle, $userId) {
             $cycle->update(['status' => GrowCycleStatus::RUNNING]);

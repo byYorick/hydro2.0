@@ -2,9 +2,11 @@
 
 namespace App\Services\AutomationScheduler;
 
+use App\Exceptions\UnsupportedHydroponicSystemException;
 use App\Services\AlertService;
 use App\Services\AutomationConfigDocumentService;
 use App\Services\CropDay\SolutionRefreshRecommendation;
+use App\Services\HydroponicSystemGuard;
 use App\Services\ZoneAutomationIntentService;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Client\Response;
@@ -219,6 +221,25 @@ class ScheduleDispatcher
             triggerTime: $triggerTime,
             payload: $payload,
         );
+        $blockedCode = $intentSnapshot['blocked_code'] ?? null;
+        if (is_string($blockedCode) && $blockedCode !== '') {
+            $writeLog($taskName, 'failed', [
+                'zone_id' => $zoneId,
+                'task_type' => $taskType,
+                'error' => $blockedCode,
+                'schedule_key' => $scheduleKey,
+                'correlation_id' => $correlationId,
+            ]);
+
+            return [
+                'ready' => false,
+                'result' => [
+                    'dispatched' => false,
+                    'retryable' => false,
+                    'reason' => $blockedCode,
+                ],
+            ];
+        }
         if (! $intentSnapshot['ok']) {
             $writeLog($taskName, 'failed', [
                 'zone_id' => $zoneId,
@@ -596,7 +617,7 @@ class ScheduleDispatcher
     }
 
     /**
-     * @return array{ok: bool, intent_id: int|null}
+     * @return array{ok: bool, intent_id: int|null, blocked_code?: string}
      */
     public function upsertSchedulerIntent(
         int $zoneId,
@@ -621,6 +642,24 @@ class ScheduleDispatcher
                 'lighting' => 'lighting_tick',
                 default => $topology,
             };
+            if ($aeTaskType !== 'lighting_tick') {
+                try {
+                    app(HydroponicSystemGuard::class)->assertZoneIrrigationExecutable($zoneId);
+                } catch (UnsupportedHydroponicSystemException $exception) {
+                    Log::warning('scheduler_intent_blocked_unsupported_hydroponic_system', [
+                        'zone_id' => $zoneId,
+                        'task_type' => $taskType,
+                        'requested_type' => $exception->requestedType,
+                        'supported_types' => $exception->supportedTypes,
+                    ]);
+
+                    return [
+                        'ok' => false,
+                        'intent_id' => null,
+                        'blocked_code' => $exception->errorCode,
+                    ];
+                }
+            }
             $irrigationMode = $taskType === 'irrigation' ? 'normal' : null;
             $irrigationDurationSec = null;
             if ($taskType === 'irrigation' && isset($payload['duration_sec']) && is_numeric($payload['duration_sec'])) {

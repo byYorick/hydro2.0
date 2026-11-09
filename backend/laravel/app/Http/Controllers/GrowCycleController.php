@@ -2,7 +2,9 @@
 
 namespace App\Http\Controllers;
 
+use App\Exceptions\UnsupportedHydroponicSystemException;
 use App\Exceptions\ZoneNotReadyException;
+use App\Http\Controllers\Concerns\PresentsLocalizedApiErrors;
 use App\Helpers\ZoneAccessHelper;
 use App\Models\GrowCycle;
 use App\Models\RecipeRevision;
@@ -22,6 +24,8 @@ use Symfony\Component\HttpFoundation\Response;
 
 class GrowCycleController extends Controller
 {
+    use PresentsLocalizedApiErrors;
+
     public function __construct(
         private GrowCycleService $growCycleService,
         private GrowCyclePresenter $growCyclePresenter,
@@ -115,6 +119,13 @@ class GrowCycleController extends Controller
                 'readiness_errors' => $e->errors(),
                 'readiness' => $e->readiness(),
             ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        } catch (UnsupportedHydroponicSystemException $e) {
+            return $this->localizedError(
+                $e->errorCode,
+                $e->getMessage(),
+                Response::HTTP_UNPROCESSABLE_ENTITY,
+                $e->extra(),
+            );
         } catch (\DomainException $e) {
             return response()->json([
                 'status' => 'error',
@@ -170,6 +181,13 @@ class GrowCycleController extends Controller
                 'status' => 'ok',
                 'data' => $cycle,
             ]);
+        } catch (UnsupportedHydroponicSystemException $e) {
+            return $this->localizedError(
+                $e->errorCode,
+                $e->getMessage(),
+                Response::HTTP_UNPROCESSABLE_ENTITY,
+                $e->extra(),
+            );
         } catch (\DomainException $e) {
             return response()->json([
                 'status' => 'error',
@@ -225,6 +243,13 @@ class GrowCycleController extends Controller
                 'status' => 'ok',
                 'data' => $cycle,
             ]);
+        } catch (UnsupportedHydroponicSystemException $e) {
+            return $this->localizedError(
+                $e->errorCode,
+                $e->getMessage(),
+                Response::HTTP_UNPROCESSABLE_ENTITY,
+                $e->extra(),
+            );
         } catch (\DomainException $e) {
             return response()->json([
                 'status' => 'error',
@@ -285,6 +310,13 @@ class GrowCycleController extends Controller
                 'status' => 'ok',
                 'data' => $cycle,
             ]);
+        } catch (UnsupportedHydroponicSystemException $e) {
+            return $this->localizedError(
+                $e->errorCode,
+                $e->getMessage(),
+                Response::HTTP_UNPROCESSABLE_ENTITY,
+                $e->extra(),
+            );
         } catch (\DomainException $e) {
             return response()->json([
                 'status' => 'error',
@@ -344,6 +376,13 @@ class GrowCycleController extends Controller
                 'status' => 'ok',
                 'data' => $cycle,
             ]);
+        } catch (UnsupportedHydroponicSystemException $e) {
+            return $this->localizedError(
+                $e->errorCode,
+                $e->getMessage(),
+                Response::HTTP_UNPROCESSABLE_ENTITY,
+                $e->extra(),
+            );
         } catch (\DomainException $e) {
             return response()->json([
                 'status' => 'error',
@@ -402,7 +441,7 @@ class GrowCycleController extends Controller
             'settings' => ['nullable', 'array'],
             'settings.expected_harvest_at' => ['nullable', 'date'],
             'irrigation' => ['nullable', 'array'],
-            'irrigation.system_type' => ['nullable', 'string', 'in:drip,substrate_trays,nft'],
+            'irrigation.system_type' => ['nullable', 'string', 'max:64'],
             'irrigation.interval_minutes' => ['nullable', 'integer', 'min:5', 'max:1440'],
             'irrigation.duration_seconds' => ['nullable', 'integer', 'min:1', 'max:3600'],
             'irrigation.clean_tank_fill_l' => ['nullable', 'integer', 'min:10', 'max:5000'],
@@ -426,6 +465,13 @@ class GrowCycleController extends Controller
                 'readiness_errors' => $e->errors(),
                 'readiness' => $e->readiness(),
             ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        } catch (UnsupportedHydroponicSystemException $e) {
+            return $this->localizedError(
+                $e->errorCode,
+                $e->getMessage(),
+                Response::HTTP_UNPROCESSABLE_ENTITY,
+                $e->extra(),
+            );
         } catch (\DomainException $e) {
             return response()->json([
                 'status' => 'error',
@@ -583,6 +629,13 @@ class GrowCycleController extends Controller
                 'status' => 'ok',
                 'data' => $cycle,
             ]);
+        } catch (UnsupportedHydroponicSystemException $e) {
+            return $this->localizedError(
+                $e->errorCode,
+                $e->getMessage(),
+                Response::HTTP_UNPROCESSABLE_ENTITY,
+                $e->extra(),
+            );
         } catch (\DomainException $e) {
             return response()->json([
                 'status' => 'error',
@@ -644,6 +697,13 @@ class GrowCycleController extends Controller
                 'status' => 'ok',
                 'data' => $cycle,
             ]);
+        } catch (UnsupportedHydroponicSystemException $e) {
+            return $this->localizedError(
+                $e->errorCode,
+                $e->getMessage(),
+                Response::HTTP_UNPROCESSABLE_ENTITY,
+                $e->extra(),
+            );
         } catch (\DomainException $e) {
             return response()->json([
                 'status' => 'error',
@@ -710,6 +770,13 @@ class GrowCycleController extends Controller
                 'status' => 'ok',
                 'data' => $cycle,
             ]);
+        } catch (UnsupportedHydroponicSystemException $e) {
+            return $this->localizedError(
+                $e->errorCode,
+                $e->getMessage(),
+                Response::HTTP_UNPROCESSABLE_ENTITY,
+                $e->extra(),
+            );
         } catch (\DomainException $e) {
             return response()->json([
                 'status' => 'error',

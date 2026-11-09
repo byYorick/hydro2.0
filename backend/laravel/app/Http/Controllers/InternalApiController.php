@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Exceptions\UnsupportedHydroponicSystemException;
+use App\Http\Controllers\Concerns\PresentsLocalizedApiErrors;
 use App\Models\GrowCycle;
 use App\Models\User;
 use App\Services\EffectiveTargetsService;
@@ -17,6 +19,8 @@ use Illuminate\Support\Facades\Validator;
  */
 class InternalApiController extends Controller
 {
+    use PresentsLocalizedApiErrors;
+
     public function __construct(
         private EffectiveTargetsService $effectiveTargetsService,
         private GrowCycleService $growCycleService,
@@ -143,6 +147,13 @@ class InternalApiController extends Controller
                 'status' => 'ok',
                 'data' => $cycle,
             ]);
+        } catch (UnsupportedHydroponicSystemException $e) {
+            return $this->localizedError(
+                $e->errorCode,
+                $e->getMessage(),
+                422,
+                $e->extra(),
+            );
         } catch (\DomainException $e) {
             return response()->json([
                 'status' => 'error',
