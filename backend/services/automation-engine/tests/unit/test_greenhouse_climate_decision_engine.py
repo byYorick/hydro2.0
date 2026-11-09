@@ -843,6 +843,35 @@ def test_explicit_zero_overheat_threshold_is_not_replaced() -> None:
     assert decision.emergency_overheat is True
 
 
+def test_solution_temperature_does_not_enter_inside_air() -> None:
+    now = datetime.now(timezone.utc)
+    temps: list[float] = []
+    common = dict(
+        freshness_sec=1200,
+        now=now,
+        inside_temps=temps,
+        inside_rhs=[],
+        inside_pressures=[],
+        outside_fresh={},
+        outdoor_state={},
+        allow_inside=True,
+        allow_outside=False,
+    )
+    run_tick._accumulate_sensor_row(
+        {"scope": "inside", "type": "TEMPERATURE", "label": "temperature", "last_value": 22.0, "last_ts": now, "last_quality": "GOOD"},
+        **common,
+    )
+    run_tick._accumulate_sensor_row(
+        {"scope": "inside", "type": "TEMPERATURE", "label": "solution_temp_c", "last_value": 48.0, "last_ts": now, "last_quality": "GOOD"},
+        **common,
+    )
+    run_tick._accumulate_sensor_row(
+        {"scope": "inside", "type": "TEMPERATURE", "label": "temp_air", "last_value": 23.0, "last_ts": now, "last_quality": "GOOD"},
+        **common,
+    )
+    assert temps == [22.0, 23.0]
+
+
 def test_exhaust_hysteresis_holds_between_thresholds_and_stops_without_sensor() -> None:
     assert exhaust_fan_on(temp_c=22.0, sensor_fresh=True, currently_on=False) is False
     assert exhaust_fan_on(temp_c=24.0, sensor_fresh=True, currently_on=False) is False

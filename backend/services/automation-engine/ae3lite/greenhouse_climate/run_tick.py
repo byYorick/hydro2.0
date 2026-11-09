@@ -389,7 +389,7 @@ def _accumulate_sensor_row(
         return False
 
     inside_marked = False
-    if allow_inside and scope == "inside" and (st == "TEMPERATURE" or label in {"temperature", "temp_air"}):
+    if allow_inside and scope == "inside" and _is_inside_air_temperature(st, label):
         inside_temps.append(fv)
         inside_marked = True
     elif allow_inside and scope == "inside" and (st == "HUMIDITY" or label in {"humidity", "humidity_air"}):
@@ -438,6 +438,20 @@ _OUTSIDE_SENSOR_TYPES = frozenset(
         "RAIN_DETECTED",
     }
 )
+
+# Температура раствора тоже приходит как TEMPERATURE (solution_temp_c).
+# В воздух её не подмешиваем: только каналы климата.
+_INSIDE_AIR_TEMP_LABELS = frozenset({
+    "temperature",
+    "temp_air",
+    "air_temp",
+    "air_temp_c",
+})
+
+
+def _is_inside_air_temperature(sensor_type: str, label: str) -> bool:
+    return label in _INSIDE_AIR_TEMP_LABELS and sensor_type in {"TEMPERATURE", "TEMP"}
+
 
 _OUTSIDE_CHANNEL_HINTS = frozenset(
     {

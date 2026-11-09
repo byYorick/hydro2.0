@@ -51,8 +51,9 @@ async def guard_pump_start(
     from common.alerts import AlertCode, AlertSource, create_alert
     from common.pump_safety import check_dry_run
 
+    source = "dose" if str(cmd or "").strip().lower() == "dose" else "solution"
     try:
-        safe, error = await check_dry_run(int(zone_id))
+        safe, error = await check_dry_run(int(zone_id), source=source, channel=channel)
     except Exception as exc:
         logger.warning(
             "AE3 dry-run check failed zone_id=%s cmd=%s channel=%s",
