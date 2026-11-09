@@ -19,6 +19,7 @@
 #include "pump_driver.h"
 #include "actuator_failsafe.h"
 #include "trema_ph.h"
+#include "ds18b20.h"
 #include "mqtt_manager.h"
 #include "node_utils.h"
 #include "config_storage.h"
@@ -864,14 +865,31 @@ static esp_err_t handle_test_sensor(
     }
 
     if (strcmp(sensor_ch, "solution_temp_c") == 0) {
-        *response = node_command_handler_create_response(
-            NULL,
-            "ERROR",
-            "sensor_unavailable",
-            "Solution temperature sensor is not configured in firmware",
-            NULL
-        );
-        return ESP_ERR_NOT_SUPPORTED;
+        float solution_c = 0.0f;
+        ds18b20_status_t status = ds18b20_read_blocking(&solution_c);
+        if (status != DS18B20_OK) {
+            *response = node_command_handler_create_response(
+                NULL,
+                "ERROR",
+                "sensor_unavailable",
+                "Solution temperature sensor is unavailable",
+                NULL
+            );
+            return ESP_ERR_NOT_SUPPORTED;
+        }
+        cJSON *extra = cJSON_CreateObject();
+        if (extra) {
+            cJSON_AddNumberToObject(extra, "value", solution_c);
+            cJSON_AddStringToObject(extra, "unit", "°C");
+            cJSON_AddStringToObject(extra, "metric_type", "TEMPERATURE");
+            cJSON_AddBoolToObject(extra, "stable", true);
+            cJSON_AddBoolToObject(extra, "stub", false);
+        }
+        *response = node_command_handler_create_response(NULL, "DONE", NULL, NULL, extra);
+        if (extra) {
+            cJSON_Delete(extra);
+        }
+        return ESP_OK;
     }
 
     *response = node_command_handler_create_response(
@@ -917,36 +935,63 @@ static esp_err_t ph_node_publish_telemetry_callback(void *user_ctx) {
             s_ph_sensor_error_active = true;
         }
         ESP_LOGW(TAG, "pH telemetry skipped: cache miss or stale (no placeholder publish)");
-        return ESP_ERR_INVALID_STATE;
+        ph_value = NAN;
     }
 
-    ESP_LOGI(
-        TAG,
-        "pH update: %.3f pH (raw=%ld, stub=%s, stable=%s)",
-        (double)ph_value,
-        (long)raw_value,
-        using_stub ? "yes" : "no",
-        is_stable ? "yes" : "no"
-    );
+    esp_err_t err = ESP_OK;
+    if (isfinite(ph_value)) {
+        ESP_LOGI(
+            TAG,
+            "pH update: %.3f pH (raw=%ld, stub=%s, stable=%s)",
+            (double)ph_value,
+            (long)raw_value,
+            using_stub ? "yes" : "no",
+            is_stable ? "yes" : "no"
+        );
 
-    // Публикация через node_telemetry_engine
-    const bool mode_active = ph_node_is_sensor_mode_active();
-    const bool publish_stable = mode_active ? is_stable : false;
-    esp_err_t err = node_telemetry_publish_sensor_with_flow_flags(
-        "ph_sensor",
-        METRIC_TYPE_PH,
-        ph_value,
-        "pH",
-        raw_value,
-        using_stub,
-        publish_stable,
-        mode_active,
-        mode_active
-    );
+        const bool mode_active = ph_node_is_sensor_mode_active();
+        const bool publish_stable = mode_active ? is_stable : false;
+        err = node_telemetry_publish_sensor_with_flow_flags(
+            "ph_sensor",
+            METRIC_TYPE_PH,
+            ph_value,
+            "pH",
+            raw_value,
+            using_stub,
+            publish_stable,
+            mode_active,
+            mode_active
+        );
+        if (err != ESP_OK) {
+            ESP_LOGW(TAG, "Failed to publish telemetry: %s", esp_err_to_name(err));
+            node_state_manager_report_error(ERROR_LEVEL_ERROR, "mqtt", err, "Failed to publish pH telemetry");
+        }
+    }
 
-    if (err != ESP_OK) {
-        ESP_LOGW(TAG, "Failed to publish telemetry: %s", esp_err_to_name(err));
-        node_state_manager_report_error(ERROR_LEVEL_ERROR, "mqtt", err, "Failed to publish pH telemetry");
+    float solution_c = 0.0f;
+    ds18b20_status_t solution_status = ds18b20_poll(&solution_c);
+    if (solution_status == DS18B20_OK) {
+        int32_t raw_centi = (int32_t)lroundf(solution_c * 100.0f);
+        esp_err_t solution_err = node_telemetry_publish_sensor(
+            "solution_temp_c",
+            METRIC_TYPE_TEMPERATURE,
+            solution_c,
+            "°C",
+            raw_centi,
+            false,
+            true
+        );
+        if (solution_err != ESP_OK) {
+            ESP_LOGW(TAG, "Failed to publish solution temperature: %s", esp_err_to_name(solution_err));
+            err = solution_err;
+        } else if (!isfinite(ph_value)) {
+            err = ESP_OK;
+        }
+    } else if (solution_status != DS18B20_BUSY) {
+        ESP_LOGW(TAG, "solution_temp_c sensor_unavailable status=%d", (int)solution_status);
+        if (!isfinite(ph_value)) {
+            err = ESP_ERR_INVALID_STATE;
+        }
     }
 
     return err;

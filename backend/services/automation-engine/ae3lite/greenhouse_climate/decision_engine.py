@@ -29,6 +29,38 @@ def _f(x: Any) -> float | None:
     return None
 
 
+def exhaust_fan_on(
+    *,
+    temp_c: float | None,
+    sensor_fresh: bool,
+    currently_on: bool,
+    on_c: float = 25.0,
+    off_c: float = 23.0,
+) -> bool:
+    """Гистерезис вытяжки. Нет свежего датчика — выключить, не угадывать жару.
+
+    Пороги по умолчанию: дневной стоп салата 25 °C и 2 °C гистерезиса.
+    Ширина гистерезиса в AGRONOMY_CRIMEA не задана.
+    """
+    if not sensor_fresh or temp_c is None or not math.isfinite(temp_c):
+        return False
+    if not (on_c > off_c):
+        return False
+    if temp_c >= on_c:
+        return True
+    if temp_c <= off_c:
+        return False
+    return bool(currently_on)
+
+
+def _num(x: Any, default: float) -> float:
+    """Явный 0 остаётся 0. Дефолт только когда поля нет или оно не число."""
+    parsed = _f(x)
+    if parsed is None:
+        return float(default)
+    return float(parsed)
+
+
 def _air_moisture(temp_c: float | None, rh: float | None) -> tuple[float, float, float] | None:
     """Воздушный VPD, точка росы и парциальное давление, кПа / °C.
 
@@ -109,42 +141,44 @@ def compute_climate_decision(
     temp_min = float(temp_min_v)
     rh_max = float(rh_max_v_cfg)
 
-    _decision_interval = int(_f(ex.get("decision_interval_sec")) or 900)
-    min_command_interval = int(_f(ex.get("min_command_interval_sec")) or 300)
-    max_step = int(_f(ex.get("max_step_pct")) or 25)
-    deadband = int(_f(ex.get("position_deadband_pct")) or 5)
-    sensor_freshness = int(_f(ex.get("sensor_freshness_sec")) or 1200)
+    _decision_interval = int(_num(ex.get("decision_interval_sec"), 900))
+    min_command_interval = int(_num(ex.get("min_command_interval_sec"), 300))
+    max_step = int(_num(ex.get("max_step_pct"), 25))
+    deadband = int(_num(ex.get("position_deadband_pct"), 5))
+    sensor_freshness = int(_num(ex.get("sensor_freshness_sec"), 1200))
 
-    day_min = int(_f(ex.get("day_min_open_pct")) or 0)
-    day_max = int(_f(ex.get("day_max_open_pct")) or 100)
-    night_min = int(_f(ex.get("night_min_open_pct")) or 0)
-    night_max = int(_f(ex.get("night_max_open_pct")) or 20)
-    daylight_lux = float(_f(ex.get("daylight_lux_threshold")) or 15000.0)
+    day_min = int(_num(ex.get("day_min_open_pct"), 0))
+    day_max = int(_num(ex.get("day_max_open_pct"), 100))
+    night_min = int(_num(ex.get("night_min_open_pct"), 0))
+    night_max = int(_num(ex.get("night_max_open_pct"), 20))
+    daylight_lux = float(_num(ex.get("daylight_lux_threshold"), 15000.0))
 
-    temp_full_delta = float(_f(ex.get("temp_full_open_delta_c")) or 6.0)
-    rh_full_delta = float(_f(ex.get("rh_full_open_delta_pct")) or 20.0)
-    cold_margin = float(_f(ex.get("cold_guard_margin_c")) or 1.0)
-    cold_max_open = int(_f(ex.get("cold_guard_max_open_pct")) or 10)
-    outside_hotter_gain = float(_f(ex.get("outside_hotter_gain")) or 1.0)
-    outside_wetter_gain = float(_f(ex.get("outside_wetter_gain")) or 1.0)
+    temp_full_delta = float(_num(ex.get("temp_full_open_delta_c"), 6.0))
+    rh_full_delta = float(_num(ex.get("rh_full_open_delta_pct"), 20.0))
+    cold_margin = float(_num(ex.get("cold_guard_margin_c"), 1.0))
+    cold_max_open = int(_num(ex.get("cold_guard_max_open_pct"), 10))
+    outside_hotter_gain = float(_num(ex.get("outside_hotter_gain"), 1.0))
+    outside_wetter_gain = float(_num(ex.get("outside_wetter_gain"), 1.0))
 
-    wind_reduce = float(_f(ex.get("wind_reduce_threshold_ms")) or 8.0)
-    wind_close = float(_f(ex.get("wind_close_threshold_ms")) or 12.0)
+    wind_reduce = float(_num(ex.get("wind_reduce_threshold_ms"), 8.0))
+    wind_close = float(_num(ex.get("wind_close_threshold_ms"), 12.0))
     if wind_close < wind_reduce:
         wind_close = wind_reduce
 
-    wr_wind = int(_f(ex.get("wind_reduce_windward_max_pct")) or 25)
-    wr_lee = int(_f(ex.get("wind_reduce_leeward_max_pct")) or 50)
-    st_wind = int(_f(ex.get("wind_storm_windward_max_pct")) or 0)
-    st_lee = int(_f(ex.get("wind_storm_leeward_max_pct")) or 10)
-    rain_wind = int(_f(ex.get("rain_windward_position_pct")) or 0)
-    rain_lee = int(_f(ex.get("rain_leeward_position_pct")) or 10)
-    rain_unknown = int(_f(ex.get("rain_unknown_direction_max_pct")) or 5)
+    wr_wind = int(_num(ex.get("wind_reduce_windward_max_pct"), 25))
+    wr_lee = int(_num(ex.get("wind_reduce_leeward_max_pct"), 50))
+    st_wind = int(_num(ex.get("wind_storm_windward_max_pct"), 0))
+    st_lee = int(_num(ex.get("wind_storm_leeward_max_pct"), 10))
+    rain_wind = int(_num(ex.get("rain_windward_position_pct"), 0))
+    rain_lee = int(_num(ex.get("rain_leeward_position_pct"), 10))
+    rain_unknown = int(_num(ex.get("rain_unknown_direction_max_pct"), 5))
 
-    overheat_temp = float(_f(ex.get("overheat_emergency_temp_c")) or 38.0)
-    emergency_open = int(_f(ex.get("emergency_open_pct")) or 100)
-    fallback_open = int(_f(ex.get("fallback_open_pct")) or 5)
-    weather_stale_max_open = int(_f(ex.get("weather_stale_max_open_pct")) or 20)
+    # 38 °C — прежний дефолт для уже настроенных теплиц. Крымский аварийный
+    # порог ~32 °C задаётся рецептом/профилем, а не подменой этого дефолта.
+    overheat_temp = float(_num(ex.get("overheat_emergency_temp_c"), 38.0))
+    emergency_open = int(_num(ex.get("emergency_open_pct"), 100))
+    fallback_open = int(_num(ex.get("fallback_open_pct"), 5))
+    weather_stale_max_open = int(_num(ex.get("weather_stale_max_open_pct"), 20))
 
     left_n = _f(ex.get("left_roof_normal_deg"))
     right_n = _f(ex.get("right_roof_normal_deg"))
@@ -181,10 +215,10 @@ def compute_climate_decision(
     )
     if daylight:
         min_open, max_open = day_min, day_max
-        base_open = int(_f(ex.get("day_base_open_pct")) or min_open)
+        base_open = int(_num(ex.get("day_base_open_pct"), min_open))
     else:
         min_open, max_open = night_min, night_max
-        base_open = int(_f(ex.get("night_base_open_pct")) or min_open)
+        base_open = int(_num(ex.get("night_base_open_pct"), min_open))
 
     if not weather_fresh:
         max_open = min(max_open, weather_stale_max_open)

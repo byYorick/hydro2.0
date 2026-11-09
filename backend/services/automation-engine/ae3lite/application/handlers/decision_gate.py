@@ -12,6 +12,8 @@ from ae3lite.domain.errors import TaskExecutionError
 from ae3lite.domain.services.irrigation_decision_controller import IrrigationDecision
 from ae3lite.domain.services.solution_temp_irrigation_guard import (
     DEFAULT_SOLUTION_TEMP_STALE_SEC,
+    REASON_SOLUTION_TEMP_HOT_STOP,
+    REASON_SOLUTION_TEMP_HOT_WARN,
     evaluate_solution_temp_hold,
     solution_temp_gate_active,
 )
@@ -38,6 +40,7 @@ _QUIET_SUCCESS_SKIP_REASONS = frozenset({
     "smart_soil_telemetry_missing_or_stale",
     "solution_temp_unavailable",
     "solution_temp_out_of_band",
+    "solution_temp_hot_stop",
 })
 
 
@@ -228,7 +231,15 @@ class DecisionGateHandler(BaseStageHandler):
         required = bool(getattr(health, "required", False))
         min_c = getattr(health, "min_c", None)
         max_c = getattr(health, "max_c", None)
-        if not solution_temp_gate_active(required=required, min_c=min_c, max_c=max_c):
+        warn_c = getattr(health, "warn_c", None)
+        stop_c = getattr(health, "stop_c", None)
+        if not solution_temp_gate_active(
+            required=required,
+            min_c=min_c,
+            max_c=max_c,
+            warn_c=warn_c,
+            stop_c=stop_c,
+        ):
             return decision
 
         hold_sec = int(getattr(health, "breach_hold_sec", DEFAULT_SOLUTION_TEMP_STALE_SEC) or DEFAULT_SOLUTION_TEMP_STALE_SEC)
@@ -248,14 +259,20 @@ class DecisionGateHandler(BaseStageHandler):
             reading = None
 
         verdict = evaluate_solution_temp_hold(
-            min_c=float(min_c),
-            max_c=float(max_c),
+            min_c=None if min_c is None else float(min_c),
+            max_c=None if max_c is None else float(max_c),
             hold_sec=hold_sec,
             stale_sec=DEFAULT_SOLUTION_TEMP_STALE_SEC,
             now=now,
             reading=reading if isinstance(reading, Mapping) else None,
+            warn_c=None if warn_c is None else float(warn_c),
+            stop_c=None if stop_c is None else float(stop_c),
         )
         if verdict is None:
+            return decision
+        if verdict.reason_code in {REASON_SOLUTION_TEMP_HOT_WARN, REASON_SOLUTION_TEMP_HOT_STOP}:
+            await self._emit_solution_hot_alert(task=task, verdict=verdict)
+        if not verdict.blocks_irrigation:
             return decision
         return IrrigationDecision(
             outcome="skip",
@@ -263,6 +280,36 @@ class DecisionGateHandler(BaseStageHandler):
             degraded=False,
             details=verdict.details,
         )
+
+    async def _emit_solution_hot_alert(self, *, task: Any, verdict: Any) -> None:
+        reason = str(getattr(verdict, "reason_code", "") or "")
+        stopping = reason == REASON_SOLUTION_TEMP_HOT_STOP
+        try:
+            await note_upward_report(
+                code="biz_solution_temp_hot_stop" if stopping else "biz_solution_temp_hot_warn",
+                alert_type="AE3 Solution Temperature",
+                message=(
+                    "Новый полив не запущен: раствор достиг аварийного порога. Уже идущий полив дорабатывает до лимита длительности рецепта."
+                    if stopping
+                    else "Раствор теплее порога предупреждения, полив продолжается."
+                ),
+                severity="critical" if stopping else "warning",
+                zone_id=int(getattr(task, "zone_id", 0) or 0),
+                dedupe_key=_irrigation_decision_alert_dedupe_key(
+                    outcome="stop" if stopping else "warn",
+                    zone_id=int(getattr(task, "zone_id", 0) or 0),
+                    reason_code=reason,
+                ),
+                details=dict(getattr(verdict, "details", {}) or {}),
+                scope_parts=("stage:decision_gate", "solution_temp"),
+            )
+        except Exception:
+            inc_observability_write_failed(kind="biz_alert")
+            _logger.warning(
+                "AE3 не смог отправить alert температуры раствора zone_id=%s",
+                int(getattr(task, "zone_id", 0) or 0),
+                exc_info=True,
+            )
 
     async def _emit_irrigation_decision_event(
         self,

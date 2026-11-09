@@ -19,27 +19,36 @@ from common.pump_safety import (
 from common.alerts import AlertCode, AlertSource
 
 
+def _level_row(label: str, value: float, *, age_sec: float = 0, quality: str = "GOOD"):
+    return {
+        "label": label,
+        "value": value,
+        "ts": utcnow().replace(tzinfo=None) - timedelta(seconds=age_sec),
+        "quality": quality,
+    }
+
+
 @pytest.mark.asyncio
 async def test_check_dry_run_safe():
-    """Test dry run check when water level is safe."""
-    with patch("common.pump_safety.check_water_level") as mock_check:
-        mock_check.return_value = (True, 0.5)  # Нормальный уровень
-        
+    """Свежий уровень бака раствора позволяет пуск."""
+    with patch("common.pump_safety.fetch", new_callable=AsyncMock) as mock_fetch:
+        mock_fetch.return_value = [_level_row("level_solution_min", 1.0)]
+
         is_safe, error_msg = await check_dry_run(1, MIN_WATER_LEVEL)
-        
+
         assert is_safe is True
         assert error_msg is None
 
 
 @pytest.mark.asyncio
 async def test_check_dry_run_low_water():
-    """Test dry run check when water level is too low."""
-    with patch("common.pump_safety.check_water_level") as mock_check, \
-         patch("common.pump_safety.create_alert") as mock_alert:
-        mock_check.return_value = (False, 0.1)  # Низкий уровень
-        
+    """Низкий уровень бака раствора блокирует пуск и ставит тревогу."""
+    with patch("common.pump_safety.fetch", new_callable=AsyncMock) as mock_fetch, \
+         patch("common.pump_safety.create_alert", new_callable=AsyncMock) as mock_alert:
+        mock_fetch.return_value = [_level_row("level_solution_min", 0.1)]
+
         is_safe, error_msg = await check_dry_run(1, MIN_WATER_LEVEL)
-        
+
         assert is_safe is False
         assert error_msg is not None
         assert "Water level too low" in error_msg

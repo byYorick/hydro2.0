@@ -23,3 +23,15 @@ gcc -std=c11 -Wall -Wextra -Werror -fsanitize=undefined \
   firmware/nodes/common/components/node_framework/node_metric_type.c \
   -o "$out/telemetry-metric"
 "$out/telemetry-metric"
+gcc -std=c11 -Wall -Wextra -Werror -fsanitize=undefined \
+  -I firmware/nodes/common/components/climate_control/include \
+  firmware/tests/host/test_climate_control_logic.c \
+  firmware/nodes/common/components/climate_control/climate_control_logic.c \
+  -lm -o "$out/climate"
+"$out/climate"
+gcc -std=c11 -Wall -Wextra -Werror -fsanitize=undefined \
+  -I firmware/nodes/common/components/sensors/ds18b20/include \
+  firmware/tests/host/test_ds18b20_parse.c \
+  firmware/nodes/common/components/sensors/ds18b20/ds18b20_parse.c \
+  -lm -o "$out/ds18b20"
+"$out/ds18b20"

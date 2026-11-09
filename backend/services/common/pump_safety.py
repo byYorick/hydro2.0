@@ -19,6 +19,10 @@ _alert_publisher = AlertPublisher(default_source=AlertSource.BIZ.value)
 MIN_WATER_LEVEL = 0.15  # 15% - минимальный уровень для работы насоса
 CURRENT_IDLE_THRESHOLD = 50.0  # mA - порог тока в режиме простоя (по умолчанию)
 DRY_RUN_CHECK_DELAY_SEC = 3  # Задержка перед проверкой flow после запуска насоса
+DRY_RUN_LEVEL_MAX_AGE_SEC = 120  # Старше — уровень нельзя считать живым
+
+_SOLUTION_TANK_HINTS = ("solution", "раствор", "level_solution")
+_NON_SOURCE_TANK_HINTS = ("clean", "fresh", "чист", "drain", "waste", "слив")
 MAX_RECENT_FAILURES = 3  # Максимальное количество недавних ошибок
 FAILURE_WINDOW_MINUTES = 30  # Окно времени для подсчёта ошибок
 MCU_OFFLINE_TIMEOUT_SEC = 300  # 5 минут - время без телеметрии для определения offline
@@ -58,41 +62,126 @@ def _is_telemetry_grace_active(
     return elapsed_sec <= telemetry_grace_sec
 
 
-async def check_dry_run(zone_id: int, min_water_level: Optional[float] = None) -> tuple[bool, Optional[str]]:
+def _tank_label_is_source(label: str, *, source: str, channel: Optional[str]) -> bool:
+    """Чистый бак и дренаж не являются источником полива и дозирования."""
+    text = (label or "").strip().lower()
+    if source == "dose" and channel:
+        token = channel.strip().lower()
+        if token and token in text:
+            return True
+    if any(hint in text for hint in _NON_SOURCE_TANK_HINTS):
+        return False
+    return any(hint in text for hint in _SOLUTION_TANK_HINTS)
+
+
+def _pick_source_level_row(rows: List[Dict[str, Any]], *, source: str, channel: Optional[str]) -> Optional[Dict[str, Any]]:
+    matched = [row for row in rows if _tank_label_is_source(str(row.get("label") or ""), source=source, channel=channel)]
+    if source == "dose" and channel:
+        token = channel.strip().lower()
+        dedicated = [row for row in matched if token and token in str(row.get("label") or "").lower()]
+        if dedicated:
+            matched = dedicated
+    if not matched:
+        return None
+
+    def _rank(row: Dict[str, Any]) -> tuple[int, datetime]:
+        label = str(row.get("label") or "").lower()
+        prefers_min = 1 if "min" in label else 0
+        ts = _to_naive_utc(row.get("ts")) or datetime.min
+        return (prefers_min, ts)
+
+    return max(matched, key=_rank)
+
+
+async def _alert_dry_run(zone_id: int, details: Dict[str, Any]) -> None:
+    await create_alert(
+        zone_id=zone_id,
+        source=AlertSource.BIZ.value,
+        code=AlertCode.BIZ_DRY_RUN.value,
+        type="Dry run protection activated",
+        details=details,
+    )
+
+
+async def check_dry_run(
+    zone_id: int,
+    min_water_level: Optional[float] = None,
+    *,
+    source: str = "solution",
+    channel: Optional[str] = None,
+    max_age_sec: int = DRY_RUN_LEVEL_MAX_AGE_SEC,
+    now: Optional[datetime] = None,
+) -> tuple[bool, Optional[str]]:
+    """Уровень бака-источника перед пуском. Нет свежих данных — не безопасно.
+
+    Полив и дозирование смотрят бак раствора (или датчик канала дозы),
+    не бак чистой воды.
     """
-    Проверка защиты от сухого хода.
-    
-    Перед попыткой включить насос проверяем water_level.
-    
-    Args:
-        zone_id: ID зоны
-        min_water_level: Минимальный уровень воды (по умолчанию MIN_WATER_LEVEL)
-    
-    Returns:
-        (is_safe, error_message): True если безопасно, False если обнаружен сухой ход
-    """
-    min_level = min_water_level or MIN_WATER_LEVEL
-    
-    water_level_ok, water_level = await check_water_level(zone_id)
-    
-    if water_level is not None and water_level < min_level:
-        # Создаём alert
-        await create_alert(
-            zone_id=zone_id,
-            source=AlertSource.BIZ.value,
-            code=AlertCode.BIZ_DRY_RUN.value,
-            type='Dry run protection activated',
-            details={
-                "water_level": water_level,
-                "min_level": min_level,
-                "zone_id": zone_id
-            }
+    min_level = MIN_WATER_LEVEL if min_water_level is None else float(min_water_level)
+    moment = _to_naive_utc(now) or utcnow().replace(tzinfo=None)
+    details: Dict[str, Any] = {
+        "zone_id": zone_id,
+        "source": source,
+        "channel": channel,
+        "min_level": min_level,
+        "max_age_sec": int(max_age_sec),
+    }
+    try:
+        rows = await fetch(
+            """
+            SELECT
+              s.label AS label,
+              tl.last_value AS value,
+              COALESCE(tl.last_ts, tl.updated_at) AS ts,
+              tl.last_quality::text AS quality
+            FROM sensors s
+            LEFT JOIN telemetry_last tl ON tl.sensor_id = s.id
+            WHERE s.zone_id = $1
+              AND s.is_active IS TRUE
+              AND UPPER(COALESCE(s.type, '')) = 'WATER_LEVEL'
+            """,
+            zone_id,
         )
-        logger.warning(
-            f"Zone {zone_id}: Dry run protection activated - water_level={water_level} < {min_level}"
-        )
-        return False, f"Water level too low: {water_level} < {min_level}"
-    
+    except Exception as exc:
+        details["error"] = str(exc)
+        logger.warning("Zone %s: dry-run check failed", zone_id, exc_info=True)
+        try:
+            await _alert_dry_run(zone_id, details)
+        except Exception:
+            logger.warning("Zone %s: dry-run alert failed", zone_id, exc_info=True)
+        return False, "dry_run_check_failed"
+
+    chosen = _pick_source_level_row(list(rows or []), source=source, channel=channel)
+    if chosen is None:
+        details["reason"] = "source_level_missing"
+        logger.warning("Zone %s: dry-run blocked, source level missing (%s)", zone_id, source)
+        await _alert_dry_run(zone_id, details)
+        return False, "Source tank level is unavailable"
+
+    quality = str(chosen.get("quality") or "").strip().upper()
+    ts = _to_naive_utc(chosen.get("ts"))
+    age_sec = None if ts is None else (moment - ts).total_seconds()
+    details.update({"label": chosen.get("label"), "quality": quality, "age_sec": age_sec, "value": chosen.get("value")})
+    if quality in {"BAD", "STUB"} or ts is None or age_sec is None or age_sec > float(max_age_sec) or age_sec < 0:
+        details["reason"] = "source_level_stale"
+        logger.warning("Zone %s: dry-run blocked, source level stale or bad", zone_id)
+        await _alert_dry_run(zone_id, details)
+        return False, "Source tank level is stale"
+
+    try:
+        level = float(chosen.get("value"))
+    except (TypeError, ValueError):
+        details["reason"] = "source_level_missing"
+        await _alert_dry_run(zone_id, details)
+        return False, "Source tank level is unavailable"
+
+    if level < min_level:
+        details["reason"] = "source_level_low"
+        details["water_level"] = level
+        logger.warning("Zone %s: dry-run blocked, level=%s < %s", zone_id, level, min_level)
+        await _alert_dry_run(zone_id, details)
+        return False, f"Water level too low: {level} < {min_level}"
+
     return True, None
 
 

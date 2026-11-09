@@ -50,6 +50,17 @@ extern "C" {
 #define CLIMATE_NODE_FACTORY_RESET_HOLD_MS        20000U
 #define CLIMATE_NODE_FACTORY_RESET_POLL_INTERVAL  50U
 
+/* Фрамуги: два реле направления и концевик полного закрытия (active-low, подтяжка к питанию).
+   Вытяжка: GPIO, если в NodeConfig нет реле fan_A/fan_B. E-STOP active-low с внутренней подтяжкой. */
+#define CLIMATE_VENT_LEFT_OPEN_GPIO            GPIO_NUM_16
+#define CLIMATE_VENT_LEFT_CLOSE_GPIO           GPIO_NUM_17
+#define CLIMATE_VENT_LEFT_CLOSED_LIMIT_GPIO    GPIO_NUM_32
+#define CLIMATE_VENT_RIGHT_OPEN_GPIO           GPIO_NUM_18
+#define CLIMATE_VENT_RIGHT_CLOSE_GPIO          GPIO_NUM_19
+#define CLIMATE_VENT_RIGHT_CLOSED_LIMIT_GPIO   GPIO_NUM_33
+#define CLIMATE_EXHAUST_GPIO                   GPIO_NUM_27
+#define CLIMATE_ESTOP_GPIO                     GPIO_NUM_13
+
 #ifdef __cplusplus
 }
 #endif

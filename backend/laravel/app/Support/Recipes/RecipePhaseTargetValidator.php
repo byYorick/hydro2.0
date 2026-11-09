@@ -154,6 +154,29 @@ class RecipePhaseTargetValidator
                 );
             }
         }
+
+        $warn = $health['warn_c'] ?? null;
+        $stop = $health['stop_c'] ?? null;
+        $warnSet = ! $this->isEmptyCropDayValue($warn);
+        $stopSet = ! $this->isEmptyCropDayValue($stop);
+        if ($warnSet && ! is_numeric($warn)) {
+            $validator->errors()->add(
+                $attributePrefix.'extensions.solution_health.warn_c',
+                'solution_health.warn_c должен быть числом.'
+            );
+        }
+        if ($stopSet && ! is_numeric($stop)) {
+            $validator->errors()->add(
+                $attributePrefix.'extensions.solution_health.stop_c',
+                'solution_health.stop_c должен быть числом.'
+            );
+        }
+        if ($warnSet && $stopSet && is_numeric($warn) && is_numeric($stop) && (float) $warn >= (float) $stop) {
+            $validator->errors()->add(
+                $attributePrefix.'extensions.solution_health.warn_c',
+                'Порог предупреждения раствора должен быть ниже аварийного стопа.'
+            );
+        }
     }
 
     private function isEmptyCropDayValue(mixed $value): bool
