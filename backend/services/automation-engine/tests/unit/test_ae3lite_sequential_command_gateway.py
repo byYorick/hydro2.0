@@ -1276,6 +1276,29 @@ async def test_run_batch_rechecks_stage_budget_after_first_dose(monkeypatch: pyt
 
 
 @pytest.mark.asyncio
+async def test_recovered_done_dose_does_not_require_new_stage_budget(monkeypatch: pytest.MonkeyPatch):
+    from unittest.mock import AsyncMock
+
+    task = _make_task()
+    task.workflow.stage_deadline_at = NOW - timedelta(seconds=1)
+    gw = _make_gw()
+    monkeypatch.setattr(gw, "_recovery_batch_resume_active", AsyncMock(return_value=True))
+    monkeypatch.setattr(gw, "_load_recovery_resume_marker", AsyncMock(return_value={"stage": "corr_dose_ec"}))
+    monkeypatch.setattr(
+        gw, "_completed_planner_step_status",
+        AsyncMock(return_value={"status": "DONE", "recovered": True}),
+    )
+    run_one = AsyncMock()
+    monkeypatch.setattr(gw, "_run_command", run_one)
+
+    result = await gw.run_batch(task=task, commands=[_dose(duration_ms=2000)], now=NOW)
+
+    assert result["success"] is True
+    assert result["command_statuses"] == [{"status": "DONE", "recovered": True}]
+    run_one.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_run_batch_fails_closed_when_poll_timeout_without_stage_deadline(
     monkeypatch: pytest.MonkeyPatch,
 ):
