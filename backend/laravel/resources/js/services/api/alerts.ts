@@ -4,7 +4,8 @@
  * Эндпоинты:
  *   GET   /api/alerts                       — список с фильтрами
  *   GET   /api/alerts/catalog               — справочник кодов алертов
- *   PATCH /api/alerts/:id/ack               — подтвердить (resolve) алерт
+ *   PATCH /api/alerts/:id/ack               — подтвердить, статус остаётся ACTIVE
+ *   PATCH /api/alerts/:id/resolve           — закрыть некритичный алерт; safety ACTIVE → 409
  */
 import type { Alert } from '@/types/Alert'
 import type { AlertSeverity } from '@/constants/alertErrorMap'
@@ -57,5 +58,9 @@ export const alertsApi = {
 
   acknowledge(alertId: number): Promise<Alert> {
     return apiPatch<Alert>(`/alerts/${alertId}/ack`, {})
+  },
+
+  resolve(alertId: number): Promise<Alert> {
+    return apiPatch<Alert>(`/alerts/${alertId}/resolve`, {})
   },
 }

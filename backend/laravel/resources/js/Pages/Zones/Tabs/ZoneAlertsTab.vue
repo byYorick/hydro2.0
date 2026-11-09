@@ -88,6 +88,7 @@
       :resolve-loading="resolveLoading"
       @close="closeDetails"
       @resolve="resolveSelectedAlert"
+      @acknowledge="acknowledgeSelectedAlert"
     />
   </div>
 </template>
@@ -285,13 +286,32 @@ const applyResolved = (id: number, updated?: Alert): void => {
   })
 }
 
+const acknowledgeSelectedAlert = async (): Promise<void> => {
+  if (!selectedAlert.value || normalizeAlertStatus(selectedAlert.value.status) === 'RESOLVED' || resolveLoading.value) return
+  resolveLoading.value = true
+
+  try {
+    const current = selectedAlert.value
+    const updated = await api.alerts.acknowledge(current.id)
+    localAlerts.value = localAlerts.value.map((alert) => (
+      alert.id === current.id ? { ...alert, ...updated } : alert
+    ))
+    showToast('Алерт подтверждён. Условие остаётся активным.', 'success', TOAST_TIMEOUT.NORMAL)
+  } catch (error) {
+    logger.error('[ZoneAlertsTab] Failed to acknowledge alert', error)
+    showToast(`Не удалось подтвердить алерт: ${extractHumanErrorMessage(error, 'Ошибка подтверждения')}`, 'error', TOAST_TIMEOUT.LONG)
+  } finally {
+    resolveLoading.value = false
+  }
+}
+
 const resolveSelectedAlert = async (): Promise<void> => {
   if (!selectedAlert.value || normalizeAlertStatus(selectedAlert.value.status) === 'RESOLVED' || resolveLoading.value) return
   resolveLoading.value = true
 
   try {
     const resolvedAlert = selectedAlert.value
-    const updated = await api.alerts.acknowledge(resolvedAlert.id)
+    const updated = await api.alerts.resolve(resolvedAlert.id)
     applyResolved(resolvedAlert.id, updated)
     if (isAutomationBlockingCode(resolvedAlert.code)) {
       emit('policy-alert-resolved')

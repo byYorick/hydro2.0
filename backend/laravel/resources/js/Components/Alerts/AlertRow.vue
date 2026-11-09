@@ -52,6 +52,13 @@
       >
         Решён: {{ formatAlertDate(item.resolved_at || item.updated_at) }}
       </p>
+      <p
+        v-else-if="item.acknowledged_at"
+        class="mt-0.5 text-[11px] text-[color:var(--text-dim)]"
+        data-testid="alert-acknowledged-active"
+      >
+        Подтверждён, условие активно: {{ formatAlertDate(item.acknowledged_at) }}
+      </p>
     </div>
   </div>
 </template>

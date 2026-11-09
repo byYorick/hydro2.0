@@ -343,7 +343,8 @@ Breaking-change: обратная совместимость со старыми
 |-------|------------------------------|------|-----------------------------------|
 | GET | /api/alerts | auth:sanctum | Список алертов |
 | GET | /api/alerts/{id} | auth:sanctum | Детали алерта |
-| PATCH | /api/alerts/{id}/ack | auth:sanctum (operator/admin/agronomist/engineer) | Подтвердить/принять алерт |
+| PATCH | /api/alerts/{id}/ack | auth:sanctum (operator/admin/agronomist/engineer) | Подтвердить алерт: пишет `acknowledged_at`/`acknowledged_by`, статус остаётся `ACTIVE` |
+| PATCH | /api/alerts/{id}/resolve | auth:sanctum (operator/admin/agronomist/engineer) | Закрыть некритичный алерт. Safety-код при активном условии — `409 alert_manual_resolve_refused` |
 | GET | /api/alerts/stream | auth:sanctum | Server-Sent Events поток алертов |
 
 ---

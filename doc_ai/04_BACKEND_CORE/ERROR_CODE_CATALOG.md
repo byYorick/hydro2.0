@@ -337,6 +337,14 @@ Biz-коды `dli_sensor_unavailable` и `solution_refresh_recommended` — от
 | `ae3_requeue_failed` | `ae3_transition_apply_failed` / `ae3_poll_apply_failed` / `ae3_correction_apply_failed` |
 | `cycle_start_blocked_nodes_unavailable` | `ae3_required_node_offline` / `ae3_snapshot_required_node_type_missing` / `ae3_snapshot_no_online_actuator_channels` / `ae3_snapshot_required_node_persistently_offline` |
 
+## Коды lifecycle алертов (HTTP 4xx)
+
+| code | HTTP | Когда возникает | Что видит пользователь |
+| --- | --- | --- | --- |
+| `alert_manual_resolve_refused` | 409 | `PATCH /api/alerts/{id}/resolve` для safety-кода (`SafetyCriticalAlertCodes`), пока `status=ACTIVE` | `Нельзя закрыть алерт вручную, пока условие безопасности ещё активно.` |
+
+Подтверждение `PATCH /api/alerts/{id}/ack` этот код не возвращает: оно оставляет `ACTIVE` и пишет `acknowledged_at` / `acknowledged_by`.
+
 ## Коды config modes / live-edit (Phase 5–6, HTTP 4xx)
 
 Возвращаются из `ZoneConfigModeController`, `GrowCyclePhaseConfigController`, `ZoneCorrectionLiveEditController`. Коды в API — **snake_case**; в ответе всегда есть `human_error_message`.

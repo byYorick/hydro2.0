@@ -1478,6 +1478,16 @@ authority-документ `zone.logic_profile` через API `/api/automation-
 
 - **Аутентификация:** Требуется `auth:sanctum`, роль `operator`, `admin`, `agronomist` или `engineer`
 - Подтверждение алерта оператором.
+- Не меняет `status`: алерт остаётся `ACTIVE`, пока условие не снято.
+- Ответ включает `acknowledged_at` и `acknowledged_by` (id пользователя).
+- Уже закрытый алерт — `422`.
+
+### 7.3.1. PATCH /api/alerts/{id}/resolve
+
+- **Аутентификация:** Требуется `auth:sanctum`, роль `operator`, `admin`, `agronomist` или `engineer`
+- Ручное закрытие некритичного алерта: `status=RESOLVED`, `resolved_at`.
+- Safety-код при ещё активном условии (`SafetyCriticalAlertCodes`, статус `ACTIVE`) — `409`, тело `code=alert_manual_resolve_refused`. Статус не меняется, пишется audit `ALERT_MANUAL_RESOLVE_REFUSED`.
+- Уже закрытый алерт — `422`.
 
 ### 7.4. GET /api/alerts/stream
 

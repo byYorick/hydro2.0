@@ -500,14 +500,30 @@
                   >
                     {{ translateStatus(row.status) }}
                   </Badge>
+                  <span
+                    v-if="row.acknowledged_at && !isResolved(row)"
+                    class="block text-[11px] text-[color:var(--text-dim)]"
+                    data-testid="alert-ack-active-label"
+                  >
+                    подтверждён, активен
+                  </span>
                 </template>
 
                 <template #row-actions="{ row }">
                   <Button
+                    v-if="isSafetyCriticalCode(row.code) && !isResolved(row)"
+                    size="sm"
+                    variant="secondary"
+                    :data-testid="`alert-ack-btn-${row.id}`"
+                    @click.stop="acknowledgeAlert(row)"
+                  >
+                    Подтвердить
+                  </Button>
+                  <Button
                     size="sm"
                     variant="secondary"
                     :data-testid="`alert-resolve-btn-${row.id}`"
-                    :disabled="isResolved(row)"
+                    :disabled="isResolved(row) || isSafetyCriticalCode(row.code)"
                     @click.stop="openResolve(row)"
                   >
                     Отметить как решённый
@@ -548,6 +564,7 @@
       :resolve-loading="confirm.loading"
       @close="closeDetails"
       @resolve="resolveFromDetails"
+      @acknowledge="acknowledgeFromDetails"
     />
   </AppLayout>
 </template>
@@ -587,6 +604,7 @@ import {
 } from '@/utils/alertMeta'
 import {
   alertProcessStoppingKind,
+  isSafetyCriticalCode,
   PROCESS_STOPPING_BADGE_LABEL,
   PROCESS_STOPPING_SECTION_TITLE,
 } from '@/utils/automationBlock'
@@ -617,6 +635,7 @@ const {
   openResolve,
   closeConfirm,
   doResolve,
+  acknowledgeAlert,
   resolveSelected,
   selectedAlert,
   openDetails,
@@ -696,7 +715,13 @@ function humanTitle(alert: AlertRecord): string {
 
 function resolveFromDetails(): void {
   if (!selectedAlert.value || isResolved(selectedAlert.value)) return
+  if (isSafetyCriticalCode(selectedAlert.value.code)) return
   openResolve(selectedAlert.value)
+}
+
+function acknowledgeFromDetails(): void {
+  if (!selectedAlert.value || isResolved(selectedAlert.value)) return
+  void acknowledgeAlert(selectedAlert.value)
 }
 
 const columns = [

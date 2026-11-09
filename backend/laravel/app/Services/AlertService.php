@@ -2,7 +2,9 @@
 
 namespace App\Services;
 
+use App\Exceptions\ManualAlertResolveRefusedException;
 use App\Models\Alert;
+use App\Models\User;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -17,16 +19,20 @@ class AlertService
 
     private TelegramAlertNotifier $telegramAlertNotifier;
 
+    private SafetyCriticalAlertCodes $safetyCriticalAlertCodes;
+
     public function __construct(
         ?AlertCatalogService $alertCatalog = null,
         ?AlertLocalizationService $alertLocalization = null,
         ?AlertPolicyService $alertPolicyService = null,
         ?TelegramAlertNotifier $telegramAlertNotifier = null,
+        ?SafetyCriticalAlertCodes $safetyCriticalAlertCodes = null,
     ) {
         $this->alertCatalog = $alertCatalog ?? app(AlertCatalogService::class);
         $this->alertLocalization = $alertLocalization ?? app(AlertLocalizationService::class);
         $this->alertPolicyService = $alertPolicyService ?? app(AlertPolicyService::class);
         $this->telegramAlertNotifier = $telegramAlertNotifier ?? app(TelegramAlertNotifier::class);
+        $this->safetyCriticalAlertCodes = $safetyCriticalAlertCodes ?? new SafetyCriticalAlertCodes();
     }
 
     /**
@@ -269,6 +275,16 @@ class AlertService
                 ];
             }
 
+            if ($this->refusesManualClose($alert, $context)) {
+                return [
+                    'resolved' => false,
+                    'alert' => $alert,
+                    'event_id' => null,
+                    'manual_resolve_refused' => true,
+                    'code' => ManualAlertResolveRefusedException::ERROR_CODE,
+                ];
+            }
+
             if ($this->alertPolicyService->blocksAutomaticResolution($normalizedCode, $context)) {
                 Log::info('Alert auto-resolution blocked by policy', [
                     'alert_id' => $alert->id,
@@ -286,53 +302,18 @@ class AlertService
                 ];
             }
 
-            $now = now();
-            $nowIso = $now->toIso8601String();
-            $details = $this->normalizeDetails($alert->details);
-
-            if (isset($context['details']) && is_array($context['details'])) {
-                $details = $this->mergeAlertDetails($details, $context['details']);
-            }
-
-            $details['resolved_at'] = $nowIso;
-            $details['status'] = 'RESOLVED';
-            $details = $this->applyResolutionAuditDetails($details, $nowIso, $context);
-
-            $alert->update([
-                'status' => 'RESOLVED',
-                'resolved_at' => $now,
-                'details' => $details,
-                'last_seen_at' => $now,
-            ]);
-
-            $fresh = $alert->fresh();
-
-            $eventId = null;
-            if ($fresh->zone_id) {
-                $eventId = $this->recordAlertZoneEvent(
-                    (int) $fresh->zone_id,
-                    'ALERT_RESOLVED',
-                    $fresh,
-                    $this->buildEventPayload($fresh, 'resolved', [
-                        'resolved_at' => $nowIso,
-                    ]),
-                );
-            }
-
-            DB::afterCommit(function () use ($fresh) {
-                $this->broadcastAlertUpdated($fresh);
-            });
+            $resolved = $this->applyResolvedState($alert, $context);
 
             Log::info('Alert resolved by code', [
-                'alert_id' => $fresh->id,
+                'alert_id' => $resolved['alert']->id,
                 'zone_id' => $zoneId,
                 'code' => $normalizedCode,
             ]);
 
             return [
                 'resolved' => true,
-                'alert' => $fresh,
-                'event_id' => $eventId,
+                'alert' => $resolved['alert'],
+                'event_id' => $resolved['event_id'],
             ];
         });
 
@@ -342,50 +323,163 @@ class AlertService
             UnifiedDashboardService::invalidate();
         }
 
+        if (! empty($result['manual_resolve_refused']) && $result['alert'] instanceof Alert) {
+            $this->auditManualResolveRefused($result['alert'], $context);
+        }
+
         return $result;
     }
 
     /**
-     * Подтвердить/принять алерт.
+     * Закрыть уже найденный алерт. Ручной путь для safety-кодов сюда не входит.
+     *
+     * @param  array<string, mixed>  $context
+     */
+    public function resolveExisting(Alert $alert, array $context = []): Alert
+    {
+        if ($this->refusesManualClose($alert, $context)) {
+            $this->auditManualResolveRefused($alert, $context);
+
+            throw new ManualAlertResolveRefusedException;
+        }
+
+        $fresh = DB::transaction(function () use ($alert, $context) {
+            $locked = Alert::query()->whereKey($alert->id)->lockForUpdate()->first();
+            if (! $locked || $this->normalizeStatus((string) $locked->status) === 'RESOLVED') {
+                return $locked ?? $alert;
+            }
+
+            return $this->applyResolvedState($locked, $context)['alert'];
+        });
+
+        if ($this->normalizeStatus((string) $fresh->status) === 'RESOLVED') {
+            UnifiedDashboardService::invalidate();
+        }
+
+        return $fresh;
+    }
+
+    /**
+     * Ручное закрытие. Safety-коды с ещё активным условием отклоняются.
+     *
+     * @param  array<string, mixed>  $context
+     *
+     * @throws ManualAlertResolveRefusedException
+     * @throws \DomainException
+     */
+    public function resolveManually(Alert $alert, array $context = []): Alert
+    {
+        $context['resolved_via'] = 'manual';
+        if ($this->normalizeString($context['resolved_by'] ?? null) === null) {
+            $context['resolved_by'] = 'manual';
+        }
+
+        $outcome = DB::transaction(function () use ($alert, $context) {
+            $locked = Alert::query()->whereKey($alert->id)->lockForUpdate()->first();
+            if (! $locked) {
+                throw new \DomainException('Alert not found');
+            }
+
+            if ($this->normalizeStatus((string) $locked->status) === 'RESOLVED') {
+                throw new \DomainException('Alert is already resolved');
+            }
+
+            if ($this->refusesManualClose($locked, $context)) {
+                return ['refused' => true, 'alert' => $locked];
+            }
+
+            return [
+                'refused' => false,
+                'alert' => $this->applyResolvedState($locked, $context)['alert'],
+            ];
+        });
+
+        if ($outcome['refused'] === true) {
+            $this->auditManualResolveRefused($outcome['alert'], $context);
+
+            throw new ManualAlertResolveRefusedException;
+        }
+
+        UnifiedDashboardService::invalidate();
+
+        return $outcome['alert'];
+    }
+
+    /**
+     * Подтвердить алерт, не снимая ACTIVE и не закрывая safety-блокировку.
+     *
+     * @param  array<string, mixed>  $context
+     *
+     * @throws \DomainException
      */
     public function acknowledge(Alert $alert, array $context = []): Alert
     {
         $fresh = DB::transaction(function () use ($alert, $context) {
-            if ($this->normalizeStatus((string) $alert->status) === 'RESOLVED') {
+            $locked = Alert::query()->whereKey($alert->id)->lockForUpdate()->first();
+            if (! $locked) {
+                throw new \DomainException('Alert not found');
+            }
+
+            if ($this->normalizeStatus((string) $locked->status) === 'RESOLVED') {
                 throw new \DomainException('Alert is already resolved');
             }
 
             $now = now();
-            $details = $this->normalizeDetails($alert->details);
-            $details['resolved_at'] = $now->toIso8601String();
-            $details = $this->applyResolutionAuditDetails($details, $now->toIso8601String(), $context);
+            $nowIso = $now->toIso8601String();
+            $userId = $this->resolveAcknowledgedByUserId($context);
+            $details = $this->normalizeDetails($locked->details);
+            $details['acknowledged_at'] = $nowIso;
+            if ($userId !== null) {
+                $details['acknowledged_by'] = $userId;
+            }
 
-            $alert->update([
-                'status' => 'RESOLVED',
-                'resolved_at' => $now,
-                'last_seen_at' => $now,
+            $via = $this->normalizeString($context['acknowledged_via'] ?? null)
+                ?? $this->normalizeString($context['source'] ?? null)
+                ?? 'manual';
+            $details['acknowledged_via'] = $via;
+
+            $name = $this->normalizeString($context['acknowledged_by_user_name'] ?? null);
+            if ($name !== null) {
+                $details['acknowledged_by_user_name'] = $name;
+            }
+
+            $locked->update([
+                'acknowledged_at' => $now,
+                'acknowledged_by' => $userId,
                 'details' => $details,
             ]);
 
-            $fresh = $alert->fresh();
+            $fresh = $locked->fresh();
+            if (! $fresh instanceof Alert) {
+                throw new \DomainException('Alert not found');
+            }
 
             if ($fresh->zone_id) {
                 $this->recordAlertZoneEvent(
                     (int) $fresh->zone_id,
-                    'ALERT_RESOLVED',
+                    'ALERT_ACKNOWLEDGED',
                     $fresh,
-                    $this->buildEventPayload($fresh, 'resolved', [
-                        'resolved_at' => $now->toIso8601String(),
+                    $this->buildEventPayload($fresh, 'acknowledged', [
+                        'acknowledged_at' => $nowIso,
+                        'acknowledged_by' => $userId,
                     ]),
                 );
             }
 
-            Log::info('Alert acknowledged', ['alert_id' => $fresh->id]);
+            DB::afterCommit(function () use ($fresh) {
+                $this->broadcastAlertUpdated($fresh);
+            });
+
+            Log::info('Alert acknowledged', [
+                'alert_id' => $fresh->id,
+                'code' => $fresh->code,
+                'status' => $fresh->status,
+                'acknowledged_by' => $userId,
+            ]);
 
             return $fresh;
         });
 
-        // Сбрасываем кеш unified-дашборда: алерт переведён в RESOLVED.
         UnifiedDashboardService::invalidate();
 
         if ($fresh->zone_id) {
@@ -393,6 +487,133 @@ class AlertService
         }
 
         return $fresh;
+    }
+
+    /**
+     * @param  array<string, mixed>  $context
+     * @return array{alert: Alert, event_id: int|null}
+     */
+    private function applyResolvedState(Alert $alert, array $context): array
+    {
+        $now = now();
+        $nowIso = $now->toIso8601String();
+        $details = $this->normalizeDetails($alert->details);
+
+        if (isset($context['details']) && is_array($context['details'])) {
+            $details = $this->mergeAlertDetails($details, $context['details']);
+        }
+
+        $details['resolved_at'] = $nowIso;
+        $details['status'] = 'RESOLVED';
+        $details = $this->applyResolutionAuditDetails($details, $nowIso, $context);
+
+        $alert->update([
+            'status' => 'RESOLVED',
+            'resolved_at' => $now,
+            'details' => $details,
+            'last_seen_at' => $now,
+        ]);
+
+        $fresh = $alert->fresh();
+        if (! $fresh instanceof Alert) {
+            throw new \DomainException('Alert not found');
+        }
+        $eventId = null;
+        if ($fresh->zone_id) {
+            $eventId = $this->recordAlertZoneEvent(
+                (int) $fresh->zone_id,
+                'ALERT_RESOLVED',
+                $fresh,
+                $this->buildEventPayload($fresh, 'resolved', [
+                    'resolved_at' => $nowIso,
+                ]),
+            );
+        }
+
+        DB::afterCommit(function () use ($fresh) {
+            $this->broadcastAlertUpdated($fresh);
+        });
+
+        return [
+            'alert' => $fresh,
+            'event_id' => $eventId,
+        ];
+    }
+
+    /**
+     * Условие safety-алерта считается активным, пока строка ACTIVE:
+     * автоматический resolveByCode закрывает её только когда источник снял условие.
+     *
+     * @param  array<string, mixed>  $context
+     */
+    private function refusesManualClose(Alert $alert, array $context): bool
+    {
+        if (! $this->isManualResolution($context)) {
+            return false;
+        }
+
+        if ($this->normalizeStatus((string) $alert->status) !== 'ACTIVE') {
+            return false;
+        }
+
+        $code = is_string($alert->code) ? $alert->code : null;
+
+        return $this->safetyCriticalAlertCodes->contains($code);
+    }
+
+    /**
+     * @param  array<string, mixed>  $context
+     */
+    private function isManualResolution(array $context): bool
+    {
+        return strtolower(trim((string) ($context['resolved_via'] ?? ''))) === 'manual';
+    }
+
+    /**
+     * @param  array<string, mixed>  $context
+     */
+    private function auditManualResolveRefused(Alert $alert, array $context): void
+    {
+        $userId = $this->resolveAcknowledgedByUserId($context);
+        $payload = [
+            'alert_id' => $alert->id,
+            'code' => $alert->code,
+            'status' => $alert->status,
+            'error_code' => ManualAlertResolveRefusedException::ERROR_CODE,
+            'reason' => 'condition_still_active',
+            'resolved_via' => 'manual',
+            'acknowledged_by' => $userId,
+        ];
+
+        if ($alert->zone_id) {
+            $this->recordAlertZoneEvent(
+                (int) $alert->zone_id,
+                'ALERT_MANUAL_RESOLVE_REFUSED',
+                $alert,
+                $this->buildEventPayload($alert, 'manual_resolve_refused', $payload),
+            );
+        }
+
+        Log::warning('Alert manual resolve refused', $payload);
+    }
+
+    /**
+     * @param  array<string, mixed>  $context
+     */
+    private function resolveAcknowledgedByUserId(array $context): ?int
+    {
+        foreach (['acknowledged_by', 'acknowledged_by_user_id', 'resolved_by_user_id', 'actor_id'] as $key) {
+            if (! array_key_exists($key, $context) || ! is_numeric($context[$key])) {
+                continue;
+            }
+
+            $id = (int) $context[$key];
+            if ($id > 0 && User::query()->whereKey($id)->exists()) {
+                return $id;
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -820,6 +1041,8 @@ class AlertService
             'first_seen_at' => $alert->first_seen_at?->toIso8601String(),
             'last_seen_at' => $alert->last_seen_at?->toIso8601String(),
             'resolved_at' => $alert->resolved_at?->toIso8601String(),
+            'acknowledged_at' => $alert->acknowledged_at?->toIso8601String(),
+            'acknowledged_by' => $alert->acknowledged_by,
             'created_at' => $alert->created_at?->toIso8601String(),
         ];
     }

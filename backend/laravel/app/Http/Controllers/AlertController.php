@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Exceptions\ManualAlertResolveRefusedException;
 use App\Helpers\ZoneAccessHelper;
 use App\Models\Alert;
 use App\Services\AlertCatalogService;
@@ -207,15 +208,62 @@ class AlertController extends Controller
 
         try {
             $alert = $this->alertService->acknowledge($alert, [
-                'resolved_by' => 'user_ack_api',
+                'acknowledged_by' => $user->id ?? null,
+                'acknowledged_via' => 'user_ack_api',
+                'acknowledged_by_user_name' => $user->name ?? null,
+            ]);
+
+            return response()->json(['status' => 'ok', 'data' => $alert], Response::HTTP_OK);
+        } catch (\DomainException $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage(),
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+    }
+
+    public function resolve(Request $request, Alert $alert)
+    {
+        $user = $request->user();
+        if (! $user) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Unauthorized',
+            ], 401);
+        }
+
+        if ($alert->zone_id && ! ZoneAccessHelper::canAccessZone($user, $alert->zone_id)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Forbidden: Access denied to this alert',
+            ], 403);
+        }
+
+        if (! $user->canResolveAlerts()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Forbidden: Viewers cannot resolve alerts',
+            ], 403);
+        }
+
+        try {
+            $alert = $this->alertService->resolveManually($alert, [
+                'resolved_by' => 'user_resolve_api',
                 'resolved_via' => 'manual',
                 'resolved_by_user_id' => $user->id ?? null,
                 'resolved_by_user_name' => $user->name ?? null,
                 'resolved_by_user_email' => $user->email ?? null,
                 'resolved_ip' => $request->ip(),
+                'acknowledged_by' => $user->id ?? null,
             ]);
 
             return response()->json(['status' => 'ok', 'data' => $alert], Response::HTTP_OK);
+        } catch (ManualAlertResolveRefusedException $e) {
+            return response()->json([
+                'status' => 'error',
+                'code' => ManualAlertResolveRefusedException::ERROR_CODE,
+                'message' => $e->getMessage(),
+            ], Response::HTTP_CONFLICT);
         } catch (\DomainException $e) {
             return response()->json([
                 'status' => 'error',

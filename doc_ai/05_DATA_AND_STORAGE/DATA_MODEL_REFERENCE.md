@@ -1588,6 +1588,8 @@ first_seen_at TIMESTAMP NULL
 last_seen_at TIMESTAMP NULL
 created_at
 resolved_at
+acknowledged_at TIMESTAMP NULL
+acknowledged_by FK → users NULL
 ```
 
 Индексы:
@@ -1605,7 +1607,8 @@ alerts_hardware_id_idx
 - единственный writer: Laravel `AlertService`;
 - Python/AE3 публикуют только ingest intent;
 - scoped lookup использует `details.dedupe_key`;
-- `error_count`, `first_seen_at`, `last_seen_at` обновляются только в canonical dedup path.
+- `error_count`, `first_seen_at`, `last_seen_at` обновляются только в canonical dedup path;
+- `acknowledged_at` / `acknowledged_by` пишутся только `AlertService::acknowledge()` и не переводят `status` в `RESOLVED`.
 
 Практика:
 
