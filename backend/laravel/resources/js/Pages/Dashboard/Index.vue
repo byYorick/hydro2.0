@@ -179,7 +179,7 @@
 
           <AgronomyZoneList
             v-else-if="dashboardView === 'agronomy'"
-            :zones="pagedZones as UnifiedZone[]"
+            :zones="zonesForView"
             :now="now"
           />
 
@@ -188,9 +188,9 @@
             class="dashboard-zone-grid"
           >
             <ZoneDashboardCard
-              v-for="zone in pagedZones"
+              v-for="zone in zonesForView"
               :key="zone.id"
-              :zone="zone as UnifiedZone"
+              :zone="zone"
               :sparkline-series-data="sparklines[zone.id] ?? null"
               :dense="denseView"
             />
@@ -336,6 +336,7 @@ import AgronomyOverviewPanel from './AgronomyOverviewPanel.vue'
 import AgronomyZoneList from './AgronomyZoneList.vue'
 import EngineeringEquipmentPanel from './EngineeringEquipmentPanel.vue'
 import { useUrlState } from '@/composables/useUrlState'
+import { useZoneEstopIndex } from '@/composables/useZoneEstopIndex'
 import AdminHealthPanel from './AdminHealthPanel.vue'
 import {
   DASHBOARD_CONTEXT_TITLE,
@@ -426,6 +427,12 @@ watch(showOnlyAlerts, value => { storedAlerts.value = value })
 watch(storedAlerts, value => { showOnlyAlerts.value = value })
 watch(() => filteredZones.value.length, count => { currentPage.value = Math.max(1, Math.min(currentPage.value, Math.ceil(count / perPage.value))) })
 
+const { estopByZoneId } = useZoneEstopIndex(computed(() => props.zones.map((zone) => zone.id)))
+const zonesForView = computed(() => pagedZones.value.map((zone) => {
+  const summary = zone as UnifiedZone
+  const estop = estopByZoneId.value[summary.id]
+  return estop ? { ...summary, estop } : summary
+}))
 const shiftQueue = computed(() => buildShiftQueue(props.zones))
 const agronomyCorridor = computed(() => summarizePhEcCorridor(props.zones, now.value))
 const phaseTransitions = computed(() => upcomingPhaseTransitions(props.zones, now.value))

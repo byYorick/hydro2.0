@@ -8,7 +8,16 @@ const pageState = vi.hoisted(() => ({
 }))
 
 const nodesListMock = vi.hoisted(() => vi.fn(async () => []))
-vi.mock('@/services/api', () => ({ api: { nodes: { list: nodesListMock } } }))
+const estopMock = vi.hoisted(() => vi.fn(async (zoneId: number) => ({
+  zone_id: zoneId,
+  estop: { active: false, source: null, since: null, node_uid: null, event_id: null },
+})))
+vi.mock('@/services/api', () => ({
+  api: {
+    nodes: { list: nodesListMock },
+    zones: { getEstop: estopMock },
+  },
+}))
 
 const healthMock = vi.hoisted(() =>
   vi.fn(async () => ({
