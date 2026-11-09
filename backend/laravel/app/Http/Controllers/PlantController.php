@@ -184,6 +184,8 @@ class PlantController extends Controller
 
     public function destroy(Request $request, Plant $plant): RedirectResponse|JsonResponse
     {
+        $this->authorize('delete', $plant);
+
         $plant->delete();
 
         if ($request->wantsJson() || $request->expectsJson()) {
