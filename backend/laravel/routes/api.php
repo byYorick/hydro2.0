@@ -75,9 +75,6 @@ use Illuminate\Http\Request;
 use Illuminate\Session\Middleware\StartSession;
 use Illuminate\Support\Facades\Route;
 
-// S1.7 (AUDIT_2026_05_28_BUGFIX_PLAN): throttle-значения теперь читаются из
-// config-слоя (`services.api.throttle_default` / `throttle_internal`), что
-// поддерживает `php artisan config:cache` в production.
 $apiThrottle = config('services.api.throttle_default', '120,1');
 $internalApiThrottle = config('services.api.throttle_internal', $apiThrottle);
 
