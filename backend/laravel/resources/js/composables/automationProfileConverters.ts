@@ -114,7 +114,7 @@ function profileFromCanonicalSubsystems(subsystems: Dict): AutomationProfile {
         waterForm: {
             systemType: asEnum(
                 irrigationExecution.system_type,
-                ['drip', 'substrate_trays', 'nft'] as const,
+                ['drip', 'substrate_trays', 'nft', 'dwc', 'ebb_flow', 'aeroponics'] as const,
                 d.waterForm.systemType,
             ),
             tanksCount: (() => {
@@ -300,7 +300,7 @@ export function zoneLogicProfileToProfile(payload: unknown): AutomationProfile {
 
     return {
         waterForm: {
-            systemType: asEnum(water.system_type, ['drip', 'substrate_trays', 'nft'] as const, d.waterForm.systemType),
+            systemType: asEnum(water.system_type, ['drip', 'substrate_trays', 'nft', 'dwc', 'ebb_flow', 'aeroponics'] as const, d.waterForm.systemType),
             tanksCount: (() => {
                 const raw = asNumber(water.tanks_count, d.waterForm.tanksCount);
                 const rounded = Math.round(raw);

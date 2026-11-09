@@ -407,6 +407,11 @@ class PgZoneSnapshotReadModel:
 
                 from .dli_light_series import load_dli_light_series
 
+                configured_hydroponic_system_types = self._configured_hydroponic_system_types(
+                    cycle_settings=cycle_settings,
+                    zone_row=zone_row,
+                )
+
                 dli_light_series = await load_dli_light_series(
                     conn,
                     zone_id=zone_id,
@@ -444,7 +449,25 @@ class PgZoneSnapshotReadModel:
                 else None
             ),
             dli_light_series=dli_light_series,
+            configured_hydroponic_system_types=configured_hydroponic_system_types,
         )
+
+    @staticmethod
+    def _configured_hydroponic_system_types(
+        *,
+        cycle_settings: Mapping[str, Any],
+        zone_row: Mapping[str, Any],
+    ) -> tuple[str, ...]:
+        found: list[str] = []
+        irrigation = cycle_settings.get("irrigation") if isinstance(cycle_settings, Mapping) else None
+        if isinstance(irrigation, Mapping):
+            cycle_type = irrigation.get("system_type")
+            if isinstance(cycle_type, str) and cycle_type.strip():
+                found.append(cycle_type.strip())
+        phase_type = zone_row.get("irrigation_system_type")
+        if isinstance(phase_type, str) and phase_type.strip():
+            found.append(phase_type.strip())
+        return tuple(found)
 
     @staticmethod
     def _build_no_actuators_diagnostics(

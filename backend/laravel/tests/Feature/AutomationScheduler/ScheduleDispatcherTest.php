@@ -2,6 +2,8 @@
 
 namespace Tests\Feature\AutomationScheduler;
 
+use App\Enums\GrowCycleStatus;
+use App\Models\GrowCycle;
 use App\Models\Zone;
 use App\Services\AutomationScheduler\ScheduleCycleContext;
 use App\Services\AutomationScheduler\ScheduleDispatcher;
@@ -80,6 +82,45 @@ class ScheduleDispatcherTest extends TestCase
             json_decode((string) $before->payload, true, 512, JSON_THROW_ON_ERROR),
             json_decode((string) $after->payload, true, 512, JSON_THROW_ON_ERROR),
         );
+    }
+
+    public function test_irrigation_intent_is_blocked_for_nft_but_lighting_is_not(): void
+    {
+        $zone = Zone::factory()->create([
+            'status' => 'online',
+            'automation_runtime' => 'ae3',
+        ]);
+        $zone->greenhouse->update(['type' => 'greenhouse']);
+        GrowCycle::factory()->create([
+            'zone_id' => $zone->id,
+            'greenhouse_id' => $zone->greenhouse_id,
+            'status' => GrowCycleStatus::RUNNING,
+            'settings' => ['irrigation' => ['system_type' => 'nft']],
+        ]);
+
+        /** @var ScheduleDispatcher $dispatcher */
+        $dispatcher = $this->app->make(ScheduleDispatcher::class);
+        $triggerTime = CarbonImmutable::parse('2026-03-12 12:00:00', 'UTC');
+
+        $irrigation = $dispatcher->upsertSchedulerIntent(
+            zoneId: $zone->id,
+            taskType: 'irrigation',
+            correlationId: 'sch:z'.$zone->id.':irrigation:nft',
+            triggerTime: $triggerTime,
+        );
+
+        $this->assertFalse($irrigation['ok']);
+        $this->assertSame('hydro_system_not_implemented', $irrigation['blocked_code'] ?? null);
+        $this->assertSame(0, DB::table('zone_automation_intents')->where('zone_id', $zone->id)->where('task_type', 'irrigation_start')->count());
+
+        $lighting = $dispatcher->upsertSchedulerIntent(
+            zoneId: $zone->id,
+            taskType: 'lighting',
+            correlationId: 'sch:z'.$zone->id.':lighting:nft',
+            triggerTime: $triggerTime,
+        );
+
+        $this->assertTrue($lighting['ok']);
     }
 
     public function test_dispatch_skips_non_irrigation_task_for_ae3_runtime(): void

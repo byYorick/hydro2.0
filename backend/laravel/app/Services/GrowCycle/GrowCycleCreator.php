@@ -57,11 +57,12 @@ class GrowCycleCreator
         }
 
         $requestedSystemType = data_get($data, 'irrigation.system_type');
+        $environment = $zone->greenhouse?->type;
         $this->hydroponicSystems->assertExecutable(array_merge(
             [is_string($requestedSystemType) ? $requestedSystemType : null],
             $this->hydroponicSystems->typesFromPhase($firstPhase),
             $this->hydroponicSystems->typesFromActiveProfile((int) $zone->id),
-        ));
+        ), is_string($environment) ? $environment : null);
 
         $plantingAt = isset($data['planting_at']) && $data['planting_at']
             ? Carbon::parse($data['planting_at'])

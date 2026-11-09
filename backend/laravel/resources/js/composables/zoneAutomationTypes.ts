@@ -1,4 +1,4 @@
-export type IrrigationSystem = 'drip' | 'substrate_trays' | 'nft'
+export type IrrigationSystem = 'drip' | 'substrate_trays' | 'nft' | 'dwc' | 'ebb_flow' | 'aeroponics'
 
 export interface ClimateFormState {
   enabled: boolean

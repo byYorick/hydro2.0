@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "updated_at": "2026-10-04T16:12:21Z",
+  "updated_at": "2026-11-09T17:36:18Z",
   "codes": [
     {
       "code": "actuator_apply_failed",
@@ -606,6 +606,26 @@
       "title": "Требуется HMAC",
       "message": "Команда отклонена: для узла включена обязательная подпись HMAC.",
       "source_layer": "firmware_mqtt"
+    },
+    {
+      "code": "hydro_system_environment_forbidden",
+      "title": "Тип системы запрещён для среды",
+      "message": "Этот тип гидропоники нельзя запустить в данной среде. Снаружи допустима только капля."
+    },
+    {
+      "code": "hydro_system_needs_review",
+      "title": "Тип системы требует выбора",
+      "message": "Старый тип системы не переводится в канон автоматически. Выберите drip, ebb_flow, nft или dwc."
+    },
+    {
+      "code": "hydro_system_not_implemented",
+      "title": "Тип гидропоники ещё не исполняется",
+      "message": "Для этого типа гидропоники нет графа автоматики. Сейчас запускается только капля."
+    },
+    {
+      "code": "hydro_system_unknown",
+      "title": "Неизвестный тип гидропоники",
+      "message": "Тип гидропонной системы не входит в канон drip, ebb_flow, nft, dwc."
     },
     {
       "code": "infra_ae3_command_send_retry_scheduled",

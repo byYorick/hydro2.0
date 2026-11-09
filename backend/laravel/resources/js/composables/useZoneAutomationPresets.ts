@@ -9,6 +9,7 @@ import type {
   CorrectionProfile,
   StartupFailSafeGuardsConfig,
 } from '@/types/ZoneAutomationPreset'
+import { normalizeIrrigationSystem } from './recipeSystemType'
 import type { WaterFormState } from './zoneAutomationTypes'
 import { FALLBACK_AUTOMATION_DEFAULTS } from './useAutomationDefaults'
 
@@ -144,8 +145,9 @@ export function applyPresetToWaterForm(
     recirculationStopOnSolutionMin: failSafe.recirculation_stop_on_solution_min,
     stopOnSolutionMin: failSafe.irrigation_stop_on_solution_min,
     estopDebounceMs: failSafe.estop_debounce_ms,
-    // System type from preset
+    // Канонический тип пресета доходит до logic profile. DWC/NFT не схлопываются в каплю.
     tanksCount: preset.tanks_count,
+    systemType: normalizeIrrigationSystem(preset.irrigation_system_type) ?? form.systemType,
   }
 }
 

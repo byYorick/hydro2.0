@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const irrigationSystemSchema = z.enum(['drip', 'substrate_trays', 'nft']);
+export const irrigationSystemSchema = z.enum(['drip', 'substrate_trays', 'nft', 'dwc', 'ebb_flow', 'aeroponics']);
 
 const timeStringSchema = z
     .string()

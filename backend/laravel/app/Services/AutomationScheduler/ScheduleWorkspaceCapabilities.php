@@ -3,6 +3,7 @@
 namespace App\Services\AutomationScheduler;
 
 use App\Models\Zone;
+use App\Support\Hydroponics\HydroponicSystemCatalog;
 
 /**
  * Расчёт полей `capabilities` для GET /api/zones/{id}/schedule-workspace.
@@ -28,6 +29,8 @@ final class ScheduleWorkspaceCapabilities
             'ae3_irrigation_only_dispatch' => $zone->automation_runtime === 'ae3',
             'non_executable_planned_task_types' => $nonExecutablePlanned,
             'diagnostics_available' => true,
+            'supported_hydroponic_systems' => HydroponicSystemCatalog::implementedTypes(),
+            'hydroponic_systems' => HydroponicSystemCatalog::publicPayload(),
         ];
     }
 }

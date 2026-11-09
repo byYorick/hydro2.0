@@ -642,7 +642,10 @@ class ScheduleDispatcher
                 'lighting' => 'lighting_tick',
                 default => $topology,
             };
-            if ($aeTaskType !== 'lighting_tick') {
+            $explicitTopology = strtolower(trim($topology));
+            $hydraulicTask = in_array($aeTaskType, ['irrigation_start', 'solution_topup', 'solution_change'], true)
+                || ($aeTaskType === 'cycle_start' && ! in_array($explicitTopology, ['generic_cycle_start', 'lighting_tick'], true));
+            if ($hydraulicTask) {
                 try {
                     app(HydroponicSystemGuard::class)->assertZoneIrrigationExecutable($zoneId);
                 } catch (UnsupportedHydroponicSystemException $exception) {

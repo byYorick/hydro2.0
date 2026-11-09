@@ -329,7 +329,7 @@ class GrowCycleControllerTest extends TestCase
                 'plant_id' => $this->plant->id,
                 'start_immediately' => true,
                 'irrigation' => [
-                    'system_type' => 'nft',
+                    'system_type' => 'drip',
                     'interval_minutes' => 20,
                     'duration_seconds' => 20,
                     'clean_tank_fill_l' => 300,
@@ -346,12 +346,117 @@ class GrowCycleControllerTest extends TestCase
             ->first();
 
         $this->assertNotNull($cycle);
-        $this->assertSame('nft', data_get($cycle->settings, 'irrigation.system_type'));
+        $this->assertSame('drip', data_get($cycle->settings, 'irrigation.system_type'));
         $this->assertSame(20, data_get($cycle->settings, 'irrigation.interval_minutes'));
         $this->assertSame(20, data_get($cycle->settings, 'irrigation.duration_seconds'));
         $this->assertSame(300, data_get($cycle->settings, 'irrigation.clean_tank_fill_l'));
         $this->assertSame(280, data_get($cycle->settings, 'irrigation.nutrient_tank_target_l'));
         $this->assertSame(2.5, data_get($cycle->settings, 'irrigation.irrigation_batch_l'));
+    }
+
+    #[Test]
+    public function it_starts_cycle_without_explicit_system_type_as_drip(): void
+    {
+        $this->zone->greenhouse->update(['type' => 'greenhouse']);
+        $this->createPidConfigs($this->zone);
+
+        $response = $this->actingAs($this->user)
+            ->postJson("/api/zones/{$this->zone->id}/grow-cycles", [
+                'recipe_revision_id' => $this->revision->id,
+                'plant_id' => $this->plant->id,
+                'start_immediately' => true,
+            ]);
+
+        $response->assertCreated();
+        $this->assertNotSame('hydro_system_not_implemented', $response->json('code'));
+    }
+
+    #[Test]
+    public function it_rejects_nft_and_dwc_grow_cycle_start(): void
+    {
+        $this->zone->greenhouse->update(['type' => 'greenhouse']);
+
+        foreach (['nft', 'dwc'] as $systemType) {
+            $response = $this->actingAs($this->user)
+                ->postJson("/api/zones/{$this->zone->id}/grow-cycles", [
+                    'recipe_revision_id' => $this->revision->id,
+                    'plant_id' => $this->plant->id,
+                    'start_immediately' => true,
+                    'irrigation' => ['system_type' => $systemType],
+                ]);
+
+            $response->assertStatus(422)
+                ->assertJsonPath('status', 'error')
+                ->assertJsonPath('code', 'hydro_system_not_implemented')
+                ->assertJsonPath('requested_type', $systemType)
+                ->assertJsonPath('supported_types', ['drip']);
+            $this->assertStringContainsString($systemType, (string) $response->json('message'));
+            $this->assertNotSame('', (string) $response->json('human_error_message'));
+        }
+
+        $this->assertSame(0, GrowCycle::query()->where('zone_id', $this->zone->id)->count());
+    }
+
+    #[Test]
+    public function it_rejects_legacy_substrate_trays_without_guessing_drip(): void
+    {
+        $this->zone->greenhouse->update(['type' => 'greenhouse']);
+
+        $this->actingAs($this->user)
+            ->postJson("/api/zones/{$this->zone->id}/grow-cycles", [
+                'recipe_revision_id' => $this->revision->id,
+                'plant_id' => $this->plant->id,
+                'irrigation' => ['system_type' => 'substrate_trays'],
+            ])
+            ->assertStatus(422)
+            ->assertJsonPath('code', 'hydro_system_needs_review')
+            ->assertJsonPath('requested_type', 'substrate_trays');
+    }
+
+    #[Test]
+    public function it_rejects_resume_when_cycle_system_type_is_nft(): void
+    {
+        $this->zone->greenhouse->update(['type' => 'greenhouse']);
+        $this->zone->update(['status' => 'PAUSED']);
+        $cycle = GrowCycle::factory()->create([
+            'zone_id' => $this->zone->id,
+            'greenhouse_id' => $this->zone->greenhouse_id,
+            'status' => GrowCycleStatus::PAUSED,
+            'settings' => ['irrigation' => ['system_type' => 'nft']],
+        ]);
+
+        $this->actingAs($this->user)
+            ->postJson("/api/grow-cycles/{$cycle->id}/resume")
+            ->assertStatus(422)
+            ->assertJsonPath('code', 'hydro_system_not_implemented')
+            ->assertJsonPath('requested_type', 'nft');
+
+        $this->assertSame(GrowCycleStatus::PAUSED, $cycle->fresh()->status);
+    }
+
+    #[Test]
+    public function it_rejects_phase_advance_onto_dwc(): void
+    {
+        $this->zone->greenhouse->update(['type' => 'greenhouse']);
+        $this->createPidConfigs($this->zone);
+        RecipeRevisionPhase::factory()->create([
+            'recipe_revision_id' => $this->revision->id,
+            'phase_index' => 1,
+            'irrigation_system_type' => 'dwc',
+        ]);
+
+        $cycle = app(GrowCycleService::class)->createCycle(
+            $this->zone,
+            $this->revision,
+            $this->plant->id,
+            ['start_immediately' => false],
+        );
+
+        $this->actingAs($this->user)
+            ->postJson("/api/grow-cycles/{$cycle->id}/advance-phase")
+            ->assertStatus(422)
+            ->assertJsonPath('code', 'hydro_system_not_implemented')
+            ->assertJsonPath('requested_type', 'dwc');
     }
 
     #[Test]

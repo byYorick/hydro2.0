@@ -15,18 +15,24 @@ export function normalizeIrrigationSystem(value: unknown): IrrigationSystem | nu
     return 'drip'
   }
 
-  if (
-    raw === 'substrate'
-    || raw === 'substrate_trays'
-    || raw === 'ebb_flow'
-    || raw === 'dwc'
-    || raw === 'aeroponics'
-  ) {
-    return 'substrate_trays'
-  }
-
   if (raw === 'recirc' || raw === 'nft') {
     return 'nft'
+  }
+
+  if (raw === 'ebb_flow' || raw === 'ebb-and-flow' || raw === 'ebb_and_flow') {
+    return 'ebb_flow'
+  }
+
+  if (raw === 'dwc') {
+    return 'dwc'
+  }
+
+  if (raw === 'aeroponics') {
+    return 'aeroponics'
+  }
+
+  if (raw === 'substrate' || raw === 'substrate_trays') {
+    return 'substrate_trays'
   }
 
   return null

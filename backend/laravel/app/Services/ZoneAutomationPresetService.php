@@ -43,7 +43,7 @@ class ZoneAutomationPresetService
                 'scope' => 'custom',
                 'is_locked' => false,
                 'tanks_count' => (int) ($data['tanks_count'] ?? 2),
-                'irrigation_system_type' => (string) ($data['irrigation_system_type'] ?? 'dwc'),
+                'irrigation_system_type' => (string) ($data['irrigation_system_type'] ?? 'drip'),
                 'correction_preset_id' => $data['correction_preset_id'] ?? null,
                 'correction_profile' => $data['correction_profile'] ?? null,
                 'config' => $data['config'] ?? [],
