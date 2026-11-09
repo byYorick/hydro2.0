@@ -18,6 +18,7 @@ import { useRole } from '@/composables/useRole'
 import { logger } from '@/utils/logger'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import { ERROR_MESSAGES } from '@/constants/messages'
+import { extractHumanErrorMessage } from '@/utils/errorMessage'
 import { subscribeManagedChannelEvents } from '@/ws/managedChannelEvents'
 import { parseNodeTelemetryBatch } from '@/ws/nodeTelemetryPayload'
 import type { CommandType } from '@/types'
@@ -406,8 +407,7 @@ export function useZoneShowPage() {
       reloadZonePageProps()
     } catch (err) {
       logger.error(`Failed to execute ${actionType}:`, err)
-      let errorMessage: string = ERROR_MESSAGES.UNKNOWN
-      if (err && typeof err === 'object' && 'message' in err) errorMessage = String(err.message)
+      const errorMessage = extractHumanErrorMessage(err, ERROR_MESSAGES.UNKNOWN)
       const actionName = actionNames[actionType] || 'Действие'
       showToast(`Ошибка при выполнении "${actionName}": ${errorMessage}`, 'error', TOAST_TIMEOUT.LONG)
     } finally {

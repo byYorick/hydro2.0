@@ -203,6 +203,24 @@ describe('useRole', () => {
       })
     })
 
+    it('разрешает аварийную остановку тем же ролям, что и команды', () => {
+      const roles: UserRole[] = ['admin', 'agronomist', 'engineer', 'operator', 'viewer']
+
+      roles.forEach(role => {
+        mockPage.mockReturnValue({
+          props: {
+            auth: {
+              user: { role }
+            }
+          }
+        })
+
+        const { canEngageEstop, canReleaseEstop } = useRole()
+        expect(canEngageEstop.value).toBe(role !== 'viewer')
+        expect(canReleaseEstop.value).toBe(role !== 'viewer')
+      })
+    })
+
     it('should allow recipe editing for admin and agronomist only', () => {
       const roles: UserRole[] = ['admin', 'agronomist', 'operator', 'engineer', 'viewer']
       
