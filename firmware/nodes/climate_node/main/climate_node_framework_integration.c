@@ -14,6 +14,7 @@
 #include "node_telemetry_engine.h"
 #include "node_state_manager.h"
 #include "climate_node_app.h"
+#include "climate_node_control.h"
 #include "relay_driver.h"
 #include "pwm_driver.h"
 #include "sht3x.h"
@@ -498,7 +499,11 @@ esp_err_t climate_node_publish_telemetry_callback(void *user_ctx) {
     sht3x_reading_t sht_reading = {0};
     esp_err_t sht_err = sht3x_read(&sht_reading);
     
-    if (sht_err == ESP_OK && sht_reading.valid) {
+    if (sht_err == ESP_OK && sht_reading.valid && isfinite(sht_reading.temperature)) {
+        climate_node_control_set_air(true, sht_reading.temperature);
+        if (!mqtt_manager_is_connected()) {
+            return ESP_OK;
+        }
         // Публикация температуры
         esp_err_t err = node_telemetry_publish_sensor(
             "temperature",
@@ -530,8 +535,13 @@ esp_err_t climate_node_publish_telemetry_callback(void *user_ctx) {
         }
     } else {
         esp_err_t report_err = (sht_err == ESP_OK) ? ESP_ERR_INVALID_RESPONSE : sht_err;
+        climate_node_control_set_air(false, 0.0f);
         ESP_LOGW(TAG, "Failed to read SHT3x: %s", esp_err_to_name(report_err));
         node_state_manager_report_error(ERROR_LEVEL_ERROR, "sht3x", report_err, "Failed to read SHT3x sensor");
+    }
+
+    if (!mqtt_manager_is_connected()) {
+        return ESP_OK;
     }
 
     // Чтение CO₂ (CCS811)
@@ -688,6 +698,12 @@ esp_err_t climate_node_framework_init_integration(void) {
         ESP_LOGW(TAG, "Failed to register test_sensor handler: %s", esp_err_to_name(err));
     }
 
+    err = climate_node_control_init();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to init climate control: %s", esp_err_to_name(err));
+        return err;
+    }
+
     // Регистрация callback для отключения актуаторов в safe_mode
     err = node_state_manager_register_safe_mode_callback(climate_node_disable_actuators_in_safe_mode, NULL);
     if (err != ESP_OK) {
@@ -739,7 +755,14 @@ static esp_err_t climate_node_disable_actuators_in_safe_mode(void *user_ctx) {
                                  strcasecmp(kind, "FAN") == 0 ||
                                  strcasecmp(kind, "HEATER") == 0 ||
                                  strcasecmp(kind, "LED") == 0)) {
-                                relay_driver_set_state(channel_name, RELAY_STATE_OPEN);
+                                const bool ventilation =
+                                    climate_node_control_ventilation_safe() &&
+                                    (strcasecmp(kind, "FAN") == 0 ||
+                                     strncmp(channel_name, "roof_vent", 9) == 0 ||
+                                     strncmp(channel_name, "fan", 3) == 0);
+                                if (!ventilation) {
+                                    relay_driver_set_state(channel_name, RELAY_STATE_OPEN);
+                                }
                             }
                             
                             // Отключаем PWM (устанавливаем duty в 0%)
@@ -753,7 +776,8 @@ static esp_err_t climate_node_disable_actuators_in_safe_mode(void *user_ctx) {
             cJSON_Delete(config);
         }
     }
-    
+
+    climate_node_control_apply_now();
     return ESP_OK;
 }
 

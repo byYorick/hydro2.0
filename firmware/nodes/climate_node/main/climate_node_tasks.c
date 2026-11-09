@@ -67,10 +67,8 @@ static void task_sensors(void *pvParameters) {
             // Сбрасываем watchdog перед выполнением работы
             node_watchdog_reset();
 
-        // Публикация телеметрии через node_framework
-        if (mqtt_manager_is_connected()) {
-            climate_node_publish_telemetry_callback(NULL);
-        }
+        /* Опрос воздуха нужен и без MQTT: локальный термостат не ждёт брокер. */
+        climate_node_publish_telemetry_callback(NULL);
         
         // Обновление OLED UI с данными датчиков
         if (oled_ui_is_initialized()) {
