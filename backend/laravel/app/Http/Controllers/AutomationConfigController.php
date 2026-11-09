@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Exceptions\UnsupportedHydroponicSystemException;
 use App\Http\Controllers\Concerns\PresentsLocalizedApiErrors;
 use App\Helpers\ZoneAccessHelper;
 use App\Jobs\PublishNodeConfigJob;
@@ -16,6 +17,7 @@ use App\Services\AutomationConfigDocumentService;
 use App\Services\AutomationConfigPresetService;
 use App\Services\AutomationConfigRegistry;
 use App\Services\AutomationRuntimeConfigService;
+use App\Services\HydroponicSystemGuard;
 use App\Services\SystemAutomationSettingsCatalog;
 use App\Services\ZoneConfigRevisionService;
 use App\Services\ZoneCorrectionConfigCatalog;
@@ -92,6 +94,13 @@ class AutomationConfigController extends Controller
                 ]);
             }
 
+            if (
+                $namespace === AutomationConfigRegistry::NAMESPACE_ZONE_LOGIC_PROFILE
+                && $scopeType === AutomationConfigRegistry::SCOPE_ZONE
+            ) {
+                app(HydroponicSystemGuard::class)->assertLogicProfileChangeAllowed($scopeId, $payload);
+            }
+
             $previousDocument = $this->documents->getDocument($namespace, $scopeType, $scopeId, false);
             $previousPayload = is_array($previousDocument?->payload) ? $previousDocument->payload : [];
             $document = $namespace === AutomationConfigRegistry::NAMESPACE_ZONE_RUNTIME_TUNING_BUNDLE
@@ -140,6 +149,13 @@ class AutomationConfigController extends Controller
                     $document->updated_by
                 ),
             ]);
+        } catch (UnsupportedHydroponicSystemException $exception) {
+            return $this->localizedError(
+                $exception->errorCode,
+                $exception->getMessage(),
+                Response::HTTP_UNPROCESSABLE_ENTITY,
+                $exception->extra(),
+            );
         } catch (\InvalidArgumentException $exception) {
             return $this->localizedError('invalid_argument', $exception->getMessage(), Response::HTTP_UNPROCESSABLE_ENTITY);
         }

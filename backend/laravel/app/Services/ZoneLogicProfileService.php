@@ -77,6 +77,7 @@ class ZoneLogicProfileService
         }
 
         $payload['profiles'] = $profiles;
+        app(HydroponicSystemGuard::class)->assertLogicProfileChangeAllowed((int) $zone->id, $payload);
         $this->documents->upsertDocument(
             AutomationConfigRegistry::NAMESPACE_ZONE_LOGIC_PROFILE,
             AutomationConfigRegistry::SCOPE_ZONE,

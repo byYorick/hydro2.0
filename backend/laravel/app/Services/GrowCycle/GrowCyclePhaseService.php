@@ -15,6 +15,7 @@ use App\Services\AutomationConfigCompiler;
 use App\Services\AutomationConfigRegistry;
 use App\Services\GrowCycle\Support\CorrelationIdResolver;
 use App\Services\GrowCycle\Support\PhaseSnapshotCreator;
+use App\Services\HydroponicSystemGuard;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -31,6 +32,7 @@ class GrowCyclePhaseService
         private readonly GrowCycleAutomationCanceller $canceller,
         private readonly PhaseSnapshotCreator $snapshotCreator,
         private readonly CorrelationIdResolver $correlation,
+        private readonly HydroponicSystemGuard $hydroponicSystems,
     ) {}
 
     public function advanceStage(GrowCycle $cycle, ?string $targetStageCode = null): GrowCycle
@@ -126,6 +128,9 @@ class GrowCyclePhaseService
             throw new \DomainException('No next phase available');
         }
 
+        $this->hydroponicSystems->assertZoneIrrigationExecutable((int) $cycle->zone_id, $cycle);
+        $this->hydroponicSystems->assertExecutable($this->hydroponicSystems->typesFromPhase($nextPhaseTemplate));
+
         return DB::transaction(function () use ($cycle, $currentPhase, $currentPhaseTemplate, $nextPhaseTemplate, $userId) {
             // Row-level lock против параллельного advancePhase (двойной snapshot + race на current_phase_id).
             $cycle = GrowCycle::query()->whereKey($cycle->id)->lockForUpdate()->firstOrFail();
@@ -195,6 +200,9 @@ class GrowCyclePhaseService
         if ($newPhase->recipe_revision_id !== $revision->id) {
             throw new \DomainException('Phase does not belong to cycle\'s recipe revision');
         }
+
+        $this->hydroponicSystems->assertZoneIrrigationExecutable((int) $cycle->zone_id, $cycle);
+        $this->hydroponicSystems->assertExecutable($this->hydroponicSystems->typesFromPhase($newPhase));
 
         $currentPhase = $cycle->currentPhase;
         $currentPhaseTemplate = $currentPhase?->recipeRevisionPhase;
@@ -269,6 +277,12 @@ class GrowCyclePhaseService
     ): GrowCycle {
         if ($newRevision->status !== 'PUBLISHED') {
             throw new \DomainException('Only PUBLISHED revisions can be applied to cycles');
+        }
+
+        $this->hydroponicSystems->assertZoneIrrigationExecutable((int) $cycle->zone_id, $cycle);
+        $phaseToApply = $this->phaseAppliedByRecipeChange($cycle, $newRevision, $applyMode);
+        if ($phaseToApply !== null) {
+            $this->hydroponicSystems->assertExecutable($this->hydroponicSystems->typesFromPhase($phaseToApply));
         }
 
         return DB::transaction(function () use ($cycle, $newRevision, $applyMode, $userId) {
@@ -348,5 +362,28 @@ class GrowCyclePhaseService
 
             return $cycle->fresh()->load('recipeRevision', 'currentPhase');
         });
+    }
+
+    private function phaseAppliedByRecipeChange(
+        GrowCycle $cycle,
+        RecipeRevision $newRevision,
+        string $applyMode,
+    ): ?RecipeRevisionPhase {
+        if ($applyMode === 'now') {
+            return $newRevision->phases()->orderBy('phase_index')->first();
+        }
+
+        $currentIndex = $cycle->currentPhase?->phase_index;
+        if ($currentIndex !== null) {
+            $upcoming = $newRevision->phases()
+                ->where('phase_index', '>', $currentIndex)
+                ->orderBy('phase_index')
+                ->first();
+            if ($upcoming !== null) {
+                return $upcoming;
+            }
+        }
+
+        return $newRevision->phases()->orderBy('phase_index')->first();
     }
 }

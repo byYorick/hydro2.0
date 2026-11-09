@@ -13,6 +13,8 @@ use App\Models\Zone;
 use App\Models\ZoneEvent;
 use App\Services\GrowCycle\Support\CorrelationIdResolver;
 use App\Services\GrowCycle\Support\PhaseSnapshotCreator;
+use App\Services\HydroponicSystemGuard;
+use App\Support\Hydroponics\HydroponicSystemCatalog;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -27,6 +29,7 @@ class GrowCycleCreator
         private readonly PhaseSnapshotCreator $snapshotCreator,
         private readonly CorrelationIdResolver $correlation,
         private readonly GrowCycleLifecycleService $lifecycle,
+        private readonly HydroponicSystemGuard $hydroponicSystems,
     ) {}
 
     /**
@@ -53,6 +56,14 @@ class GrowCycleCreator
             throw new \DomainException('Revision has no phases');
         }
 
+        $requestedSystemType = data_get($data, 'irrigation.system_type');
+        $environment = $zone->greenhouse?->type;
+        $this->hydroponicSystems->assertExecutable(array_merge(
+            [is_string($requestedSystemType) ? $requestedSystemType : null],
+            $this->hydroponicSystems->typesFromPhase($firstPhase),
+            $this->hydroponicSystems->typesFromActiveProfile((int) $zone->id),
+        ), is_string($environment) ? $environment : null);
+
         $plantingAt = isset($data['planting_at']) && $data['planting_at']
             ? Carbon::parse($data['planting_at'])
             : now();
@@ -63,8 +74,12 @@ class GrowCycleCreator
 
             $irrigation = is_array($data['irrigation'] ?? null) ? $data['irrigation'] : [];
             if (! empty($irrigation)) {
+                $requested = $irrigation['system_type'] ?? null;
+                $systemType = is_string($requested) && trim($requested) !== ''
+                    ? (HydroponicSystemCatalog::canonicalize($requested) ?? 'drip')
+                    : 'drip';
                 $settings['irrigation'] = [
-                    'system_type' => $irrigation['system_type'] ?? 'drip',
+                    'system_type' => $systemType,
                     'interval_minutes' => (int) ($irrigation['interval_minutes'] ?? 30),
                     'duration_seconds' => (int) ($irrigation['duration_seconds'] ?? 120),
                     'clean_tank_fill_l' => (int) ($irrigation['clean_tank_fill_l'] ?? 300),

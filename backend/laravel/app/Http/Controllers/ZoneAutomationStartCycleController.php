@@ -2,10 +2,12 @@
 
 namespace App\Http\Controllers;
 
+use App\Exceptions\UnsupportedHydroponicSystemException;
 use App\Http\Controllers\Concerns\PresentsLocalizedApiErrors;
 use App\Helpers\ZoneAccessHelper;
 use App\Models\Zone;
 use App\Services\Ae3IrrigationBridgeService;
+use App\Services\HydroponicSystemGuard;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\JsonResponse;
@@ -36,7 +38,15 @@ class ZoneAutomationStartCycleController extends Controller
         ];
 
         try {
+            app(HydroponicSystemGuard::class)->assertZoneIrrigationExecutable($zone);
             return response()->json($this->bridge->dispatchStartCycle($zone->id, $payload));
+        } catch (UnsupportedHydroponicSystemException $e) {
+            return $this->localizedError(
+                $e->errorCode,
+                $e->getMessage(),
+                422,
+                $e->extra(),
+            );
         } catch (RequestException $e) {
             $proxyResponse = $this->buildAutomationEngineErrorResponse($e);
             if ($proxyResponse instanceof JsonResponse) {

@@ -12,6 +12,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 Зафиксировать канонический contract для ошибок automation/runtime:
 
 - backend и AE3 передают наружу `error_code`;
+- `hydro_system_not_implemented`, `hydro_system_unknown`, `hydro_system_needs_review`, `hydro_system_environment_forbidden` — отказ гидравлического старта по ADR-0001. Реализован сейчас только `drip` (`schemas/hydro_system.enum.json`).
 - frontend показывает локализованное описание по коду;
 - raw `error_message` считается debug-context и запасным каналом без строгого контракта, но не business contract.
 

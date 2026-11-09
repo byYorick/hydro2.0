@@ -19,6 +19,7 @@ from ae3lite.config.runtime_plan_builder import (
 )
 from ae3lite.domain.entities import AutomationTask, PlannedCommand
 from ae3lite.domain.errors import ErrorCodes, PlannerConfigurationError
+from ae3lite.domain.hydro_system import refuse_drip_execution_for_unsupported_system
 from ae3lite.domain.services.dli_integral import (
     DliTickDecision,
     decide_on_tick_duty,
@@ -63,16 +64,27 @@ class CycleStartPlanner:
           * Fail-closed — raises ``PlannerConfigurationError`` instead of
             silently degrading on missing/invalid config
         """
-        if str(getattr(task, "task_type", "") or "").strip().lower() == "lighting_tick":
+        task_type = str(getattr(task, "task_type", "") or "").strip().lower()
+        if task_type == "lighting_tick":
             lighting_pack = TopologyRegistry().pack("lighting_tick")
             if lighting_pack.plan_profile != "lighting":
                 raise PlannerConfigurationError("Пакет lighting_tick обязан быть tick-профилем света")
             if lighting_pack.entry_by_task_type.get("lighting_tick") != "apply":
                 raise PlannerConfigurationError("Пакет lighting_tick должен входить в стадию apply")
             return self._build_lighting_tick_plan(task=task, snapshot=snapshot)
-        if str(getattr(task, "task_type", "") or "").strip().lower() == "solution_topup":
+        if task_type == "solution_topup":
+            refuse_drip_execution_for_unsupported_system(
+                snapshot=snapshot,
+                task_type=task_type,
+                topology=str(getattr(task, "topology", "") or ""),
+            )
             return self._build_solution_topup_plan(task=task, snapshot=snapshot)
-        if str(getattr(task, "task_type", "") or "").strip().lower() == "solution_change":
+        if task_type == "solution_change":
+            refuse_drip_execution_for_unsupported_system(
+                snapshot=snapshot,
+                task_type=task_type,
+                topology=str(getattr(task, "topology", "") or ""),
+            )
             return self._build_solution_change_plan(task=task, snapshot=snapshot)
         if task.task_type not in {"cycle_start", "irrigation_start"}:
             raise PlannerConfigurationError(f"CycleStartPlanner не поддерживает task_type={task.task_type}")
@@ -104,8 +116,18 @@ class CycleStartPlanner:
             raise PlannerConfigurationError("Для diagnostics execution обязательно указать topology")
         hydraulic = TopologyRegistry().try_pack(topology)
         if hydraulic is not None and hydraulic.plan_profile in {"two_tank", "single_tank"}:
+            refuse_drip_execution_for_unsupported_system(
+                snapshot=snapshot,
+                task_type=str(getattr(task, "task_type", "") or ""),
+                topology=topology,
+            )
             return self._build_two_tank_plan(task=task, snapshot=snapshot, workflow=workflow, topology=topology)
 
+        refuse_drip_execution_for_unsupported_system(
+            snapshot=snapshot,
+            task_type=str(getattr(task, "task_type", "") or ""),
+            topology=topology,
+        )
         steps = diagnostics.get("steps")
         if not isinstance(steps, Sequence) or not steps:
             raise PlannerConfigurationError("command_plans.plans.diagnostics.steps должен быть непустым массивом")

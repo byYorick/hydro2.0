@@ -68,7 +68,14 @@ function toTimeHHmm(value: unknown, fallback: string): string {
 }
 
 function toIrrigationSystem(value: unknown, fallback: IrrigationSystem): IrrigationSystem {
-  if (value === 'drip' || value === 'substrate_trays' || value === 'nft') {
+  if (
+    value === 'drip'
+    || value === 'substrate_trays'
+    || value === 'nft'
+    || value === 'dwc'
+    || value === 'ebb_flow'
+    || value === 'aeroponics'
+  ) {
     return value
   }
   return fallback

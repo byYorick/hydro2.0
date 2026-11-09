@@ -329,7 +329,7 @@ class GrowCycleControllerTest extends TestCase
                 'plant_id' => $this->plant->id,
                 'start_immediately' => true,
                 'irrigation' => [
-                    'system_type' => 'nft',
+                    'system_type' => 'drip',
                     'interval_minutes' => 20,
                     'duration_seconds' => 20,
                     'clean_tank_fill_l' => 300,
@@ -346,7 +346,7 @@ class GrowCycleControllerTest extends TestCase
             ->first();
 
         $this->assertNotNull($cycle);
-        $this->assertSame('nft', data_get($cycle->settings, 'irrigation.system_type'));
+        $this->assertSame('drip', data_get($cycle->settings, 'irrigation.system_type'));
         $this->assertSame(20, data_get($cycle->settings, 'irrigation.interval_minutes'));
         $this->assertSame(20, data_get($cycle->settings, 'irrigation.duration_seconds'));
         $this->assertSame(300, data_get($cycle->settings, 'irrigation.clean_tank_fill_l'));

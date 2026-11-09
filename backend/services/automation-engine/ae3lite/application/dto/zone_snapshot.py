@@ -47,3 +47,4 @@ class ZoneSnapshot:
     config_revision: Optional[int] = None
     # Ряд света за местные сутки. None — цель DLI не задана, планировщик ряд не читает.
     dli_light_series: Optional[Mapping[str, Any]] = None
+    configured_hydroponic_system_types: Tuple[str, ...] = ()

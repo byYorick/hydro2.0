@@ -13,6 +13,7 @@ use App\Http\Controllers\E2EAuthController;
 use App\Http\Controllers\Api\SiteWeatherStationController;
 use App\Http\Controllers\GreenhouseController;
 use App\Http\Controllers\GreenhouseTypeController;
+use App\Http\Controllers\HydroponicSystemController;
 use App\Http\Controllers\GrowCycleController;
 use App\Http\Controllers\GrowCyclePhaseConfigController;
 use App\Http\Controllers\InfrastructureInstanceController;
@@ -145,6 +146,7 @@ Route::middleware([
 ])->group(function () use ($apiThrottle) {
     // Read-only endpoints (viewer+)
     Route::get('greenhouse-types', [GreenhouseTypeController::class, 'index']);
+    Route::get('hydroponic-systems', [HydroponicSystemController::class, 'index']);
     Route::get('greenhouses', [GreenhouseController::class, 'index']);
     Route::get('greenhouses/{greenhouse}', [GreenhouseController::class, 'show']);
     Route::get('greenhouses/{greenhouse}/dashboard', [GreenhouseController::class, 'dashboard']);

@@ -168,6 +168,10 @@ class ErrorCodes:
     AE3_RECIRC_DILUTE_BLOCKED_SOLUTION_MAX = "recirc_dilute_blocked_solution_max"
     ZONE_PID_CONFIG_MISSING_CRITICAL = "zone_pid_config_missing_critical"
     ZONE_RECIPE_PHASE_TARGETS_MISSING_CRITICAL = "zone_recipe_phase_targets_missing_critical"
+    HYDRO_SYSTEM_NOT_IMPLEMENTED = "hydro_system_not_implemented"
+    HYDRO_SYSTEM_UNKNOWN = "hydro_system_unknown"
+    HYDRO_SYSTEM_NEEDS_REVIEW = "hydro_system_needs_review"
+    HYDRO_SYSTEM_ENVIRONMENT_FORBIDDEN = "hydro_system_environment_forbidden"
 
 
 class Ae3LiteError(Exception):

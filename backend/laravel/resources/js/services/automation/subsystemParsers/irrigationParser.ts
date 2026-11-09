@@ -22,7 +22,14 @@ import { syncSystemToTankLayout } from '@/services/automation/tankLayout'
 import type { IrrigationSystem, WaterFormState } from '@/composables/zoneAutomationTypes'
 
 function asIrrigationSystem(value: unknown): IrrigationSystem | null {
-  if (value === 'drip' || value === 'substrate_trays' || value === 'nft') {
+  if (
+    value === 'drip'
+    || value === 'substrate_trays'
+    || value === 'nft'
+    || value === 'dwc'
+    || value === 'ebb_flow'
+    || value === 'aeroponics'
+  ) {
     return value
   }
 

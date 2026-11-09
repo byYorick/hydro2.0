@@ -186,6 +186,7 @@ Breaking-change: обратная совместимость со старыми
 Примечания по запуску:
 - `start_immediately=true` создаёт цикл через canonical path `PLANNED -> start`, без отдельного wizard-launch endpoint;
 - перед immediate-start backend выполняет fail-closed readiness;
+- явный тип гидропоники, для которого нет графа AE3, отклоняется до записи цикла. Канон и коды — ADR-0001 (`drip` реализован; `nft`, `dwc`, `ebb_flow` → `hydro_system_not_implemented`; `substrate_trays` / `aeroponics` → `hydro_system_needs_review`, без подмены на каплю). Тело 422: `code`, `message`, `human_error_message`, `requested_type`, `supported_types`. Список: `GET /api/hydroponic-systems` и `capabilities.hydroponic_systems` у schedule-workspace. Пустой тип остаётся неявной каплей.
 - readiness должен совпадать с runtime gate и учитывает bind-ы, калибровки, PID, runtime-флаг dispatch и hard-blocking alerts automation-engine.
 
 ### 3.3. POST /api/grow-cycles/{id}/pause

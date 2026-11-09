@@ -219,11 +219,12 @@ class ScheduleDispatcher
             triggerTime: $triggerTime,
             payload: $payload,
         );
+        $blockedCode = is_string($intentSnapshot['blocked_code'] ?? null) ? $intentSnapshot['blocked_code'] : '';
         if (! $intentSnapshot['ok']) {
             $writeLog($taskName, 'failed', [
                 'zone_id' => $zoneId,
                 'task_type' => $taskType,
-                'error' => 'intent_upsert_failed',
+                'error' => $blockedCode !== '' ? $blockedCode : 'intent_upsert_failed',
                 'schedule_key' => $scheduleKey,
                 'correlation_id' => $correlationId,
             ]);
@@ -232,8 +233,8 @@ class ScheduleDispatcher
                 'ready' => false,
                 'result' => [
                     'dispatched' => false,
-                    'retryable' => true,
-                    'reason' => 'intent_upsert_failed',
+                    'retryable' => $blockedCode === '',
+                    'reason' => $blockedCode !== '' ? $blockedCode : 'intent_upsert_failed',
                 ],
             ];
         }
@@ -596,7 +597,7 @@ class ScheduleDispatcher
     }
 
     /**
-     * @return array{ok: bool, intent_id: int|null}
+     * @return array{ok: bool, intent_id: int|null, blocked_code?: string}
      */
     public function upsertSchedulerIntent(
         int $zoneId,
@@ -621,6 +622,10 @@ class ScheduleDispatcher
                 'lighting' => 'lighting_tick',
                 default => $topology,
             };
+            $blockedCode = app(HydroponicDispatchGate::class)->blockCode($zoneId, $aeTaskType, $topology);
+            if (is_string($blockedCode) && $blockedCode !== '') {
+                return ['ok' => false, 'intent_id' => null, 'blocked_code' => $blockedCode];
+            }
             $irrigationMode = $taskType === 'irrigation' ? 'normal' : null;
             $irrigationDurationSec = null;
             if ($taskType === 'irrigation' && isset($payload['duration_sec']) && is_numeric($payload['duration_sec'])) {
