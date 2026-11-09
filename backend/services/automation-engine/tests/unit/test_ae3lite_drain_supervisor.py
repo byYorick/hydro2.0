@@ -167,6 +167,82 @@ async def test_execution_crash_isolates_task_and_continues_drain() -> None:
 
 
 @pytest.mark.asyncio
+async def test_crash_cas_miss_keeps_intent_non_terminal() -> None:
+    task = SimpleNamespace(
+        id=3, zone_id=12, intent_id=103, topology="two_tank",
+        status="claimed", is_active=True, claimed_by="worker-a", claim_generation=1,
+    )
+    task_repository = SimpleNamespace(fail_for_recovery=AsyncMock(return_value=None))
+    worker = _build_worker(task_repository=task_repository)
+
+    await worker._fail_task_after_execution_crash(task=task, exc=RuntimeError("boom"))
+
+    task_repository.fail_for_recovery.assert_awaited_once()
+    worker._zone_intent_repository.mark_terminal.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_crash_safety_path_returning_new_active_claim_keeps_intent_open() -> None:
+    task = SimpleNamespace(
+        id=4, zone_id=13, intent_id=104, topology="two_tank",
+        status="claimed", is_active=True, claimed_by="worker-a", claim_generation=1,
+    )
+
+    class _SafetyPath:
+        async def complete_execution_failure(self, **kwargs):
+            return SimpleNamespace(status="running", is_active=True, claim_generation=2)
+
+    task_repository = SimpleNamespace(fail_for_recovery=AsyncMock(return_value=None))
+    worker = _build_worker(task_repository=task_repository)
+    worker._execute_task_use_case = _SafetyPath()
+
+    await worker._fail_task_after_execution_crash(task=task, exc=RuntimeError("boom"))
+
+    task_repository.fail_for_recovery.assert_awaited_once()
+    worker._zone_intent_repository.mark_terminal.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_crash_syncs_intent_after_confirmed_task_failure() -> None:
+    task = SimpleNamespace(
+        id=5, zone_id=14, intent_id=105, topology="two_tank",
+        status="claimed", is_active=True, claimed_by="worker-a", claim_generation=1,
+    )
+    failed = SimpleNamespace(
+        id=5, zone_id=14, intent_id=105, status="failed", is_active=False,
+        error_code="ae3_task_execution_crashed", error_message="boom",
+    )
+    task_repository = SimpleNamespace(fail_for_recovery=AsyncMock(return_value=failed))
+    worker = _build_worker(task_repository=task_repository)
+
+    await worker._fail_task_after_execution_crash(task=task, exc=RuntimeError("boom"))
+
+    worker._zone_intent_repository.mark_terminal.assert_awaited_once()
+    assert worker._zone_intent_repository.mark_terminal.await_args.kwargs["error_code"] == failed.error_code
+
+
+@pytest.mark.asyncio
+async def test_timeout_with_active_task_does_not_terminalize_intent() -> None:
+    task = SimpleNamespace(
+        id=6, zone_id=15, intent_id=106, topology="two_tank",
+        status="claimed", is_active=True, claimed_by="worker-a", claim_generation=1,
+    )
+
+    async def _execute(**kwargs):
+        try:
+            await asyncio.sleep(3600)
+        except asyncio.CancelledError:
+            return task  # terminal CAS lost to a newer claim
+
+    worker = _build_worker(execute_run=AsyncMock(side_effect=_execute))
+    worker._max_task_execution_sec = 0.01
+
+    await worker._execute_claimed_task(task=task)
+
+    worker._zone_intent_repository.mark_terminal.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_task_claim_rollback_error_keeps_drain_alive() -> None:
     claim_run = AsyncMock(
         side_effect=[

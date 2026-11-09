@@ -60,17 +60,6 @@ vi.mock('@/utils/logger', () => ({
   },
 }))
 
-vi.mock('@/composables/useApi', () => ({
-  useApi: () => ({
-    api: {
-      get: (url: string) => apiGetMock(url),
-      patch: (url: string, payload?: unknown) => apiPatchMock(url, payload),
-      post: (url: string, payload?: unknown) => apiPostMock(url, payload),
-      delete: (url: string) => apiDeleteMock(url),
-    },
-  }),
-}))
-
 vi.mock('@/composables/useAutomationConfig', () => ({
   useAutomationConfig: () => ({
     getDocument: getDocumentMock,

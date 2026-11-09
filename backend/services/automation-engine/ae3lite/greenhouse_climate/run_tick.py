@@ -26,7 +26,7 @@ from ae3lite.infrastructure.metrics import (
     record_greenhouse_climate_crop_metrics,
 )
 from common.alert_publisher import AlertPublisher
-from common.db import execute, fetch
+from common.db import execute, fetch, get_pool
 
 logger = logging.getLogger(__name__)
 
@@ -121,7 +121,7 @@ async def _load_manual_override(greenhouse_id: int) -> dict[str, Any] | None:
     }
 
 
-async def _restore_expired_manual_override(greenhouse_id: int, state: Mapping[str, Any]) -> str | None:
+async def _expired_manual_override_return_mode(greenhouse_id: int, state: Mapping[str, Any]) -> str | None:
     override_id = state.get("active_manual_override_id")
     if override_id is None:
         return None
@@ -140,17 +140,6 @@ async def _restore_expired_manual_override(greenhouse_id: int, state: Mapping[st
     return_mode = str(rows[0].get("return_mode") or "auto").strip().lower()
     if return_mode not in {"auto", "semi", "manual"}:
         return_mode = "auto"
-    await execute(
-        """
-        UPDATE greenhouse_automation_state
-        SET control_mode = $2,
-            active_manual_override_id = NULL,
-            updated_at = now()
-        WHERE greenhouse_id = $1
-        """,
-        greenhouse_id,
-        return_mode,
-    )
     return return_mode
 
 
@@ -216,6 +205,19 @@ async def _release_greenhouse_lease(greenhouse_id: int, *, owner: str) -> None:
         greenhouse_id,
         owner,
     )
+
+
+async def _lock_owned_greenhouse_lease(conn: Any, *, greenhouse_id: int, owner: str) -> bool:
+    row = await conn.fetchrow(
+        """
+        SELECT greenhouse_id FROM greenhouse_automation_leases
+        WHERE greenhouse_id = $1 AND owner = $2 AND leased_until > now()
+        FOR UPDATE
+        """,
+        greenhouse_id,
+        owner,
+    )
+    return row is not None
 
 
 def _as_float(value: Any) -> float | None:
@@ -1006,29 +1008,39 @@ async def run_greenhouse_climate_tick(
             greenhouse_id,
         )
         if not bundle_rows or str(bundle_rows[0].get("status") or "").lower() != "valid":
-            await execute(
-                """
-                UPDATE greenhouse_automation_intents
-                SET status = 'failed', completed_at = now(), updated_at = now(),
-                    error_code = 'greenhouse_bundle_missing', error_message = 'No valid automation bundle'
-                WHERE id = $1
-                """,
-                intent_id,
-            )
-            if task_id is not None:
-                await execute(
-                    """
-                    UPDATE greenhouse_automation_tasks
-                    SET status = 'failed',
-                        workflow_stage = 'bundle_load',
-                        error_code = 'greenhouse_bundle_missing',
-                        error_message = 'No valid automation bundle',
-                        completed_at = now(),
-                        updated_at = now()
-                    WHERE id = $1
-                    """,
-                    task_id,
-                )
+            pool = await get_pool()
+            async with pool.acquire() as conn:
+                async with conn.transaction():
+                    if not await _lock_owned_greenhouse_lease(conn, greenhouse_id=greenhouse_id, owner=lease_owner):
+                        _record_tick_metric(tick_started, "failed")
+                        return {"status": "failed", "error_code": "greenhouse_climate_lease_lost", "greenhouse_id": greenhouse_id}
+                    intent_update = await conn.execute(
+                        """
+                        UPDATE greenhouse_automation_intents
+                        SET status = 'failed', completed_at = now(), updated_at = now(),
+                            error_code = 'greenhouse_bundle_missing', error_message = 'No valid automation bundle'
+                        WHERE id = $1 AND status = 'running'
+                        """,
+                        intent_id,
+                    )
+                    if intent_update != "UPDATE 1":
+                        raise RuntimeError("greenhouse_climate_intent_transition_failed")
+                    if task_id is not None:
+                        task_update = await conn.execute(
+                            """
+                            UPDATE greenhouse_automation_tasks
+                            SET status = 'failed',
+                                workflow_stage = 'bundle_load',
+                                error_code = 'greenhouse_bundle_missing',
+                                error_message = 'No valid automation bundle',
+                                completed_at = now(),
+                                updated_at = now()
+                            WHERE id = $1 AND status IN ('claimed', 'running', 'waiting_command')
+                            """,
+                            task_id,
+                        )
+                        if task_update != "UPDATE 1":
+                            raise RuntimeError("greenhouse_climate_task_transition_failed")
             _record_tick_metric(tick_started, "failed")
             return {"status": "failed", "reason": "bundle_missing", "greenhouse_id": greenhouse_id}
 
@@ -1043,7 +1055,7 @@ async def run_greenhouse_climate_tick(
             greenhouse_id,
         )
         state = dict(state_rows[0]) if state_rows else {}
-        restored_mode = await _restore_expired_manual_override(greenhouse_id, state)
+        restored_mode = await _expired_manual_override_return_mode(greenhouse_id, state)
         if restored_mode is not None:
             state["control_mode"] = restored_mode
             state["active_manual_override_id"] = None
@@ -1058,56 +1070,70 @@ async def run_greenhouse_climate_tick(
             current_left = int(state.get("left_position_pct") or 0)
             current_right = int(state.get("right_position_pct") or 0)
             factors = {"enabled": False, "control_mode": control_mode}
-            await execute(
-                """
-                UPDATE greenhouse_automation_state
-                SET climate_enabled = false,
-                    recommended_left_position_pct = $2,
-                    recommended_right_position_pct = $3,
-                    decision_reason = 'climate_disabled',
-                    decision_factors = $4::jsonb,
-                    weather_fresh = false,
-                    inside_climate_fresh = false,
-                    active_alerts_summary = '[]'::jsonb,
-                    last_decision_at = now(),
-                    next_scheduled_tick_at = $5,
-                    active_manual_override_id = $6,
-                    last_task_id = $7,
-                    last_error_code = NULL,
-                    last_error_message = NULL,
-                    updated_at = now()
-                WHERE greenhouse_id = $1
-                """,
-                greenhouse_id,
-                current_left,
-                current_right,
-                json.dumps(factors),
-                next_tick_idle,
-                active_override_id,
-                task_id,
-            )
-            await execute(
-                """
-                UPDATE greenhouse_automation_intents
-                SET status = 'completed', completed_at = now(), updated_at = now()
-                WHERE id = $1
-                """,
-                intent_id,
-            )
-            if task_id is not None:
-                await execute(
-                    """
-                    UPDATE greenhouse_automation_tasks
-                    SET status = 'completed',
-                        workflow_stage = 'disabled',
-                        decision_snapshot = $2::jsonb,
-                        completed_at = now(),
-                        updated_at = now()
-                    WHERE id = $1
-                    """,
-                    task_id,
-                    json.dumps({"decision_reason": "climate_disabled", "factors": factors}),
-                )
+            pool = await get_pool()
+            async with pool.acquire() as conn:
+                async with conn.transaction():
+                    if not await _lock_owned_greenhouse_lease(conn, greenhouse_id=greenhouse_id, owner=lease_owner):
+                        _record_tick_metric(tick_started, "failed")
+                        return {"status": "failed", "error_code": "greenhouse_climate_lease_lost", "greenhouse_id": greenhouse_id}
+                    state_update = await conn.execute(
+                        """
+                        UPDATE greenhouse_automation_state
+                        SET climate_enabled = false,
+                            control_mode = $8,
+                            recommended_left_position_pct = $2,
+                            recommended_right_position_pct = $3,
+                            decision_reason = 'climate_disabled',
+                            decision_factors = $4::jsonb,
+                            weather_fresh = false,
+                            inside_climate_fresh = false,
+                            active_alerts_summary = '[]'::jsonb,
+                            last_decision_at = now(),
+                            next_scheduled_tick_at = $5,
+                            active_manual_override_id = $6,
+                            last_task_id = $7,
+                            last_error_code = NULL,
+                            last_error_message = NULL,
+                            updated_at = now()
+                        WHERE greenhouse_id = $1
+                        """,
+                        greenhouse_id,
+                        current_left,
+                        current_right,
+                        json.dumps(factors),
+                        next_tick_idle,
+                        active_override_id,
+                        task_id,
+                        control_mode,
+                    )
+                    if state_update != "UPDATE 1":
+                        raise RuntimeError("greenhouse_climate_state_transition_failed")
+                    intent_update = await conn.execute(
+                        """
+                        UPDATE greenhouse_automation_intents
+                        SET status = 'completed', completed_at = now(), updated_at = now()
+                        WHERE id = $1 AND status = 'running'
+                        """,
+                        intent_id,
+                    )
+                    if intent_update != "UPDATE 1":
+                        raise RuntimeError("greenhouse_climate_intent_transition_failed")
+                    if task_id is not None:
+                        task_update = await conn.execute(
+                            """
+                            UPDATE greenhouse_automation_tasks
+                            SET status = 'completed',
+                                workflow_stage = 'disabled',
+                                decision_snapshot = $2::jsonb,
+                                completed_at = now(),
+                                updated_at = now()
+                            WHERE id = $1 AND status IN ('claimed', 'running', 'waiting_command')
+                            """,
+                            task_id,
+                            json.dumps({"decision_reason": "climate_disabled", "factors": factors}),
+                        )
+                        if task_update != "UPDATE 1":
+                            raise RuntimeError("greenhouse_climate_task_transition_failed")
             await _publish_greenhouse_alert_lifecycle(
                 greenhouse_id=greenhouse_id,
                 active_codes=[],
@@ -1247,6 +1273,20 @@ async def run_greenhouse_climate_tick(
                     command_failures.append(f"{channel}:MISSING_BINDING")
                     GREENHOUSE_CLIMATE_COMMAND_FAILED_TOTAL.labels(side=side, failure="MISSING_BINDING").inc()
                     continue
+                try:
+                    renewed = await _climate_lease_renew()
+                    if renewed is None:
+                        # One transport error is tolerated for an in-flight
+                        # command, but a new command needs confirmed ownership.
+                        if await _climate_lease_renew() is not True:
+                            raise _GreenhouseLeaseStop()
+                except asyncio.CancelledError:
+                    raise
+                except _GreenhouseLeaseStop:
+                    command_failures.append(f"{channel}:{_LEASE_LOST_STATUS}")
+                    GREENHOUSE_CLIMATE_COMMAND_FAILED_TOTAL.labels(side=side, failure=_LEASE_LOST_STATUS).inc()
+                    stop_ordinary_commands = True
+                    break
                 params = {
                     "position_pct": int(target),
                     "max_step_pct": int(float(execution.get("max_step_pct") or 25)),
@@ -1359,90 +1399,121 @@ async def run_greenhouse_climate_tick(
             active_alerts.append("GREENHOUSE_VENT_COMMAND_FAILED")
             active_alerts = _unique_alert_codes(active_alerts)
 
-        await execute(
-            """
-            UPDATE greenhouse_automation_state
-            SET climate_enabled = true,
-                control_mode = $2,
-                left_position_pct = $3,
-                right_position_pct = $4,
-                recommended_left_position_pct = $5,
-                recommended_right_position_pct = $6,
-                last_sent_left_position_pct = CASE WHEN $14 THEN $5 ELSE last_sent_left_position_pct END,
-                last_sent_right_position_pct = CASE WHEN $15 THEN $6 ELSE last_sent_right_position_pct END,
-                decision_reason = $7,
-                decision_factors = $8::jsonb,
-                weather_fresh = $11,
-                inside_climate_fresh = $12,
-                last_decision_at = now(),
-                last_command_at = CASE WHEN ($9::varchar IS NOT NULL OR $10::varchar IS NOT NULL) THEN now() ELSE last_command_at END,
-                last_left_cmd_id = COALESCE($9, last_left_cmd_id),
-                last_right_cmd_id = COALESCE($10, last_right_cmd_id),
-                next_scheduled_tick_at = $13,
-                active_manual_override_id = $16,
-                last_task_id = $17,
-                last_error_code = $18,
-                last_error_message = $19,
-                active_alerts_summary = $20::jsonb,
-                updated_at = now()
-            WHERE greenhouse_id = $1
-            """,
-            greenhouse_id,
-            control_mode,
-            model_left,
-            model_right,
-            decision.left_target_pct,
-            decision.right_target_pct,
-            decision.decision_reason,
-            json.dumps(decision.factors),
-            left_cmd_id,
-            right_cmd_id,
-            snap["weather_fresh"],
-            snap["inside_fresh"],
-            next_tick_active,
-            left_done,
-            right_done,
-            active_override_id,
-            task_id,
-            error_code,
-            error_message,
-            json.dumps(active_alerts),
-        )
+        def lease_lost_response() -> dict[str, Any]:
+            _record_tick_metric(tick_started, "failed")
+            return {
+                "status": "failed",
+                "greenhouse_id": greenhouse_id,
+                "decision": decision.decision_reason,
+                "suppress": decision.suppress_commands,
+                "left_cmd_id": left_cmd_id,
+                "right_cmd_id": right_cmd_id,
+                "command_failures": command_failures,
+                "error_code": "greenhouse_climate_lease_lost",
+            }
 
-        await execute(
-            """
-            UPDATE greenhouse_automation_intents
-            SET status = $2, completed_at = now(), updated_at = now(),
-                error_code = $3,
-                error_message = $4
-            WHERE id = $1
-            """,
-            intent_id,
-            final_status,
-            error_code,
-            error_message,
-        )
-        if task_id is not None:
-            await execute(
-                """
-                UPDATE greenhouse_automation_tasks
-                SET status = $2,
-                    workflow_stage = 'terminal',
-                    decision_snapshot = $3::jsonb,
-                    command_refs = $4::jsonb,
-                    error_code = $5,
-                    error_message = $6,
-                    completed_at = now(),
-                    updated_at = now()
-                WHERE id = $1
-                """,
-                task_id,
-                final_status,
-                json.dumps({"decision_reason": decision.decision_reason, "factors": decision.factors}),
-                json.dumps({"left_cmd_id": left_cmd_id, "right_cmd_id": right_cmd_id}),
-                error_code,
-                error_message,
-            )
+        if lease_lost:
+            # A successor tick may already own the greenhouse. Leave this
+            # intent/task for stale recovery instead of overwriting its state.
+            logger.warning("greenhouse_climate_tick lost lease before outcome gh=%s intent=%s", greenhouse_id, intent_id)
+            return lease_lost_response()
+
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            async with conn.transaction():
+                if not await _lock_owned_greenhouse_lease(conn, greenhouse_id=greenhouse_id, owner=lease_owner):
+                    logger.warning("greenhouse_climate_tick lost lease at outcome gh=%s intent=%s", greenhouse_id, intent_id)
+                    command_failures.append("lease:LEASE_LOST")
+                    return lease_lost_response()
+
+                state_update = await conn.execute(
+                    """
+                    UPDATE greenhouse_automation_state
+                    SET climate_enabled = true,
+                        control_mode = $2,
+                        left_position_pct = $3,
+                        right_position_pct = $4,
+                        recommended_left_position_pct = $5,
+                        recommended_right_position_pct = $6,
+                        last_sent_left_position_pct = CASE WHEN $14 THEN $5 ELSE last_sent_left_position_pct END,
+                        last_sent_right_position_pct = CASE WHEN $15 THEN $6 ELSE last_sent_right_position_pct END,
+                        decision_reason = $7,
+                        decision_factors = $8::jsonb,
+                        weather_fresh = $11,
+                        inside_climate_fresh = $12,
+                        last_decision_at = now(),
+                        last_command_at = CASE WHEN ($9::varchar IS NOT NULL OR $10::varchar IS NOT NULL) THEN now() ELSE last_command_at END,
+                        last_left_cmd_id = COALESCE($9, last_left_cmd_id),
+                        last_right_cmd_id = COALESCE($10, last_right_cmd_id),
+                        next_scheduled_tick_at = $13,
+                        active_manual_override_id = $16,
+                        last_task_id = $17,
+                        last_error_code = $18,
+                        last_error_message = $19,
+                        active_alerts_summary = $20::jsonb,
+                        updated_at = now()
+                    WHERE greenhouse_id = $1
+                    """,
+                    greenhouse_id,
+                    control_mode,
+                    model_left,
+                    model_right,
+                    decision.left_target_pct,
+                    decision.right_target_pct,
+                    decision.decision_reason,
+                    json.dumps(decision.factors),
+                    left_cmd_id,
+                    right_cmd_id,
+                    snap["weather_fresh"],
+                    snap["inside_fresh"],
+                    next_tick_active,
+                    left_done,
+                    right_done,
+                    active_override_id,
+                    task_id,
+                    error_code,
+                    error_message,
+                    json.dumps(active_alerts),
+                )
+                if state_update != "UPDATE 1":
+                    raise RuntimeError("greenhouse_climate_state_transition_failed")
+                intent_update = await conn.execute(
+                    """
+                    UPDATE greenhouse_automation_intents
+                    SET status = $2, completed_at = now(), updated_at = now(),
+                        error_code = $3, error_message = $4
+                    WHERE id = $1 AND status = 'running'
+                    """,
+                    intent_id,
+                    final_status,
+                    error_code,
+                    error_message,
+                )
+                if intent_update != "UPDATE 1":
+                    raise RuntimeError("greenhouse_climate_intent_transition_failed")
+                if task_id is not None:
+                    task_update = await conn.execute(
+                        """
+                        UPDATE greenhouse_automation_tasks
+                        SET status = $2,
+                            workflow_stage = 'terminal',
+                            decision_snapshot = $3::jsonb,
+                            command_refs = $4::jsonb,
+                            error_code = $5,
+                            error_message = $6,
+                            completed_at = now(),
+                            updated_at = now()
+                        WHERE id = $1 AND status IN ('claimed', 'running', 'waiting_command')
+                        """,
+                        task_id,
+                        final_status,
+                        json.dumps({"decision_reason": decision.decision_reason, "factors": decision.factors}),
+                        json.dumps({"left_cmd_id": left_cmd_id, "right_cmd_id": right_cmd_id}),
+                        error_code,
+                        error_message,
+                    )
+                    if task_update != "UPDATE 1":
+                        raise RuntimeError("greenhouse_climate_task_transition_failed")
 
         await _publish_greenhouse_alert_lifecycle(
             greenhouse_id=greenhouse_id,
@@ -1470,36 +1541,48 @@ async def run_greenhouse_climate_tick(
         }
     except Exception as exc:
         logger.error("greenhouse_climate_tick failed gh=%s intent=%s", greenhouse_id, intent_id, exc_info=True)
-        await execute(
-            """
-            UPDATE greenhouse_automation_intents
-            SET status = 'failed', completed_at = now(), updated_at = now(),
-                error_code = 'greenhouse_climate_tick_failed', error_message = $2
-            WHERE id = $1
-            """,
-            intent_id,
-            str(exc)[:2000],
-        )
-        if task_id is not None:
-            await execute(
-                """
-                UPDATE greenhouse_automation_tasks
-                SET status = 'failed',
-                    workflow_stage = 'exception',
-                    error_code = 'greenhouse_climate_tick_failed',
-                    error_message = $2,
-                    completed_at = now(),
-                    updated_at = now()
-                WHERE id = $1
-                """,
-                task_id,
-                str(exc)[:2000],
-            )
+        try:
+            pool = await get_pool()
+            async with pool.acquire() as conn:
+                async with conn.transaction():
+                    if await _lock_owned_greenhouse_lease(conn, greenhouse_id=greenhouse_id, owner=lease_owner):
+                        await conn.execute(
+                            """
+                            UPDATE greenhouse_automation_intents
+                            SET status = 'failed', completed_at = now(), updated_at = now(),
+                                error_code = 'greenhouse_climate_tick_failed', error_message = $2
+                            WHERE id = $1 AND status = 'running'
+                            """,
+                            intent_id,
+                            str(exc)[:2000],
+                        )
+                        if task_id is not None:
+                            await conn.execute(
+                                """
+                                UPDATE greenhouse_automation_tasks
+                                SET status = 'failed',
+                                    workflow_stage = 'exception',
+                                    error_code = 'greenhouse_climate_tick_failed',
+                                    error_message = $2,
+                                    completed_at = now(),
+                                    updated_at = now()
+                                WHERE id = $1 AND status IN ('claimed', 'running', 'waiting_command')
+                                """,
+                                task_id,
+                                str(exc)[:2000],
+                            )
+        except Exception:
+            logger.warning("greenhouse_climate_tick could not persist failure gh=%s intent=%s", greenhouse_id, intent_id, exc_info=True)
         _record_tick_metric(tick_started, "failed")
         raise
     finally:
         if lease_claimed:
-            await _release_greenhouse_lease(greenhouse_id, owner=lease_owner)
+            try:
+                await _release_greenhouse_lease(greenhouse_id, owner=lease_owner)
+            except Exception:
+                # The TTL will release ownership even when cleanup is unavailable.
+                # Do not replace a committed outcome or its original exception.
+                logger.warning("greenhouse_climate_tick lease release failed gh=%s", greenhouse_id, exc_info=True)
 
 
 __all__ = ["run_greenhouse_climate_tick"]

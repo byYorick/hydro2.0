@@ -43,12 +43,6 @@ vi.mock('axios', () => ({
 }))
 
 // Мокируем useApi, чтобы он использовал мокированный axios
-vi.mock('@/composables/useApi', () => ({
-  useApi: () => ({
-    api: mockAxiosInstance,
-  }),
-}))
-
 vi.mock('@inertiajs/vue3', () => ({
   Link: { name: 'Link', props: ['href'], template: '<a :href="href"><slot /></a>' },
   router: {
