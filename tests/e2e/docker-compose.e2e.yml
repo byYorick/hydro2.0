@@ -229,7 +229,7 @@ services:
     - MQTT_PORT=1883
     - MQTT_TLS=0
     - MQTT_USER=${MQTT_HISTORY_LOGGER_USER:-history_logger}
-    - MQTT_PASS=${MQTT_HISTORY_LOGGER_PASS:?MQTT_HISTORY_LOGGER_PASS is required (run: make ensure-dev-secrets)}
+    - 'MQTT_PASS=${MQTT_HISTORY_LOGGER_PASS:?MQTT_HISTORY_LOGGER_PASS is required (run: make ensure-dev-secrets)}'
     - MQTT_CLIENT_ID=hydro-history-logger-e2e
     - PG_HOST=postgres
     - PG_DB=${POSTGRES_DB:-hydro_e2e}
@@ -282,7 +282,7 @@ services:
     - MQTT_PORT=1883
     - MQTT_TLS=0
     - MQTT_USER=${MQTT_MQTT_BRIDGE_USER:-mqtt_bridge}
-    - MQTT_PASS=${MQTT_MQTT_BRIDGE_PASS:?MQTT_MQTT_BRIDGE_PASS is required (run: make ensure-dev-secrets)}
+    - 'MQTT_PASS=${MQTT_MQTT_BRIDGE_PASS:?MQTT_MQTT_BRIDGE_PASS is required (run: make ensure-dev-secrets)}'
     - MQTT_CLIENT_ID=hydro-mqtt-bridge-e2e
     - PG_HOST=postgres
     - PG_DB=${POSTGRES_DB:-hydro_e2e}
@@ -351,7 +351,7 @@ services:
     - MQTT_PORT=1883
     - MQTT_TLS=0
     - MQTT_USER=${MQTT_AUTOMATION_ENGINE_USER:-automation_engine}
-    - MQTT_PASS=${MQTT_AUTOMATION_ENGINE_PASS:?MQTT_AUTOMATION_ENGINE_PASS is required (run: make ensure-dev-secrets)}
+    - 'MQTT_PASS=${MQTT_AUTOMATION_ENGINE_PASS:?MQTT_AUTOMATION_ENGINE_PASS is required (run: make ensure-dev-secrets)}'
     - PG_HOST=postgres
     - PG_DB=${POSTGRES_DB:-hydro_e2e}
     - PG_USER=${POSTGRES_USER:-hydro}

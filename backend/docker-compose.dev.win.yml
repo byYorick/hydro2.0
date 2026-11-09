@@ -19,11 +19,11 @@ services:
     image: eclipse-mosquitto:2
     entrypoint: ["/bin/sh", "/mosquitto-entrypoint.sh"]
     environment:
-      MQTT_PYTHON_SERVICE_PASS: ${MQTT_PYTHON_SERVICE_PASS:?MQTT_PYTHON_SERVICE_PASS is required (run: make ensure-dev-secrets)}
-      MQTT_AUTOMATION_ENGINE_PASS: ${MQTT_AUTOMATION_ENGINE_PASS:?MQTT_AUTOMATION_ENGINE_PASS is required (run: make ensure-dev-secrets)}
-      MQTT_HISTORY_LOGGER_PASS: ${MQTT_HISTORY_LOGGER_PASS:?MQTT_HISTORY_LOGGER_PASS is required (run: make ensure-dev-secrets)}
-      MQTT_MQTT_BRIDGE_PASS: ${MQTT_MQTT_BRIDGE_PASS:?MQTT_MQTT_BRIDGE_PASS is required (run: make ensure-dev-secrets)}
-      MQTT_ESP32_NODE_PASS: ${MQTT_ESP32_NODE_PASS:?MQTT_ESP32_NODE_PASS is required (run: make ensure-dev-secrets)}
+      MQTT_PYTHON_SERVICE_PASS: "${MQTT_PYTHON_SERVICE_PASS:?MQTT_PYTHON_SERVICE_PASS is required (run: make ensure-dev-secrets)}"
+      MQTT_AUTOMATION_ENGINE_PASS: "${MQTT_AUTOMATION_ENGINE_PASS:?MQTT_AUTOMATION_ENGINE_PASS is required (run: make ensure-dev-secrets)}"
+      MQTT_HISTORY_LOGGER_PASS: "${MQTT_HISTORY_LOGGER_PASS:?MQTT_HISTORY_LOGGER_PASS is required (run: make ensure-dev-secrets)}"
+      MQTT_MQTT_BRIDGE_PASS: "${MQTT_MQTT_BRIDGE_PASS:?MQTT_MQTT_BRIDGE_PASS is required (run: make ensure-dev-secrets)}"
+      MQTT_ESP32_NODE_PASS: "${MQTT_ESP32_NODE_PASS:?MQTT_ESP32_NODE_PASS is required (run: make ensure-dev-secrets)}"
     ports:
       - "${MQTT_BIND_ADDR:-127.0.0.1}:1883:1883"
     volumes:
@@ -170,7 +170,7 @@ services:
       - MQTT_PORT=1883
       - MQTT_TLS=0
       - MQTT_USER=mqtt_bridge
-      - MQTT_PASS=${MQTT_MQTT_BRIDGE_PASS:?MQTT_MQTT_BRIDGE_PASS is required (run: make ensure-dev-secrets)}
+      - 'MQTT_PASS=${MQTT_MQTT_BRIDGE_PASS:?MQTT_MQTT_BRIDGE_PASS is required (run: make ensure-dev-secrets)}'
       - PG_HOST=db
       - PG_DB=hydro_dev
       - PG_USER=hydro
@@ -209,8 +209,8 @@ services:
       - MQTT_PORT=1883
       - MQTT_TLS=0
       - MQTT_USER=history_logger
-      - MQTT_PASS=${MQTT_HISTORY_LOGGER_PASS:?MQTT_HISTORY_LOGGER_PASS is required (run: make ensure-dev-secrets)}
-      - NODE_SECRET_WRAP_PASSPHRASE=${NODE_SECRET_WRAP_PASSPHRASE:?NODE_SECRET_WRAP_PASSPHRASE is required (run: make ensure-dev-secrets)}
+      - 'MQTT_PASS=${MQTT_HISTORY_LOGGER_PASS:?MQTT_HISTORY_LOGGER_PASS is required (run: make ensure-dev-secrets)}'
+      - 'NODE_SECRET_WRAP_PASSPHRASE=${NODE_SECRET_WRAP_PASSPHRASE:?NODE_SECRET_WRAP_PASSPHRASE is required (run: make ensure-dev-secrets)}'
       - PG_HOST=db
       - PG_DB=hydro_dev
       - PG_USER=hydro
@@ -256,7 +256,7 @@ services:
       - MQTT_PORT=1883
       - MQTT_TLS=0
       - MQTT_USER=automation_engine
-      - MQTT_PASS=${MQTT_AUTOMATION_ENGINE_PASS:?MQTT_AUTOMATION_ENGINE_PASS is required (run: make ensure-dev-secrets)}
+      - 'MQTT_PASS=${MQTT_AUTOMATION_ENGINE_PASS:?MQTT_AUTOMATION_ENGINE_PASS is required (run: make ensure-dev-secrets)}'
       - PG_HOST=db
       - PG_DB=hydro_dev
       - PG_USER=hydro
@@ -312,7 +312,7 @@ services:
     container_name: grafana
     environment:
       - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
-      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD is required (run: make ensure-dev-secrets)}
+      - 'GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD is required (run: make ensure-dev-secrets)}'
       # Плагин grafana-clock-panel отключен из-за проблем с установкой (403 Forbidden)
       # - GF_INSTALL_PLUGINS=grafana-clock-panel
       - GF_DEFAULT_LANGUAGE=ru
