@@ -47,7 +47,7 @@ Breaking-change: обратная совместимость со старыми
 
 `docker-compose.dev.yml` публикует MQTT `1883`, Postgres `5432` и Redis `6379` только на `127.0.0.1`. Контейнеры ходят друг к другу по сети compose. Для ESP32 в LAN задайте `MQTT_BIND_ADDR=0.0.0.0` (и при необходимости `POSTGRES_BIND_ADDR` / `REDIS_BIND_ADDR`).
 
-Если `passwords.txt` отсутствует, `mosquitto-entrypoint.sh` собирает его из `MQTT_*_PASS` (dev-fallback'и только для локального стенда). Файл паролей не коммитится.
+Если `passwords.txt` отсутствует, `mosquitto-entrypoint.sh` собирает его из `MQTT_*_PASS`. Публичных паролей по умолчанию нет: пустая переменная останавливает entrypoint. `make ensure-dev-secrets` генерирует значения в `backend/.env` (и заменяет известные слабые `esp32_pass`, `logger_pass`, `bridge_pass`, `automation_pass`, `python_service_pass`). Grafana `GF_SECURITY_ADMIN_PASSWORD` тоже только из `GRAFANA_ADMIN_PASSWORD`. Файл паролей не коммитится.
 
 `node_secret` не кладётся в MQTT NodeConfig открытым текстом. History-logger при заданном `NODE_SECRET_WRAP_PASSPHRASE` (должен совпадать с `mqtt.password` узла, обычно `MQTT_ESP32_NODE_PASS`) публикует `node_secret_enc`. Прошивка расшифровывает его и, если поля нет или расшифровка не удалась, оставляет секрет, уже записанный в NVS. Команды по-прежнему подписываются секретом из БД (`nodes.config.node_secret`).
 
@@ -197,8 +197,16 @@ Middleware aliases:
 - `CommandPolicy` — управление командами
 - `GrowCyclePolicy` — управление grow-циклами (advance, pause, harvest, abort)
 - `RecipeRevisionPolicy` — управление ревизиями рецептов
+- `PlantPolicy` — каталог культур: чтение для любой роли, запись для `admin` / `operator` / `agronomist` / `engineer`. `viewer` не создаёт, не меняет и не удаляет растения
+- `RecipePolicy` — то же разделение для рецептов. Страницы `/recipes/create` и `/recipes/{id}/edit` вызывают policy; API-мутации дополнительно закрыты `role`-middleware
 
 Регистрация — `app/Providers/AuthServiceProvider.php`.
+
+## 4.6. Доверенные proxy
+
+`TrustProxies` не использует `*`. Список задаёт `TRUSTED_PROXIES` (через запятую: IP или CIDR). Если переменная не задана, доверяются только частные сети Docker/RFC1918: `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`. Пустая строка не доверяет никому. Значение `*` включает доверие любому proxy и в production не рекомендуется.
+
+`X-Forwarded-For` от клиента вне этого списка не подменяет `request->ip()`.
 
 ---
 

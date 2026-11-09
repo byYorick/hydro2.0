@@ -4,11 +4,11 @@ services:
     image: eclipse-mosquitto:2
     entrypoint: ["/bin/sh", "/mosquitto-entrypoint.sh"]
     environment:
-      MQTT_PYTHON_SERVICE_PASS: ${MQTT_PYTHON_SERVICE_PASS:-python_service_pass}
-      MQTT_AUTOMATION_ENGINE_PASS: ${MQTT_AUTOMATION_ENGINE_PASS:-automation_pass}
-      MQTT_HISTORY_LOGGER_PASS: ${MQTT_HISTORY_LOGGER_PASS:-logger_pass}
-      MQTT_MQTT_BRIDGE_PASS: ${MQTT_MQTT_BRIDGE_PASS:-bridge_pass}
-      MQTT_ESP32_NODE_PASS: ${MQTT_ESP32_NODE_PASS:-esp32_pass}
+      MQTT_PYTHON_SERVICE_PASS: ${MQTT_PYTHON_SERVICE_PASS:?MQTT_PYTHON_SERVICE_PASS is required (run: make ensure-dev-secrets)}
+      MQTT_AUTOMATION_ENGINE_PASS: ${MQTT_AUTOMATION_ENGINE_PASS:?MQTT_AUTOMATION_ENGINE_PASS is required (run: make ensure-dev-secrets)}
+      MQTT_HISTORY_LOGGER_PASS: ${MQTT_HISTORY_LOGGER_PASS:?MQTT_HISTORY_LOGGER_PASS is required (run: make ensure-dev-secrets)}
+      MQTT_MQTT_BRIDGE_PASS: ${MQTT_MQTT_BRIDGE_PASS:?MQTT_MQTT_BRIDGE_PASS is required (run: make ensure-dev-secrets)}
+      MQTT_ESP32_NODE_PASS: ${MQTT_ESP32_NODE_PASS:?MQTT_ESP32_NODE_PASS is required (run: make ensure-dev-secrets)}
     ports:
       # Только loopback. Для ESP32 в LAN: MQTT_BIND_ADDR=0.0.0.0
       - "${MQTT_BIND_ADDR:-127.0.0.1}:1883:1883"
@@ -87,6 +87,7 @@ services:
       # LAN: задайте APP_URL и VITE_DEV_SERVER_URL в backend/.env (см. make lan-setup)
       - APP_URL=${APP_URL:-http://localhost:8080}
       - APP_ENV=local
+      - TRUSTED_PROXIES=${TRUSTED_PROXIES:-10.0.0.0/8,172.16.0.0/12,192.168.0.0/16}
       - APP_DEBUG=true
       - APP_DEBUG_MODE=true
       # Канал pump_main/valve_drain уже есть на ноде → binding при readiness (иначе missing_binding)
@@ -251,7 +252,7 @@ services:
       - MQTT_PORT=1883
       - MQTT_TLS=0
       - MQTT_USER=mqtt_bridge
-      - MQTT_PASS=${MQTT_MQTT_BRIDGE_PASS:-bridge_pass}
+      - MQTT_PASS=${MQTT_MQTT_BRIDGE_PASS:?MQTT_MQTT_BRIDGE_PASS is required (run: make ensure-dev-secrets)}
       - PG_HOST=db
       - PG_DB=hydro_dev
       - PG_USER=hydro
@@ -300,9 +301,9 @@ services:
       - MQTT_PORT=1883
       - MQTT_TLS=0
       - MQTT_USER=history_logger
-      - MQTT_PASS=${MQTT_HISTORY_LOGGER_PASS:-logger_pass}
+      - MQTT_PASS=${MQTT_HISTORY_LOGGER_PASS:?MQTT_HISTORY_LOGGER_PASS is required (run: make ensure-dev-secrets)}
       # Совпадает с mqtt.password узла (user esp32_node). Пусто — секрет не кладётся в MQTT.
-      - NODE_SECRET_WRAP_PASSPHRASE=${NODE_SECRET_WRAP_PASSPHRASE:-esp32_pass}
+      - NODE_SECRET_WRAP_PASSPHRASE=${NODE_SECRET_WRAP_PASSPHRASE:?NODE_SECRET_WRAP_PASSPHRASE is required (run: make ensure-dev-secrets)}
       - PG_HOST=db
       - PG_DB=hydro_dev
       - PG_USER=hydro
@@ -314,6 +315,7 @@ services:
       - 'PY_API_TOKEN=${PY_API_TOKEN:?PY_API_TOKEN is required (run: make ensure-dev-secrets)}'
       - 'PY_INGEST_TOKEN=${PY_INGEST_TOKEN:?PY_INGEST_TOKEN is required (run: make ensure-dev-secrets)}'
       - 'HISTORY_LOGGER_API_TOKEN=${HISTORY_LOGGER_API_TOKEN:-${PY_INGEST_TOKEN:?PY_INGEST_TOKEN is required (run: make ensure-dev-secrets)}}'
+      - 'HISTORY_LOGGER_AE_TOKEN=${HISTORY_LOGGER_AE_TOKEN:?HISTORY_LOGGER_AE_TOKEN is required (run: make ensure-dev-secrets)}'
       - 'LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:?LARAVEL_API_TOKEN is required (run: make ensure-dev-secrets)}'
       - REDIS_HOST=redis
       - REDIS_PORT=6379
@@ -364,7 +366,7 @@ services:
       - MQTT_PORT=1883
       - MQTT_TLS=0
       - MQTT_USER=automation_engine
-      - MQTT_PASS=${MQTT_AUTOMATION_ENGINE_PASS:-automation_pass}
+      - MQTT_PASS=${MQTT_AUTOMATION_ENGINE_PASS:?MQTT_AUTOMATION_ENGINE_PASS is required (run: make ensure-dev-secrets)}
       - PG_HOST=db
       - PG_DB=hydro_dev
       - PG_USER=hydro
@@ -377,6 +379,7 @@ services:
       - 'PY_API_TOKEN=${PY_API_TOKEN:?PY_API_TOKEN is required (run: make ensure-dev-secrets)}'
       - 'PY_INGEST_TOKEN=${PY_INGEST_TOKEN:?PY_INGEST_TOKEN is required (run: make ensure-dev-secrets)}'
       - 'HISTORY_LOGGER_API_TOKEN=${HISTORY_LOGGER_API_TOKEN:-${PY_INGEST_TOKEN:?PY_INGEST_TOKEN is required (run: make ensure-dev-secrets)}}'
+      - 'HISTORY_LOGGER_AE_TOKEN=${HISTORY_LOGGER_AE_TOKEN:?HISTORY_LOGGER_AE_TOKEN is required (run: make ensure-dev-secrets)}'
       - 'LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:?LARAVEL_API_TOKEN is required (run: make ensure-dev-secrets)}'
       - CONFIG_FETCH_MIN_INTERVAL_SECONDS=60
       - HYDRO_CONFIGS_DIR=/hydro-configs
@@ -486,8 +489,8 @@ services:
     image: grafana/grafana-oss:11.5.2
     container_name: grafana
     environment:
-      - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD is required (run: make ensure-dev-secrets)}
       # Плагин grafana-clock-panel отключен из-за проблем с установкой (403 Forbidden)
       # - GF_INSTALL_PLUGINS=grafana-clock-panel
       # Disable auto preinstall of cloud plugins (403 from grafana.com in this env)

@@ -229,7 +229,7 @@ services:
     - MQTT_PORT=1883
     - MQTT_TLS=0
     - MQTT_USER=${MQTT_HISTORY_LOGGER_USER:-history_logger}
-    - MQTT_PASS=${MQTT_HISTORY_LOGGER_PASS:-logger_pass}
+    - MQTT_PASS=${MQTT_HISTORY_LOGGER_PASS:?MQTT_HISTORY_LOGGER_PASS is required (run: make ensure-dev-secrets)}
     - MQTT_CLIENT_ID=hydro-history-logger-e2e
     - PG_HOST=postgres
     - PG_DB=${POSTGRES_DB:-hydro_e2e}
@@ -242,6 +242,7 @@ services:
     # Меньше шума infra_telemetry_* в e2e (дубли при nd-* / TRUNCATE); override для production-like окружений
     - TELEMETRY_INFRA_ANOMALY_THROTTLE_SEC=${TELEMETRY_INFRA_ANOMALY_THROTTLE_SEC:-86400}
     - 'HISTORY_LOGGER_API_TOKEN=${HISTORY_LOGGER_API_TOKEN:-${PY_INGEST_TOKEN:?PY_INGEST_TOKEN is required (run: make ensure-dev-secrets)}}'
+    - 'HISTORY_LOGGER_AE_TOKEN=${HISTORY_LOGGER_AE_TOKEN:?HISTORY_LOGGER_AE_TOKEN is required (run: make ensure-dev-secrets)}'
     - 'LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:?LARAVEL_API_TOKEN is required (run: make ensure-dev-secrets)}'
     - REDIS_HOST=redis
     - REDIS_PORT=6379
@@ -281,7 +282,7 @@ services:
     - MQTT_PORT=1883
     - MQTT_TLS=0
     - MQTT_USER=${MQTT_MQTT_BRIDGE_USER:-mqtt_bridge}
-    - MQTT_PASS=${MQTT_MQTT_BRIDGE_PASS:-bridge_pass}
+    - MQTT_PASS=${MQTT_MQTT_BRIDGE_PASS:?MQTT_MQTT_BRIDGE_PASS is required (run: make ensure-dev-secrets)}
     - MQTT_CLIENT_ID=hydro-mqtt-bridge-e2e
     - PG_HOST=postgres
     - PG_DB=${POSTGRES_DB:-hydro_e2e}
@@ -350,7 +351,7 @@ services:
     - MQTT_PORT=1883
     - MQTT_TLS=0
     - MQTT_USER=${MQTT_AUTOMATION_ENGINE_USER:-automation_engine}
-    - MQTT_PASS=${MQTT_AUTOMATION_ENGINE_PASS:-automation_pass}
+    - MQTT_PASS=${MQTT_AUTOMATION_ENGINE_PASS:?MQTT_AUTOMATION_ENGINE_PASS is required (run: make ensure-dev-secrets)}
     - PG_HOST=postgres
     - PG_DB=${POSTGRES_DB:-hydro_e2e}
     - PG_USER=${POSTGRES_USER:-hydro}
@@ -360,6 +361,7 @@ services:
     - 'PY_API_TOKEN=${PY_API_TOKEN:?PY_API_TOKEN is required (run: make ensure-dev-secrets)}'
     - 'LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:?LARAVEL_API_TOKEN is required (run: make ensure-dev-secrets)}'
     - 'HISTORY_LOGGER_API_TOKEN=${HISTORY_LOGGER_API_TOKEN:?HISTORY_LOGGER_API_TOKEN is required (run: make ensure-dev-secrets)}'
+    - 'HISTORY_LOGGER_AE_TOKEN=${HISTORY_LOGGER_AE_TOKEN:?HISTORY_LOGGER_AE_TOKEN is required (run: make ensure-dev-secrets)}'
     # Ускоренные настройки для E2E тестов
     - MAIN_LOOP_SLEEP_SECONDS=${MAIN_LOOP_SLEEP_SECONDS:-2}
     - INITIAL_BACKOFF_SECONDS=${INITIAL_BACKOFF_SECONDS:-5}

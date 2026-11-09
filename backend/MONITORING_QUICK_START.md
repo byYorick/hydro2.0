@@ -9,8 +9,8 @@ http://localhost:3000
 ```
 
 **Вход:**
-- Логин: `admin`
-- Пароль: `admin` (dev) или из `GRAFANA_ADMIN_PASSWORD` (prod)
+- Логин: `admin` (или `GRAFANA_ADMIN_USER`)
+- Пароль: `GRAFANA_ADMIN_PASSWORD` из `backend/.env` (`make ensure-dev-secrets` / `make prod-setup`). Публичного пароля `admin` в compose нет.
 
 ### 2. Откройте Dashboard
 

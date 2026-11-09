@@ -30,6 +30,11 @@ class BrokerRuntimeTest(unittest.TestCase):
         subprocess.run([
             "docker", "run", "-d", "--name", cls.name,
             "-e", "MQTT_PLAINTEXT_ENABLED=0",
+            "-e", "MQTT_PYTHON_SERVICE_PASS=ci-python-service-pass",
+            "-e", "MQTT_AUTOMATION_ENGINE_PASS=ci-automation-engine-pass",
+            "-e", "MQTT_HISTORY_LOGGER_PASS=ci-history-logger-pass",
+            "-e", "MQTT_MQTT_BRIDGE_PASS=ci-mqtt-bridge-pass",
+            "-e", "MQTT_ESP32_NODE_PASS=ci-esp32-node-pass",
             "-v", f"{cls.directory}/acl:/mosquitto/config/acl:ro",
             "-v", f"{cls.directory}/mosquitto.dev.conf:/mosquitto/config/mosquitto.conf:ro",
             "-v", f"{cls.directory}/mosquitto-entrypoint.sh:/review-entrypoint.sh:ro",
@@ -53,7 +58,10 @@ class BrokerRuntimeTest(unittest.TestCase):
         if tls:
             command += ["--cafile", ca]
         if user:
-            passwords = {"history_logger": "logger_pass", "esp32_node": "esp32_pass"}
+            passwords = {
+                "history_logger": "ci-history-logger-pass",
+                "esp32_node": "ci-esp32-node-pass",
+            }
             command += ["-u", user, "-P", passwords[user]]
         return subprocess.run(command, capture_output=True, text=True, timeout=8)
 
