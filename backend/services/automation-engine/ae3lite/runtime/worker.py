@@ -907,11 +907,11 @@ class Ae3RuntimeWorker:
         zone_id = int(getattr(task, "zone_id", 0) or 0)
         error_name = type(exc).__name__
         TASK_EXECUTION_CRASHED.labels(error=error_name).inc()
-        finalized = False
+        terminal_task = None
         complete = getattr(self._execute_task_use_case, "complete_execution_failure", None)
         if isinstance(complete, types.MethodType):
             try:
-                await complete(
+                completed = await complete(
                     task=task,
                     snapshot=None,
                     plan=None,
@@ -920,7 +920,8 @@ class Ae3RuntimeWorker:
                     error_code="ae3_task_execution_crashed",
                     error_message=error_message,
                 )
-                finalized = True
+                if not getattr(completed, "is_active", True):
+                    terminal_task = completed
             except asyncio.CancelledError:
                 raise
             except Exception:
@@ -931,11 +932,11 @@ class Ae3RuntimeWorker:
                     self._owner,
                     exc_info=True,
                 )
-        if not finalized and task_id > 0 and self._task_repository is not None:
+        if terminal_task is None and task_id > 0 and self._task_repository is not None:
             fail_for_recovery = getattr(self._task_repository, "fail_for_recovery", None)
             if callable(fail_for_recovery):
                 try:
-                    await fail_for_recovery(
+                    failed = await fail_for_recovery(
                         task_id=task_id,
                         error_code="ae3_task_execution_crashed",
                         error_message=error_message,
@@ -943,6 +944,8 @@ class Ae3RuntimeWorker:
                         owner=str(getattr(task, "claimed_by", None) or self._owner),
                         claim_generation=self._claim_generation(task),
                     )
+                    if failed is not None and not getattr(failed, "is_active", True):
+                        terminal_task = failed
                 except asyncio.CancelledError:
                     raise
                 except Exception:
@@ -954,15 +957,12 @@ class Ae3RuntimeWorker:
                         exc_info=True,
                     )
         intent_id = int(getattr(task, "intent_id", 0) or 0)
-        if intent_id > 0:
-            await self._safe_mark_intent_terminal_result(
-                intent_id=intent_id,
-                now=self._now_fn(),
-                success=False,
-                error_code="ae3_task_execution_crashed",
-                error_message=error_message,
-                task_id=task_id or None,
-                zone_id=zone_id or None,
+        if intent_id > 0 and terminal_task is not None:
+            await self._safe_mark_intent_terminal(task=terminal_task, intent_id=intent_id)
+        elif intent_id > 0:
+            self._logger.warning(
+                "AE3 runtime left intent non-terminal after task crash CAS miss: intent_id=%s task_id=%s",
+                intent_id, task_id,
             )
 
     async def _drain_supervisor(self) -> None:
@@ -1008,8 +1008,6 @@ class Ae3RuntimeWorker:
         )
         final_task = task
         timed_out = False
-        timeout_error_code = TASK_EXECUTION_TIMEOUT_CANCEL_MSG
-        timeout_error_message = f"Выполнение задачи превысило timeout {self._max_task_execution_sec} с"
         execution_crash: BaseException | None = None
         ACTIVE_TASKS.labels(topology=task.topology).inc()
         try:
@@ -1058,13 +1056,6 @@ class Ae3RuntimeWorker:
                         )
                     else:
                         timed_out = True
-                        timeout_error_code = timeout_cancel_msg
-                        if timeout_cancel_msg == TASK_EXECUTION_OVERALL_DEADLINE_CANCEL_MSG:
-                            timeout_error_message = "Общий deadline задачи истёк во время выполнения"
-                        else:
-                            timeout_error_message = (
-                                f"Выполнение задачи превысило timeout {self._max_task_execution_sec} с"
-                            )
                         execution_task.cancel(timeout_cancel_msg)
                         try:
                             final_task = await execution_task
@@ -1184,36 +1175,14 @@ class Ae3RuntimeWorker:
                         )
 
         if timed_out:
-            if intent_id > 0:
-                if final_task is not None and not getattr(final_task, "is_active", True):
-                    await self._safe_mark_intent_terminal(task=final_task, intent_id=intent_id)
-                else:
-                    await self._safe_mark_intent_terminal_result(
-                        intent_id=intent_id,
-                        now=self._now_fn(),
-                        success=False,
-                        error_code=timeout_error_code,
-                        error_message=timeout_error_message,
-                        task_id=int(task.id),
-                        zone_id=int(task.zone_id),
-                    )
+            if intent_id > 0 and final_task is not None and not getattr(final_task, "is_active", True):
+                await self._safe_mark_intent_terminal(task=final_task, intent_id=intent_id)
             self._log_debug("AE3 runtime продолжает drain после задачи с превышенным timeout: task_id=%s", task.id)
             return
 
         if lease_lost_event.is_set():
-            if intent_id > 0:
-                if final_task is not None and not getattr(final_task, "is_active", True):
-                    await self._safe_mark_intent_terminal(task=final_task, intent_id=intent_id)
-                else:
-                    await self._safe_mark_intent_terminal_result(
-                        intent_id=intent_id,
-                        now=self._now_fn(),
-                        success=False,
-                        error_code=TASK_EXECUTION_LEASE_LOST_CANCEL_MSG,
-                        error_message="Во время выполнения задачи был потерян lease зоны",
-                        task_id=int(task.id),
-                        zone_id=int(task.zone_id),
-                    )
+            if intent_id > 0 and final_task is not None and not getattr(final_task, "is_active", True):
+                await self._safe_mark_intent_terminal(task=final_task, intent_id=intent_id)
             self._log_debug("AE3 runtime продолжает drain после потери lease: task_id=%s", task.id)
             return
 
@@ -1444,11 +1413,12 @@ class Ae3RuntimeWorker:
         )
         task_id = int(getattr(task, "id", 0) or 0)
         zone_id = int(getattr(task, "zone_id", 0) or 0)
+        failed_task = None
         if task_id > 0 and self._task_repository is not None:
             fail_for_recovery = getattr(self._task_repository, "fail_for_recovery", None)
             if callable(fail_for_recovery):
                 try:
-                    await fail_for_recovery(
+                    failed_task = await fail_for_recovery(
                         task_id=task_id,
                         error_code=error_code,
                         error_message=error_message,
@@ -1467,15 +1437,14 @@ class Ae3RuntimeWorker:
                         self._owner,
                         exc_info=True,
                     )
-        await self._safe_mark_intent_terminal_result(
-            intent_id=intent_id,
-            now=self._now_fn(),
-            success=False,
-            error_code=error_code,
-            error_message=error_message,
-            task_id=task_id or None,
-            zone_id=zone_id or None,
-        )
+        if failed_task is not None and not getattr(failed_task, "is_active", True):
+            await self._safe_mark_intent_terminal(task=failed_task, intent_id=intent_id)
+        else:
+            self._logger.warning(
+                "AE3 runtime left intent non-terminal after intent sync failure CAS miss: "
+                "intent_id=%s task_id=%s",
+                intent_id, task_id,
+            )
         if zone_id > 0:
             try:
                 released = await self._zone_lease_repository.release(
@@ -1537,8 +1506,8 @@ class Ae3RuntimeWorker:
                     "error_message": error_message,
                     "owner": self._owner,
                     "message": (
-                        "Task и intent рассинхронизированы: ae_task terminal, intent остаётся active. "
-                        "Фоновый orphan-intent janitor продолжит retry."
+                        "Task и intent рассинхронизированы. "
+                        "Фоновые recovery и orphan-intent janitor продолжат обработку."
                     ),
                 },
             )

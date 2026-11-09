@@ -16,14 +16,6 @@ vi.mock('@inertiajs/vue3', () => ({
   }
 }))
 
-vi.mock('@/composables/useApi', () => ({
-  useApi: () => ({
-    api: {
-      get: vi.fn(() => Promise.resolve({ data: { data: [] } }))
-    }
-  })
-}))
-
 vi.mock('@/composables/useCommands', () => ({
   useCommands: () => ({
     sendZoneCommand: vi.fn()

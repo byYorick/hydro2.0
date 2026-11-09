@@ -88,7 +88,7 @@ const mockStateResponse = {
   },
 }
 
-describe('AutomationProcessPanel realtime refresh', () => {
+describe('ZoneAutomationRuntimeSection realtime refresh', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.useFakeTimers()

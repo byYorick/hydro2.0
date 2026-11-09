@@ -898,14 +898,60 @@ async def _seed_hot_two_vent_tick() -> dict[str, Any]:
 
 
 @pytest.mark.asyncio
+async def test_climate_lease_lost_before_first_vent_does_not_publish(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seeded = await _seed_hot_two_vent_tick()
+    fake_hl = _FakeHistoryLoggerClient()
+
+    async def _renew_false(*_args: Any, **_kwargs: Any) -> bool:
+        await execute(
+            "UPDATE greenhouse_automation_leases SET owner = 'successor' WHERE greenhouse_id = $1",
+            seeded["greenhouse_id"],
+        )
+        return False
+
+    monkeypatch.setattr("ae3lite.greenhouse_climate.run_tick._renew_greenhouse_lease", _renew_false)
+    try:
+        result = await run_greenhouse_climate_tick(
+            greenhouse_id=seeded["greenhouse_id"],
+            idempotency_key=seeded["idem"],
+            history_logger_client=fake_hl,
+            alert_publisher=_FakeAlertPublisher(),
+        )
+        assert result["error_code"] == "greenhouse_climate_lease_lost"
+        assert fake_hl.calls == []
+        intents = await fetch(
+            "SELECT status FROM greenhouse_automation_intents WHERE greenhouse_id = $1 AND idempotency_key = $2",
+            seeded["greenhouse_id"], seeded["idem"],
+        )
+        assert intents and intents[0]["status"] == "running"
+    finally:
+        await _cleanup_greenhouse(
+            greenhouse_id=seeded["greenhouse_id"],
+            zone_id=seeded["zone_id"],
+            sensor_ids=seeded["sensor_ids"],
+        )
+
+
+@pytest.mark.asyncio
 async def test_climate_lease_lost_between_vents_does_not_publish_right_or_succeed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     seeded = await _seed_hot_two_vent_tick()
     fake_hl = _FakeHistoryLoggerClient()
     fake_alerts = _FakeAlertPublisher()
+    renew_calls = 0
 
     async def _renew_false(*_args: Any, **_kwargs: Any) -> bool:
+        nonlocal renew_calls
+        renew_calls += 1
+        if renew_calls == 1:
+            return True
+        await execute(
+            "UPDATE greenhouse_automation_leases SET owner = 'successor' WHERE greenhouse_id = $1",
+            seeded["greenhouse_id"],
+        )
         return False
 
     monkeypatch.setattr(
@@ -930,10 +976,122 @@ async def test_climate_lease_lost_between_vents_does_not_publish_right_or_succee
             seeded["idem"],
         )
         assert intents
-        assert str(intents[0]["status"]).lower() != "completed"
-        assert intents[0]["error_code"] == "greenhouse_climate_lease_lost"
+        assert str(intents[0]["status"]).lower() == "running"
+        assert intents[0]["error_code"] is None
+        state = await fetch(
+            "SELECT left_position_pct, right_position_pct FROM greenhouse_automation_state WHERE greenhouse_id = $1",
+            seeded["greenhouse_id"],
+        )
+        assert state and int(state[0]["left_position_pct"]) == 0
+        tasks = await fetch(
+            "SELECT status FROM greenhouse_automation_tasks WHERE greenhouse_id = $1",
+            seeded["greenhouse_id"],
+        )
+        assert tasks and tasks[0]["status"] == "running"
         left_rows = await fetch("SELECT status FROM commands WHERE cmd_id = $1", fake_hl.calls[0]["cmd_id"])
         assert left_rows and str(left_rows[0]["status"]).upper() == "DONE"
+    finally:
+        await _cleanup_greenhouse(
+            greenhouse_id=seeded["greenhouse_id"],
+            zone_id=seeded["zone_id"],
+            sensor_ids=seeded["sensor_ids"],
+        )
+
+
+@pytest.mark.asyncio
+async def test_climate_outcome_does_not_overwrite_successor_after_lease_handoff(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from common.db import get_pool as real_get_pool
+
+    seeded = await _seed_hot_two_vent_tick()
+
+    async def _handoff_before_outcome():
+        await execute(
+            "UPDATE greenhouse_automation_leases SET owner = 'successor' WHERE greenhouse_id = $1",
+            seeded["greenhouse_id"],
+        )
+        return await real_get_pool()
+
+    monkeypatch.setattr("ae3lite.greenhouse_climate.run_tick.get_pool", _handoff_before_outcome)
+    try:
+        result = await run_greenhouse_climate_tick(
+            greenhouse_id=seeded["greenhouse_id"],
+            idempotency_key=seeded["idem"],
+            history_logger_client=_FakeHistoryLoggerClient(),
+            alert_publisher=_FakeAlertPublisher(),
+        )
+        assert result["error_code"] == "greenhouse_climate_lease_lost"
+        state = await fetch(
+            "SELECT left_position_pct, right_position_pct FROM greenhouse_automation_state WHERE greenhouse_id = $1",
+            seeded["greenhouse_id"],
+        )
+        assert state and int(state[0]["left_position_pct"]) == 0
+        assert int(state[0]["right_position_pct"]) == 0
+        intents = await fetch(
+            "SELECT status FROM greenhouse_automation_intents WHERE greenhouse_id = $1 AND idempotency_key = $2",
+            seeded["greenhouse_id"], seeded["idem"],
+        )
+        assert intents and intents[0]["status"] == "running"
+    finally:
+        await _cleanup_greenhouse(
+            greenhouse_id=seeded["greenhouse_id"],
+            zone_id=seeded["zone_id"],
+            sensor_ids=seeded["sensor_ids"],
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("early_outcome", ["disabled", "missing_bundle"])
+async def test_climate_early_outcome_does_not_overwrite_successor_after_lease_handoff(
+    monkeypatch: pytest.MonkeyPatch,
+    early_outcome: str,
+) -> None:
+    from common.db import get_pool as real_get_pool
+
+    seeded = await _seed_hot_two_vent_tick()
+    if early_outcome == "disabled":
+        await execute(
+            "UPDATE automation_effective_bundles SET config = $2::jsonb WHERE scope_type = 'greenhouse' AND scope_id = $1",
+            seeded["greenhouse_id"], _disabled_bundle_config_without_targets(),
+        )
+    else:
+        await execute(
+            "UPDATE automation_effective_bundles SET status = 'invalid' WHERE scope_type = 'greenhouse' AND scope_id = $1",
+            seeded["greenhouse_id"],
+        )
+
+    async def _handoff_before_outcome():
+        await execute(
+            "UPDATE greenhouse_automation_leases SET owner = 'successor' WHERE greenhouse_id = $1",
+            seeded["greenhouse_id"],
+        )
+        return await real_get_pool()
+
+    monkeypatch.setattr("ae3lite.greenhouse_climate.run_tick.get_pool", _handoff_before_outcome)
+    try:
+        result = await run_greenhouse_climate_tick(
+            greenhouse_id=seeded["greenhouse_id"],
+            idempotency_key=seeded["idem"],
+            history_logger_client=_FakeHistoryLoggerClient(),
+            alert_publisher=_FakeAlertPublisher(),
+        )
+        assert result["error_code"] == "greenhouse_climate_lease_lost"
+        state = await fetch(
+            "SELECT decision_reason FROM greenhouse_automation_state WHERE greenhouse_id = $1",
+            seeded["greenhouse_id"],
+        )
+        assert state and state[0]["decision_reason"] is None
+        intents = await fetch(
+            "SELECT status FROM greenhouse_automation_intents WHERE greenhouse_id = $1 AND idempotency_key = $2",
+            seeded["greenhouse_id"], seeded["idem"],
+        )
+        assert intents and intents[0]["status"] == "running"
+        tasks = await fetch(
+            "SELECT status FROM greenhouse_automation_tasks WHERE greenhouse_id = $1",
+            seeded["greenhouse_id"],
+        )
+        assert tasks and tasks[0]["status"] == "running"
     finally:
         await _cleanup_greenhouse(
             greenhouse_id=seeded["greenhouse_id"],
@@ -954,6 +1112,8 @@ async def test_climate_renew_transport_budget_keeps_current_command_and_skips_se
     async def _renew_flaky(*_args: Any, **_kwargs: Any) -> bool:
         calls["n"] += 1
         if calls["n"] == 1:
+            return True
+        if calls["n"] == 2:
             raise RuntimeError("transient db")
         raise RuntimeError("budget exceeded")
 
@@ -971,7 +1131,7 @@ async def test_climate_renew_transport_budget_keeps_current_command_and_skips_se
         assert result.get("status") not in {"ok", "completed"}
         channels = [call["channel"] for call in fake_hl.calls]
         assert channels == ["roof_vent_left"]
-        assert calls["n"] >= 2
+        assert calls["n"] >= 3
         intents = await fetch(
             "SELECT status FROM greenhouse_automation_intents WHERE greenhouse_id = $1 AND idempotency_key = $2",
             seeded["greenhouse_id"],

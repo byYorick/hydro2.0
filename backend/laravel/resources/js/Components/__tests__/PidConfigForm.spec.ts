@@ -33,6 +33,25 @@ vi.mock('@/utils/logger', () => ({
 }))
 
 describe('PidConfigForm.vue', () => {
+  it('не сохраняет readonly-форму даже при программном submit', async () => {
+    const wrapper = mount(PidConfigForm, { props: { zoneId: 7, disabled: true, phaseTargets: { ph: 5.8, ec: 1.4 } } })
+    await flushPromises()
+    await wrapper.get('form').trigger('submit.prevent')
+    expect(updatePidConfigMock).not.toHaveBeenCalled()
+    expect(wrapper.get('[data-testid="pid-config-save"]').attributes('disabled')).toBeDefined()
+    wrapper.unmount()
+  })
+
+  it('блокирует отрицательную dead_zone до запроса к серверу', async () => {
+    const wrapper = mount(PidConfigForm, { props: { zoneId: 7, phaseTargets: { ph: 5.8, ec: 1.4 } } })
+    await flushPromises()
+    ;(wrapper.vm as any).form.dead_zone = -1
+    await flushPromises()
+    expect(wrapper.get('[data-testid="pid-config-validation-error"]').text()).toContain('dead_zone')
+    await wrapper.get('form').trigger('submit.prevent')
+    expect(updatePidConfigMock).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
   beforeEach(() => {
     getPidConfigMock.mockReset()
     getAllPidConfigsMock.mockReset()

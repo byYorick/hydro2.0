@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -99,7 +100,28 @@ async def test_execute_claimed_task_aborts_when_intent_sync_exhausted() -> None:
     task_repo.fail_for_recovery.assert_awaited_once()
     assert task_repo.fail_for_recovery.await_args.kwargs["error_code"] == "ae3_intent_sync_failed"
     lease_repo.release.assert_awaited()
+    intent_repo.mark_terminal.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_intent_sync_abort_terminalizes_intent_after_task_failure() -> None:
+    intent_repo = AsyncMock()
+    intent_repo.mark_terminal = AsyncMock(return_value=True)
+    failed = SimpleNamespace(
+        id=7, zone_id=3, intent_id=42, status="failed", is_active=False,
+        error_code="ae3_intent_sync_failed", error_message="sync failed",
+    )
+    task_repo = SimpleNamespace(fail_for_recovery=AsyncMock(return_value=failed))
+    lease_repo = SimpleNamespace(release=AsyncMock(return_value=True))
+    worker = _build_worker(intent_repo=intent_repo)
+    worker._task_repository = task_repo
+    worker._zone_lease_repository = lease_repo
+    task = SimpleNamespace(id=7, zone_id=3, intent_id=42, claimed_by="test-worker", claim_generation=1)
+
+    await worker._abort_task_after_intent_sync_failure(task=task, intent_id=42)
+
     intent_repo.mark_terminal.assert_awaited_once()
+    assert intent_repo.mark_terminal.await_args.kwargs["success"] is False
 
 
 @pytest.mark.asyncio

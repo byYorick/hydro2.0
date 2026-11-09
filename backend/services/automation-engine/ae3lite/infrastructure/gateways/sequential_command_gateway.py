@@ -180,8 +180,22 @@ class SequentialCommandGateway:
                 }
 
         for seq_index, command in enumerate(commands):
-            # Batch execution can wait for earlier commands to reach DONE.
-            # Admission and persisted timestamps must use the current time.
+            planner_step = planner_step_for_command(
+                task=current_task,
+                command=command,
+                seq_index=seq_index,
+            )
+            if recovery_resume_marker is not None:
+                completed_status = await self._completed_planner_step_status(
+                    task=current_task,
+                    command=command,
+                    planner_step=planner_step,
+                )
+                if completed_status is not None:
+                    combined_statuses.append(completed_status)
+                    continue
+            # A recovered DONE dose needs no new admission. For a new dose,
+            # use the time after earlier commands reached terminal status.
             command_now = _utcnow()
             admission_failure = self._dose_stage_admission_failure(
                 task=current_task,
@@ -197,20 +211,6 @@ class SequentialCommandGateway:
                     "command_statuses": combined_statuses,
                     **admission_failure,
                 }
-            planner_step = planner_step_for_command(
-                task=current_task,
-                command=command,
-                seq_index=seq_index,
-            )
-            if recovery_resume_marker is not None:
-                completed_status = await self._completed_planner_step_status(
-                    task=current_task,
-                    command=command,
-                    planner_step=planner_step,
-                )
-                if completed_status is not None:
-                    combined_statuses.append(completed_status)
-                    continue
             result = await self._run_command(
                 task=current_task,
                 command=command,

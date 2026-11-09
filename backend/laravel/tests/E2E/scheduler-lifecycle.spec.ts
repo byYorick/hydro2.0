@@ -317,6 +317,19 @@ test.describe('Scheduler workspace lifecycle на вкладке Планиро�
     await expect(chain.getByText('done').first()).toBeVisible()
   })
 
+  test('разделяет обзор, расписания и историю с фильтром ошибок', async ({ page }) => {
+    await page.getByTestId('scheduler-view-history').click()
+    await page.getByTestId('scheduler-history-status').selectOption('failed')
+    await expect(page.getByTestId('scheduler-runs-row-603')).toBeVisible()
+    await expect(page.getByTestId('scheduler-runs-row-601')).toHaveCount(0)
+    await page.getByTestId('scheduler-manage-schedules').click()
+    await expect(page.getByTestId('manual-schedules-section')).toBeVisible()
+    await expect(page.getByTestId('scheduler-recent-runs')).toHaveCount(0)
+    await page.getByTestId('manual-schedule-create').focus()
+    await page.keyboard.press('Enter')
+    await expect(page.getByTestId('manual-schedule-modal')).toBeVisible()
+  })
+
   test('показывает running run с текущим stage', async ({ page }) => {
     await page.getByRole('button', { name: /#602/ }).click()
 
