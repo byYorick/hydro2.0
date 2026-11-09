@@ -60,6 +60,13 @@
           {{ telemetrySummaryIsFresh(zone, now) ? 'Недостаточно значений или целей' : 'Нет свежей сводки (до 5 мин)' }}
         </p>
         <Badge
+          v-if="zone.estop?.active"
+          variant="danger"
+          data-testid="agronomy-zone-estop"
+        >
+          Аварийная остановка
+        </Badge>
+        <Badge
           v-if="zone.automation_block?.blocked"
           variant="danger"
         >
