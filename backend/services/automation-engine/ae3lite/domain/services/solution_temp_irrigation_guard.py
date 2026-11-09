@@ -13,6 +13,12 @@ from typing import Any, Mapping, Sequence
 
 REASON_SOLUTION_TEMP_UNAVAILABLE = "solution_temp_unavailable"
 REASON_SOLUTION_TEMP_OUT_OF_BAND = "solution_temp_out_of_band"
+REASON_SOLUTION_TEMP_HOT_WARN = "solution_temp_hot_warn"
+REASON_SOLUTION_TEMP_HOT_STOP = "solution_temp_hot_stop"
+
+# Безопасные пороги горячего раствора, если фаза включила контроль и задала пару.
+DEFAULT_SOLUTION_TEMP_WARN_C = 26.0
+DEFAULT_SOLUTION_TEMP_STOP_C = 32.0
 
 # Канал history-logger: solution_temp_c и уже принятые алиасы.
 SOLUTION_TEMP_CHANNEL_LABELS: tuple[str, ...] = (
@@ -29,6 +35,7 @@ DEFAULT_SOLUTION_TEMP_STALE_SEC = 600
 class SolutionTempSkip:
     reason_code: str
     details: dict[str, Any]
+    blocks_irrigation: bool = True
 
 
 def solution_temp_gate_active(
@@ -36,20 +43,32 @@ def solution_temp_gate_active(
     required: bool,
     min_c: float | None,
     max_c: float | None,
+    warn_c: float | None = None,
+    stop_c: float | None = None,
 ) -> bool:
-    return bool(required) and min_c is not None and max_c is not None
+    if not required:
+        return False
+    if warn_c is not None or stop_c is not None:
+        return True
+    return min_c is not None and max_c is not None
 
 
 def evaluate_solution_temp_hold(
     *,
-    min_c: float,
-    max_c: float,
+    min_c: float | None,
+    max_c: float | None,
     hold_sec: int,
     stale_sec: int,
     now: datetime,
     reading: Mapping[str, Any] | None,
+    warn_c: float | None = None,
+    stop_c: float | None = None,
 ) -> SolutionTempSkip | None:
-    """``None`` — не блокировать. Иначе успешный skip, не fail."""
+    """``None`` — не блокировать. Иначе предупреждение или успешный skip, не fail.
+
+    Без ``warn_c``/``stop_c`` горячая граница — ``max_c`` (прежнее поведение).
+    С парой порогов: выше warn полив продолжается, на stop и выше — skip.
+    """
     now_naive = _as_naive_utc(now)
     hold = max(0, int(hold_sec))
     stale = max(0, int(stale_sec))
@@ -79,6 +98,21 @@ def evaluate_solution_temp_hold(
         )
 
     latest_c = _latest_value(last_point=last_point, samples=window_samples)
+    if warn_c is None and stop_c is None and (min_c is None or max_c is None):
+        return None
+    if warn_c is not None or stop_c is not None:
+        return _evaluate_hot_thresholds(
+            min_c=min_c,
+            max_c=max_c,
+            warn_c=warn_c,
+            stop_c=stop_c,
+            hold=hold,
+            stale=stale,
+            now=now_naive,
+            window_start=window_start,
+            window_samples=window_samples,
+            latest_c=latest_c,
+        )
     if _in_band(latest_c, min_c=min_c, max_c=max_c):
         return None
     if any(_in_band(value, min_c=min_c, max_c=max_c) for _, value in window_samples):
@@ -104,18 +138,90 @@ def evaluate_solution_temp_hold(
     )
 
 
+def _evaluate_hot_thresholds(
+    *,
+    min_c: float | None,
+    max_c: float | None,
+    warn_c: float | None,
+    stop_c: float | None,
+    hold: int,
+    stale: int,
+    now: datetime,
+    window_start: datetime,
+    window_samples: Sequence[tuple[datetime, float]],
+    latest_c: float | None,
+) -> SolutionTempSkip | None:
+    stop_edge = None if stop_c is None else float(stop_c)
+    warn_edge = None if warn_c is None else float(warn_c)
+    if warn_edge is not None and stop_edge is not None and warn_edge >= stop_edge:
+        warn_edge = None
+    covered = _window_covered(
+        window_samples,
+        window_start=window_start,
+        now=now,
+        stale_sec=stale,
+    )
+    values = [value for _, value in window_samples]
+    details = _details(
+        min_c=min_c,
+        max_c=max_c,
+        hold_sec=hold,
+        stale_sec=stale,
+        samples=len(window_samples),
+        latest_c=latest_c,
+    )
+    if warn_edge is not None:
+        details["warn_c"] = warn_edge
+    if stop_edge is not None:
+        details["stop_c"] = stop_edge
+
+    if (
+        min_c is not None
+        and latest_c is not None
+        and latest_c < float(min_c)
+        and covered
+        and values
+        and all(value < float(min_c) for value in values)
+    ):
+        return SolutionTempSkip(
+            reason_code=REASON_SOLUTION_TEMP_OUT_OF_BAND,
+            details=details,
+            blocks_irrigation=True,
+        )
+    if (
+        stop_edge is not None
+        and latest_c is not None
+        and latest_c >= stop_edge
+        and covered
+        and values
+        and all(value >= stop_edge for value in values)
+    ):
+        return SolutionTempSkip(
+            reason_code=REASON_SOLUTION_TEMP_HOT_STOP,
+            details=details,
+            blocks_irrigation=True,
+        )
+    if warn_edge is not None and latest_c is not None and latest_c > warn_edge:
+        return SolutionTempSkip(
+            reason_code=REASON_SOLUTION_TEMP_HOT_WARN,
+            details=details,
+            blocks_irrigation=False,
+        )
+    return None
+
+
 def _details(
     *,
-    min_c: float,
-    max_c: float,
+    min_c: float | None,
+    max_c: float | None,
     hold_sec: int,
     stale_sec: int,
     samples: int,
     latest_c: float | None,
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
-        "min_c": float(min_c),
-        "max_c": float(max_c),
+        "min_c": None if min_c is None else float(min_c),
+        "max_c": None if max_c is None else float(max_c),
         "hold_sec": int(hold_sec),
         "stale_sec": int(stale_sec),
         "samples": int(samples),

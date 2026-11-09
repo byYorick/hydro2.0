@@ -51,6 +51,8 @@ class CropDaySettingsValidationTest extends TestCase
             ->assertJsonPath('data.solution_temp_max', 24)
             ->assertJsonPath('data.extensions.solution_health.required', true)
             ->assertJsonPath('data.extensions.solution_health.breach_hold_sec', 900)
+            ->assertJsonPath('data.extensions.solution_health.warn_c', 26)
+            ->assertJsonPath('data.extensions.solution_health.stop_c', 32)
             ->assertJsonPath('data.extensions.solution_max_age_days', 14)
             ->assertJsonPath('data.extensions.solution_refresh_after_topup_ml', 250.5)
             ->assertJsonPath('data.extensions.legacy_note', 'keep')
@@ -115,6 +117,7 @@ class CropDaySettingsValidationTest extends TestCase
                 'extensions' => ['solution_health' => ['required' => true]],
             ],
             ['extensions' => ['solution_health' => ['breach_hold_sec' => 10]]],
+            ['extensions' => ['solution_health' => ['required' => true, 'warn_c' => 32, 'stop_c' => 26]]],
             ['extensions' => ['solution_max_age_days' => 0]],
             ['extensions' => ['solution_refresh_after_topup_ml' => 0]],
         ];

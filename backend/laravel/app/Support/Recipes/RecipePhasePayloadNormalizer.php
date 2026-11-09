@@ -73,6 +73,20 @@ class RecipePhasePayloadNormalizer
 
         unset($normalized['day_target'], $normalized['night_target']);
 
+        if (isset($normalized['solution_health']) && is_array($normalized['solution_health']) && ! array_is_list($normalized['solution_health'])) {
+            $health = $normalized['solution_health'];
+            $required = filter_var($health['required'] ?? false, FILTER_VALIDATE_BOOLEAN);
+            if ($required) {
+                if (! array_key_exists('warn_c', $health) || $health['warn_c'] === null || $health['warn_c'] === '') {
+                    $health['warn_c'] = 26;
+                }
+                if (! array_key_exists('stop_c', $health) || $health['stop_c'] === null || $health['stop_c'] === '') {
+                    $health['stop_c'] = 32;
+                }
+                $normalized['solution_health'] = $health;
+            }
+        }
+
         return empty($normalized) ? null : $normalized;
     }
 

@@ -1454,6 +1454,53 @@ class ExtendedRecipesCyclesSeeder extends Seeder
                     ]),
                 ],
             ],
+            [
+                'name' => 'Салат и клубника, капля, Крым',
+                'description' => 'Один бак на салат и клубнику, капля в отход, сезонная теплица Крыма. '
+                    .'pH 5.8–6.0 и EC 1.4–1.6 — компромисс общего бака: в AGRONOMY_CRIMEA у рассады EC ниже '
+                    .'(салат 0.8–1.2, клубника 1.0–1.4), у ягоды EC до 1.8 и при жаре 1.2–1.5. '
+                    .'Интервал 3600 с и импульс 60 с консервативны: в справочнике нет длительности в секундах. '
+                    .'Доля дренажа 20% — пересечение листа 15–25% и ягоды 20–30%, контроллер её не измеряет. '
+                    .'Потолок дня 25 °C — стоп салата; качество клубники падает после 28 °C. '
+                    .'Аварийный перегрев воздуха 32 °C — ориентир между этими потолками и закрытой теплицей выше 35 °C, не буква справочника. '
+                    .'Стоп полива по раствору в справочнике выше 26 °C; здесь 26 °C только предупреждение, аварийный стоп 32 °C.',
+                'plant_slugs' => ['lettuce', 'strawberry'],
+                'season' => 'mar_nov',
+                'site_type' => 'greenhouse',
+                'phases' => [
+                    $this->phase(0, 'Общий бак', 'VEG', 28, [
+                        'ph' => ['min' => 5.8, 'max' => 6.0, 'target' => 5.9],
+                        'ec' => ['min' => 1.4, 'max' => 1.6, 'target' => 1.5],
+                        'temp_air' => ['min' => 18, 'max' => 22, 'target' => 20],
+                        'humidity' => ['min' => 60, 'max' => 70, 'target' => 65],
+                        'co2' => ['min' => 400, 'max' => 500, 'target' => 450],
+                        'dli' => ['min' => 12, 'max' => 17, 'target' => 14],
+                        'solution_temp' => ['min' => 18, 'max' => 22, 'target' => 20],
+                        'irrigation' => [
+                            'mode' => 'SUBSTRATE',
+                            'interval_sec' => 3600,
+                            'duration_sec' => 60,
+                            'drain_target_percent' => 20,
+                            'drain_to_waste' => true,
+                        ],
+                        'solution_health' => [
+                            'required' => true,
+                            'warn_c' => 26,
+                            'stop_c' => 32,
+                            'breach_hold_sec' => 600,
+                        ],
+                        'climate' => [
+                            'overheat_emergency_temp_c' => 32,
+                            'heat_ceiling_day_c' => 25,
+                        ],
+                        'agronomy' => [
+                            'night_air_c' => '10–14',
+                            'source' => 'doc_ai/14_GROWING_REFERENCE/AGRONOMY_CRIMEA.md',
+                            'recirculation' => false,
+                        ],
+                    ]),
+                ],
+            ],
         ];
     }
 
@@ -1543,7 +1590,7 @@ class ExtendedRecipesCyclesSeeder extends Seeder
             )
         );
 
-        return [
+        $payload = [
             'stage_template_id' => $stageTemplate?->id,
             'phase_index' => $phaseData['phase_index'],
             'name' => $phaseData['name'],
@@ -1584,6 +1631,15 @@ class ExtendedRecipesCyclesSeeder extends Seeder
             'dli_target' => $dliTarget,
             'extensions' => $extensions,
         ];
+
+        $solution = $phaseData['solution_temp'] ?? null;
+        if (is_array($solution)) {
+            $payload['solution_temp_min'] = $solution['min'] ?? null;
+            $payload['solution_temp_max'] = $solution['max'] ?? null;
+            $payload['solution_temp_target'] = $solution['target'] ?? $this->averageTarget($solution);
+        }
+
+        return $payload;
     }
 
     private function buildNutritionProfile(array $phaseData, ?string $stageCode = null): array
@@ -1996,7 +2052,7 @@ class ExtendedRecipesCyclesSeeder extends Seeder
         if (is_array($irrigation)) {
             $irrigationMeta = array_intersect_key(
                 $irrigation,
-                array_flip(['drain_target_percent', 'drain_ec_target', 'drain_ph_target', 'pulse_count_per_day', 'start_time', 'end_time'])
+                array_flip(['drain_target_percent', 'drain_ec_target', 'drain_ph_target', 'pulse_count_per_day', 'start_time', 'end_time', 'drain_to_waste'])
             );
             if (! empty($irrigationMeta)) {
                 $extensions['irrigation'] = $irrigationMeta;
@@ -2005,6 +2061,14 @@ class ExtendedRecipesCyclesSeeder extends Seeder
 
         if (! empty($phaseData['vpd_target_kpa'])) {
             $extensions['vpd_target_kpa'] = $phaseData['vpd_target_kpa'];
+        }
+
+        if (! empty($phaseData['solution_health']) && is_array($phaseData['solution_health'])) {
+            $extensions['solution_health'] = $phaseData['solution_health'];
+        }
+
+        if (! empty($phaseData['climate']) && is_array($phaseData['climate'])) {
+            $extensions['climate'] = $phaseData['climate'];
         }
 
         return empty($extensions) ? null : $extensions;

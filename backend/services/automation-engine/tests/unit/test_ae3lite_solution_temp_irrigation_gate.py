@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -18,8 +19,11 @@ from ae3lite.domain.services.irrigation_decision_controller import (
 )
 from ae3lite.domain.services.solution_temp_irrigation_guard import (
     DEFAULT_SOLUTION_TEMP_STALE_SEC,
+    REASON_SOLUTION_TEMP_HOT_STOP,
+    REASON_SOLUTION_TEMP_HOT_WARN,
     REASON_SOLUTION_TEMP_OUT_OF_BAND,
     REASON_SOLUTION_TEMP_UNAVAILABLE,
+    SOLUTION_TEMP_CHANNEL_LABELS,
     evaluate_solution_temp_hold,
 )
 from ae3lite.hydraulics.failure_report import close_upward_capture, drain_upward_reports, open_upward_capture
@@ -364,6 +368,8 @@ def test_builder_takes_limits_from_phase_columns_and_required_from_extensions() 
         "required": True,
         "min_c": 18.0,
         "max_c": 24.0,
+        "warn_c": None,
+        "stop_c": None,
         "breach_hold_sec": 900,
     }
     assert plan.solution_health.required is True
@@ -378,6 +384,8 @@ def test_builder_defaults_when_extension_and_limits_absent() -> None:
         "required": False,
         "min_c": None,
         "max_c": None,
+        "warn_c": None,
+        "stop_c": None,
         "breach_hold_sec": 600,
     }
 
@@ -403,4 +411,70 @@ def test_target_column_does_not_fill_empty_limits() -> None:
     assert health["required"] is True
     assert health["min_c"] == 18.0
     assert health["max_c"] is None
+    assert health["warn_c"] is None
+    assert health["stop_c"] is None
     assert health["breach_hold_sec"] == 600
+
+
+def _series(value: float) -> tuple[dict, ...]:
+    start = NOW - timedelta(seconds=HOLD_SEC)
+    return (
+        {"ts": start, "value": value},
+        {"ts": start + timedelta(seconds=HOLD_SEC // 2), "value": value},
+        {"ts": NOW, "value": value},
+    )
+
+
+@pytest.mark.asyncio
+async def test_hot_warn_continues_irrigation_and_raises_warning() -> None:
+    outcome, reports, repository, _monitor = await _run(
+        _Monitor(_reading(samples=_series(28.0), last={"ts": NOW, "value": 28.0})),
+        plan=_plan(max_c=22.0, warn_c=26.0, stop_c=32.0),
+    )
+
+    _assert_not_failed(outcome, repository)
+    assert outcome.next_stage == "irrigation_start"
+    assert repository.saved[0]["irrigation_decision_reason_code"] != REASON_SOLUTION_TEMP_HOT_STOP
+    assert [report.code for report in reports] == ["biz_solution_temp_hot_warn"]
+    assert reports[0].severity == "warning"
+
+
+@pytest.mark.asyncio
+async def test_hot_stop_skips_irrigation_and_raises_alarm() -> None:
+    outcome, reports, repository, _monitor = await _run(
+        _Monitor(_reading(samples=_series(33.0), last={"ts": NOW, "value": 33.0})),
+        plan=_plan(max_c=22.0, warn_c=26.0, stop_c=32.0),
+    )
+
+    _assert_not_failed(outcome, repository)
+    assert outcome.next_stage == "completed_skip"
+    assert repository.saved[0]["irrigation_decision_reason_code"] == REASON_SOLUTION_TEMP_HOT_STOP
+    assert [report.code for report in reports] == ["biz_solution_temp_hot_stop"]
+    assert reports[0].severity == "error"
+
+
+def test_warn_without_full_stop_window_does_not_block() -> None:
+    verdict = evaluate_solution_temp_hold(
+        min_c=MIN_C,
+        max_c=22.0,
+        warn_c=26.0,
+        stop_c=32.0,
+        hold_sec=HOLD_SEC,
+        stale_sec=DEFAULT_SOLUTION_TEMP_STALE_SEC,
+        now=NOW,
+        reading=_reading(samples=({"ts": NOW, "value": 33.0},), last={"ts": NOW, "value": 33.0}),
+    )
+    assert verdict is not None
+    assert verdict.reason_code == REASON_SOLUTION_TEMP_HOT_WARN
+    assert verdict.blocks_irrigation is False
+
+
+def test_firmware_solution_temp_channel_is_readable_by_the_gate() -> None:
+    assert "solution_temp_c" in SOLUTION_TEMP_CHANNEL_LABELS
+    firmware = (
+        Path(__file__).resolve().parents[5]
+        / "firmware/nodes/ph_node/main/ph_node_framework_integration.c"
+    ).read_text(encoding="utf-8")
+    assert '"solution_temp_c"' in firmware
+    assert "METRIC_TYPE_TEMPERATURE" in firmware
+    assert "sensor_unavailable" in firmware

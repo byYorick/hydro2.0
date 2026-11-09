@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import Annotated, Any, Literal, Mapping
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from ae3lite.config.schema.zone_correction import (
     Controllers,
@@ -306,7 +306,15 @@ class SolutionHealth(BaseModel):
     required: bool = False
     min_c: float | None = None
     max_c: float | None = None
+    warn_c: float | None = None
+    stop_c: float | None = None
     breach_hold_sec: Annotated[int, Field(ge=60, le=86400)] = 600
+
+    @model_validator(mode="after")
+    def warn_below_stop(self) -> "SolutionHealth":
+        if self.warn_c is not None and self.stop_c is not None and float(self.warn_c) >= float(self.stop_c):
+            raise ValueError("solution_health warn_c must be lower than stop_c")
+        return self
 
 
 class IrrigationRuntimeSlice(BaseModel):
