@@ -226,6 +226,14 @@ make i18n-catalog-check   # включает audit_phase4_i18n_coverage.py
 | `ae3_task_running_transition_failed` | `ae3_execution` | Не удалось перевести claimed→running | `Не удалось активировать задачу AE3 для выполнения.` |
 | `ae3_required_node_offline` | `ae3_execution` | Обязательный узел зоны offline (transient) | `Узел зоны недоступен (offline): {uid} ({type}).` |
 | `ae3_zone_lease_held` | `ae3_execution` | Operator/Laravel mutating-команда при активной `ae_zone_leases` (HL `409`, кроме `source=automation-engine` и fail-safe OFF) | `Зона занята автоматикой AE3. Дождитесь завершения задачи или переведите зону в manual.` |
+| `estop_active` | `manual_safety` | Ручная включающая команда при активном E-STOP любого узла зоны или операторском engage | `Аварийный стоп активен на зоне. Включающие команды отклонены до снятия E-STOP.` |
+| `node_offline` | `manual_safety` | Целевой узел ручной команды не в статусе `online` | `Узел не в сети. Команда не отправлена.` |
+| `dose_limit_exceeded` | `manual_safety` | Разовая доза выше `controllers.*.max_dose_ml` / `pump_calibration.max_dose_ms` | `Доза больше разового лимита контроллера.` |
+| `dose_below_min_dose_ms` | `manual_safety` | Длительность ниже `pump_calibration.min_dose_ms` | `Длительность дозы меньше минимального импульса насоса.` |
+| `dose_interval_active` | `manual_safety` | Повтор дозы раньше `controllers.*.min_interval_sec` | `Следующая доза этого контура ещё не разрешена.` |
+| `dose_window_limit_exceeded` | `manual_safety` | Сумма `ml` доз зоны за `MANUAL_DOSE_WINDOW_SEC` (default 3600) выше `max_dose_ml × max_*_correction_attempts` | `Суммарная доза зоны за окно превышает бюджет контроллера.` |
+| `manual_command_rate_limited` | `manual_safety` | Больше `MANUAL_COMMAND_RATE_PER_MINUTE` (default 30) включающих ручных команд на зону и пользователя | `Слишком много ручных команд в эту зону. Повторите позже.` |
+| `solution_level_interlock` | `manual_safety` | Старт полива/`pump_main` при `level_solution_min` ниже порога. Нет датчика — не блокирует | `Полив и насос раствора заблокированы: уровень раствора ниже минимума.` |
 | `ae3_zone_lease_lost` | `ae3_execution` | Lease зоны потеряна mid-run. `extend()==False` — немедленный сигнал, без трёх попыток на чужом владении | `Эксклюзивная блокировка зоны была потеряна, задача прервана.` |
 | `ae3_stale_claim_rejected` | `ae3_execution` | Stale writer увидел чужой `claimed_by` или другое `claim_generation` и не пишет outcome. Подстановка свежего owner запрещена | `Исполнитель потерял право записи этого захвата и не сохранил результат.` |
 | `greenhouse_climate_lease_lost` | `greenhouse_climate` | Renew greenhouse lease вернул false, исчерпал transient retry или владелец изменился перед outcome; следующие команды не публикуются, прежний tick не записывает state/terminal intent/task. `running` строки обрабатывает stale recovery | `Климатический контур потерял владение теплицей и остановил следующие команды.` |

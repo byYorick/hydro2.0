@@ -69,7 +69,7 @@ class DeviceNodeAccessConsistencyTest extends TestCase
     {
         $user = User::factory()->create(['role' => 'operator']);
         $zone = Zone::factory()->create();
-        $node = DeviceNode::factory()->create(['zone_id' => $zone->id]);
+        $node = DeviceNode::factory()->create(['zone_id' => $zone->id, 'status' => 'online']);
 
         $user->zones()->syncWithoutDetaching([$zone->id]);
 
@@ -96,7 +96,7 @@ class DeviceNodeAccessConsistencyTest extends TestCase
     public function test_agronomist_can_send_command_to_unassigned_node(): void
     {
         $user = User::factory()->create(['role' => 'agronomist']);
-        $node = DeviceNode::factory()->create(['zone_id' => null]);
+        $node = DeviceNode::factory()->create(['zone_id' => null, 'status' => 'online']);
 
         $this->mock(PythonBridgeService::class, function ($mock) use ($node): void {
             $mock->shouldReceive('sendNodeCommand')

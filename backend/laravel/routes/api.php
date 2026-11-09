@@ -3,19 +3,24 @@
 use App\Http\Controllers\AiController;
 use App\Http\Controllers\AlertController;
 use App\Http\Controllers\AlertStreamController;
+use App\Http\Controllers\Api\AlertWebhookController;
 use App\Http\Controllers\Api\GreenhouseClimateController;
+use App\Http\Controllers\Api\Internal\HistoryLoggerWebhookController;
+use App\Http\Controllers\Api\SiteWeatherStationController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\AutomationBundleController;
 use App\Http\Controllers\AutomationConfigController;
 use App\Http\Controllers\AutomationPresetController;
 use App\Http\Controllers\ChannelBindingController;
+use App\Http\Controllers\CommandStatusController;
 use App\Http\Controllers\E2EAuthController;
-use App\Http\Controllers\Api\SiteWeatherStationController;
 use App\Http\Controllers\GreenhouseController;
 use App\Http\Controllers\GreenhouseTypeController;
 use App\Http\Controllers\GrowCycleController;
 use App\Http\Controllers\GrowCyclePhaseConfigController;
 use App\Http\Controllers\InfrastructureInstanceController;
+use App\Http\Controllers\InternalApiController;
+use App\Http\Controllers\InternalRealtimeController;
 use App\Http\Controllers\LaunchFlow\LaunchFlowManifestController;
 use App\Http\Controllers\NodeChannelController;
 use App\Http\Controllers\NodeCommandController;
@@ -35,37 +40,41 @@ use App\Http\Controllers\ScheduleExecutionController;
 use App\Http\Controllers\ScheduleExecutionRetryController;
 use App\Http\Controllers\SchedulerMetricsController;
 use App\Http\Controllers\ScheduleWorkspaceController;
-use App\Http\Controllers\ZoneManualScheduleController;
 use App\Http\Controllers\SensorCalibrationController;
 use App\Http\Controllers\ServiceLogController;
 use App\Http\Controllers\SetupWizardController;
 use App\Http\Controllers\SimulationController;
 use App\Http\Controllers\SimulationEventController;
+use App\Http\Controllers\SubstrateController;
+use App\Http\Controllers\SyncController;
 use App\Http\Controllers\SystemController;
 use App\Http\Controllers\TelemetryController;
 use App\Http\Controllers\UnassignedNodeErrorController;
+use App\Http\Controllers\UserController;
 use App\Http\Controllers\ZoneAutomationControlModeController;
 use App\Http\Controllers\ZoneAutomationManualStepController;
+use App\Http\Controllers\ZoneAutomationOperatorUnblockController;
 use App\Http\Controllers\ZoneAutomationPresetController;
+use App\Http\Controllers\ZoneAutomationStartCycleController;
 use App\Http\Controllers\ZoneAutomationStartIrrigationController;
 use App\Http\Controllers\ZoneAutomationStartSolutionChangeController;
 use App\Http\Controllers\ZoneAutomationStartSolutionTopupController;
-use App\Http\Controllers\ZoneAutomationOperatorUnblockController;
-use App\Http\Controllers\ZoneAutomationStartCycleController;
 use App\Http\Controllers\ZoneAutomationStateController;
 use App\Http\Controllers\ZoneCommandController;
 use App\Http\Controllers\ZoneConfigModeController;
 use App\Http\Controllers\ZoneController;
 use App\Http\Controllers\ZoneCorrectionLiveEditController;
+use App\Http\Controllers\ZoneEstopController;
+use App\Http\Controllers\ZoneManualScheduleController;
 use App\Http\Controllers\ZonePidLogController;
 use App\Http\Controllers\ZonePumpCalibrationsController;
 use App\Http\Controllers\ZoneRelayAutotuneController;
+use App\Http\Middleware\AuthenticateWithApiToken;
+use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Http\Request;
+use Illuminate\Session\Middleware\StartSession;
 use Illuminate\Support\Facades\Route;
 
-// S1.7 (AUDIT_2026_05_28_BUGFIX_PLAN): throttle-значения теперь читаются из
-// config-слоя (`services.api.throttle_default` / `throttle_internal`), что
-// поддерживает `php artisan config:cache` в production.
 $apiThrottle = config('services.api.throttle_default', '120,1');
 $internalApiThrottle = config('services.api.throttle_internal', $apiThrottle);
 
@@ -82,9 +91,9 @@ Route::prefix('auth')->middleware('throttle:10,1')->group(function () {
 // (но не требуем аутентификацию - роут остается публичным)
 Route::get('system/health', [SystemController::class, 'health'])
     ->middleware([
-        \Illuminate\Cookie\Middleware\EncryptCookies::class,
-        \Illuminate\Session\Middleware\StartSession::class,
-        \App\Http\Middleware\AuthenticateWithApiToken::class, // Попытка аутентификации через токен (необязательно)
+        EncryptCookies::class,
+        StartSession::class,
+        AuthenticateWithApiToken::class, // Попытка аутентификации через токен (необязательно)
         'throttle:300,1',
     ]);
 Route::get('system/scheduler/metrics', SchedulerMetricsController::class)
@@ -117,9 +126,9 @@ if (app()->environment('testing', 'e2e')) {
             ],
         ]);
     })->middleware([
-        \Illuminate\Cookie\Middleware\EncryptCookies::class,
-        \Illuminate\Session\Middleware\StartSession::class,
-        \App\Http\Middleware\AuthenticateWithApiToken::class,
+        EncryptCookies::class,
+        StartSession::class,
+        AuthenticateWithApiToken::class,
         'throttle:60,1',
     ]);
 }
@@ -136,9 +145,9 @@ Route::middleware('throttle:120,1')->group(function () {
 // CSRF protection is handled globally in bootstrap/app.php with exceptions for token-based routes
 // Rate limiting: 60 requests per minute (default from bootstrap/app.php)
 Route::middleware([
-    \Illuminate\Cookie\Middleware\EncryptCookies::class,
-    \Illuminate\Session\Middleware\StartSession::class,
-    \App\Http\Middleware\AuthenticateWithApiToken::class,
+    EncryptCookies::class,
+    StartSession::class,
+    AuthenticateWithApiToken::class,
     // API routes should accept Sanctum bearer tokens (E2E / services) and also work for session-auth SPA if needed.
     'auth:sanctum',
     'throttle:'.$apiThrottle, // Увеличен лимит для тестов и множественных компонентов
@@ -156,6 +165,7 @@ Route::middleware([
     Route::get('zones/{zone}/commands', [ZoneController::class, 'commands']);
     Route::get('zones/{zone}/events', [ZoneController::class, 'events']);
     Route::get('zones/{zone}/snapshot', [ZoneController::class, 'snapshot']);
+    Route::get('zones/{zone}/estop', [ZoneEstopController::class, 'show']);
     Route::get('launch-flow/manifest', [LaunchFlowManifestController::class, 'show']);
     Route::get('automation-configs/{scopeType}/{scopeId}/{namespace}/history', [AutomationConfigController::class, 'history']);
     Route::get('automation-configs/{scopeType}/{scopeId}/{namespace}/history/{version}', [AutomationConfigController::class, 'showRevision'])->where('version', '[0-9]+');
@@ -193,8 +203,8 @@ Route::middleware([
     Route::get('recipes/{recipe}/active-usage', [RecipeController::class, 'activeUsage']);
     Route::get('nutrient-products', [NutrientProductController::class, 'index']);
     Route::get('nutrient-products/{nutrientProduct}', [NutrientProductController::class, 'show']);
-    Route::get('substrates', [\App\Http\Controllers\SubstrateController::class, 'index']);
-    Route::get('substrates/{substrate}', [\App\Http\Controllers\SubstrateController::class, 'show']);
+    Route::get('substrates', [SubstrateController::class, 'index']);
+    Route::get('substrates/{substrate}', [SubstrateController::class, 'show']);
     Route::get('presets', [PresetController::class, 'index']);
     Route::get('presets/{preset}', [PresetController::class, 'show']);
     Route::get('plant-taxonomies', [PlantController::class, 'taxonomies']);
@@ -295,9 +305,9 @@ Route::middleware([
         Route::delete('nutrient-products/{nutrientProduct}', [NutrientProductController::class, 'destroy']);
 
         // Substrates
-        Route::post('substrates', [\App\Http\Controllers\SubstrateController::class, 'store']);
-        Route::patch('substrates/{substrate}', [\App\Http\Controllers\SubstrateController::class, 'update']);
-        Route::delete('substrates/{substrate}', [\App\Http\Controllers\SubstrateController::class, 'destroy']);
+        Route::post('substrates', [SubstrateController::class, 'store']);
+        Route::patch('substrates/{substrate}', [SubstrateController::class, 'update']);
+        Route::delete('substrates/{substrate}', [SubstrateController::class, 'destroy']);
 
         // Recipe revisions
         Route::post('recipes/{recipe}/revisions', [RecipeRevisionController::class, 'store']);
@@ -317,6 +327,7 @@ Route::middleware([
 
         // Commands (operator+)
         Route::post('zones/{zone}/commands', [ZoneCommandController::class, 'store']);
+        Route::post('zones/{zone}/estop', [ZoneEstopController::class, 'store']);
         Route::post('nodes/{node}/commands', [NodeCommandController::class, 'store']);
 
         // PID Config (operator+)
@@ -371,17 +382,17 @@ Route::middleware([
     Route::get('telemetry/aggregates', [TelemetryController::class, 'aggregates']);
 
     // Sync endpoints for WebSocket reconnection (viewer+)
-    Route::get('sync/telemetry', [\App\Http\Controllers\SyncController::class, 'telemetry']);
-    Route::get('sync/commands', [\App\Http\Controllers\SyncController::class, 'commands']);
-    Route::get('sync/alerts', [\App\Http\Controllers\SyncController::class, 'alerts']);
-    Route::get('sync/full', [\App\Http\Controllers\SyncController::class, 'full']);
+    Route::get('sync/telemetry', [SyncController::class, 'telemetry']);
+    Route::get('sync/commands', [SyncController::class, 'commands']);
+    Route::get('sync/alerts', [SyncController::class, 'alerts']);
+    Route::get('sync/full', [SyncController::class, 'full']);
 
     // Service logs (admin/operator/engineer)
     Route::middleware(['role:admin,operator,engineer', 'throttle:60,1'])
         ->get('logs/service', [ServiceLogController::class, 'index']);
 
     // Commands status (viewer+)
-    Route::get('commands/{cmdId}/status', [\App\Http\Controllers\CommandStatusController::class, 'show']);
+    Route::get('commands/{cmdId}/status', [CommandStatusController::class, 'show']);
     Route::get('zones/{zone}/state', [ZoneAutomationStateController::class, 'show']);
     Route::get('zones/{zone}/control-mode', [ZoneAutomationControlModeController::class, 'show']);
     Route::post('zones/{zone}/control-mode', [ZoneAutomationControlModeController::class, 'update'])
@@ -443,7 +454,7 @@ Route::middleware([
     });
 
     // Users management (admin only)
-    Route::middleware('role:admin')->apiResource('users', \App\Http\Controllers\UserController::class);
+    Route::middleware('role:admin')->apiResource('users', UserController::class);
 });
 
 // Python ingest (token-based) - более высокий лимит для внутренних сервисов
@@ -458,10 +469,10 @@ Route::prefix('python')->middleware('throttle:'.$apiThrottle)->group(function ()
 
 // Internal API для Python сервисов (требует verify.python.service middleware)
 Route::prefix('internal')->middleware(['verify.python.service', 'throttle:'.$internalApiThrottle])->group(function () {
-    Route::post('effective-targets/batch', [\App\Http\Controllers\InternalApiController::class, 'getEffectiveTargetsBatch']);
-    Route::post('grow-cycles/{growCycle}/advance-phase', [\App\Http\Controllers\InternalApiController::class, 'advanceGrowCyclePhase']);
-    Route::post('grow-cycles/{growCycle}/harvest', [\App\Http\Controllers\InternalApiController::class, 'harvestGrowCycle']);
-    Route::post('realtime/telemetry-batch', [\App\Http\Controllers\InternalRealtimeController::class, 'telemetryBatch']);
+    Route::post('effective-targets/batch', [InternalApiController::class, 'getEffectiveTargetsBatch']);
+    Route::post('grow-cycles/{growCycle}/advance-phase', [InternalApiController::class, 'advanceGrowCyclePhase']);
+    Route::post('grow-cycles/{growCycle}/harvest', [InternalApiController::class, 'harvestGrowCycle']);
+    Route::post('realtime/telemetry-batch', [InternalRealtimeController::class, 'telemetryBatch']);
 });
 
 // Internal webhook от history-logger для live-обновлений cockpit causal chain.
@@ -471,7 +482,7 @@ Route::prefix('internal/webhooks')
     ->group(function () {
         Route::post(
             'history-logger/execution-event',
-            [\App\Http\Controllers\Api\Internal\HistoryLoggerWebhookController::class, 'executionEvent'],
+            [HistoryLoggerWebhookController::class, 'executionEvent'],
         );
     });
 
@@ -483,6 +494,6 @@ Route::middleware(['throttle:node_register', 'ip.whitelist'])->group(function ()
     Route::post('nodes/register', [NodeController::class, 'register']);
 
     // Alertmanager webhook (защищен секретом)
-    Route::post('alerts/webhook', [\App\Http\Controllers\Api\AlertWebhookController::class, 'webhook'])
+    Route::post('alerts/webhook', [AlertWebhookController::class, 'webhook'])
         ->middleware('verify.alertmanager.webhook');
 });

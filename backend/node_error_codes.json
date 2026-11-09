@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "updated_at": "2026-10-04T16:12:21Z",
+  "updated_at": "2026-11-09T15:51:28Z",
   "description": "Коды error_code из command_response ESP32 и MQTT (фаза 5). Source of truth для слоя узлов.",
   "codes": [
     {
@@ -92,6 +92,13 @@
       "title": "Некорректное состояние ESP",
       "message": "Узел в недопустимом состоянии для операции (ESP_ERR_INVALID_STATE).",
       "category": "diagnostics",
+      "layer": "firmware_mqtt"
+    },
+    {
+      "code": "estop_active",
+      "title": "Активен E-STOP",
+      "message": "Узел отклонил включающую команду: нажата аварийная кнопка E-STOP.",
+      "category": "irrigation",
       "layer": "firmware_mqtt"
     },
     {

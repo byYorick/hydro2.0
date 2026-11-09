@@ -73,6 +73,23 @@ class ZonePolicy
     }
 
     /**
+     * Включить зонный E-STOP. Те же роли, что и отправка команд.
+     */
+    public function engageEstop(User $user, Zone $zone): bool
+    {
+        return $this->sendCommand($user, $zone);
+    }
+
+    /**
+     * Снять зонный E-STOP. Домен прошивки отпускает защёлку кнопкой;
+     * API делает то же явным reset и не восстанавливает актуаторы.
+     */
+    public function releaseEstop(User $user, Zone $zone): bool
+    {
+        return $this->sendCommand($user, $zone);
+    }
+
+    /**
      * Determine whether the user can switch zone into config_mode='live'.
      *
      * Live mode allows hot-reloading zone.correction and recipe.phase

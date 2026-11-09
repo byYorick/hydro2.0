@@ -103,7 +103,7 @@ Breaking-change: обратная совместимость со старыми
 | POST | /api/grow-cycles/{id}/resume | auth:sanctum (agronomist) | Возобновление grow cycle |
 | POST | /api/grow-cycles/{id}/set-phase | auth:sanctum (agronomist) | Ручной переход фазы grow cycle |
 | POST | /api/grow-cycles/{id}/advance-phase | auth:sanctum (agronomist) | Переход на следующую фазу grow cycle |
-| POST | /api/zones/{id}/commands | auth:sanctum (operator/admin/agronomist/engineer) | Отправить команду зоне |
+| POST | /api/zones/{id}/commands | auth:sanctum (operator/admin/agronomist/engineer) | Отправить команду зоне. Ручные актуаторные команды отклоняются при E-STOP любого узла зоны (`409 estop_active`), превышении разовой или суммарной дозы (`422 dose_limit_exceeded` / `dose_window_limit_exceeded`), интервале между дозами (`409 dose_interval_active`), низком `level_solution_min` (`409 solution_level_interlock`), offline целевого `node_uid` (`409 node_offline`) и rate limit (`429 manual_command_rate_limited`). Отказ пишется в `system_logs` и `zone_events` `MANUAL_COMMAND_REJECTED` |
 | POST | /api/zones/{id}/start-irrigation | auth:sanctum (operator/admin/agronomist/engineer) | Канонический запуск AE3 irrigation workflow (`mode=normal|force`) |
 | POST | /api/zones/{id}/start-cycle | auth:sanctum (operator/admin/agronomist/engineer) | Публичный wake-up / start-cycle зоны (Laravel → AE `POST /zones/{id}/start-cycle`) |
 | POST | /api/zones/{id}/start-solution-topup | auth:sanctum (operator/admin/agronomist/engineer) | Запуск solution top-up workflow |
@@ -122,7 +122,9 @@ Breaking-change: обратная совместимость со старыми
 | PATCH | /api/zones/{id}/config-mode/extend | auth:sanctum (operator+) | Продлить live TTL |
 | GET | /api/zones/{id}/effective-targets | auth:sanctum | Effective targets зоны (UI/diagnostics; AE3 runtime читает SQL bundle) |
 | POST | /api/internal/effective-targets/batch | verify.python.service (Sanctum или service token) | Batch effective targets для диагностики; AE3 runtime читает SQL bundle |
-| GET | /api/zones/{id}/snapshot | auth:sanctum | Снимок зоны для UI/diagnostics |
+| GET | /api/zones/{id}/snapshot | auth:sanctum | Снимок зоны для UI/diagnostics. `data.tank_levels.solution_percent` / `clean_percent` / `buffer_percent` — уровень бака в процентах или `null`, если датчика нет. `data.estop.active` — защёлка E-STOP зоны |
+| GET | /api/zones/{id}/estop | auth:sanctum | Текущая защёлка E-STOP зоны (`data.estop.active/source/since/node_uid`) |
+| POST | /api/zones/{id}/estop | auth:sanctum (operator/admin/agronomist/engineer), Policy `engageEstop` / `releaseEstop` | `{"action":"engage"|"release","reason":string?}`. `release` требует `reason` ≥ 3 символов. Каждый вызов пишет audit в `system_logs` (кто, когда, зона, action, result). Engage не восстанавливает актуаторы при release |
 | GET | /api/zones/{id}/executions/{executionId} | auth:sanctum | Детали одного execution run по canonical `ae_tasks.id` |
 | GET | /api/zones/{id}/scheduler-diagnostics | auth:sanctum (admin/engineer) | Инженерный diagnostics path: dispatcher state + historical `scheduler_logs`, вне operator flow |
 | GET | /api/zones/{id}/telemetry/last | auth:sanctum | Последняя телеметрия |
@@ -239,7 +241,7 @@ Breaking-change: обратная совместимость со старыми
 |-------|------------------------------------|------|--------------------------------------------------|
 | GET | /api/nodes/{id}/telemetry/last | auth:sanctum | Последняя телеметрия по узлу |
 | GET | /api/nodes/{id}/config | auth:sanctum | Получить сохраненный NodeConfig (read-only) |
-| POST | /api/nodes/{id}/commands | auth:sanctum (operator/admin/agronomist/engineer) | Отправка низкоуровневых команд |
+| POST | /api/nodes/{id}/commands | auth:sanctum (operator/admin/agronomist/engineer) | Низкоуровневые команды. `cmd` и ключи `params` — allow-list (`dose`=`ml`, `run_pump`=`duration_ms`, `set_relay`/`set_state`, `set_pwm`, `set_position`, `calibrate`, `test_sensor`, `restart`, `state`); неизвестная команда или лишний параметр → 422. Узел не `online` → `409 node_offline`. Те же safety-коды, что у zone commands. Fail-safe OFF (`set_relay state=false`, `set_pwm duty=0`) разрешён при E-STOP и lease |
 | POST | /api/nodes/{id}/detach | auth:sanctum (operator+) | Detach/unbind узла от зоны (NodeConfig temp namespace) |
 | POST | /api/nodes/{id}/swap | auth:sanctum (operator+) | Замена узла (swap hardware) |
 | GET | /api/nodes/{id}/lifecycle/allowed-transitions | auth:sanctum | Допустимые lifecycle transitions |
