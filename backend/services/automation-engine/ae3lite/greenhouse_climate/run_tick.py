@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from statistics import median
 from typing import Any, Mapping
 
-from ae3lite.greenhouse_climate.decision_engine import compute_climate_decision
+from ae3lite.greenhouse_climate.decision_engine import compute_climate_decision, exhaust_fan_on
 from ae3lite.infrastructure.clients import HistoryLoggerClient
 from ae3lite.infrastructure.metrics import (
     GREENHOUSE_CLIMATE_COMMAND_FAILED_TOTAL,
@@ -621,6 +621,62 @@ async def _load_vents(greenhouse_id: int) -> dict[str, dict[str, Any]]:
     return out
 
 
+def _previous_exhaust_on(state: Mapping[str, Any]) -> bool:
+    raw = state.get("decision_factors")
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except json.JSONDecodeError:
+            return False
+    if isinstance(raw, dict):
+        return bool(raw.get("exhaust_on"))
+    return False
+
+
+def _execution_float(execution: Mapping[str, Any], key: str, default: float) -> float:
+    raw = execution.get(key)
+    if isinstance(raw, bool) or not isinstance(raw, (int, float)):
+        return default
+    return float(raw)
+
+
+async def _load_fans(greenhouse_id: int) -> list[dict[str, Any]]:
+    rows = await fetch(
+        """
+        SELECT nc.channel AS channel,
+               n.uid AS node_uid,
+               n.zone_id AS zone_id,
+               g.uid AS greenhouse_uid
+        FROM channel_bindings cb
+        JOIN infrastructure_instances ii ON ii.id = cb.infrastructure_instance_id
+        JOIN node_channels nc ON nc.id = cb.node_channel_id
+        JOIN nodes n ON n.id = nc.node_id
+        JOIN zones z ON z.id = n.zone_id
+        JOIN greenhouses g ON g.id = ii.owner_id
+        WHERE ii.owner_type = 'greenhouse'
+          AND ii.owner_id = $1
+          AND z.greenhouse_id = ii.owner_id
+          AND cb.direction = 'actuator'
+          AND cb.role = 'fan_actuator'
+          AND nc.is_active IS TRUE
+        """,
+        greenhouse_id,
+    )
+    fans: list[dict[str, Any]] = []
+    for row in rows or []:
+        channel = str(row.get("channel") or "")
+        node_uid = str(row.get("node_uid") or "")
+        zone_id = int(row.get("zone_id") or 0)
+        if channel and node_uid and zone_id > 0:
+            fans.append({
+                "channel": channel,
+                "node_uid": node_uid,
+                "zone_id": zone_id,
+                "greenhouse_uid": str(row.get("greenhouse_uid") or ""),
+            })
+    return fans
+
+
 async def _load_greenhouse_timezone(greenhouse_id: int) -> str:
     rows = await fetch(
         "SELECT timezone FROM greenhouses WHERE id = $1 LIMIT 1",
@@ -1100,6 +1156,18 @@ async def run_greenhouse_climate_tick(
             now_ts=now_ts,
             last_command_ts=last_cmd_ts,
         )
+        previous_exhaust_on = _previous_exhaust_on(state)
+        if control_mode == "auto" and not decision.suppress_commands:
+            exhaust_on = exhaust_fan_on(
+                temp_c=snap["inside_temp_median"],
+                sensor_fresh=bool(snap["inside_fresh"]),
+                currently_on=previous_exhaust_on,
+                on_c=_execution_float(execution, "exhaust_on_c", 25.0),
+                off_c=_execution_float(execution, "exhaust_off_c", 23.0),
+            )
+        else:
+            exhaust_on = previous_exhaust_on
+        decision.factors["exhaust_on"] = exhaust_on
         record_greenhouse_climate_crop_metrics(
             greenhouse_id=int(greenhouse_id),
             factors=decision.factors,
@@ -1246,6 +1314,35 @@ async def run_greenhouse_climate_tick(
                     command_failures.append(f"{channel}:{_LEASE_LOST_STATUS}")
                     stop_ordinary_commands = True
                     break
+
+        if (
+            control_mode == "auto"
+            and not decision.suppress_commands
+            and not stop_ordinary_commands
+            and bool(decision.factors.get("exhaust_on")) != previous_exhaust_on
+        ):
+            fans = await _load_fans(greenhouse_id)
+            fan_state = bool(decision.factors.get("exhaust_on"))
+            for fan in fans:
+                try:
+                    await history_logger_client.publish(
+                        greenhouse_uid=str(fan["greenhouse_uid"]),
+                        zone_id=int(fan["zone_id"]),
+                        node_uid=str(fan["node_uid"]),
+                        channel=str(fan["channel"]),
+                        cmd="set_relay",
+                        params={"state": fan_state, "reason": "exhaust_hysteresis"},
+                        cmd_id=f"ghc-{greenhouse_id}-{idempotency_key}-fan-{fan['channel']}-{int(fan_state)}",
+                    )
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    logger.warning(
+                        "greenhouse_climate_tick exhaust command failed gh=%s channel=%s",
+                        greenhouse_id,
+                        fan["channel"],
+                        exc_info=True,
+                    )
 
         model_left = int(decision.left_target_pct) if left_done else int(state.get("left_position_pct") or 0)
         model_right = int(decision.right_target_pct) if right_done else int(state.get("right_position_pct") or 0)

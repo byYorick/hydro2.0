@@ -21,7 +21,6 @@
 
 static const char *TAG = "climate_ctrl";
 
-#define CLIMATE_AIR_STALE_US (30LL * 1000000LL)
 #define CLIMATE_TICK_US 100000
 
 typedef struct {
@@ -37,14 +36,6 @@ typedef struct {
 
 static portMUX_TYPE s_mux = portMUX_INITIALIZER_UNLOCKED;
 static vent_hw_t s_vents[2];
-static exhaust_hyst_t s_fan;
-static climate_safe_mode_t s_safe_mode = CLIMATE_SAFE_VENTILATE_ABOVE;
-static float s_overheat_c = 32.0f;
-static float s_ventilate_above_c = 25.0f;
-static int s_failsafe_open_pct = 100;
-static bool s_air_valid = false;
-static float s_air_c = 0.0f;
-static int64_t s_air_us = 0;
 static bool s_ready = false;
 static esp_timer_handle_t s_timer = NULL;
 
@@ -71,12 +62,6 @@ static void load_policy(void)
     cJSON *block;
     cJSON *item;
 
-    s_fan.on_c = 25.0f;
-    s_fan.off_c = 23.0f;
-    s_overheat_c = 32.0f;
-    s_ventilate_above_c = 25.0f;
-    s_failsafe_open_pct = 100;
-    s_safe_mode = CLIMATE_SAFE_VENTILATE_ABOVE;
     if (config_storage_get_json(json, sizeof(json)) != ESP_OK) {
         return;
     }
@@ -89,49 +74,13 @@ static void load_policy(void)
         cJSON_Delete(root);
         return;
     }
-    item = cJSON_GetObjectItem(block, "exhaust_on_c");
-    if (cJSON_IsNumber(item)) {
-        s_fan.on_c = (float)cJSON_GetNumberValue(item);
-    }
-    item = cJSON_GetObjectItem(block, "exhaust_off_c");
-    if (cJSON_IsNumber(item)) {
-        s_fan.off_c = (float)cJSON_GetNumberValue(item);
-    }
-    item = cJSON_GetObjectItem(block, "overheat_c");
-    if (cJSON_IsNumber(item)) {
-        s_overheat_c = (float)cJSON_GetNumberValue(item);
-    }
-    item = cJSON_GetObjectItem(block, "ventilate_above_c");
-    if (cJSON_IsNumber(item)) {
-        s_ventilate_above_c = (float)cJSON_GetNumberValue(item);
-    }
-    item = cJSON_GetObjectItem(block, "failsafe_open_pct");
-    if (cJSON_IsNumber(item)) {
-        s_failsafe_open_pct = (int)cJSON_GetNumberValue(item);
-    }
     item = cJSON_GetObjectItem(block, "travel_full_ms");
     if (cJSON_IsNumber(item) && cJSON_GetNumberValue(item) > 0.0) {
         uint32_t travel = (uint32_t)cJSON_GetNumberValue(item);
         s_vents[0].drive.travel_full_ms = travel;
         s_vents[1].drive.travel_full_ms = travel;
     }
-    item = cJSON_GetObjectItem(block, "safe_mode");
-    if (cJSON_IsString(item) && strcmp(item->valuestring, "all_off") == 0) {
-        s_safe_mode = CLIMATE_SAFE_ALL_OFF;
-    }
     cJSON_Delete(root);
-}
-
-static bool air_is_fresh(float *temp_out)
-{
-    int64_t now = esp_timer_get_time();
-    if (!s_air_valid || (now - s_air_us) > CLIMATE_AIR_STALE_US || !isfinite(s_air_c)) {
-        return false;
-    }
-    if (temp_out != NULL) {
-        *temp_out = s_air_c;
-    }
-    return true;
 }
 
 static void set_motor_gpio(const vent_hw_t *vent, vent_motor_t motor)
@@ -216,12 +165,9 @@ static bool limit_closed(const vent_hw_t *vent)
 
 static void control_tick(void *arg)
 {
-    climate_fs_input_t in;
-    climate_fs_output_t out;
-    exhaust_level_t level;
-    float temp = 0.0f;
-    bool fresh;
     bool estop;
+    bool link_up;
+    bool stop_all;
     int i;
 
     (void)arg;
@@ -229,39 +175,19 @@ static void control_tick(void *arg)
         return;
     }
     estop = actuator_failsafe_is_latched();
-    fresh = air_is_fresh(&temp);
-    level = exhaust_hysteresis_step(&s_fan, fresh && !estop, temp);
-    in.estop = estop;
-    in.driver_ok = true;
-    in.sensor_valid = fresh;
-    in.temp_c = temp;
-    in.link_up = mqtt_manager_is_connected();
-    in.safe_mode = s_safe_mode;
-    in.ventilate_above_c = s_ventilate_above_c;
-    in.overheat_c = s_overheat_c;
-    in.failsafe_open_pct = s_failsafe_open_pct;
-    in.cool_close_c = s_fan.off_c;
-    climate_failsafe_decide(&in, level == EXHAUST_ON, &out);
-
+    link_up = mqtt_manager_is_connected();
+    stop_all = estop || !link_up;
     {
         bool closed[2] = {limit_closed(&s_vents[0]), limit_closed(&s_vents[1])};
         vent_motor_t motors[2] = {VENT_STOP, VENT_STOP};
 
         taskENTER_CRITICAL(&s_mux);
-        if (out.deenergize_all || estop) {
-            s_fan.fan_on = false;
+        if (stop_all) {
             for (i = 0; i < 2; i++) {
                 if (s_vents[i].response_pending) {
                     s_vents[i].failed = true;
                 }
                 vent_drive_halt(&s_vents[i].drive);
-            }
-        } else if (out.move_vents) {
-            for (i = 0; i < 2; i++) {
-                if (s_vents[i].response_pending) {
-                    s_vents[i].failed = true;
-                }
-                vent_drive_override(&s_vents[i].drive, out.vent_target_pct);
             }
         }
         for (i = 0; i < 2; i++) {
@@ -270,18 +196,13 @@ static void control_tick(void *arg)
             if (was && !s_vents[i].drive.moving && s_vents[i].response_pending) {
                 s_vents[i].failed = s_vents[i].failed || s_vents[i].drive.fault;
             }
-            motors[i] = s_vents[i].drive.motor;
+            motors[i] = stop_all ? VENT_STOP : s_vents[i].drive.motor;
         }
         taskEXIT_CRITICAL(&s_mux);
-
-        if (out.deenergize_all || estop) {
-            set_motor_gpio(&s_vents[0], VENT_STOP);
-            set_motor_gpio(&s_vents[1], VENT_STOP);
+        set_motor_gpio(&s_vents[0], motors[0]);
+        set_motor_gpio(&s_vents[1], motors[1]);
+        if (stop_all) {
             set_exhaust(false);
-        } else {
-            set_motor_gpio(&s_vents[0], motors[0]);
-            set_motor_gpio(&s_vents[1], motors[1]);
-            set_exhaust(out.exhaust_on);
         }
     }
 
@@ -494,17 +415,8 @@ esp_err_t climate_node_control_init(void)
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "E-STOP init failed: %s", esp_err_to_name(err));
     }
-    ESP_LOGI(TAG, "Climate control ready (vents + exhaust hysteresis)");
+    ESP_LOGI(TAG, "Climate vent executor ready; link-loss stops actuators");
     return ESP_OK;
-}
-
-void climate_node_control_set_air(bool valid, float temp_c)
-{
-    s_air_valid = valid && isfinite(temp_c);
-    if (s_air_valid) {
-        s_air_c = temp_c;
-    }
-    s_air_us = esp_timer_get_time();
 }
 
 void climate_node_control_apply_now(void)
@@ -516,9 +428,4 @@ void climate_node_control_apply_now(void)
 bool climate_node_control_estop_latched(void)
 {
     return actuator_failsafe_is_latched();
-}
-
-bool climate_node_control_ventilation_safe(void)
-{
-    return s_safe_mode == CLIMATE_SAFE_VENTILATE_ABOVE && !actuator_failsafe_is_latched();
 }

@@ -34,3 +34,5 @@ def test_shared_crimea_recipe_uses_compromise_chemistry_and_documented_bounds() 
     assert "консервативн" in block
     assert "AGRONOMY_CRIMEA" in block
     assert "RECIRC" not in block
+    assert "осмос" in block
+    assert "базовая EC около 0" in block

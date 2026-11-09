@@ -500,7 +500,6 @@ esp_err_t climate_node_publish_telemetry_callback(void *user_ctx) {
     esp_err_t sht_err = sht3x_read(&sht_reading);
     
     if (sht_err == ESP_OK && sht_reading.valid && isfinite(sht_reading.temperature)) {
-        climate_node_control_set_air(true, sht_reading.temperature);
         if (!mqtt_manager_is_connected()) {
             return ESP_OK;
         }
@@ -535,7 +534,6 @@ esp_err_t climate_node_publish_telemetry_callback(void *user_ctx) {
         }
     } else {
         esp_err_t report_err = (sht_err == ESP_OK) ? ESP_ERR_INVALID_RESPONSE : sht_err;
-        climate_node_control_set_air(false, 0.0f);
         ESP_LOGW(TAG, "Failed to read SHT3x: %s", esp_err_to_name(report_err));
         node_state_manager_report_error(ERROR_LEVEL_ERROR, "sht3x", report_err, "Failed to read SHT3x sensor");
     }
@@ -755,14 +753,7 @@ static esp_err_t climate_node_disable_actuators_in_safe_mode(void *user_ctx) {
                                  strcasecmp(kind, "FAN") == 0 ||
                                  strcasecmp(kind, "HEATER") == 0 ||
                                  strcasecmp(kind, "LED") == 0)) {
-                                const bool ventilation =
-                                    climate_node_control_ventilation_safe() &&
-                                    (strcasecmp(kind, "FAN") == 0 ||
-                                     strncmp(channel_name, "roof_vent", 9) == 0 ||
-                                     strncmp(channel_name, "fan", 3) == 0);
-                                if (!ventilation) {
-                                    relay_driver_set_state(channel_name, RELAY_STATE_OPEN);
-                                }
+                                relay_driver_set_state(channel_name, RELAY_STATE_OPEN);
                             }
                             
                             // Отключаем PWM (устанавливаем duty в 0%)

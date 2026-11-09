@@ -29,6 +29,30 @@ def _f(x: Any) -> float | None:
     return None
 
 
+def exhaust_fan_on(
+    *,
+    temp_c: float | None,
+    sensor_fresh: bool,
+    currently_on: bool,
+    on_c: float = 25.0,
+    off_c: float = 23.0,
+) -> bool:
+    """Гистерезис вытяжки. Нет свежего датчика — выключить, не угадывать жару.
+
+    Пороги по умолчанию: дневной стоп салата 25 °C и 2 °C гистерезиса.
+    Ширина гистерезиса в AGRONOMY_CRIMEA не задана.
+    """
+    if not sensor_fresh or temp_c is None or not math.isfinite(temp_c):
+        return False
+    if not (on_c > off_c):
+        return False
+    if temp_c >= on_c:
+        return True
+    if temp_c <= off_c:
+        return False
+    return bool(currently_on)
+
+
 def _num(x: Any, default: float) -> float:
     """Явный 0 остаётся 0. Дефолт только когда поля нет или оно не число."""
     parsed = _f(x)

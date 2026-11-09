@@ -1,4 +1,4 @@
-from ae3lite.greenhouse_climate.decision_engine import compute_climate_decision
+from ae3lite.greenhouse_climate.decision_engine import compute_climate_decision, exhaust_fan_on
 from ae3lite.greenhouse_climate import run_tick
 from datetime import datetime, timedelta, timezone
 
@@ -841,3 +841,13 @@ def test_explicit_zero_overheat_threshold_is_not_replaced() -> None:
         last_command_ts=None,
     )
     assert decision.emergency_overheat is True
+
+
+def test_exhaust_hysteresis_holds_between_thresholds_and_stops_without_sensor() -> None:
+    assert exhaust_fan_on(temp_c=22.0, sensor_fresh=True, currently_on=False) is False
+    assert exhaust_fan_on(temp_c=24.0, sensor_fresh=True, currently_on=False) is False
+    assert exhaust_fan_on(temp_c=25.0, sensor_fresh=True, currently_on=False) is True
+    assert exhaust_fan_on(temp_c=24.0, sensor_fresh=True, currently_on=True) is True
+    assert exhaust_fan_on(temp_c=23.0, sensor_fresh=True, currently_on=True) is False
+    assert exhaust_fan_on(temp_c=40.0, sensor_fresh=False, currently_on=True) is False
+    assert exhaust_fan_on(temp_c=None, sensor_fresh=True, currently_on=True) is False
