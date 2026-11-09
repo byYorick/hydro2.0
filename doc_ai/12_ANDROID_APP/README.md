@@ -30,9 +30,12 @@ Breaking-change: обратная совместимость со старыми
 #### [ANDROID_APP_API_INTEGRATION.md](ANDROID_APP_API_INTEGRATION.md)
 **Интеграция с API**
 - REST API интеграция
-- WebSocket интеграция
+- REST polling и ограничения WebSocket-заготовки
 - Аутентификация
 - Обработка ошибок
+
+#### [ANDROID_GROW_CYCLE_UI.md](ANDROID_GROW_CYCLE_UI.md)
+Граница текущего operator UI и backend grow-cycle API; отдельный lifecycle/editor flow в Android не подключён.
 
 ---
 

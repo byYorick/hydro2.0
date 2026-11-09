@@ -7,7 +7,7 @@
 
 **Версия:** 1.1  
 **Дата:** 2026-07-08  
-**Статус:** добавлен контур `solution_topup` (этап B, AGRO_AUTONOMY_MASTER_PLAN)
+**Статус:** действующий контур `solution_topup`
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 Breaking-change: обратная совместимость со старыми форматами и алиасами не поддерживается.
@@ -398,7 +398,7 @@ UI должен показывать:
 
 # 19. Контур автодолива бака раствора (`solution_topup`)
 
-> **Этап B** из `doc_ai/AGRO_AUTONOMY_MASTER_PLAN.md`.  
+> **Контур автодолива `solution_topup`.**
 > Цель: в фазе роста (`workflow_phase='ready'`) автоматически восполнять бак раствора
 > при падении уровня ниже `level_solution_max`, не дожидаясь критического `level_solution_min`.
 

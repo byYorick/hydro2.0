@@ -1,5 +1,6 @@
 """Validate Compose schemas with generated test values, without starting services."""
 import os
+import json
 from pathlib import Path
 import re
 import secrets
@@ -30,6 +31,30 @@ class ComposeConfigsTest(unittest.TestCase):
                         '-f', str(ROOT / name), 'config', '--quiet',
                     ], env=env, capture_output=True, text=True, timeout=30)
                     self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_application_backup_sources_are_read_only_without_docker_socket(self):
+        env = os.environ.copy()
+        files = ['backend/docker-compose.dev.yml', 'backend/docker-compose.prod.yml']
+        for name in files:
+            for key in re.findall(r'\$\{([A-Z][A-Z0-9_]*):\?', (ROOT / name).read_text()):
+                env[key] = secrets.token_hex(32)
+        with tempfile.NamedTemporaryFile() as empty_env:
+            for name in files:
+                with self.subTest(compose=name):
+                    result = subprocess.run([
+                        'docker', 'compose', '--env-file', empty_env.name,
+                        '-f', str(ROOT / name), 'config', '--format', 'json',
+                    ], env=env, capture_output=True, text=True, timeout=30)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    laravel = json.loads(result.stdout)['services']['laravel']
+                    mounts = {volume['target']: volume for volume in laravel['volumes']}
+                    for target in ['/scripts/backup', '/backup-sources/services',
+                                   '/backup-sources/configs', '/backup-sources/compose.env',
+                                   '/backup-sources/docker-compose.yml']:
+                        self.assertIn(target, mounts)
+                        self.assertTrue(mounts[target]['read_only'])
+                    self.assertNotIn('/var/run/docker.sock', mounts)
+                    self.assertEqual(laravel['environment']['BACKUP_SOURCE_ROOT'], '/backup-sources')
 
 
 if __name__ == '__main__':

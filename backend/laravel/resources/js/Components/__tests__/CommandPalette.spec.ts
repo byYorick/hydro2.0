@@ -60,6 +60,16 @@ describe('CommandPalette (P3-1)', () => {
     expect((wrapper.vm as any).open).toBe(true)
   })
 
+  it('открывается из шапки через отдельный метод, сохраняя состояние открытости', async () => {
+    const wrapper = mount(CommandPalette)
+    wrapper.vm.openPalette()
+    await nextTick()
+
+    expect(wrapper.find('input').exists()).toBe(true)
+    expect((wrapper.vm as any).open).toBe(true)
+    wrapper.unmount()
+  })
+
   it('closes on Escape key', async () => {
     const wrapper = mount(CommandPalette)
     

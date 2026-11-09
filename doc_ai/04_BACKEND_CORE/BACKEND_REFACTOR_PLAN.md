@@ -1,7 +1,0 @@
-# BACKEND_REFACTOR_PLAN.md
-
-**Статус:** `archive` (перенесён)
-
-Полный текст: [`../00_ARCHIVE/PLANS/BACKEND_REFACTOR_PLAN.md`](../00_ARCHIVE/PLANS/BACKEND_REFACTOR_PLAN.md)
-
-**Актуальный SoT:** [`BACKEND_ARCH_FULL.md`](BACKEND_ARCH_FULL.md), [`PYTHON_SERVICES_ARCH.md`](PYTHON_SERVICES_ARCH.md).

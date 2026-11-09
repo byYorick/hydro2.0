@@ -243,6 +243,54 @@ async def test_trigger_maps_task_create_precondition_failure(monkeypatch: pytest
 
 
 @pytest.mark.asyncio
+async def test_trigger_requeues_claimed_intent_when_create_races_with_busy_zone(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fetch_fn(query: str, *args: object):
+        if "FROM zones z" in query:
+            return [{"automation_runtime": "ae3", "workflow_phase": "ready"}]
+        if "FROM ae_tasks" in query:
+            return []
+        return []
+
+    monkeypatch.setattr(
+        "ae3lite.application.use_cases.trigger_solution_topup_from_level_event.load_zone_level_monitor_config",
+        AsyncMock(return_value={
+            "solution_min_sensor_labels": ("level_solution_min",),
+            "solution_max_sensor_labels": ("level_solution_max",),
+            "level_switch_on_threshold": 0.5,
+            "telemetry_max_age_sec": 60,
+        }),
+    )
+    runtime_monitor = AsyncMock()
+    runtime_monitor.read_level_switch = AsyncMock(side_effect=[
+        {"is_triggered": True, "has_level": True},
+        {"is_triggered": False, "has_level": True},
+    ])
+    intent_repo = AsyncMock()
+    intent_repo.upsert_solution_topup_intent.return_value = 91
+    intent_repo.claim_pending_intent_by_id.return_value = {
+        "decision": "claimed",
+        "intent": {"id": 91, "zone_id": 5, "task_type": "solution_topup",
+                   "topology": "two_tank_drip_substrate_trays"},
+    }
+    create_task = AsyncMock()
+    create_task.run.side_effect = TaskCreateError("start_cycle_zone_busy", "busy")
+    use_case = TriggerSolutionTopupFromLevelEventUseCase(
+        zone_intent_repository=intent_repo,
+        create_task_from_intent_use_case=create_task,
+        runtime_monitor=runtime_monitor,
+        fetch_fn=fetch_fn,
+    )
+    result = await use_case.run(zone_id=5, event_data=_level_event(), now=NOW)
+    assert result["reason"] == "zone_busy"
+    intent_repo.requeue_claimed_intent.assert_awaited_once_with(
+        intent_id=91, now=NOW.replace(tzinfo=None),
+    )
+    intent_repo.mark_terminal.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_trigger_skips_when_solution_topup_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
     async def fetch_fn(query: str, *args: object):
         if "FROM zones z" in query:

@@ -579,15 +579,21 @@ describe('Devices/Show.vue', () => {
     expect(text).toBeTruthy()
   })
 
-  it('показывает каналы и метаданные раньше калибровки и графиков', () => {
-    const wrapper = mount(DevicesShow)
+  it('разделяет состояние, каналы и измерения без потери контекста узла', async () => {
+    window.history.replaceState({}, '', '/')
+    const wrapper = mount(DevicesShow, { attachTo: document.body })
     expect(wrapper.get('h1').text()).toContain('node-ph-1')
-    expect(wrapper.text()).toContain('Каналы')
-    expect(wrapper.text()).not.toContain('Channels')
-    const ids = ['device-meta', 'device-channels', 'device-ph-calibration', 'device-charts', 'device-nodeconfig']
-      .map((id) => wrapper.html().indexOf(`data-testid="${id}"`))
-    expect(ids[0]).toBeGreaterThan(-1)
-    expect(ids.every((pos, i) => i === 0 || pos > ids[i - 1])).toBe(true)
+    expect(wrapper.get('[data-testid="device-meta"]').isVisible()).toBe(true)
+    expect(wrapper.get('[data-testid="device-channels"]').isVisible()).toBe(false)
+    await wrapper.findAll('nav button').find(button => button.text() === 'Каналы')!.trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="device-channels"]').isVisible()).toBe(true)
+    expect(wrapper.get('[data-testid="device-meta"]').isVisible()).toBe(false)
+    await wrapper.findAll('nav button').find(button => button.text() === 'Измерения')!.trigger('click')
+    expect(wrapper.find('[data-testid="device-charts"]').exists()).toBe(true)
+    expect(wrapper.get('h1').text()).toContain('node-ph-1')
+    wrapper.unmount()
+    window.history.replaceState({}, '', '/')
   })
 
   it('скрывает raw NodeConfig у оператора и показывает человеческий статус калибровки', async () => {

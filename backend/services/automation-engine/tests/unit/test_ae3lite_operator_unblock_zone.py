@@ -43,7 +43,15 @@ class _TaskRepo:
         self.fail_calls.append(
             {"task_id": task_id, "error_code": error_code, "error_message": error_message, "now": now}
         )
-        return self._active
+        failed = self._active
+        self._active = None
+        return failed
+
+    async def fail_pending_or_active_for_recovery(self, *, task_id, error_code, error_message, now, claim_generation=0):
+        self.fail_calls.append({"task_id": task_id, "error_code": error_code, "error_message": error_message, "now": now})
+        failed = self._active
+        self._active = None
+        return failed
 
 
 async def test_operator_unblock_idle_zone_resets_workflow(monkeypatch) -> None:
@@ -115,3 +123,40 @@ async def test_operator_unblock_fails_active_task_after_fail_safe(monkeypatch) -
     lease.release_if_owner_or_expired.assert_awaited()
     assert intents.mark_terminal.await_count == 2
     pid.reset_no_effect_counts.assert_awaited()
+
+
+async def test_operator_unblock_terminalizes_pending_task_before_reset(monkeypatch) -> None:
+    monkeypatch.setattr("ae3lite.application.use_cases.operator_unblock_zone.create_zone_event", AsyncMock())
+    monkeypatch.setattr(
+        "ae3lite.application.services.correction_interrupt_safety.load_irrig_fail_safe_actuators",
+        AsyncMock(return_value=()),
+    )
+    pending = SimpleNamespace(id=81, zone_id=9, status="pending", claimed_by=None,
+                              claim_generation=0, intent_id=21, topology="two_tank", current_stage="startup")
+    task_repo = _TaskRepo(pending)
+    wf_repo = _WorkflowRepo(SimpleNamespace(workflow_phase="ready", payload={}, scheduler_task_id=None))
+    result = await OperatorUnblockZoneUseCase(
+        task_repository=task_repo, workflow_repository=wf_repo,
+        command_gateway=SimpleNamespace(run_publish_only_batch=AsyncMock()),
+        fetch_fn=AsyncMock(return_value=[]),
+    ).run(zone_id=9, now=NOW)
+    assert result["failed_task_id"] == 81
+    assert task_repo.fail_calls[0]["error_code"] == ErrorCodes.OPERATOR_UNBLOCKED
+    assert wf_repo.upserts[0]["workflow_phase"] == "idle"
+
+
+async def test_operator_unblock_does_not_reset_workflow_on_cas_miss(monkeypatch) -> None:
+    import pytest
+    monkeypatch.setattr("ae3lite.application.services.correction_interrupt_safety.load_irrig_fail_safe_actuators",
+                        AsyncMock(return_value=()))
+    pending = SimpleNamespace(id=82, zone_id=9, status="pending", claimed_by=None,
+                              claim_generation=0, intent_id=22, topology="two_tank", current_stage="startup")
+    task_repo = _TaskRepo(pending)
+    task_repo.fail_pending_or_active_for_recovery = AsyncMock(return_value=None)
+    wf_repo = _WorkflowRepo(SimpleNamespace(workflow_phase="ready", payload={}, scheduler_task_id=None))
+    with pytest.raises(RuntimeError, match="operator_unblock_task_transition_failed"):
+        await OperatorUnblockZoneUseCase(
+            task_repository=task_repo, workflow_repository=wf_repo,
+            command_gateway=SimpleNamespace(run_publish_only_batch=AsyncMock()),
+        ).run(zone_id=9, now=NOW)
+    assert wf_repo.upserts == []

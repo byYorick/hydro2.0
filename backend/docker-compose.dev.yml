@@ -203,6 +203,10 @@ services:
       - FPM_PM_MIN_SPARE_SERVERS=2
       - FPM_PM_MAX_SPARE_SERVERS=6
       - FPM_MAX_REQUESTS=500
+      - BACKUP_DIR=/backups
+      - BACKUP_SOURCE_ROOT=/backup-sources
+      - BACKUP_ENV_FILE=/backup-sources/compose.env
+      - BACKUP_COMPOSE_FILE=/backup-sources/docker-compose.yml
     volumes:
       - ./laravel:/app
       - ./api_error_raw_translations.json:/app/api_error_raw_translations.json:ro
@@ -212,6 +216,11 @@ services:
       # RW: AutomationReadModelSchemaTest дампит schemas/automation_read_model_schema.json.
       - ../schemas:/schemas
       - backups_data:/backups
+      - ./scripts/backup:/scripts/backup:ro
+      - ./services:/backup-sources/services:ro
+      - ./configs:/backup-sources/configs:ro
+      - ./.env:/backup-sources/compose.env:ro
+      - ./docker-compose.dev.yml:/backup-sources/docker-compose.yml:ro
     ports:
       - "8080:80"
       - "5173:5173"
@@ -635,7 +644,7 @@ services:
     restart: unless-stopped
 
   # ML Phase 2 — единственный writer в zone_features_5m / ml_labels /
-  # dose_response_events. Подробности: doc_ai/09_AI_AND_DIGITAL_TWIN/ML_FEATURE_PIPELINE.md §6.
+  # dose_response_events. Текущий статус skeleton: backend/services/feature-builder/README.md.
   feature-builder:
     build:
       context: ./services

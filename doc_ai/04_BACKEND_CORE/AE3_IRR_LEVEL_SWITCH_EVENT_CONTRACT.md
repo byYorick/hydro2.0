@@ -433,4 +433,4 @@ AE3 и backend обязаны исходить из at-least-once модели �
 - `../05_DATA_AND_STORAGE/DATA_MODEL_REFERENCE.md`
 - `../02_HARDWARE_FIRMWARE/STORAGE_IRRIGATION_NODE_PROD_SPEC.md`
 - `../06_DOMAIN_ZONES_RECIPES/WATER_FLOW_ENGINE.md` (§19 `solution_topup`)
-- `AGRO_AUTONOMY_MASTER_PLAN.md` (этап B)
+- `../06_DOMAIN_ZONES_RECIPES/WATER_FLOW_ENGINE.md` — действующий водный контур

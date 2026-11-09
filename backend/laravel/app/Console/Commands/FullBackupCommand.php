@@ -19,7 +19,7 @@ class FullBackupCommand extends Command
         $this->info('Создание полного бэкапа системы');
         $this->info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
-        $scriptDir = base_path('../scripts/backup');
+        $scriptDir = config('backup.script_directory');
         $fullBackupScript = $scriptDir.'/full_backup.sh';
 
         // Проверка существования скрипта
@@ -30,13 +30,28 @@ class FullBackupCommand extends Command
         }
 
         // Подготовка переменных окружения
-        $backupDir = env('BACKUP_DIR', '/backups');
+        $backupDir = config('backup.directory');
+        $skipDocker = $this->option('skip-docker') || ! config('backup.include_docker_volumes');
         $env = [
             'BACKUP_DIR' => $backupDir,
+            'LARAVEL_DIR' => base_path(),
+            'SERVICES_DIR' => config('backup.services_directory'),
+            'MQTT_CONFIG_DIR' => config('backup.mqtt_directory'),
+            'CONFIGS_DIR' => config('backup.configs_directory'),
+            'DEPLOY_ENV_FILE' => config('backup.env_file'),
+            'DEPLOY_COMPOSE_FILE' => config('backup.compose_file'),
+            'ACTIVE_APP_KEY' => config('app.key'),
+            'DB_HOST' => config('database.connections.pgsql.host'),
+            'DB_PORT' => (string) config('database.connections.pgsql.port'),
+            'DB_NAME' => config('database.connections.pgsql.database'),
+            'DB_USER' => config('database.connections.pgsql.username'),
+            'DB_PASSWORD' => config('database.connections.pgsql.password'),
+            'SKIP_DOCKER' => $skipDocker ? '1' : '0',
+            'SKIP_MQTT' => $this->option('skip-mqtt') ? '1' : '0',
         ];
 
         // Добавление опций в переменные окружения
-        if ($this->option('skip-docker')) {
+        if ($skipDocker) {
             $this->warn('Пропуск бэкапа Docker volumes');
         }
 
@@ -51,7 +66,7 @@ class FullBackupCommand extends Command
         $process = Process::path(base_path('..'))
             ->env($env)
             ->timeout(3600) // 1 час таймаут
-            ->run("bash {$fullBackupScript}");
+            ->run(['bash', $fullBackupScript]);
 
         if ($process->successful()) {
             $output = $process->output();

@@ -64,9 +64,21 @@
       </div>
     </div>
 
+    <DeviceWorkspaceOverview
+      v-model:view="deviceView"
+      :tabs="deviceViewTabs"
+      :zone-id="linkedZoneId"
+      :status-label="formatDeviceStatus(device.status)"
+      :last-packet-label="formatNodeDate(device.last_heartbeat_at || device.last_seen_at) || 'время неизвестно'"
+      :fresh-sensor-count="freshSensorCount"
+      :sensor-count="sensorChannels.length"
+      :calibration-label="sensorCalibStatusLoading ? 'Загрузка…' : phSensorCalibrationItems.length ? phSensorCalibrationItems.every(item => item.calibration_status === 'ok') ? 'Действительна' : 'Требует проверки' : 'Нет сводки'"
+      :calibration-in-zone="!showPhSensorCalibrationSection"
+    />
     <!-- Визуализация связи с зоной -->
     <Card
       v-if="hasZoneAssignment"
+      v-show="deviceView === 'state'"
       class="mb-3"
       data-testid="device-zone-health"
     >
@@ -125,6 +137,7 @@
     </Card>
     <Card
       v-else
+      v-show="deviceView === 'state'"
       class="mb-3 border-[color:var(--badge-warning-border)] bg-[color:var(--badge-warning-bg)]"
       data-testid="device-zone-health"
     >
@@ -153,6 +166,7 @@
     </Card>
 
     <Card
+      v-show="deviceView === 'state'"
       class="mb-3"
       data-testid="device-meta"
     >
@@ -197,6 +211,7 @@
     </Card>
 
     <Card
+      v-show="deviceView === 'channels'"
       class="mb-3"
       data-testid="device-channels"
     >
@@ -235,6 +250,7 @@
 
     <Card
       v-if="showPhSensorCalibrationSection"
+      v-show="deviceView === 'calibration'"
       class="mb-3"
       data-testid="device-ph-calibration"
     >
@@ -339,7 +355,7 @@
     />
 
     <div
-      v-if="sensorChannels.length > 0"
+      v-if="sensorChannels.length > 0 && deviceView === 'telemetry'"
       class="mb-3 space-y-3"
       data-testid="device-charts"
     >
@@ -372,6 +388,7 @@
 
     <Card
       v-if="canDiagnose"
+      v-show="deviceView === 'config'"
       class="mb-3"
       data-testid="device-nodeconfig"
     >
@@ -435,6 +452,7 @@ import Button from '@/Components/Button.vue'
 import ConfirmModal from '@/Components/ConfirmModal.vue'
 import NodeLifecycleBadge from '@/Components/NodeLifecycleBadge.vue'
 import DeviceChannelsTable from '@/Pages/Devices/DeviceChannelsTable.vue'
+import DeviceWorkspaceOverview from './DeviceWorkspaceOverview.vue'
 import MultiSeriesTelemetryChart from '@/Components/MultiSeriesTelemetryChart.vue'
 import SensorCalibrationDrawer from '@/Components/Launch/Calibration/SensorCalibrationDrawer.vue'
 import type { BadgeVariant } from '@/Components/Badge.vue'
@@ -450,9 +468,10 @@ import { useDeviceCommandActions } from '@/composables/useDeviceCommandActions'
 import type { Device, DeviceChannel } from '@/types'
 import type { SensorCalibrationOverview, SensorCalibrationSessionOutcome } from '@/types/SensorCalibration'
 import { formatPendingBindAge } from '@/composables/useNodeLifecycle'
-import { translateStatus, translateDeviceType } from '@/utils/i18n'
+import { translateDeviceType } from '@/utils/i18n'
 import { formatTime } from '@/utils/formatTime'
 import { useRole } from '@/composables/useRole'
+import { useDeviceWorkspace, formatDeviceStatus } from '@/composables/useDeviceWorkspace'
 
 interface PageProps {
   device?: Device
@@ -536,14 +555,6 @@ function formatUptime(seconds?: number | null): string | null {
     return `${hours}ч ${minutes}м`
   }
   return `${minutes}м`
-}
-
-function formatDeviceStatus(status?: string | null): string {
-  const key = String(status || 'unknown').trim().toUpperCase()
-  if (!key || key === 'UNKNOWN') {
-    return 'Неизвестно'
-  }
-  return translateStatus(key)
 }
 
 function formatHeap(bytes?: number | null): string | null {
@@ -702,7 +713,8 @@ function formatCalibrationDate(iso: string): string {
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleString('ru-RU')
 }
 
-function openPhSensorCalibrationDrawer(channelId: number | null): void {
+async function openPhSensorCalibrationDrawer(channelId: number | null): Promise<void> {
+  await loadPhSensorCalibrationStatus()
   phCalibrationInitialChannelId.value = channelId
   phSensorCalibrationDrawerOpen.value = true
 }
@@ -740,6 +752,11 @@ const {
 // Графики телеметрии
 const chartTimeRange = ref<'1H' | '24H' | '7D' | '30D' | 'ALL'>('24H')
 const chartDataByChannel = ref<Record<string, Array<{ ts: number; value: number }>>>({})
+const { deviceViewTabs, deviceView, freshSensorCount } = useDeviceWorkspace({
+  canDiagnose,
+  channels: () => sensorChannels.value,
+  series: chartDataByChannel,
+})
 
 // Приоритеты метрик для сортировки (меньше = выше приоритет)
 const METRIC_PRIORITY: Record<string, number> = {

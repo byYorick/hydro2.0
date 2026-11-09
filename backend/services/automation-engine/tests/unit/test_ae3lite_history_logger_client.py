@@ -300,3 +300,34 @@ async def test_history_logger_client_breaker_opens_and_fast_fails_without_http()
     finally:
         await client.aclose()
 
+
+@pytest.mark.asyncio
+async def test_half_open_4xx_does_not_block_later_valid_commands() -> None:
+    now = {"value": 1000.0}
+    responses = [503, 400, 200]
+    attempts = 0
+
+    async def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        status = responses.pop(0)
+        if status == 200:
+            return httpx.Response(200, json={"data": {"command_id": "valid-next-command"}})
+        return httpx.Response(status, json={"detail": "bad request"})
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    gateway = HistoryLoggerClient(
+        client=client, max_retries=0, breaker_fail_threshold=1,
+        breaker_open_sec=15.0, now_fn=lambda: now["value"],
+    )
+    try:
+        with pytest.raises(CommandPublishError):
+            await gateway.publish(**_publish_kwargs())
+        now["value"] += 16.0
+        with pytest.raises(CommandPublishError, match="bad request"):
+            await gateway.publish(**_publish_kwargs())
+        assert await gateway.publish(**_publish_kwargs()) == "valid-next-command"
+        assert attempts == 3
+    finally:
+        await client.aclose()
+

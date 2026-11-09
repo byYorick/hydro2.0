@@ -5,6 +5,7 @@ idf_component_register(
         "node_config_utils.c"
         "node_command_handler.c"
         "node_telemetry_engine.c"
+        "node_metric_type.c"
         "node_state_manager.c"
         "node_watchdog.c"
         "node_link_loss_failsafe.c"

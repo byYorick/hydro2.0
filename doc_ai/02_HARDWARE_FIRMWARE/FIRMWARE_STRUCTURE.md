@@ -157,7 +157,7 @@ NodeConfig хранится в NVS и включает:
 - `run_pump` (timed pump on);
 - `dose` (peristaltic pump, `params.ml`);
 - `set_relay` (вкл/выкл; для IRR — также timed-start с `timeout_ms+stage`);
-- `set_pwm` (climate/light dimming);
+- `set_pwm` (`climate_node`, `params.duty` в процентах; legacy `value` сохранён; у sensor-only `light_node` обработчика нет);
 - `set_position` (drive/roof vent, `params.position_pct`);
 - `calibrate` (sensor calibration, stage-based);
 - `test_sensor` (разовое чтение);

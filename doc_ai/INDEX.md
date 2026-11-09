@@ -1,295 +1,62 @@
-# Индекс документации hydro 2.0
-
-**Версия:** 2.5  
-**Дата обновления:** 2026-11-01
-
-Точка входа — четыре документа (остальное — по слою задачи, не «прочитать всё»):
-
-1. **этот INDEX** — карта разделов
-2. [SYSTEM_ARCH_FULL.md](SYSTEM_ARCH_FULL.md) — архитектура (`canonical`)
-3. [ARCHITECTURE_FLOWS.md](ARCHITECTURE_FLOWS.md) — пайплайны и инварианты (`canonical`)
-4. [DEV_CONVENTIONS.md](DEV_CONVENTIONS.md) — конвенции (`canonical`)
-
-Правила агентов: корневой `AGENTS.md`. Формула SoT — там и в `DEV_CONVENTIONS.md` (не дублировать): runtime = код; защищённые контракты — `doc_ai/`.
-
-Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.  
-Breaking-change: обратная совместимость со старыми форматами и алиасами не поддерживается.
-
-**Статусы в навигации:** `canonical` · `guide` · `plan` · `superseded` · `archive` — [README_STRUCTURE.md](README_STRUCTURE.md).
-
----
-
-## Быстрая навигация
-
-- [SYSTEM_ARCH_FULL.md](SYSTEM_ARCH_FULL.md) — архитектура (`canonical`)
-- [ARCHITECTURE_FLOWS.md](ARCHITECTURE_FLOWS.md) — защищённые pipeline и инварианты AE3 (`canonical`)
-- [DEV_CONVENTIONS.md](DEV_CONVENTIONS.md) — конвенции разработки (`canonical`)
-- [README_STRUCTURE.md](README_STRUCTURE.md) — структура папок `doc_ai/`
-- [11_WEBSOCKET_ARCHITECTURE.md](11_WEBSOCKET_ARCHITECTURE.md) — WebSocket (Reverb) (`canonical`)
-- [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) — live / planned / frozen (`guide`, не SoT runtime)
-- [TASKS_FOR_AI_AGENTS.md](TASKS_FOR_AI_AGENTS.md) — постановка задач для ИИ (`guide`)
-
-Открытая очередь для агента без отдельного поручения — одна: [суточный контур культуры, версия 1.2.0](04_BACKEND_CORE/AE3_CROP_DAY_LOOP_PLAN_FOR_AI_AGENTS.md).
-
-Программа владельца (сезонная теплица в Крыму, капля, зелень и клубника, 20 м² → модуль 400 м²) — [14_GROW_PROGRAM](14_GROW_PROGRAM/README.md) (`plan`, не очередь и не runtime). Исправления SEC/SAF из аудита 2026-11-01 — открытые PR #18–#22, в эту программу не копируются.
-
-Остальные файлы с именами `*PLAN*`, `*ROADMAP*` и `SYNC_PLAN.md` в рабочих папках — заглушки. Полный текст лежит в `00_ARCHIVE/PLANS/`. Архив не читать как задание и не исполнять. Исключение, которое остаётся спецификацией, а не очередью: `06_DOMAIN_ZONES_RECIPES/GREENHOUSE_CLIMATE_CONTROL_PLAN.md` (алгоритм уже построенных форточек).
-
----
-
-## Структура документации по разделам
-
-### [01_SYSTEM](01_SYSTEM/) — Системная архитектура
-Высокоуровневая архитектура, логика, потоки данных.
-
-**Ключевые документы:**
-- `01_SYSTEM/LOGIC_ARCH.md` — логическая модель (Теплица → Зоны → Ноды → Каналы) (`canonical`)
-- `01_SYSTEM/DATAFLOW_FULL.md` — потоки данных (telemetry, commands, config: Laravel→HL→MQTT + `config_report`) (`canonical`)
-- `01_SYSTEM/NODE_LIFECYCLE_AND_PROVISIONING.md` — жизненный цикл узлов (`canonical`)
-- `01_SYSTEM/NODE_ASSIGNMENT_LOGIC.md` — pending bind + `PublishNodeConfigJob` + wire ACK (`canonical`)
-- `01_SYSTEM/NODE_ADDITION_AND_ACTIVATION_FLOW.md` — добавление/активация ноды (`canonical`)
-- `01_SYSTEM/NODE_DETACH_IMPLEMENTATION.md` — detach/unbind через NodeConfig temp namespace (`canonical`)
-- `01_SYSTEM/01_PROJECT_STRUCTURE_PROD.md` — структура проекта (`canonical`)
-- `01_SYSTEM/REPO_MAPPING.md` — маппинг репозиториев (`guide`)
-- Исторические plans (stubs → `00_ARCHIVE/PLANS/`): `PUMP_NAMING_UNIFICATION_PLAN`, `FULL_SYSTEM_ARCH_PROPOSAL`, `MIGRATION_PLAN_FROM_MESH_HYDRO`
-
-**См. также:** [README](01_SYSTEM/README.md)
-
----
-
-### [02_HARDWARE_FIRMWARE](02_HARDWARE_FIRMWARE/) — Железо и прошивки
-Архитектура узлов ESP32, прошивки, каналы, конфигурация.
-
-**Ключевые документы:**
-- `02_HARDWARE_FIRMWARE/NODE_ARCH_FULL.md` — полная архитектура узлов ESP32
-- `02_HARDWARE_FIRMWARE/NODE_LOGIC_FULL.md` — логика работы узлов
-- `02_HARDWARE_FIRMWARE/NODE_CHANNELS_REFERENCE.md` — справочник каналов узлов
-- `02_HARDWARE_FIRMWARE/NODE_CONFIG_SPEC.md` — спецификация NodeConfig
-- `02_HARDWARE_FIRMWARE/CONFIG_REPORT_HANDLING.md` — обработка `config_report` (канон wire ACK; `CONFIG_RESPONSE_HANDLING.md` — superseded)
-- `02_HARDWARE_FIRMWARE/FIRMWARE_STRUCTURE.md` — структура прошивки
-- `02_HARDWARE_FIRMWARE/HARDWARE_ARCH_FULL.md` — аппаратная архитектура
-- `02_HARDWARE_FIRMWARE/ESP32_C_CODING_STANDARDS.md` — стандарты кодирования C/ESP-IDF
-- `02_HARDWARE_FIRMWARE/SDKCONFIG_PROFILES.md` — профили sdkconfig
-- `02_HARDWARE_FIRMWARE/OTA_UPDATE_PROTOCOL.md` — протокол OTA-обновлений
-- `02_HARDWARE_FIRMWARE/WIFI_CONNECTIVITY_ENGINE.md`, `WIFI_PROVISIONING_FIRST_RUN.md` — Wi-Fi
-- `02_HARDWARE_FIRMWARE/NODE_DIAGNOSTICS_ENGINE.md`, `NODE_INPUT_CONTROLS.md`, `NODE_OLED_UI_SPEC.md` — диагностика, UI узлов
-- `02_HARDWARE_FIRMWARE/STORAGE_IRRIGATION_NODE_PROD_SPEC.md` — irrigation-node prod spec
-- `02_HARDWARE_FIRMWARE/TEST_NODE_REAL_HW_PROD_READINESS_SPEC.md`, `TEST_NODE_TO_REAL_NODES_MAPPING_MATRIX.md` — test-node
-- `02_HARDWARE_FIRMWARE/DEVICE_NODE_PROTOCOL.md` — device-node протокол
-- `02_HARDWARE_FIRMWARE/MEMORY_SAFETY_AUDIT.md` — аудит memory safety firmware (`guide`)
-- `02_HARDWARE_FIRMWARE/TASK_INA209_PUMP_NODE.md` — задача INA209 на pump_node (`plan`)
-
-**См. также:** [README](02_HARDWARE_FIRMWARE/README.md)
-
----
-
-### [03_TRANSPORT_MQTT](03_TRANSPORT_MQTT/) — MQTT транспорт
-Протокол MQTT, топики, контракты, валидация.
-
-**Ключевые документы:**
-- `03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md` — полная спецификация MQTT (`canonical`)
-- `03_TRANSPORT_MQTT/MQTT_NAMESPACE.md` — структура топиков (`canonical`)
-- `03_TRANSPORT_MQTT/BACKEND_NODE_CONTRACT_FULL.md` — контракт между backend и узлами (`canonical`)
-- `03_TRANSPORT_MQTT/COMMAND_VALIDATION_ENGINE.md` — валидация команд (`canonical`)
-- `03_TRANSPORT_MQTT/STATUS_PUBLISH_IMPLEMENTATION_CHECK.md` — check-list status publish (`guide`)
-- `03_TRANSPORT_MQTT/MQTT_LOAD_BALANCING.md` — multi-broker LB (`plan`; вне текущей каноники одного брокера)
-
-**См. также:** [README](03_TRANSPORT_MQTT/README.md)
-
----
-
-### [04_BACKEND_CORE](04_BACKEND_CORE/) — Backend (Laravel)
-Архитектура backend, API, Python-сервисы, интеграции.
-
-**Ключевые документы:**
-- `04_BACKEND_CORE/BACKEND_ARCH_FULL.md` — архитектура backend
-- `04_BACKEND_CORE/AUTOMATION_CONFIG_AUTHORITY.md` — единый authority automation/runtime-конфигов
-- `04_BACKEND_CORE/PYTHON_SERVICES_ARCH.md` — архитектура Python-сервисов
-- `04_BACKEND_CORE/ae3lite.md` — каноническая спецификация AE3-Lite (automation-engine), rollout/rollback; §9.4.1 UI `observability` в `/state` (`canonical`)
-- [04_BACKEND_CORE/AE3_CROP_DAY_LOOP_PLAN_FOR_AI_AGENTS.md](04_BACKEND_CORE/AE3_CROP_DAY_LOOP_PLAN_FOR_AI_AGENTS.md) — единственная открытая очередь агента: суточный контур культуры, версия 1.2.0 (`plan`)
-- `04_BACKEND_CORE/LARAVEL_AE3_READ_MODEL_CONTRACT.md` — snapshot-контракт read-model Laravel↔AE3 + CI-job (`canonical`)
-- `04_BACKEND_CORE/AE3_RUNTIME_EVENT_CONTRACT.md` — runtime-event контракт AE3 (`canonical`)
-- `04_BACKEND_CORE/AE3_IRR_FAILSAFE_AND_ESTOP_CONTRACT.md` — failsafe / E-Stop контракт irrigation (`canonical`)
-- `04_BACKEND_CORE/AE3_IRR_LEVEL_SWITCH_EVENT_CONTRACT.md` — channel-level events для level_switch (`canonical`)
-- `04_BACKEND_CORE/API_SPEC_FRONTEND_BACKEND_FULL.md` — API-спецификация
-- `04_BACKEND_CORE/REST_API_REFERENCE.md` — REST API справочник
-- `04_BACKEND_CORE/HISTORY_LOGGER_API.md` — контракт публикации команд и ingest (`canonical`)
-- `04_BACKEND_CORE/ERROR_CODE_CATALOG.md` — каталог кодов ошибок backend/AE3 (`canonical`)
-- `04_BACKEND_CORE/END_TO_END_WORKFLOW_GUIDE.md` — сквозные сценарии и точки интеграции (`guide`)
-- `04_BACKEND_CORE/REALTIME_UPDATES_ARCH.md` — архитектура real-time обновлений
-- `04_BACKEND_CORE/FULL_STACK_DEPLOY_DOCKER.md` — деплой стека через Docker
-- `04_BACKEND_CORE/TECH_STACK_LARAVEL_INERTIA_VUE3_PG.md` — технологический стек
-- Заглушки планов AE3 (полный текст в `00_ARCHIVE/PLANS/`, не исполнять): startup recovery, node availability, setup-before-irrigation, hardening, architecture review, reliability audit, refactoring
-
-**См. также:** [README](04_BACKEND_CORE/README.md)
-
----
-
-### [05_DATA_AND_STORAGE](05_DATA_AND_STORAGE/) — Данные и хранилища
-Модель данных, телеметрия, политики хранения.
-
-**Ключевые документы:**
-- `05_DATA_AND_STORAGE/DATA_MODEL_REFERENCE.md` — полный справочник моделей данных
-- `05_DATA_AND_STORAGE/TELEMETRY_PIPELINE.md` — пайплайн телеметрии
-- `05_DATA_AND_STORAGE/DATA_RETENTION_POLICY.md` — политики хранения данных
-
-**См. также:** [README](05_DATA_AND_STORAGE/README.md)
-
----
-
-### [06_DOMAIN_ZONES_RECIPES](06_DOMAIN_ZONES_RECIPES/) — Доменная логика
-Контроллеры зон, рецепты, планировщики, события.
-
-**Ключевые документы:**
-- `06_DOMAIN_ZONES_RECIPES/ZONE_CONTROLLER_FULL.md` — контроллеры зон (pH, EC, климат, полив, свет)
-- `06_DOMAIN_ZONES_RECIPES/ZONE_LOGIC_FLOW.md` — сквозная логика зоны (телеметрия → контроллеры → команды → UI)
-- `06_DOMAIN_ZONES_RECIPES/RECIPE_ENGINE_FULL.md` — движок рецептов
-- `06_DOMAIN_ZONES_RECIPES/CORRECTION_CYCLE_SPEC.md` — спецификация циклов коррекции раствора (pH/EC)
-- `06_DOMAIN_ZONES_RECIPES/EFFECTIVE_TARGETS_SPEC.md` — спецификация effective-targets для контроллеров
-- `06_DOMAIN_ZONES_RECIPES/ZONES_AND_PRESETS.md` — зоны и пресеты культур
-- `06_DOMAIN_ZONES_RECIPES/SCHEDULER_ENGINE.md` — планировщик
-- `06_DOMAIN_ZONES_RECIPES/SCHEDULER_AE3_NON_IRRIGATION_DISPATCH.md` — dispatch не-полива для AE3 (lighting реализован, diagnostics через compat-path)
-- `06_DOMAIN_ZONES_RECIPES/GREENHOUSE_CLIMATE_CONTROL_PLAN.md` — план общего greenhouse climate runtime и алгоритма форточек
-- `06_DOMAIN_ZONES_RECIPES/PID_CONFIG_REFERENCE.md` — справочник PID-конфигов (`canonical`)
-- `06_DOMAIN_ZONES_RECIPES/CONTROL_MODES_SPEC.md` — режимы auto/semi/manual (`canonical`)
-- `06_DOMAIN_ZONES_RECIPES/WATER_FLOW_ENGINE.md` — движок водного потока
-- `06_DOMAIN_ZONES_RECIPES/EVENTS_AND_ALERTS_ENGINE.md` — события и алерты
-- `06_DOMAIN_ZONES_RECIPES/ALERTS_AND_NOTIFICATIONS_CHANNELS.md` — каналы алертов/уведомлений
-- `06_DOMAIN_ZONES_RECIPES/PER_PHASE_EC_TARGET_PLAN.md` — план per-phase EC targets (`plan`)
-- Superseded stubs → полные тексты в `00_ARCHIVE/SUPERSEDED/`: `GLOBAL_SCHEDULER_ENGINE`, `HYDROPONIC_RECIPES_ENGINE` (канон: `SCHEDULER_ENGINE` / `RECIPE_ENGINE_FULL`)
-
-**См. также:** [README](06_DOMAIN_ZONES_RECIPES/README.md)
-
----
-
-### [07_FRONTEND](07_FRONTEND/) — Frontend и UI/UX
-Архитектура фронтенда, UI/UX спецификация, тестирование.
-
-**Ключевые документы:**
-- `07_FRONTEND/FRONTEND_ARCH_FULL.md` — полная архитектура фронтенда
-- `07_FRONTEND/FRONTEND_UI_UX_SPEC.md` — спецификация UI/UX
-- `07_FRONTEND/ROLE_BASED_UI_SPEC.md` — UI по ролям (`useRole`, dashboard'ы)
-- `07_FRONTEND/API_MAPPING.md` — маппинг frontend → backend API
-- `07_FRONTEND/FRONTEND_TESTING.md` — стратегия тестирования фронтенда (`guide`)
-- `07_FRONTEND/ui_refs/` — референсы UI/UX (изображения)
-- Планы фронтенда в этой папке — заглушки на `00_ARCHIVE/PLANS/`. Не исполнять. Канон UI — `FRONTEND_ARCH_FULL.md` и `FRONTEND_UI_UX_SPEC.md`.
-- Архив plans (stubs → `00_ARCHIVE/PLANS/`): `UI_UX_IMPROVEMENT_PLAN`, `FRONTEND_REWORK_PLAN`, `LAUNCH_LEGACY_CLEANUP_PLAN`
-
-**См. также:** [README](07_FRONTEND/README.md)
-
----
-
-### [08_SECURITY_AND_OPS](08_SECURITY_AND_OPS/) — Безопасность и эксплуатация
-Безопасность, аутентификация, мониторинг, резервное копирование.
-
-**Ключевые документы:**
-- `08_SECURITY_AND_OPS/SECURITY_ARCHITECTURE.md` — архитектура безопасности
-- `08_SECURITY_AND_OPS/FULL_SYSTEM_SECURITY.md` — полный обзор безопасности
-- `08_SECURITY_AND_OPS/AUTH_SYSTEM.md` — система аутентификации
-- `08_SECURITY_AND_OPS/LOGGING_AND_MONITORING.md` — логи, метрики, алертинг
-- `08_SECURITY_AND_OPS/MONITORING_USER_GUIDE.md` — Grafana и дашборды для оператора
-- `08_SECURITY_AND_OPS/BACKUP_AND_RECOVERY.md` — резервное копирование и восстановление
-- `08_SECURITY_AND_OPS/SYSTEM_FAILURE_RECOVERY.md` — восстановление после сбоев
-- `08_SECURITY_AND_OPS/OPERATIONS_GUIDE.md` — руководство по эксплуатации
-- `08_SECURITY_AND_OPS/RUNBOOKS.md` — процедуры восстановления
-- `08_SECURITY_AND_OPS/TESTING_AND_CICD_STRATEGY.md` — стратегия тестирования и CI/CD
-- `08_SECURITY_AND_OPS/MIGRATION_SQUASH_PROCEDURE.md` — процедура squash миграций (отложена из-за TimescaleDB) (`plan`)
-
-**См. также:** [README](08_SECURITY_AND_OPS/README.md)
-
----
-
-### [09_AI_AND_DIGITAL_TWIN](09_AI_AND_DIGITAL_TWIN/) — AI и цифровой двойник
-
-Не очередь и не runtime. Файлы раздела — заглушки. Полный текст в `00_ARCHIVE/PLANS/digital_twin/`. Не реализовывать. `feature-builder` не входит в обычный `make up`.
-
-**См. также:** [README](09_AI_AND_DIGITAL_TWIN/README.md)
-
----
-
-### [10_AI_DEV_GUIDES](10_AI_DEV_GUIDES/) — Гайды для ИИ-разработки
-Руководства для работы с ИИ-агентами над различными компонентами.
-
-**Ключевые документы:**
-- `10_AI_DEV_GUIDES/AI_ASSISTANT_DEV_GUIDE.md` — общий гайд для ИИ-ассистентов
-- `10_AI_DEV_GUIDES/HYDRO_PROMPTING_GUIDE.md` — промпты под репозиторий
-- `10_AI_DEV_GUIDES/GPT5_PROMPTING_GUIDE.md` — расширенный гайд по промптам GPT-5
-- `10_AI_DEV_GUIDES/BACKEND_LARAVEL_PG_AI_GUIDE.md` — гайд по backend разработке
-- `10_AI_DEV_GUIDES/DATABASE_SCHEMA_AI_GUIDE.md` — гайд по схеме БД
-- `10_AI_DEV_GUIDES/MQTT_TOPICS_SPEC_AI_GUIDE.md` — гайд по MQTT
-- `10_AI_DEV_GUIDES/PYTHON_MQTT_SERVICE_AI_GUIDE.md` — гайд по Python MQTT-сервисам
-- `10_AI_DEV_GUIDES/AI_TASK_TEMPLATES_AND_PATTERNS.md` — шаблоны задач для ИИ
-- `10_AI_DEV_GUIDES/DEV_TASKS_FOR_AI_ASSISTANTS_SPEC.md` — спецификация постановки задач
-- `10_AI_DEV_GUIDES/OPERATOR_TASKS_FOR_AI_SPEC.md` — задачи оператора для ИИ
-- `10_AI_DEV_GUIDES/TASK_UNIFIED_DASHBOARD.md` — единый дашборд задач (`guide`)
-- `10_AI_DEV_GUIDES/ZONE_CONTROLLERS_AI_GUIDE.md` — гайд по контроллерам зон для ИИ (`guide`)
-- Планы (`plan`): `AI_AGENTS_DETAILED_PLAN.md`, `AI_IMPLEMENTATION_ROADMAP.md`
-- домен контроллеров зон: `06_DOMAIN_ZONES_RECIPES/ZONE_CONTROLLER_FULL.md`, `06_DOMAIN_ZONES_RECIPES/EFFECTIVE_TARGETS_SPEC.md`
-
-**См. также:** [README](10_AI_DEV_GUIDES/README.md)
-
----
-
-### [12_ANDROID_APP](12_ANDROID_APP/) — Android приложение
-Архитектура, экраны, интеграция с API.
-
-**Ключевые документы:**
-- `12_ANDROID_APP/ANDROID_APP_ARCH.md` — архитектура Android-приложения
-- `12_ANDROID_APP/ANDROID_APP_SCREENS.md` — описание экранов
-- `12_ANDROID_APP/ANDROID_APP_API_INTEGRATION.md` — интеграция с API
-- `12_ANDROID_APP/ANDROID_GROW_CYCLE_UI.md` — UI цикла выращивания
-
-**См. также:** [README](12_ANDROID_APP/README.md)
-
----
-
-### [13_TESTING](13_TESTING/) — Тестирование и E2E
-
-E2E-сценарии, симулятор узлов, realhw `test_node`, troubleshooting.
-
-**Ключевые документы:**
-- `13_TESTING/TESTING_OVERVIEW.md` — обзор стратегии тестирования
-- `13_TESTING/E2E_GUIDE.md` — подробное руководство по E2E
-- `13_TESTING/REALHW_TEST_NODE_AGENT_GUIDE.md` — канон запуска YAML на физической ESP32 `test_node` (для ИИ-агентов)
-- `13_TESTING/E2E_SCENARIOS.md` — полный список сценариев и DoD
-- `13_TESTING/E2E_SETUP.md` — настройка E2E окружения
-- `13_TESTING/AUTH_IN_E2E.md` — авторизация в E2E
-- `13_TESTING/NODE_SIM.md` — симулятор узлов
-- `13_TESTING/TROUBLESHOOTING.md` — troubleshooting тестов
-
-**См. также:** [README](13_TESTING/README.md)
-
----
-
-### [14_GROW_PROGRAM](14_GROW_PROGRAM/) — Программа выращивания (`plan`)
-
-Снимок кода на `ff796c3c` и план до первой сезонной теплицы. Не канон runtime и не замена очереди суточного контура.
-
-- `14_GROW_PROGRAM/01_AS_IS_GROW_CYCLE.md` — цикл как он есть в коде
-- `14_GROW_PROGRAM/02_GAP_ANALYSIS.md` — пробелы и приоритеты P0/P1/P2, включая сверенный аудит безопасности
-- `14_GROW_PROGRAM/03_AGRONOMY_CRIMEA.md` — цели по салату, базилику и клубнике
-- `14_GROW_PROGRAM/04_HARDWARE_BOM.md` — состав и оценка бюджета
-- `14_GROW_PROGRAM/05_ROADMAP.md` — вехи M0–M5
-
----
-
-## Поиск по темам
-
-Не чеклист «прочитать всё» — слой задачи → 2–3 документа.
-
-| Слой | Куда |
-|------|------|
-| Прошивки ESP32 | `02_HARDWARE_FIRMWARE/NODE_ARCH_FULL.md`, `FIRMWARE_STRUCTURE.md`, `NODE_CHANNELS_REFERENCE.md`, `03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md` |
-| Backend | `04_BACKEND_CORE/BACKEND_ARCH_FULL.md`, `AUTOMATION_CONFIG_AUTHORITY.md`, `PYTHON_SERVICES_ARCH.md`, `05_DATA_AND_STORAGE/DATA_MODEL_REFERENCE.md` |
-| Frontend | `07_FRONTEND/FRONTEND_ARCH_FULL.md`, `FRONTEND_UI_UX_SPEC.md`, `FRONTEND_TESTING.md` |
-| E2E | `13_TESTING/TESTING_OVERVIEW.md`, `E2E_GUIDE.md`; realhw: `REALHW_TEST_NODE_AGENT_GUIDE.md` + `tests/e2e/AGENTS.md` |
-| Задачи для ИИ | `TASKS_FOR_AI_AGENTS.md`, `10_AI_DEV_GUIDES/AI_ASSISTANT_DEV_GUIDE.md` |
-
----
-
-## Примечания
-
-- Формула SoT — корневой `AGENTS.md` / `DEV_CONVENTIONS.md`: runtime = код; защищённые контракты canonical в `doc_ai/` и обязаны совпадать с кодом. `doc_ai/` **не** единственный SoT на всё.
-- Ссылки в документации — относительные от корня `doc_ai/`.
-- Папка `docs/` удалена; уникальные материалы — `13_TESTING/`, `12_ANDROID_APP/`, `07_FRONTEND/ui_refs/`.
-- Планы (`plan`) и `superseded` не подменяют `canonical` и не подменяют код.
+# Индекс документации Hydro 2.0
+
+**Версия:** 2.7
+**Дата обновления:** 2026-11-06
+
+## Начало работы
+
+1. [SYSTEM_ARCH_FULL.md](SYSTEM_ARCH_FULL.md) — обзор системы и границы компонентов.
+2. [ARCHITECTURE_FLOWS.md](ARCHITECTURE_FLOWS.md) — потоки команд, телеметрии и инварианты AE3.
+3. [DEV_CONVENTIONS.md](DEV_CONVENTIONS.md) — конвенции, источники истины и проверки.
+4. [README_STRUCTURE.md](README_STRUCTURE.md) — устройство текущего каталога.
+
+Правила агента — корневой `AGENTS.md`. Runtime определяется кодом; защищённые
+контракты в `doc_ai/` должны совпадать с реализацией. Документ может быть
+`canonical` (контракт) или `guide` (руководство/справочник); guide не переопределяет контракт.
+
+Работа агента задаётся поручением пользователя. В документации нет самостоятельной
+очереди незавершённых этапов. История удалённых планов и промежуточных отчётов
+доступна в Git.
+
+## Разделы
+
+| Раздел | Содержание |
+|---|---|
+| [01_SYSTEM](01_SYSTEM/README.md) | Доменная модель, dataflow, lifecycle/bind/detach нод |
+| [02_HARDWARE_FIRMWARE](02_HARDWARE_FIRMWARE/README.md) | ESP32, аппаратная часть, NodeConfig, Wi-Fi, диагностика |
+| [03_TRANSPORT_MQTT](03_TRANSPORT_MQTT/README.md) | Namespace, payload, command validation |
+| [04_BACKEND_CORE](04_BACKEND_CORE/README.md) | Laravel, AE3, HL API, authority, read-model, суточный контур |
+| [05_DATA_AND_STORAGE](05_DATA_AND_STORAGE/README.md) | Модели, телеметрия, retention |
+| [06_DOMAIN_ZONES_RECIPES](06_DOMAIN_ZONES_RECIPES/README.md) | Рецепты, PID, correction, полив/свет/климат |
+| [07_FRONTEND](07_FRONTEND/README.md) | Inertia/Vue, роли, API и тестирование UI |
+| [08_SECURITY_AND_OPS](08_SECURITY_AND_OPS/README.md) | Безопасность, эксплуатация, мониторинг и восстановление |
+| [09_AI_AND_DIGITAL_TWIN](09_AI_AND_DIGITAL_TWIN/README.md) | Текущие опциональные компоненты и ограничения |
+| [10_AI_DEV_GUIDES](10_AI_DEV_GUIDES/README.md) | Работа с ИИ и проектные skills |
+| [12_ANDROID_APP](12_ANDROID_APP/README.md) | Android-клиент, API и ограничения provisioning |
+| [13_TESTING](13_TESTING/README.md) | Python E2E, realhw, Playwright и диагностика тестов |
+| [14_GROWING_REFERENCE](14_GROWING_REFERENCE/README.md) | Агрономические и аппаратные справочники выращивания |
+
+## Защищённые контракты
+
+- [MQTT_SPEC_FULL.md](03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md) и [MQTT_NAMESPACE.md](03_TRANSPORT_MQTT/MQTT_NAMESPACE.md) — wire-протокол и топики.
+- [BACKEND_NODE_CONTRACT_FULL.md](03_TRANSPORT_MQTT/BACKEND_NODE_CONTRACT_FULL.md) — backend↔node.
+- [CONFIG_REPORT_HANDLING.md](02_HARDWARE_FIRMWARE/CONFIG_REPORT_HANDLING.md) — наблюдение wire ACK конфигурации.
+- [ae3lite.md](04_BACKEND_CORE/ae3lite.md) — ingress, execution, single-writer и recovery.
+- [HISTORY_LOGGER_API.md](04_BACKEND_CORE/HISTORY_LOGGER_API.md) — публикация и ingest.
+- [AUTOMATION_CONFIG_AUTHORITY.md](04_BACKEND_CORE/AUTOMATION_CONFIG_AUTHORITY.md) — authority/config bundles.
+- [LARAVEL_AE3_READ_MODEL_CONTRACT.md](04_BACKEND_CORE/LARAVEL_AE3_READ_MODEL_CONTRACT.md) — контракт прямого SQL read-model.
+- [DATA_MODEL_REFERENCE.md](05_DATA_AND_STORAGE/DATA_MODEL_REFERENCE.md) и [DATA_RETENTION_POLICY.md](05_DATA_AND_STORAGE/DATA_RETENTION_POLICY.md).
+- [CORRECTION_CYCLE_SPEC.md](06_DOMAIN_ZONES_RECIPES/CORRECTION_CYCLE_SPEC.md) и [EFFECTIVE_TARGETS_SPEC.md](06_DOMAIN_ZONES_RECIPES/EFFECTIVE_TARGETS_SPEC.md).
+- [GREENHOUSE_CLIMATE_CONTROL_SPEC.md](06_DOMAIN_ZONES_RECIPES/GREENHOUSE_CLIMATE_CONTROL_SPEC.md) — действующий климатический контур теплицы.
+
+## Практические точки входа
+
+- [Сводка реализации](IMPLEMENTATION_STATUS.md) — состояние репозитория; не акт приёмки стенда.
+- [Суточный контур](04_BACKEND_CORE/CROP_DAY_RUNTIME.md) — существующие crop-day функции и их владельцы.
+- [REST API](04_BACKEND_CORE/REST_API_REFERENCE.md) — endpoint-ы и авторизация.
+- [WebSocket/Reverb](11_WEBSOCKET_ARCHITECTURE.md) — realtime UI.
+- [Backup/recovery](08_SECURITY_AND_OPS/BACKUP_AND_RECOVERY.md) и [runbooks](08_SECURITY_AND_OPS/RUNBOOKS.md).
+- [Проектные skills](10_AI_DEV_GUIDES/PROJECT_SKILLS.md) — каталог, источники и offline-проверка.
+- [Realhw test_node](13_TESTING/REALHW_TEST_NODE_AGENT_GUIDE.md) — MQTT 1884, отдельный контур.
+
+Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.

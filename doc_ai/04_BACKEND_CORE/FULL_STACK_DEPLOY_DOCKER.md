@@ -1,519 +1,136 @@
-# FULL_STACK_DEPLOY_DOCKER.md
-# Полный гайд по деплою стека 2.0 в Docker
-# (Laravel + PostgreSQL + Python MQTT Service + Mosquitto + Inertia/Vue)
+# Развёртывание текущего Docker-стека Hydro 2.0
 
-Этот документ описывает, **как ИИ-агенты и люди должны разворачивать весь стек 2.0** 
-в Docker-среде: от структуры репозитория до docker-compose и переменных окружения.
+**Статус:** guide. **Сверено:** 2026-11-07 по Compose, Dockerfile и Makefile.
 
-Цель: получить воспроизводимую среду, где:
+## Источники конфигурации
 
-- Laravel обслуживает UI и API,
-- PostgreSQL хранит доменную модель и телеметрию,
-- Mosquitto обслуживает MQTT-трафик узлов ESP32,
-- Python-сервис обрабатывает MQTT и управляет контроллерами.
+- Dev: [docker-compose.dev.yml](../../backend/docker-compose.dev.yml),
+  [Laravel Dockerfile](../../backend/laravel/Dockerfile), [DB Dockerfile](../../backend/services/db/Dockerfile).
+- Production: [docker-compose.prod.yml](../../backend/docker-compose.prod.yml),
+  [Laravel Dockerfile.prod](../../backend/laravel/Dockerfile.prod).
+- Команды и env-файлы задаёт [Makefile](../../Makefile). Отдельного корневого
+  `docker-compose.yml` нет; команды ниже выполняются из корня репозитория.
 
+Не создавайте Compose/Dockerfile заново по примеру из документации: рабочие файлы
+уже содержат mounts, healthchecks, auth, profiles и параметры запуска.
+
+## Состав и версии
+
+Laravel 12 / PHP 8.2, Inertia 2 + Vue 3, Sanctum и Reverb заданы composer/package
+manifest. Dev PHP-образ включает Node 20. Python-сервисы используют собственные
+requirements и Dockerfile; общий код расположен в `backend/services/common/`.
+
+| Сервис | Назначение | Обычный dev `make up` |
+|---|---|---|
+| `mqtt` | Mosquitto, auth/ACL, транспорт нод | да |
+| `db` | PostgreSQL 16 + TimescaleDB + pg_cron | да |
+| `redis` | Кеш/очереди Laravel, сервисные очереди | да |
+| `laravel` | API/UI, конфигурация, scheduler-dispatch, Reverb | да |
+| `mqtt-bridge` | Metrics и live-status probe; не command/config API | да |
+| `history-logger` | MQTT ingest, БД и единственная публикация device-команд | да |
+| `automation-engine` | AE3 workflow и greenhouse climate | да |
+| `telemetry-aggregator` | Непрерывная агрегация и очистка telemetry | да |
+| Monitoring + exporters | Prometheus, Grafana, Alertmanager | profile `obs` |
+| `digital-twin`, `node-sim-manager` | Симуляция | profile `sim` |
+| `feature-builder` | Frozen skeleton | profile `ml` |
+| `node-emulator` | Нагрузочная эмуляция | profile `load-test` |
+
+Production Compose имеет свой состав: в нём нет dev `feature-builder`,
+`node-sim-manager`, `node-emulator` и тестовых контейнеров. Не переносите dev-профили
+в production без проверки выбранного Compose-файла.
+
+Dev DB-образ закреплён на TimescaleDB **2.26.0-pg16**, production —
+**2.28.2-pg16**. При переносе volume/backup проверьте версию расширения и направление
+обновления; одинаковая major PostgreSQL не означает взаимозаменяемость образов.
+
+## Development
+
+```bash
+make up-build   # при первой сборке или изменении Dockerfile/dependencies
+make migrate    # миграции и DevBootstrapSeeder
+make logs-core
+```
+
+Для обычного запуска с существующими образами: `make up` (pull missing, без
+принудительной пересборки). Без pull/build: `make up-offline`, если образы уже есть.
+`ensure-dev-secrets` подготавливает `backend/.env`; не публикуйте его значения.
+Запуск контейнера не заменяет явную проверку миграций через `make migrate`.
+
+```bash
+make up-obs
+# Опциональные контуры запускаются отдельно по задаче:
+# make up-sim
+# make up-ml
+```
+
+`make refresh`, `make reset-db`, `down -v` удаляют данные/состояние и не являются
+обычными шагами bootstrap или диагностики.
+
+## Development: доступ с хоста
+
+| Сервис | Адрес/порт |
+|---|---|
+| Laravel | `http://localhost:8080` |
+| Vite | `5173` |
+| Reverb | `6001` |
+| mqtt-bridge | `9000` |
+| history-logger | `9300` (REST и `/metrics`) |
+| automation-engine | `9405` (REST и `/metrics/`) |
+| telemetry-aggregator | `9404` |
+| PostgreSQL / Redis / MQTT | `5432` / `6379` / `1883`, по умолчанию loopback |
+| Prometheus / Grafana / Alertmanager | `9090` / `3000` / `9093`, profile `obs` |
+
+Внутри Compose используются DNS-имена сервисов и их внутренние порты.
+`localhost` внутри контейнера не обозначает соседний контейнер или Docker host.
+Для ESP32 нужен доступный сетевой адрес хоста и настроенный bind/firewall;
+loopback MQTT 1883 недоступен устройству из LAN по умолчанию.
+
+Проверка уже запущенного dev-стека:
+
+```bash
+curl --fail --silent --show-error http://localhost:9300/health
+curl --fail --silent --show-error http://localhost:9405/health/live
+curl --fail --silent --show-error http://localhost:9405/health/ready
+```
+
+HTTP 200 health-check не является проверкой исполнения команд на железе.
+HL подписывается на конкретные topic patterns, а не на широкий `hydro/#`;
+контракт подписок — [MQTT_SPEC_FULL.md](../03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md).
+
+## Production
+
+Production использует `backend/.env.prod` и явный Compose-файл через Makefile:
+
+```bash
+make prod-setup
+make prod-check
+make prod-up
+make prod-migrate
+make prod-ps
+```
+
+`prod-setup` подготавливает конфигурацию развёртывания; проверьте её до запуска.
+`prod-seed` — отдельное действие с `StartUsersSeeder`, не обязательный шаг
+восстановления существующей БД. Monitoring подключается через `COMPOSE_PROFILES=obs`.
+
+В production опубликованы Laravel `8080`, Reverb `6001`, MQTT `1883/8883` и,
+при profile `obs`, Grafana `3000`. PostgreSQL, Redis, HL, AE3, mqtt-bridge,
+Prometheus и Alertmanager не имеют host port mapping. Доступ к ним проверяется
+в выбранной контейнерной сети/через явно настроенный канал, не по dev localhost URL.
+MQTT listener/bind, TLS-файлы и `MQTT_PLAINTEXT_ENABLED` проверяются отдельно;
+наличие 8883 mapping не доказывает активный TLS listener.
+
+## Резервное копирование
+
+Laravel использует mounted `/scripts/backup` и read-only `/backup-sources`. `backup:full` по умолчанию сохраняет DB dump и конфигурации приложения/MQTT; Docker volumes отключены и отмечены в manifest. Dockerfiles устанавливают PostgreSQL client 16 и archive tools. Перед вводом стенда проверьте manifest и восстановление — [BACKUP_AND_RECOVERY.md](../08_SECURITY_AND_OPS/BACKUP_AND_RECOVERY.md).
+
+## Проверки перед изменением конфигурации
+
+Проверьте выбранные profiles, ports, mounts, healthchecks и env-binding.
+`docker compose ... config --quiet` валидирует конфигурацию без печати раскрытых
+секретов. Полный `config`/`env` не включайте в отчёты.
+Защищённые command/config contracts — [PYTHON_SERVICES_ARCH.md](PYTHON_SERVICES_ARCH.md),
+[HISTORY_LOGGER_API.md](HISTORY_LOGGER_API.md), [ARCHITECTURE_FLOWS.md](../ARCHITECTURE_FLOWS.md).
+Восстановление существующих данных — по [BACKUP_AND_RECOVERY.md](../08_SECURITY_AND_OPS/BACKUP_AND_RECOVERY.md).
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
-Breaking-change: обратная совместимость со старыми форматами и алиасами не поддерживается.
-
----
-
-> Планировщик расписаний (полив, свет, климат) выполняется **внутри Laravel** (`automation:dispatch-schedules`, intents в БД). Отдельного Python-сервиса `scheduler` в compose **нет**.  
-> Источник истины: `doc_ai/04_BACKEND_CORE/PYTHON_SERVICES_ARCH.md`,
-> `doc_ai/06_DOMAIN_ZONES_RECIPES/SCHEDULER_ENGINE.md`, `doc_ai/ARCHITECTURE_FLOWS.md`.
-
-## 1. Структура репозитория
-
-```text
-hydro2.0/
- backend/
-  laravel/              # Laravel приложение (Inertia + Vue 3)
-  services/             # Python сервисы
-   mqtt-bridge/
-   history-logger/
-   automation-engine/
-   common/              # Общая библиотека для Python сервисов
-  docker-compose.dev.yml
-  docker-compose.prod.yml
-  configs/              # Конфигурации для dev/prod
- ../                # Документация
- firmware/              # Прошивки ESP32
- mobile/                # Android приложение
- infra/                 # Инфраструктура (Terraform, Ansible, K8s)
-```
-
-**Правило для ИИ-агентов:** 
-не менять эту структуру кардинально, только дополнять.
-
----
-
-## 2. Компоненты стека
-
-### 2.1. Laravel (PHP)
-
-- PHP 8.2+
-- Laravel 10/11
-- Inertia + Vue 3
-- Подключение к PostgreSQL
-
-### 2.2. PostgreSQL
-
-- PostgreSQL 16 (или совместимая, TimescaleDB для production)
-- База данных:
- - Development: `hydro_dev`
- - Production: `hydro`
-- Содержит:
- - доменные таблицы (zones, devices, recipes…),
- - телеметрию (telemetry_samples),
- - команды и события.
-
-### 2.3. Mosquitto
-
-- MQTT брокер (`eclipse-mosquitto`)
-- Слушает на порту `1883`.
-
-### 2.4. Python MQTT Services
-
-- Python 3.11+
-- Несколько независимых сервисов:
- - `mqtt-bridge` - FastAPI мост для отправки команд через MQTT
- - `history-logger` - запись телеметрии в PostgreSQL
- - `automation-engine` - контроллер зон, проверка targets, исполнение intents от Laravel
-- Расписания полива/света/фаз рецепта планирует **Laravel** (см. `SCHEDULER_ENGINE.md`), а не отдельный Python-процесс
-- Общая библиотека `common/` для всех сервисов
-- Пакеты: `asyncio-mqtt` или `gmqtt`, `sqlalchemy`, `psycopg2` или `asyncpg`, `pydantic`, `loguru`
-
-### 2.5. Redis
-
-- Redis 7+ для кэша и сессий Laravel
-- Используется для очередей и realtime обновлений
-
-### 2.6. Laravel Reverb (WebSocket)
-
-- Встроенный WebSocket сервер Laravel
-- Используется для realtime обновлений UI
-- Порт: `6001`
-
----
-
-## 3. docker-compose.yml (иллюстративная структура)
-
-Пример упрощённый; для реального запуска использовать текущие `backend/docker-compose*.yml`.
-
-Основные сервисы:
-
-```yaml
-version: "3.9"
-
-services:
- db:
-   image: timescale/timescaledb:latest-pg16
-   environment:
-     POSTGRES_DB: hydro_dev  # или hydro для production
-     POSTGRES_USER: hydro
-     POSTGRES_PASSWORD: hydro
-   volumes:
-     - postgres_data:/var/lib/postgresql/data
-   ports:
-     - "5432:5432"
-
- mqtt:
-   image: eclipse-mosquitto:2
-   ports:
-     - "1883:1883"
-
- redis:
-   image: redis:7-alpine
-   ports:
-     - "6379:6379"
-
- laravel:
-   build:
-     context: ./laravel
-     dockerfile: Dockerfile
-   environment:
-     APP_ENV: local
-     DB_HOST: db
-     DB_DATABASE: hydro_dev  # или hydro для production
-     REDIS_HOST: redis
-     REVERB_APP_ID: app
-     REVERB_APP_KEY: local
-     REVERB_APP_SECRET: secret
-   depends_on:
-     - db
-     - redis
-   ports:
-     - "8080:80"      # HTTP
-     - "5173:5173"    # Vite dev server (только dev)
-     - "6001:6001"    # Reverb WebSocket
-
- mqtt-bridge:
-   build:
-     context: ./services
-     dockerfile: mqtt-bridge/Dockerfile
-   environment:
-     MQTT_HOST: mqtt
-     PG_HOST: db
-     PG_DB: hydro_dev  # или hydro для production
-     LARAVEL_API_URL: http://laravel
-   depends_on:
-     - mqtt
-     - db
-     - laravel
-   ports:
-     - "9000:9000"
-
- history-logger:
-   build:
-     context: ./services
-     dockerfile: history-logger/Dockerfile
-   environment:
-     MQTT_HOST: mqtt
-     PG_HOST: db
-     PG_DB: hydro_dev  # или hydro для production
-   depends_on:
-     - mqtt
-     - db
-
- automation-engine:
-   build:
-     context: ./services
-     dockerfile: automation-engine/Dockerfile
-   environment:
-     MQTT_HOST: mqtt
-     PG_HOST: db
-     PG_DB: hydro_dev  # или hydro для production
-     LARAVEL_API_URL: http://laravel
-     LARAVEL_API_TOKEN: ${LARAVEL_API_TOKEN}
-   depends_on:
-     - mqtt
-     - db
-     - laravel
-   ports:
-     - "9405:9405"
-
-volumes:
- postgres_data:
-```
-
-ИИ-агент может:
-- добавлять сервисы (grafana, redis, websockets),
-- но не должен ломать основную связку.
-
----
-
-## 4. Dockerfile для Laravel
-
-`backend/laravel/Dockerfile`:
-
-```dockerfile
-FROM php:8.2-fpm
-
-RUN apt-get update && apt-get install -y \
- git unzip libpq-dev libzip-dev \
- && docker-php-ext-install pdo pdo_pgsql
-
-COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
-
-WORKDIR /app
-
-COPY composer.json composer.lock ./
-RUN composer install --no-interaction --no-scripts --no-autoloader
-
-COPY . ./
-RUN composer dump-autoload --optimize
-
-CMD php artisan migrate --force && php artisan serve --host=0.0.0.0 --port=80
-```
-
-**Примечание:** В production используется Apache/Nginx через `supervisord`, порт `80` внутри контейнера, внешний порт `8080`.
-
-ИИ-агент не должен:
-- удалять миграции из команды запуска,
-- менять порт без обновления docker-compose.
-
----
-
-## 5. Dockerfile для Python-сервисов
-
-Каждый сервис имеет свой Dockerfile в `backend/services/<service-name>/Dockerfile`:
-
-```dockerfile
-FROM python:3.11-slim
-
-WORKDIR /app
-
-COPY common/ ./common/
-COPY <service-name>/ ./
-
-RUN pip install --no-cache-dir -r requirements.txt
-
-CMD ["python", "main.py"]
-```
-
-**Сервисы:**
-- `mqtt-bridge` - FastAPI сервис на порту `9000`
-- `history-logger` - подписка на MQTT, запись телеметрии; REST + Prometheus `/metrics` на `9300` (publish `9301` в compose — legacy/unused; см. `HISTORY_LOGGER_API.md`)
-- `automation-engine` - контроллер зон, порт `9405` (REST API + встроенный `/metrics/`)
-- расписания и dispatch — в **Laravel** (метрики при необходимости: `GET /api/system/scheduler/metrics` на `8080`)
-
----
-
-## 6. Конфиг Mosquitto
-
-`backend/services/mqtt-bridge/mosquitto.dev.conf` (для dev):
-
-```conf
-listener 1883
-allow_anonymous false
-password_file /mosquitto/config/passwords
-acl_file /mosquitto/config/acl
-```
-
-Dev compose публикует `1883`, `5432` и `6379` на `127.0.0.1`. Для ESP32 в LAN: `MQTT_BIND_ADDR=0.0.0.0`.
-
-ИИ-агент может:
-- добавить авторизацию,
-- включить persistence,
-- но не должен менять порт без синхронизации с env.
-
----
-
-## 7. Переменные окружения (env)
-
-### 7.1. Laravel
-
-`.env` (или environment секция docker-compose):
-
-**Development:**
-```env
-APP_ENV=local
-APP_DEBUG=true
-DB_CONNECTION=pgsql
-DB_HOST=db
-DB_PORT=5432
-DB_DATABASE=hydro_dev
-DB_USERNAME=hydro
-DB_PASSWORD=hydro
-REDIS_HOST=redis
-REDIS_PORT=6379
-BROADCAST_DRIVER=reverb
-REVERB_APP_ID=app
-REVERB_APP_KEY=local
-REVERB_APP_SECRET=secret
-REVERB_HOST=0.0.0.0
-REVERB_PORT=6001
-REVERB_SCHEME=http
-REVERB_DEBUG=true
-REVERB_AUTO_START=true
-```
-
-**Production:**
-```env
-APP_ENV=production
-APP_DEBUG=false
-DB_CONNECTION=pgsql
-DB_HOST=db
-DB_PORT=5432
-DB_DATABASE=hydro
-DB_USERNAME=hydro
-DB_PASSWORD=change-me
-REDIS_HOST=redis
-REDIS_PORT=6379
-BROADCAST_DRIVER=reverb
-REVERB_APP_ID=app
-REVERB_APP_KEY=change-me
-REVERB_APP_SECRET=change-me
-REVERB_HOST=0.0.0.0
-REVERB_PORT=6001
-REVERB_SCHEME=http
-REVERB_DEBUG=false
-REVERB_AUTO_START=true
-```
-
-### 7.2. Python Services
-
-**Общие переменные для всех Python сервисов:**
-```env
-MQTT_HOST=mqtt
-MQTT_PORT=1883
-PG_HOST=db
-PG_PORT=5432
-PG_DB=hydro_dev  # или hydro для production
-PG_USER=hydro
-PG_PASS=hydro
-```
-
-**Для automation-engine и mqtt-bridge (требуют доступ к Laravel API):**
-```env
-LARAVEL_API_URL=http://laravel
-LARAVEL_API_TOKEN=<token>  # Генерируется через Laravel Sanctum или отдельный API token
-```
-
-**Генерация токенов:**
-
-1. **LARAVEL_API_TOKEN** - для Python сервисов:
-   ```bash
-   # В Laravel контейнере
-   php artisan tinker
-   >>> $token = \App\Models\User::first()->createToken('python-service')->plainTextToken;
-   >>> echo $token;
-   ```
-
-2. **REVERB_APP_KEY и REVERB_APP_SECRET** - для WebSocket:
-   ```bash
-   # В Laravel контейнере
-   php artisan reverb:install
-   # Или сгенерировать вручную через openssl
-   ```
-
-3. **PY_API_TOKEN** - для Laravel → Python bridge (опционально):
-   ```bash
-   # Можно использовать тот же LARAVEL_API_TOKEN или отдельный
-   ```
-
-ИИ-агент не должен:
-- хардкодить пароли в коде,
-- использовать отличающиеся значения для DB в Laravel и Python.
-
----
-
-## 8. Процесс запуска (end-to-end)
-
-1. Клонировать репозиторий или распаковать.
-2. Заполнить `.env` для Laravel (минимум APP_KEY и DB).
-3. Собрать и запустить контейнеры:
- ```bash
- docker-compose up --build
- ```
-4. Laravel:
- - при старте выполняет `php artisan migrate --force`.
-5. Python-сервис:
- - подключается к PostgreSQL и Mosquitto,
- - подписывается на `hydro/#`.
-6. ESP32-узлы:
- - настраиваются на подключение к MQTT-брокеру (`host = IP контейнера/хоста`),
- - начинают публиковать telemetry/status.
-
----
-
-## 9. Локальный доступ
-
-**Development окружение:**
-- Laravel (Inertia UI): `http://localhost:8080`
-- Vite dev server: `http://localhost:5173` (только dev)
-- Reverb WebSocket: `ws://localhost:6001`
-- MQTT брокер: `mqtt://localhost:1883`
-- PostgreSQL: `localhost:5432`, БД `hydro_dev`
-- Redis: `localhost:6379`
-- Prometheus: `http://localhost:9090` (если включен)
-- Grafana: `http://localhost:3000` (если включен)
-
-**Production окружение:**
-- Laravel (Inertia UI): `http://localhost:8080`
-- Reverb WebSocket: `ws://localhost:6001`
-- MQTT брокер: `mqtt://localhost:1883` (внутренний, не публичный)
-- PostgreSQL: `localhost:5432`, БД `hydro` (внутренний)
-
----
-
-## 10. Расширения стека (о чём можно просить ИИ)
-
-ИИ-агент может предложить добавить:
-
-1. **Grafana**:
- - отдельный сервис `grafana` в docker-compose;
- - datasource = PostgreSQL.
-
-2. **Redis**:
- - для очередей Laravel;
- - для кэша.
-
-3. **Laravel Reverb (WebSocket)**:
- - встроен в Laravel сервис;
- - автоматически запускается при `REVERB_AUTO_START=true`;
- - используется для realtime обновлений UI;
- - см. раздел 13 ниже.
-
-4. **Python-сервисы**:
- - `automation-engine` — контроллеры зон и исполнение workflow;
- - `history-logger` — телеметрия и публикация команд в MQTT;
- - `mqtt-bridge` — REST → MQTT мост;
- - расписания — логика Laravel (отдельного контейнера `scheduler` нет).
-
----
-
-## 11. Чего нельзя делать ИИ-агенту
-
-- Менять имена сервисов (`db`, `mqtt`, `laravel`, `redis`, `mqtt-bridge`, `history-logger`, `automation-engine`) без обновления всех зависимостей.
-- Менять порты без синхронизации с конфигами ESP32/клиентов.
-- Удалять автоматический запуск миграций без замены на понятный альтернативный процесс.
-- Хардкодить IP-адреса внутри контейнеров (использовать имена сервисов).
-- Менять структуру `backend/services/` без обновления Dockerfile путей.
-
----
-
-## 12. Чек-лист перед изменением Docker-конфигов
-
-1. Laravel, Python и ESP32 всё ещё могут достучаться до PostgreSQL и MQTT?
-2. Имена сервисов не изменены или везде обновлены?
-3. Порты на хосте не конфликтуют между собой?
-4. Секреты (пароли, токены) не захардкожены в изображениях?
-5. В случае добавления новых сервисов (Grafana, Redis, Prometheus) — они не ломают зависимости?
-6. Reverb WebSocket правильно настроен для realtime обновлений?
-
----
-
-## 13. Laravel Reverb (WebSocket)
-
-Laravel Reverb — встроенный WebSocket сервер для realtime обновлений UI.
-
-### 13.1. Конфигурация
-
-Reverb автоматически запускается при старте Laravel контейнера, если `REVERB_AUTO_START=true`.
-
-**Переменные окружения:**
-- `REVERB_APP_ID` - идентификатор приложения (по умолчанию: `app`)
-- `REVERB_APP_KEY` - публичный ключ для клиентов
-- `REVERB_APP_SECRET` - секретный ключ для сервера
-- `REVERB_HOST` - хост для прослушивания (по умолчанию: `0.0.0.0`)
-- `REVERB_PORT` - порт WebSocket (по умолчанию: `6001`)
-- `REVERB_SCHEME` - схема (`http` или `https`)
-- `REVERB_DEBUG` - режим отладки (только для dev)
-- `REVERB_AUTO_START` - автоматический запуск при старте контейнера
-
-### 13.2. Подключение клиентов
-
-**Frontend (Vue 3):**
-```javascript
-import Echo from 'laravel-echo';
-import Pusher from 'pusher-js';
-
-window.Pusher = Pusher;
-window.Echo = new Echo({
-    broadcaster: 'reverb',
-    key: import.meta.env.VITE_REVERB_APP_KEY,
-    wsHost: import.meta.env.VITE_REVERB_HOST,
-    wsPort: import.meta.env.VITE_REVERB_PORT,
-    wssPort: import.meta.env.VITE_REVERB_PORT,
-    forceTLS: (import.meta.env.VITE_REVERB_SCHEME ?? 'https') === 'https',
-    enabledTransports: ['ws', 'wss'],
-});
-```
-
-### 13.3. Использование
-
-См. `REALTIME_UPDATES_ARCH.md` для детального описания событий и каналов.
-
-**Основные каналы:**
-- `hydro.zones.{id}` - обновления по зоне
-- `hydro.alerts` - новые алерты
-- `nodes.{id}.status` - статусы узлов
-
-### 13.4. Мониторинг
-
-Reverb логирует подключения и события. В production рекомендуется настроить логирование в файл или внешний сервис.
-
----
-
-# Конец файла FULL_STACK_DEPLOY_DOCKER.md

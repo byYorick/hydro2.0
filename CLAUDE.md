@@ -57,7 +57,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### Сборка и запуск
 
 ```bash
-# Core: laravel, mqtt-bridge, history-logger, automation-engine, postgres, redis, mosquitto
+# Core: mqtt, db, redis, laravel, mqtt-bridge, history-logger, automation-engine, telemetry-aggregator
 # digital-twin / feature-builder / node-emulator — не часть default up
 make up
 # Или: docker compose -f backend/docker-compose.dev.yml up -d --pull missing
@@ -442,7 +442,7 @@ Laravel scheduler-dispatch → REST → Automation-Engine → REST → History-L
 
 - Канонические device `cmd`: `run_pump`, `dose`, `set_relay`, `set_pwm`, `set_position`, `calibrate`, `test_sensor`, `restart`, `state`.
 - Статусы команд: `QUEUED|SENT|ACK|DONE|NO_EFFECT|ERROR|INVALID|BUSY|TIMEOUT|SEND_FAILED`. Статусы `ACCEPTED`/`FAILED` (и lowercase `failed`) **запрещены**.
-- Timestamp валидация: `abs(now - ts) < 10 секунд` на всех уровнях.
+- Timestamp валидация: `abs(now - ts) <= 10 секунд` на всех уровнях.
 - HMAC-SHA256: canonical JSON с lexicographic sort ключей, порядок массивов сохранён, без whitespace, числа в формате cJSON, UTF-8, unescaped slashes. `node_secret` — 32 байта на узел.
 - `command_response.ts` — в **миллисекундах**.
 - Ограничения (безопасные пределы; реальные значения задаются через `zone.correction_config` / `pump_calibration`):
@@ -538,7 +538,7 @@ Laravel scheduler-dispatch → REST → Automation-Engine → REST → History-L
 - Калибровка pH — 2-3 точки (raw/value); EC — K-value + temperature compensation.
 - `fail_safe_guards` для `irrig` — **зеркало** значений из `zone.logic_profile`.
 - Узел обязан валидировать NodeConfig, применять локально и публиковать `config_report` как ACK.
-- HMAC подпись команд: timestamp не старше **10 секунд** (firmware `HMAC_TIMESTAMP_TOLERANCE_SEC=10` и HL `_MAX_TIMESTAMP_SKEW_SEC=10`). HMAC подписи конфигов на ноде — целевое значение 60 секунд, но в актуальной прошивке config HMAC verify пока не реализован (Status: planned, см. `doc_ai/08_SECURITY_AND_OPS/SECURITY_ARCHITECTURE.md` §2.3.2).
+- HMAC подпись команд: timestamp не старше **10 секунд** (firmware `HMAC_TIMESTAMP_TOLERANCE_SEC=10` и HL `_MAX_COMMAND_TS_OFFSET_SEC=10`). HMAC подписи конфигов на ноде — целевое значение 60 секунд, но в актуальной прошивке config HMAC verify пока не реализован (Status: planned, см. `doc_ai/08_SECURITY_AND_OPS/SECURITY_ARCHITECTURE.md` §2.3.2).
 
 ### Безопасность
 

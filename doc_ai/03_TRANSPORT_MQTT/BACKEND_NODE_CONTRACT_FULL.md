@@ -342,7 +342,7 @@ Backend → Node
 **Позиция привода (roof vent, greenhouse climate):**
 - `cmd`: `set_position`
 - `params`: обязательный `position_pct` (0..100), опционально `max_step_pct` (0..100)
-- каналы: `roof_vent_left`, `roof_vent_right` (см. `NODE_CHANNELS_REFERENCE.md`, `GREENHOUSE_CLIMATE_CONTROL_PLAN.md`).
+- каналы: `roof_vent_left`, `roof_vent_right` (см. `NODE_CHANNELS_REFERENCE.md`, `GREENHOUSE_CLIMATE_CONTROL_SPEC.md`).
 
 **Тест сенсора канала:**
 - `cmd`: `test_sensor`
@@ -400,13 +400,13 @@ sig = HMAC_SHA256(node_secret, canonical_json(command_without_sig))
 
 **Проверки на узле:**
 1. **Timestamp проверка:**
-   - `abs(now - ts) < 10 секунд`
+   - `abs(now - ts) <= 10 секунд`
    - Если timestamp истек, команда отклоняется с ошибкой `timestamp_expired`
 
 2. **HMAC подпись проверка:**
    - Узел получает `node_secret` из NodeConfig (поле `node_secret`)
    - Вычисляется ожидаемая подпись: `HMAC_SHA256(node_secret, canonical_json(command_without_sig))`
-   - Сравнивается с полученной подписью `sig` (константное время)
+   - Сравнивается с полученной подписью `sig` без учёта регистра hex. Текущий `node_signature_matches` проверяет все 64 символа с накоплением mismatch без раннего выхода; применяется также к разрешённой dev legacy-подписи. Ожидаемая и полученная подписи в лог не выводятся.
    - Если подписи не совпадают, команда отклоняется с ошибкой `invalid_signature`
 
 3. **Требования к полям:**

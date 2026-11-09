@@ -12,15 +12,15 @@ export const DASHBOARD_HERO_EYEBROW: Record<DashboardView, string> = {
 
 export const DASHBOARD_HERO_TITLE: Record<DashboardView, string> = {
   operations: 'Сегодня',
-  agronomy: 'Обзор культур',
-  engineering: 'Узлы',
+  agronomy: 'Культуры и циклы',
+  engineering: 'Диагностика',
   admin: 'Система',
 }
 
 export const DASHBOARD_HERO_SUBTITLE: Record<DashboardView, string> = {
   operations: 'Очередь смены и зоны. Пауза автоматики — на карточке зоны.',
-  agronomy: 'Культуры, коридор pH/EC и ближайшие переходы фаз.',
-  engineering: 'Проблемные узлы и зоны. Карточки — диагностика.',
+  agronomy: 'Отклонения, достоверность измерений и ближайшие решения по фазам.',
+  engineering: 'Узел, наблюдения, влияние на зону и следующая проверка.',
   admin: 'Здоровье сервисов, блокировки автоматики и инциденты.',
 }
 
@@ -147,34 +147,46 @@ function metricCorridor(
   value: number | null | undefined,
   range: { min: number | null; max: number | null } | null | undefined,
 ): CorridorStatus {
-  if (value === null || value === undefined || Number.isNaN(value)) {
+  if (value === null || value === undefined || !Number.isFinite(value)) {
     return 'unknown'
   }
-  if (!range || range.min === null || range.max === null) {
+  if (!range || range.min == null || range.max == null || !Number.isFinite(range.min) || !Number.isFinite(range.max) || range.min > range.max) {
     return 'unknown'
   }
   return value >= range.min && value <= range.max ? 'in' : 'out'
 }
 
-export function zonePhEcCorridor(zone: UnifiedZone): CorridorStatus {
-  const ph = metricCorridor(zone.telemetry?.ph, zone.targets?.ph)
-  const ec = metricCorridor(zone.telemetry?.ec, zone.targets?.ec)
+// Presentation threshold for the dashboard summary, not an automation interlock.
+export const DASHBOARD_TELEMETRY_MAX_AGE_MS = 5 * 60 * 1000
 
-  if (ph === 'out' || ec === 'out') {
-    return 'out'
-  }
-  if (ph === 'in' || ec === 'in') {
-    return 'in'
-  }
+export function telemetrySummaryIsFresh(zone: UnifiedZone, now = Date.now()): boolean {
+  const at = Date.parse(zone.telemetry?.updated_at ?? '')
+  return Number.isFinite(at) && at <= now + 30_000 && now - at <= DASHBOARD_TELEMETRY_MAX_AGE_MS
+}
 
-  if (zone.status === 'ALARM' || zone.status === 'WARNING') {
-    return 'out'
-  }
-  if (zone.status === 'RUNNING' || zone.status === 'OK') {
-    return 'in'
-  }
+export function zonePhEcCorridor(zone: UnifiedZone, now = Date.now()): CorridorStatus {
+  if (!telemetrySummaryIsFresh(zone, now)) return 'unknown'
 
-  return 'unknown'
+  // Only assess metrics with configured target ranges. No targets is not "healthy".
+  const metrics = (['ph', 'ec'] as const)
+    .filter((metric) => zone.targets?.[metric] != null)
+    .map((metric) => metricCorridor(zone.telemetry?.[metric], zone.targets?.[metric]))
+  if (metrics.includes('out')) return 'out'
+  return metrics.length > 0 && metrics.every((state) => state === 'in') ? 'in' : 'unknown'
+}
+
+export function zoneNeedsAgronomyDecision(zone: UnifiedZone, now = Date.now()): boolean {
+  return Boolean(zone.automation_block?.blocked) || zonePhEcCorridor(zone, now) === 'out'
+}
+
+export function telemetrySummaryAge(zone: UnifiedZone, now = Date.now()): string {
+  const at = Date.parse(zone.telemetry?.updated_at ?? '')
+  if (!Number.isFinite(at)) return 'Время измерений неизвестно'
+  const seconds = Math.floor((now - at) / 1000)
+  if (seconds < -30) return 'Проверьте время измерений'
+  if (seconds < 60) return 'Сводка обновлена менее минуты назад'
+  if (seconds < 3600) return `Сводка обновлена ${Math.floor(seconds / 60)} мин назад`
+  return `Сводка обновлена ${Math.floor(seconds / 3600)} ч назад`
 }
 
 export interface AgronomyCorridorSummary {
@@ -184,7 +196,7 @@ export interface AgronomyCorridorSummary {
   total: number
 }
 
-export function summarizePhEcCorridor(zones: UnifiedZone[]): AgronomyCorridorSummary {
+export function summarizePhEcCorridor(zones: UnifiedZone[], now = Date.now()): AgronomyCorridorSummary {
   const summary: AgronomyCorridorSummary = {
     inRange: 0,
     outOfRange: 0,
@@ -193,7 +205,7 @@ export function summarizePhEcCorridor(zones: UnifiedZone[]): AgronomyCorridorSum
   }
 
   for (const zone of zones) {
-    const status = zonePhEcCorridor(zone)
+    const status = zonePhEcCorridor(zone, now)
     if (status === 'in') {
       summary.inRange += 1
     } else if (status === 'out') {
@@ -293,7 +305,7 @@ export function buildEngineeringIssues(zones: UnifiedZone[]): EngineeringIssue[]
     const online = zone.devices?.online ?? 0
     const total = zone.devices?.total ?? 0
     if (total > 0 && online < total) {
-      reasons.push(`Узлы офлайн: ${online}/${total}`)
+      reasons.push(`Узлы не на связи: ${total - online} из ${total}`)
     }
     if (zone.irrig_node && zone.irrig_node.online === false) {
       reasons.push('Поливной узел не на связи')

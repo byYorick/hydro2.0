@@ -313,6 +313,7 @@ const emit = defineEmits<{
   (e: 'close'): void
   /** Терминальное состояние сессии (успех / ошибка / отмена) — для обновления списков. */
   (e: 'session-finished', outcome: SensorCalibrationSessionOutcome): void
+  (e: 'state-change', state: { hasUnsavedInput: boolean; activeSession: boolean; busy: boolean }): void
 }>()
 
 function fieldHelp(key: 'point_1_reference' | 'point_2_reference'): string {
@@ -634,6 +635,7 @@ async function cancel(): Promise<void> {
   busy.value = true
   try {
     await cancelCalibration(calibration.value.id)
+    calibration.value = { ...calibration.value, status: 'cancelled' }
     stopPolling()
     emit('session-finished', 'cancelled')
     emit('close')
@@ -661,6 +663,18 @@ watch(
 onBeforeUnmount(() => {
   stopPolling()
 })
+
+watch([calibration, point1Value, point2Value, busy, sessionLoading, () => props.active], () => {
+  const session = calibration.value
+  emit('state-change', {
+    hasUnsavedInput: props.active && (
+      point1Value.value !== (session?.point_1_reference ?? defaults.value.point_1_value)
+      || point2Value.value !== (session?.point_2_reference ?? defaults.value.point_2_value)
+    ),
+    activeSession: Boolean(props.active && session && !['completed', 'failed', 'cancelled'].includes(session.status)),
+    busy: busy.value || sessionLoading.value,
+  })
+}, { immediate: true, deep: true })
 </script>
 
 <style scoped>

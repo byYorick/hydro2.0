@@ -1,100 +1,19 @@
-# 01_SYSTEM — Системная архитектура
+# Системная архитектура
 
-Этот раздел содержит высокоуровневую системную архитектуру и логику работы системы hydro 2.0.
+**Статус:** навигационный guide.
 
+Доменная модель, потоки данных и жизненный цикл нод.
 
-Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
-Breaking-change: обратная совместимость со старыми форматами и алиасами не поддерживается.
+## Документы
 
----
+- [01_PROJECT_STRUCTURE_PROD.md](01_PROJECT_STRUCTURE_PROD.md) — Спецификация структуры боевого проекта `hydro2.0`
+- [DATAFLOW_FULL.md](DATAFLOW_FULL.md) — Полный детальный документ потоков данных 2.0 (Data Flows)
+- [LOGIC_ARCH.md](LOGIC_ARCH.md) — Архитектура логики 2.0 (Теплица → Зоны → Циклы выращивания → Рецепты → Ноды → Каналы)
+- [NODE_ADDITION_AND_ACTIVATION_FLOW.md](NODE_ADDITION_AND_ACTIVATION_FLOW.md) — Полная цепочка добавления новой ноды и выход в рабочий режим
+- [NODE_ASSIGNMENT_LOGIC.md](NODE_ASSIGNMENT_LOGIC.md) — Логика привязки ноды к зоне
+- [NODE_DETACH_IMPLEMENTATION.md](NODE_DETACH_IMPLEMENTATION.md) — Реализация отвязки ноды от зоны
+- [NODE_LIFECYCLE_AND_PROVISIONING.md](NODE_LIFECYCLE_AND_PROVISIONING.md) — Жизненный цикл узла 2.0
+- [REPO_MAPPING.md](REPO_MAPPING.md) — Соответствие документации 2.0 и реальных репозиториев
 
-## 📋 Документы раздела
-
-### Основные документы
-
-#### [LOGIC_ARCH.md](LOGIC_ARCH.md)
-**Логическая модель системы** (Теплица → Зоны → Ноды → Каналы)
-- Иерархия сущностей
-- Роли компонентов
-- Логические потоки
-- Взаимодействие с рецептами
-
-#### [DATAFLOW_FULL.md](DATAFLOW_FULL.md)
-**Полные потоки данных**
-- Telemetry Flow (узлы → backend)
-- Command Flow (backend → узлы)
-- Config Flow (Laravel → HL → MQTT `…/config` + `config_report` вверх)
-- Status/LWT Flow
-- Heartbeat Flow
-- Events Flow
-- WebSocket Flow
-
-#### [NODE_LIFECYCLE_AND_PROVISIONING.md](NODE_LIFECYCLE_AND_PROVISIONING.md)
-**Жизненный цикл узла**
-- Состояния узла (MANUFACTURED → ACTIVE → DECOMMISSIONED)
-- Идентификаторы узла
-- Этапы жизненного цикла
-- Provisioning и регистрация
-
-#### [01_PROJECT_STRUCTURE_PROD.md](01_PROJECT_STRUCTURE_PROD.md)
-**Структура боевого проекта**
-- Общая структура монорепозитория
-- Организация firmware, backend, mobile, infra
-- Конфигурационные файлы
-- Инструменты и утилиты
-
-### Вспомогательные документы (`canonical` / `guide`)
-
-#### [REPO_MAPPING.md](REPO_MAPPING.md)
-Маппинг репозиториев и компонентов (`guide`)
-
-#### [NODE_ASSIGNMENT_LOGIC.md](NODE_ASSIGNMENT_LOGIC.md)
-Логика привязки узлов к зонам (`canonical`)
-
-#### [NODE_ADDITION_AND_ACTIVATION_FLOW.md](NODE_ADDITION_AND_ACTIVATION_FLOW.md)
-Добавление и активация узла в системе (`canonical`)
-
-#### [NODE_DETACH_IMPLEMENTATION.md](NODE_DETACH_IMPLEMENTATION.md)
-Реализация отвязки узлов от зон (NodeConfig temp namespace через HL; unbind ≠ отсутствие bind-publish) (`canonical`)
-
-### Архив plans (`archive` stubs)
-
-Полные тексты в [`../00_ARCHIVE/PLANS/`](../00_ARCHIVE/PLANS/). На месте — короткие stubs:
-
-- [PUMP_NAMING_UNIFICATION_PLAN.md](PUMP_NAMING_UNIFICATION_PLAN.md)
-- [FULL_SYSTEM_ARCH_PROPOSAL.md](FULL_SYSTEM_ARCH_PROPOSAL.md)
-- [MIGRATION_PLAN_FROM_MESH_HYDRO.md](MIGRATION_PLAN_FROM_MESH_HYDRO.md)
-
----
-
-## 🔗 Связанные разделы
-
-- **[02_HARDWARE_FIRMWARE](../02_HARDWARE_FIRMWARE/)** — прошивки и железо
-- **[03_TRANSPORT_MQTT](../03_TRANSPORT_MQTT/)** — MQTT транспорт
-- **[04_BACKEND_CORE](../04_BACKEND_CORE/)** — backend архитектура
-- **[05_DATA_AND_STORAGE](../05_DATA_AND_STORAGE/)** — модель данных
-
----
-
-## 🎯 С чего начать
-
-1. **Новичок в проекте?** → Начните с [LOGIC_ARCH.md](LOGIC_ARCH.md)
-2. **Нужно понять потоки данных?** → Изучите [DATAFLOW_FULL.md](DATAFLOW_FULL.md)
-3. **Работаете с узлами?** → Прочитайте [NODE_LIFECYCLE_AND_PROVISIONING.md](NODE_LIFECYCLE_AND_PROVISIONING.md)
-4. **Нужна структура проекта?** → См. [01_PROJECT_STRUCTURE_PROD.md](01_PROJECT_STRUCTURE_PROD.md)
-
----
-
-## 📊 Статус документов
-
-| Документ | Статус |
-|----------|--------|
-| `LOGIC_ARCH.md`, `DATAFLOW_FULL.md`, `NODE_*`, `01_PROJECT_STRUCTURE_PROD.md` | `canonical` |
-| `REPO_MAPPING.md` | `guide` |
-| stubs `PUMP_NAMING_*`, `FULL_SYSTEM_ARCH_PROPOSAL`, `MIGRATION_PLAN_*` | `archive` → `00_ARCHIVE/PLANS/` |
-
-Canonical-документы раздела — SoT; архивные plans не подменяют их.
-
----
-
-**См. также:** [Главный индекс документации](../INDEX.md)
+Нормативные контракты сверяются с текущим кодом по правилам `AGENTS.md`.
+[Главный индекс](../INDEX.md).

@@ -7,6 +7,7 @@
 #include "node_framework.h"
 #include "mqtt_manager.h"
 #include "node_utils.h"
+#include "node_signature.h"
 #include "oled_ui.h"
 #include "config_storage.h"
 #include "esp_log.h"
@@ -745,24 +746,9 @@ static bool verify_command_signature(const cJSON *json,
         return false;
     }
 
-    // Сравниваем подписи (константное время, регистронезависимое сравнение hex)
-    bool is_valid = (strlen(sig) == 64 && strlen(expected_sig) == 64);
-    if (is_valid) {
-        for (size_t i = 0; i < 64; i++) {
-            // Нормализуем к нижнему регистру для сравнения (hex всегда в нижнем регистре)
-            char sig_char = (sig[i] >= 'A' && sig[i] <= 'F') ? (sig[i] - 'A' + 'a') : sig[i];
-            char expected_char = expected_sig[i];  // expected_sig уже в нижнем регистре
-            if (sig_char != expected_char) {
-                is_valid = false;
-                break;
-            }
-        }
-    }
-    
+    bool is_valid = node_signature_matches(sig, expected_sig);
     if (!is_valid) {
         ESP_LOGW(TAG, "Command signature verification failed: cmd=%s, ts=%lld", cmd, (long long)ts);
-        ESP_LOGD(TAG, "Expected sig: %s", expected_sig);
-        ESP_LOGD(TAG, "Received sig: %s", sig);
     }
 
     if (!is_valid && allow_legacy_sig) {
@@ -787,17 +773,7 @@ static bool verify_command_signature(const cJSON *json,
             return false;
         }
 
-        bool legacy_valid = (strlen(sig) == 64);
-        if (legacy_valid) {
-            for (size_t i = 0; i < 64; i++) {
-                char sig_char = (sig[i] >= 'A' && sig[i] <= 'F') ? (sig[i] - 'A' + 'a') : sig[i];
-                char expected_char = legacy_expected[i];
-                if (sig_char != expected_char) {
-                    legacy_valid = false;
-                    break;
-                }
-            }
-        }
+        bool legacy_valid = node_signature_matches(sig, legacy_expected);
 
         if (legacy_valid) {
             ESP_LOGW(TAG, "Command accepted with legacy HMAC signature: cmd=%s", cmd);

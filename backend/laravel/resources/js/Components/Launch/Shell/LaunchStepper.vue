@@ -25,7 +25,7 @@ defineEmits<{ (e: 'select', index: number): void }>()
 
 const { stepper } = useLaunchPreferences()
 
-// Vertical stepper только на ≥1280px (см. LAUNCH_REDESIGN.md §5.1, решение 4.14).
+// Vertical stepper только на ≥1280px (см. doc_ai/07_FRONTEND/FRONTEND_UI_UX_SPEC.md).
 const wide = ref(false)
 let mq: MediaQueryList | null = null
 

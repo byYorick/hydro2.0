@@ -1,157 +1,52 @@
-# Структура hydro 2.0 (документация)
+# Структура документации Hydro 2.0
 
-**Дата обновления:** 2026-11-01
+**Дата обновления:** 2026-11-06.
+
+Точка входа — [INDEX.md](INDEX.md). Каталог содержит текущие спецификации,
+операционные руководства и справочники. Исторические планы, отчёты отдельных
+итераций и заглушки удалены из рабочего дерева; история сохраняется в Git.
+
+## Роли документов
+
+| Роль | Значение |
+|---|---|
+| `canonical` | Защищённый контракт; сверяется с кодом по правилам `AGENTS.md` |
+| `guide` | Инструкция, обзор или справочник; не переопределяет контракт |
+
+Указание planned/frozen для отдельной функции внутри актуальной спецификации
+описывает ограничение реализации, а не поручение построить эту функцию.
+Наличие файла или успешной статической проверки не подтверждает приёмку железа.
+
+## Сквозные документы
+
+- [SYSTEM_ARCH_FULL.md](SYSTEM_ARCH_FULL.md) — границы компонентов и обзор архитектуры.
+- [ARCHITECTURE_FLOWS.md](ARCHITECTURE_FLOWS.md) — pipeline и инварианты.
+- [DEV_CONVENTIONS.md](DEV_CONVENTIONS.md) — правила разработки.
+- [TASKS_FOR_AI_AGENTS.md](TASKS_FOR_AI_AGENTS.md) — формулировка задач.
+- [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) — краткое состояние реализации.
+- [11_WEBSOCKET_ARCHITECTURE.md](11_WEBSOCKET_ARCHITECTURE.md) — realtime.
+
+## Каталоги
+
+| Путь | Назначение |
+|---|---|
+| `01_SYSTEM/` | Доменная модель, потоки данных, lifecycle и привязка узлов |
+| `02_HARDWARE_FIRMWARE/` | ESP32, каналы, конфигурация, диагностика и аппаратная часть |
+| `03_TRANSPORT_MQTT/` | Namespace и контракты текущего транспорта |
+| `04_BACKEND_CORE/` | Laravel/Python/AE3, API и runtime contracts |
+| `05_DATA_AND_STORAGE/` | Схема, telemetry pipeline и retention |
+| `06_DOMAIN_ZONES_RECIPES/` | Рецепты, correction, PID, свет, вода и climate spec |
+| `07_FRONTEND/` | Архитектура и проверка UI, роли, референсы изображений |
+| `08_SECURITY_AND_OPS/` | Безопасность, эксплуатация и восстановление |
+| `09_AI_AND_DIGITAL_TWIN/` | Guide существующих опциональных сервисов |
+| `10_AI_DEV_GUIDES/` | Руководства для ИИ, skills, форматы задач |
+| `12_ANDROID_APP/` | Клиент Android и интеграция |
+| `13_TESTING/` | Раздельные тестовые контуры и их инструменты |
+| `14_GROWING_REFERENCE/` | Ориентиры агрономии и состава оборудования |
+
+Отдельного каталога `11_*` нет: WebSocket-документ находится в корне `doc_ai/`.
+Разделовые README перечисляют только существующие документы. Ссылки Markdown
+разрешаются относительно файла, в котором записаны; code paths указываются
+относительно корня репозитория.
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
-Breaking-change: обратная совместимость со старыми форматами и алиасами не поддерживается.
-
-Этот архив содержит спецификацию системы **hydro 2.0** — без разделения на V3/V4.
-Все рабочие документы считаются частью одной актуальной версии 2.0.
-
-## 🚀 Начало работы
-
-**Для быстрой навигации используйте [INDEX.md](INDEX.md)** — главный индекс всей документации.
-
-## Статусы документов
-
-В навигации (INDEX / section README) по возможности отражается роль документа:
-
-| Статус | Значение |
-|--------|----------|
-| `canonical` | Нормативный source of truth для темы; приоритет при конфликте |
-| `guide` | Операционный гайд / how-to; не переопределяет канон |
-| `plan` | План, proposal, roadmap, audit-findings к обсуждению/внедрению |
-| `superseded` | Заменён каноном; оставлен для истории, не использовать как SoT |
-| `archive` | Исторический отчёт/черновик в `00_ARCHIVE/` |
-
-Не каждый из ~240 файлов обязан иметь метку; приоритет — сироты, планы и явные противоречия.
-
-## Корень
-- **[INDEX.md](INDEX.md)** — главный индекс документации (начните отсюда!)
-- `SYSTEM_ARCH_FULL.md` — главный входной файл по архитектуре системы 2.0 (`canonical`)
-- `ARCHITECTURE_FLOWS.md` — защищённые pipeline и инварианты (`canonical`)
-- `DEV_CONVENTIONS.md` — конвенции разработки (`canonical`)
-- `TASKS_FOR_AI_AGENTS.md` — постановка задач для ИИ (`guide`)
-- `11_WEBSOCKET_ARCHITECTURE.md` — WebSocket/Reverb и real-time UI (`canonical`)
-- `IMPLEMENTATION_STATUS.md` — сводный статус реализации (`guide`)
-- `README_STRUCTURE.md` — это описание структуры папок
-- Открытая очередь агента: `04_BACKEND_CORE/AE3_CROP_DAY_LOOP_PLAN_FOR_AI_AGENTS.md` (версия 1.2.0).
-- Программа владельца, статус `plan`: `14_GROW_PROGRAM/` (Крым, сезонная капля, 20 м² → 400 м²). Не подменяет очередь и не является runtime-каноном.
-- `ROADMAP_2.0.md`, `AGRO_AUTONOMY_MASTER_PLAN.md`, `FIRMWARE_OPTIMIZATION_PLAN.md`, `SYNC_PLAN.md` — заглушки. Полный текст в `00_ARCHIVE/PLANS/`, не исполнять.
-- Исторический спринт-план firmware: stub `DEVELOPMENT_PRIORITIES.md` → `00_ARCHIVE/PLANS/`
-- Закрытые audit-plans: stubs `AUDIT_*.md` → полные тексты в `00_ARCHIVE/PLANS/`
-
-## 00_ARCHIVE
-Исторические отчёты, superseded-полные тексты и закрытые plans (**статус `archive`**). Не SoT.
-
-Структура:
-- `REPORTS/` — аудиты кода/документации, cleanup, gaps, backend/python отчёты;
-- `PHASE_REPORTS/` — промежуточные отчёты фаз рефакторинга backend;
-- `FRONTEND_REPORTS/` — аудиты и доработки frontend;
-- `SUPERSEDED/` — полные тексты документов, заменённых каноном (stubs остаются в рабочих разделах);
-- `PLANS/` — закрытые audit/refactor/UI plans (stubs на старых путях).
-
-Точка входа: [00_ARCHIVE/README.md](00_ARCHIVE/README.md). Актуальный статус — `IMPLEMENTATION_STATUS.md`.
-
-> `11_LEGACY_ARCHIVES/` (zip-дампы) удалён 2026-08-02.
-
-## 01_SYSTEM
-Высокоуровневая системная архитектура и потоки данных:
-- общая логическая модель домена;
-- описание глобальных dataflow;
-- жизненный цикл / assignment / detach узлов;
-- планы и proposal (не все `canonical` — см. README раздела).
-
-## 02_HARDWARE_FIRMWARE
-Железо и прошивки узлов:
-- общая аппаратная архитектура;
-- структура прошивок и протоколы узлов;
-- описание типов нод (pH, EC, климат, полив, свет);
-- Wi‑Fi/OTA и диагностика;
-- NodeConfig / config_report / coding standards.
-
-## 03_TRANSPORT_MQTT
-Транспорт и MQTT-протокол:
-- структура топиков и namespace;
-- контракты между backend и узлами;
-- валидация команд и соблюдение транспортных инвариантов;
-- планы масштабирования (multi-broker) — вне текущей каноники.
-
-## 04_BACKEND_CORE
-Ядро backend-приложения:
-- архитектура Laravel-приложения;
-- Python-сервисы и AE3 (`ae3lite.md` — canonical runtime);
-- REST/API‑слой, history-logger, error codes;
-- стек и варианты деплоя (в т.ч. Docker);
-- планы рефакторинга / reliability (status `plan`).
-
-## 05_DATA_AND_STORAGE
-Данные и хранилища:
-- модель данных и связи;
-- сбор и хранение телеметрии;
-- политики хранения (retention).
-
-## 06_DOMAIN_ZONES_RECIPES
-Доменные правила, зоны и рецепты:
-- контроллеры зон;
-- движок рецептов и управление водой;
-- планировщики, события и алерты;
-- correction / effective targets / control modes;
-- пресеты и шаблоны зон.
-
-## 07_FRONTEND
-Фронтенд и UI/UX:
-- архитектура SPA/панели управления;
-- сценарии работы оператора и администратора;
-- real‑time обновление состояния;
-- планы redesign / wizard / scheduler cockpit (`plan`).
-
-## 08_SECURITY_AND_OPS
-Безопасность и эксплуатация:
-- аутентификация/авторизация, роли и права;
-- мониторинг и логирование;
-- резервное копирование и восстановление;
-- runbooks и CI/CD strategy.
-
-## 09_AI_AND_DIGITAL_TWIN
-AI и цифровой двойник:
-- общая AI‑архитектура;
-- оптимизация режимов, симуляция зон;
-- pipeline plans и charters (часть — `plan` / charter, не полный runtime-канон).
-
-## 10_AI_DEV_GUIDES
-Гайды по работе с ИИ (`guide`):
-- как использовать ассистента для генерации кода backend/firmware;
-- рекомендации по работе с схемой БД, MQTT и контроллерами зон;
-- шаблоны задач и prompting.
-
-## 12_ANDROID_APP
-Android-приложение:
-- архитектура клиента;
-- экраны и grow-cycle UI;
-- интеграция с backend API.
-
-См. [12_ANDROID_APP/README.md](12_ANDROID_APP/README.md).
-
-## 13_TESTING
-Тестирование и E2E:
-- обзор стратегии тестирования;
-- E2E guide / scenarios / setup / auth;
-- симулятор узлов (`NODE_SIM`);
-- troubleshooting.
-
-См. [13_TESTING/README.md](13_TESTING/README.md).
-
-## 14_GROW_PROGRAM
-Программа выращивания (`plan`, не runtime):
-- как цикл устроен в коде;
-- пробелы до сезонной капли в Крыму, включая безопасность насосов и дозаторов;
-- агроориентиры салата, базилика и клубники;
-- состав оборудования и вехи до модуля 400 м².
-
-См. [14_GROW_PROGRAM/README.md](14_GROW_PROGRAM/README.md).
-
-## Корень `doc_ai/` (вне нумерованных папок)
-
-Сквозные документы перечислены в блоке **Корень** выше и в [INDEX.md](INDEX.md).
-Нумерация разделов: `01`–`10`, затем `12`–`14` (отдельного раздела `11_*` нет — WebSocket лежит в корне как `11_WEBSOCKET_ARCHITECTURE.md`).

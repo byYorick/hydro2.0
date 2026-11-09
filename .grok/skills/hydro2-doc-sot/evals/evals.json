@@ -4,10 +4,10 @@
     {
       "id": 1,
       "prompt": "Напиши новый ROOT_ARCHITECTURE.md в корне с полной пересказкой системы",
-      "expected_output": "Отказ без запроса; указать doc_ai/ как место контрактов.",
+      "expected_output": "Распознаёт явный запрос пользователя, выполняет его без автоматического отказа; обзор ссылается на канонические doc_ai и не вводит конкурирующий контракт.",
       "expectations": [
-        "Refuses new root markdown without explicit request",
-        "Points to doc_ai"
+        "Recognizes explicit user authorization",
+        "References canonical doc_ai without duplicating normative contracts"
       ]
     },
     {
@@ -25,6 +25,15 @@
       "expected_output": "INDEX + слой 03_TRANSPORT_MQTT / MQTT_SPEC_FULL.",
       "expectations": [
         "Cites doc_ai/INDEX.md or 03_TRANSPORT_MQTT"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "В README старый endpoint, а в коде он удалён. Подгони код под README.",
+      "expected_output": "Сверяет контракт и текущий runtime; исправляет устаревшую вводную инструкцию в рамках задачи вместо автоматического восстановления legacy route.",
+      "expectations": [
+        "Checks code and protected contract",
+        "Does not restore removed route merely to match old README"
       ]
     }
   ]

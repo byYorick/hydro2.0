@@ -1,8 +1,8 @@
 <template>
   <AppLayout>
     <template #default>
-      <div class="space-y-5">
-        <section class="ui-hero space-y-5 p-5 md:p-6">
+      <div class="dashboard-workspace min-w-0 space-y-5">
+        <section class="surface-card space-y-5 p-5 md:p-6">
           <div class="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
             <div class="min-w-0 space-y-1.5">
               <p class="text-[11px] uppercase tracking-[0.28em] text-[color:var(--text-muted)]">
@@ -34,85 +34,10 @@
             </div>
           </div>
 
-          <div
-            class="ui-kpi-grid grid-cols-2 md:grid-cols-3"
-            :class="(summary.zones_blocked ?? 0) > 0 ? 'xl:grid-cols-6' : 'xl:grid-cols-5'"
-          >
-            <div
-              class="ui-kpi-card"
-              data-testid="dashboard-zones-count"
-            >
-              <div class="ui-kpi-label">
-                Зоны
-              </div>
-              <div class="ui-kpi-value text-status-ok">
-                {{ summary.zones_total }}<span class="text-base font-semibold text-[color:var(--text-muted)]"> / {{ summary.zones_running }}</span>
-              </div>
-              <div class="ui-kpi-hint">
-                Всего / в работе
-              </div>
-            </div>
-            <div class="ui-kpi-card">
-              <div class="ui-kpi-label">
-                Предупреждение
-              </div>
-              <div
-                class="ui-kpi-value"
-                :class="summary.zones_warning > 0 ? 'text-status-warning' : ''"
-              >
-                {{ summary.zones_warning }}
-              </div>
-            </div>
-            <div class="ui-kpi-card">
-              <div class="ui-kpi-label">
-                Тревога
-              </div>
-              <div
-                class="ui-kpi-value"
-                :class="summary.zones_alarm > 0 ? 'text-status-critical' : ''"
-              >
-                {{ summary.zones_alarm }}
-              </div>
-            </div>
-            <div class="ui-kpi-card">
-              <div class="ui-kpi-label">
-                Устройства
-              </div>
-              <div class="ui-kpi-value text-status-info">
-                {{ summary.devices_online }}<span class="text-base font-semibold text-[color:var(--text-muted)]">/{{ summary.devices_total }}</span>
-              </div>
-              <div class="ui-kpi-hint">
-                Online / всего
-              </div>
-            </div>
-            <div
-              class="ui-kpi-card"
-              data-testid="dashboard-alerts-count"
-              :class="summary.alerts_active > 0 ? 'border-[color:var(--status-critical)]' : ''"
-            >
-              <div class="ui-kpi-label">
-                Алерты
-              </div>
-              <div
-                class="ui-kpi-value"
-                :class="summary.alerts_active > 0 ? 'text-status-critical' : ''"
-              >
-                {{ summary.alerts_active }}
-              </div>
-            </div>
-            <div
-              v-if="(summary.zones_blocked ?? 0) > 0"
-              class="ui-kpi-card border border-[color:var(--status-critical)]"
-              data-testid="dashboard-zones-blocked"
-            >
-              <div class="ui-kpi-label text-status-critical">
-                Авто остановлено
-              </div>
-              <div class="ui-kpi-value text-status-critical animate-pulse">
-                {{ summary.zones_blocked }}
-              </div>
-            </div>
-          </div>
+          <DashboardSummary
+            :summary="summary"
+            :expanded="dashboardView === 'operations' || dashboardView === 'admin'"
+          />
         </section>
 
         <OperationsShiftPanel
@@ -122,23 +47,28 @@
         <AgronomyOverviewPanel
           v-else-if="dashboardView === 'agronomy'"
           :corridor="agronomyCorridor"
+          :decision-count="agronomyDecisionCount"
           :transitions="phaseTransitions"
         />
-        <EngineeringIssuesPanel
+        <EngineeringEquipmentPanel
           v-else-if="dashboardView === 'engineering'"
-          :issues="engineeringIssues"
+          :zones="zones"
+          :now="now"
         />
         <AdminHealthPanel
           v-else-if="dashboardView === 'admin'"
           :blocked-count="summary.zones_blocked ?? blockedZonesCount"
         />
 
-        <section class="surface-card rounded-2xl border border-[color:var(--border-muted)] p-3 md:p-4">
-          <div class="flex flex-col gap-3 lg:flex-row lg:items-center">
-            <div class="flex flex-1 flex-col gap-2 sm:flex-row sm:items-center">
+        <section
+          v-if="dashboardView !== 'engineering'"
+          class="surface-card rounded-2xl border border-[color:var(--border-muted)] p-3 md:p-4"
+        >
+          <div class="dashboard-filters flex min-w-0 flex-col gap-3">
+            <div class="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-center">
               <TextField
                 v-model="query"
-                class="flex-1"
+                class="min-w-0 flex-1"
                 placeholder="Поиск зоны, культуры или теплицы"
                 aria-label="Поиск зоны, культуры или теплицы"
               />
@@ -184,6 +114,19 @@
               </SelectField>
             </div>
             <div class="flex flex-wrap items-center gap-2">
+              <template v-if="dashboardView === 'agronomy'">
+                <button
+                  v-for="item in agronomyFilters"
+                  :key="item.id"
+                  type="button"
+                  class="btn min-h-11 px-3 text-xs"
+                  :class="agronomyFilter === item.id ? 'btn-outline' : 'btn-ghost'"
+                  :aria-pressed="agronomyFilter === item.id"
+                  @click="agronomyFilter = item.id"
+                >
+                  {{ item.label }}
+                </button>
+              </template>
               <button
                 type="button"
                 class="btn h-9 px-3 text-xs"
@@ -193,6 +136,7 @@
                 {{ showOnlyAlerts ? 'Показать все' : 'Только алерты' }}
               </button>
               <button
+                v-if="dashboardView !== 'agronomy'"
                 type="button"
                 class="btn h-9 px-3 text-xs"
                 :class="denseView ? 'btn-outline' : 'btn-ghost'"
@@ -204,78 +148,61 @@
           </div>
         </section>
 
-        <div
-          v-if="summary.zones_total === 0"
-          class="surface-card border border-[color:var(--border-muted)] rounded-2xl p-6"
-        >
-          <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div>
-              <div class="text-sm font-semibold">
-                Создайте теплицу
-              </div>
-              <div class="text-xs text-[color:var(--text-muted)] mt-1">
-                Добавьте теплицу и зоны, чтобы видеть их на обзоре.
-              </div>
-            </div>
-            <Link href="/greenhouses">
-              <Button size="sm">
-                Перейти к теплицам
-              </Button>
-            </Link>
-          </div>
-        </div>
-
-        <EmptyState
-          v-else-if="!filteredZones.length"
-          title="Нет зон по текущим фильтрам"
-          description="Сбросьте статус, теплицу или поиск, чтобы снова увидеть зоны."
-          container-class="surface-card rounded-card border border-line py-8"
-        />
-
-        <div
-          v-else-if="dashboardView === 'agronomy'"
-          class="space-y-6"
-        >
-          <section
-            v-for="group in cropGroups"
-            :key="group.crop"
-            class="space-y-3"
-            data-testid="dashboard-crop-group"
+        <template v-if="dashboardView !== 'engineering'">
+          <div
+            v-if="summary.zones_total === 0"
+            class="surface-card border border-[color:var(--border-muted)] rounded-2xl p-6"
           >
-            <h2 class="text-sm font-semibold text-[color:var(--text-primary)]">
-              {{ group.crop }}
-            </h2>
-            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-              <ZoneDashboardCard
-                v-for="zone in group.zones"
-                :key="zone.id"
-                :zone="zone"
-                :sparkline-series-data="sparklines[zone.id] ?? null"
-                :dense="denseView"
-              />
+            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <div>
+                <div class="text-sm font-semibold">
+                  Создайте теплицу
+                </div>
+                <div class="text-xs text-[color:var(--text-muted)] mt-1">
+                  Добавьте теплицу и зоны, чтобы видеть их на обзоре.
+                </div>
+              </div>
+              <Link href="/greenhouses">
+                <Button size="sm">
+                  Перейти к теплицам
+                </Button>
+              </Link>
             </div>
-          </section>
-        </div>
+          </div>
 
-        <div
-          v-else
-          class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4"
-        >
-          <ZoneDashboardCard
-            v-for="zone in pagedZones"
-            :key="zone.id"
-            :zone="zone as UnifiedZone"
-            :sparkline-series-data="sparklines[zone.id] ?? null"
-            :dense="denseView"
+          <EmptyState
+            v-else-if="!filteredZones.length"
+            title="Нет зон по текущим фильтрам"
+            description="Сбросьте статус, теплицу или поиск, чтобы снова увидеть зоны."
+            container-class="surface-card rounded-card border border-line py-8"
           />
-        </div>
 
-        <Pagination
-          v-if="filteredZones.length > perPage"
-          v-model:current-page="currentPage"
-          v-model:per-page="perPage"
-          :total="filteredZones.length"
-        />
+          <AgronomyZoneList
+            v-else-if="dashboardView === 'agronomy'"
+            :zones="pagedZones as UnifiedZone[]"
+            :now="now"
+          />
+
+          <div
+            v-else
+            class="dashboard-zone-grid"
+          >
+            <ZoneDashboardCard
+              v-for="zone in pagedZones"
+              :key="zone.id"
+              :zone="zone as UnifiedZone"
+              :sparkline-series-data="sparklines[zone.id] ?? null"
+              :dense="denseView"
+            />
+          </div>
+
+          <Pagination
+            v-if="filteredZones.length > perPage"
+            v-model:current-page="currentPage"
+            v-model:per-page="perPage"
+            :total="filteredZones.length"
+          />
+        </template>
       </div>
     </template>
 
@@ -380,7 +307,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, toRef } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, toRef, watch } from 'vue'
 import { Link, router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Badge from '@/Components/Badge.vue'
@@ -404,21 +331,24 @@ import {
 } from '@/composables/useUnifiedDashboard'
 import type { Alert, EventKind } from '@/types'
 import OperationsShiftPanel from './OperationsShiftPanel.vue'
+import DashboardSummary from './DashboardSummary.vue'
 import AgronomyOverviewPanel from './AgronomyOverviewPanel.vue'
-import EngineeringIssuesPanel from './EngineeringIssuesPanel.vue'
+import AgronomyZoneList from './AgronomyZoneList.vue'
+import EngineeringEquipmentPanel from './EngineeringEquipmentPanel.vue'
+import { useUrlState } from '@/composables/useUrlState'
 import AdminHealthPanel from './AdminHealthPanel.vue'
 import {
   DASHBOARD_CONTEXT_TITLE,
   DASHBOARD_HERO_EYEBROW,
   DASHBOARD_HERO_SUBTITLE,
   DASHBOARD_HERO_TITLE,
-  buildEngineeringIssues,
   buildShiftQueue,
   eventScopeForView,
-  groupZonesByCrop,
   resolveDashboardView,
   summarizePhEcCorridor,
   upcomingPhaseTransitions,
+  zonePhEcCorridor,
+  zoneNeedsAgronomyDecision,
 } from './dashboardRoleView'
 
 interface Props {
@@ -450,7 +380,16 @@ const { eventFilter, filteredEvents } = useDashboardRealtimeFeed({
   eventScope,
 })
 
-const zonesRef = computed(() => props.zones)
+const now = ref(Date.now())
+let observationTimer: ReturnType<typeof setInterval> | undefined
+onMounted(() => { observationTimer = setInterval(() => { now.value = Date.now() }, 30_000) })
+onBeforeUnmount(() => { clearInterval(observationTimer) })
+type AgronomyFilter = 'all' | 'attention' | 'unknown'
+const agronomyFilter = useUrlState<AgronomyFilter>({ key: 'focus', defaultValue: 'all', parse: value => value === 'attention' || value === 'unknown' ? value : 'all' })
+const agronomyFilters: Array<{ id: AgronomyFilter; label: string }> = [
+  { id: 'all', label: 'Все циклы' }, { id: 'attention', label: 'Требуют решения' }, { id: 'unknown', label: 'Без оценки' },
+]
+const zonesRef = computed(() => dashboardView.value !== 'agronomy' || agronomyFilter.value === 'all' ? props.zones : props.zones.filter(zone => agronomyFilter.value === 'attention' ? zoneNeedsAgronomyDecision(zone, now.value) : zonePhEcCorridor(zone, now.value) === 'unknown'))
 const {
   query,
   statusFilter,
@@ -469,14 +408,32 @@ const {
   defaultDense: dashboardView.value !== 'agronomy',
 })
 
+const storedSearch = useUrlState({ key: 'q', defaultValue: '', debounceMs: 200 })
+const storedStatus = useUrlState({ key: 'status', defaultValue: '' })
+const storedGreenhouse = useUrlState({ key: 'greenhouse', defaultValue: '' })
+const storedAlerts = useUrlState({ key: 'alerts', defaultValue: false, parse: value => value === '1', serialize: value => value ? '1' : null })
+query.value = storedSearch.value
+statusFilter.value = storedStatus.value
+greenhouseFilter.value = storedGreenhouse.value
+showOnlyAlerts.value = storedAlerts.value
+watch(query, value => { storedSearch.value = value })
+watch(storedSearch, value => { query.value = value })
+watch(statusFilter, value => { storedStatus.value = value })
+watch(storedStatus, value => { statusFilter.value = value })
+watch(greenhouseFilter, value => { storedGreenhouse.value = value })
+watch(storedGreenhouse, value => { greenhouseFilter.value = value })
+watch(showOnlyAlerts, value => { storedAlerts.value = value })
+watch(storedAlerts, value => { showOnlyAlerts.value = value })
+watch(() => filteredZones.value.length, count => { currentPage.value = Math.max(1, Math.min(currentPage.value, Math.ceil(count / perPage.value))) })
+
 const shiftQueue = computed(() => buildShiftQueue(props.zones))
-const agronomyCorridor = computed(() => summarizePhEcCorridor(props.zones))
-const phaseTransitions = computed(() => upcomingPhaseTransitions(props.zones))
-const engineeringIssues = computed(() => buildEngineeringIssues(props.zones))
+const agronomyCorridor = computed(() => summarizePhEcCorridor(props.zones, now.value))
+const phaseTransitions = computed(() => upcomingPhaseTransitions(props.zones, now.value))
 const blockedZonesCount = computed(() => (
   props.zones.filter((zone) => zone.automation_block?.blocked).length
 ))
-const cropGroups = computed(() => groupZonesByCrop(pagedZones.value as UnifiedZone[]))
+const agronomyDecisionCount = computed(() => props.zones.filter(zone => zoneNeedsAgronomyDecision(zone, now.value)).length)
+watch(agronomyFilter, () => { currentPage.value = 1 })
 
 const eventFilterKinds = computed((): Array<'ALL' | EventKind> => {
   if (dashboardView.value === 'admin') {
@@ -496,3 +453,27 @@ function eventKindLabel(kind: string): string {
   return translateEventKind(kind) || kind
 }
 </script>
+
+<style scoped>
+.dashboard-workspace {
+  container: dashboard / inline-size;
+}
+
+.dashboard-zone-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1rem;
+}
+
+@container dashboard (min-width: 760px) {
+  .dashboard-zone-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@container dashboard (min-width: 1100px) {
+  .dashboard-filters { flex-direction: row; align-items: center; }
+}
+
+@container dashboard (min-width: 1360px) {
+  .dashboard-zone-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+</style>

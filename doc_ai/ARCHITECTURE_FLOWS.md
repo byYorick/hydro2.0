@@ -40,7 +40,11 @@ context сохраняется до публикации через HL; terminal
 
 ## 3. AE3 запуск задач (ingress)
 
-`Laravel scheduler (insert intent) -> POST wake-up -> AE3 worker / ZoneRunner`
+`Laravel scheduler (insert intent) -> POST wake-up -> AE3RuntimeWorker (DB drain)`
+
+Текущий драйвер — `ae3lite/runtime/worker.py::AE3RuntimeWorker`: claim task,
+fencing/lease, исполнение и reconcile. Отдельного класса/процесса `ZoneRunner`
+в runtime нет.
 
 Канонические внешние ingress (см. `ae3lite.md` / `AGENT.md`):
 - `POST /zones/{id}/start-cycle` — diagnostics / cycle_start / compat non-irrigation;

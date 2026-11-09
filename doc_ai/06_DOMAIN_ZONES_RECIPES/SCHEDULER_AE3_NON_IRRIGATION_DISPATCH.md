@@ -75,7 +75,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 
 ## 7. Освещение: day/night ON/OFF (`lighting_tick`, этап A)
 
-**Связано с:** `EFFECTIVE_TARGETS_SPEC.md` §4.4, `AGRO_AUTONOMY_MASTER_PLAN.md` §A, `SchedulerCycleOrchestrator.php`, `ScheduleDispatcher.php`, `cycle_start_planner.py`.
+**Связано с:** `EFFECTIVE_TARGETS_SPEC.md` §4.4, `SchedulerCycleOrchestrator.php`, `ScheduleDispatcher.php`, `cycle_start_planner.py`.
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 
@@ -155,7 +155,9 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 | `"off"` | PWM | `set_pwm` `{duty: 0}` |
 | `"off"` | relay | `set_relay` `{state: false}` |
 
-Workflow: одношаговый `lighting_tick`, `complete_on_ack=true`. Команды — только через history-logger.
+Workflow: одношаговый `lighting_tick`. Planner может передавать legacy `complete_on_ack=true`, но `SequentialCommandGateway` игнорирует этот флаг для mutating-команд: terminal success требует `DONE`; один `ACK` не завершает execution. Команды — только через history-logger.
+
+**PWM:** таблица описывает выход AE3 planner; текущие `climate_node` и `test_node` принимают `duty` в процентах. Старые установленные бинарники требуют обновления. См. [проверку команд](../03_TRANSPORT_MQTT/COMMAND_VALIDATION_ENGINE.md#команда-set_pwm).
 
 ### 7.6. Критерии приёмки (этап A, dispatch-слой)
 

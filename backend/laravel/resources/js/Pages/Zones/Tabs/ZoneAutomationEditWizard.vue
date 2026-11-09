@@ -3,9 +3,10 @@
     :open="open"
     title="Профиль зоны"
     size="xlarge"
+    placement="workspace"
     @close="requestClose"
   >
-    <div class="space-y-4">
+    <div class="h-full min-h-0 space-y-4 overflow-y-auto overscroll-contain p-4 sm:p-6">
       <div class="rounded-2xl border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] px-4 py-3 text-xs text-[color:var(--text-dim)]">
         <p class="m-0">
           Настройте водный контур, узлы, полив, коррекцию и свет. Изменения сохраняются и применяются к зоне после нажатия кнопки ниже.
@@ -16,11 +17,17 @@
         <p class="mt-2 mb-0">
           Цели pH и EC для текущего цикла задаются в рецепте.
         </p>
+        <p
+          data-testid="zone-irrigation-strategy-caption"
+          class="mt-2 mb-0"
+        >
+          Полив выполняется по расписанию. В режиме контроля влажности полив пропускается, если свежих измерений нет; такой пропуск не считается сбоем задачи.
+        </p>
       </div>
 
       <div
         v-if="zoneId > 0"
-        class="max-h-[min(72vh,880px)] overflow-y-auto pr-0.5"
+        class="min-w-0"
       >
         <AutomationStep
           :key="automationStepKey"

@@ -6,7 +6,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * S3 (AUDIT_2026_05_28_BUGFIX_PLAN.md): включение Timescale compression
+ * Включение Timescale compression
  * на больших временных таблицах, которые ранее имели только retention.
  *
  * Контекст:

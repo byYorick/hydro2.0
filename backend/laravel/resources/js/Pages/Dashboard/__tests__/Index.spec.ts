@@ -1,11 +1,14 @@
 import { mount, flushPromises } from '@vue/test-utils'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { UnifiedSummary, UnifiedZone } from '@/composables/useUnifiedDashboard'
 
 const pageState = vi.hoisted(() => ({
   role: 'agronomist' as string,
   pagedZones: [] as UnifiedZone[],
 }))
+
+const nodesListMock = vi.hoisted(() => vi.fn(async () => []))
+vi.mock('@/services/api', () => ({ api: { nodes: { list: nodesListMock } } }))
 
 const healthMock = vi.hoisted(() =>
   vi.fn(async () => ({
@@ -131,7 +134,7 @@ function makeZone(overrides: Partial<UnifiedZone> = {}): UnifiedZone {
       temperature: 22,
       humidity: 60,
       co2: null,
-      updated_at: '2026-08-19T10:00:00.000Z',
+      updated_at: new Date().toISOString(),
     },
     targets: {
       ph: { min: 5.5, max: 6.5 },
@@ -149,10 +152,13 @@ function makeZone(overrides: Partial<UnifiedZone> = {}): UnifiedZone {
   }
 }
 
+const mounted: ReturnType<typeof mount>[] = []
+afterEach(() => { mounted.splice(0).forEach(wrapper => wrapper.unmount()) })
+
 function mountDashboard(role: string, zones: UnifiedZone[] = []) {
   pageState.role = role
   pageState.pagedZones = zones
-  return mount(DashboardIndex, {
+  const wrapper = mount(DashboardIndex, {
     props: {
       summary,
       zones,
@@ -160,6 +166,8 @@ function mountDashboard(role: string, zones: UnifiedZone[] = []) {
       latestAlerts: [],
     },
   })
+  mounted.push(wrapper)
+  return wrapper
 }
 
 describe('Dashboard/Index.vue', () => {
@@ -167,13 +175,15 @@ describe('Dashboard/Index.vue', () => {
     pageState.role = 'agronomist'
     pageState.pagedZones = []
     healthMock.mockClear()
+    nodesListMock.mockReset().mockResolvedValue([])
+    window.history.replaceState({}, '', '/')
   })
 
   it('агроном видит кнопку «Запустить цикл»', () => {
     const wrapper = mountDashboard('agronomist')
 
     expect(wrapper.text()).toContain('Запустить цикл')
-    expect(wrapper.text()).toContain('Обзор культур')
+    expect(wrapper.text()).toContain('Культуры и циклы')
   })
 
   it('operator не видит кнопку «Запустить цикл» и видит пустую очередь', () => {
@@ -214,18 +224,17 @@ describe('Dashboard/Index.vue', () => {
     expect(wrapper.get('a[href="/zones/7?tab=alerts"]').text()).toContain('Тревоги')
   })
 
-  it('агроном группирует карточки по культуре', () => {
+  it('агроном видит культуры в едином списке циклов', () => {
     const wrapper = mountDashboard('agronomist', [
       makeZone({ id: 1, name: 'Зона A', crop: 'Томат' }),
       makeZone({ id: 2, name: 'Зона B', crop: 'Салат', plant: { id: 4, name: 'Салат' } }),
     ])
 
-    const groups = wrapper.findAll('[data-testid="dashboard-crop-group"]')
-    expect(groups).toHaveLength(2)
+    expect(wrapper.findAll('.agronomy-row')).toHaveLength(2)
     expect(wrapper.text()).toContain('Томат')
     expect(wrapper.text()).toContain('Салат')
-    expect(wrapper.text()).toContain('В норме')
-    expect(wrapper.text()).toContain('Вне коридора')
+    expect(wrapper.text()).toContain('В диапазоне')
+    expect(wrapper.text()).toContain('Требуют решения')
   })
 
   it('engineer показывает блок проблемных узлов и зон', () => {
@@ -240,7 +249,7 @@ describe('Dashboard/Index.vue', () => {
 
     expect(wrapper.text()).toContain('Узлы')
     expect(wrapper.text()).toContain('Проблемные узлы и зоны')
-    expect(wrapper.text()).toContain('Узлы офлайн: 1/4')
+    expect(wrapper.text()).toContain('Узлы не на связи: 3 из 4')
     expect(wrapper.text()).toContain('Поливной узел не на связи')
     expect(wrapper.find('[data-testid="dashboard-engineering-issues"]').exists()).toBe(true)
   })

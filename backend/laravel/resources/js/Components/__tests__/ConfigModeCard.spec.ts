@@ -44,7 +44,7 @@ describe('ConfigModeCard', () => {
       props: { zoneId: 1, controlMode: 'manual', role: 'agronomist' },
     })
     await flushPromises()
-    expect(w.find('[data-testid="config-mode-badge"]').text()).toContain('Locked')
+    expect(w.find('[data-testid="config-mode-badge"]').text()).toContain('Настройки защищены')
   })
 
   it('shows live badge + countdown in live mode', async () => {
@@ -53,7 +53,7 @@ describe('ConfigModeCard', () => {
       props: { zoneId: 1, controlMode: 'manual', role: 'agronomist' },
     })
     await flushPromises()
-    expect(w.find('[data-testid="config-mode-badge"]').text()).toContain('Live tuning')
+    expect(w.find('[data-testid="config-mode-badge"]').text()).toContain('Редактирование открыто')
     expect(w.find('[data-testid="config-mode-countdown"]').exists()).toBe(true)
   })
 

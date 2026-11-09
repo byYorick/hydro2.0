@@ -1,0 +1,182 @@
+{
+  "version": 1,
+  "updated_at": "2026-11-06",
+  "format": "https://agentskills.io/specification",
+  "sources": [
+    {
+      "id": "laravel-specialist",
+      "repository": "Jeffallan/claude-skills",
+      "commit": "078a25cc5bfd8011459be7b91d004e900c1d02d3",
+      "path": "skills/laravel-specialist/SKILL.md",
+      "blob_sha": "1ba00fac6b14ecedbdcade950d135d00bb55d05f",
+      "url": "https://github.com/Jeffallan/claude-skills/blob/078a25cc5bfd8011459be7b91d004e900c1d02d3/skills/laravel-specialist/SKILL.md",
+      "license": "MIT",
+      "license_file": "tools/skills/licenses/jeffallan-claude-skills-MIT.txt",
+      "adaptation": "Workflow Laravel адаптирован к Laravel 12, Inertia/Vue, Docker и владельцам схемы/команд Hydro; Livewire/Horizon не добавляются."
+    },
+    {
+      "id": "postgres-pro",
+      "repository": "Jeffallan/claude-skills",
+      "commit": "078a25cc5bfd8011459be7b91d004e900c1d02d3",
+      "path": "skills/postgres-pro/SKILL.md",
+      "blob_sha": "3c0a347b662f1b89f71a128c1d913bf3d032b8ca",
+      "url": "https://github.com/Jeffallan/claude-skills/blob/078a25cc5bfd8011459be7b91d004e900c1d02d3/skills/postgres-pro/SKILL.md",
+      "license": "MIT",
+      "license_file": "tools/skills/licenses/jeffallan-claude-skills-MIT.txt",
+      "adaptation": "Диагностика PostgreSQL и проверка результата; ручной DDL заменён Laravel-миграциями, EXPLAIN ANALYZE не считается read-only, PITR сверяется с PostgreSQL 16."
+    },
+    {
+      "id": "docker-local-dev",
+      "repository": "thienanblog/awesome-ai-agent-skills",
+      "commit": "ac929caec7e5313e5a53033db68673c47a84c42c",
+      "path": "skills/docker-local-dev/SKILL.md",
+      "blob_sha": "7a3fd5b08c645b23fc247d14ea20b684388f654f",
+      "url": "https://github.com/thienanblog/awesome-ai-agent-skills/blob/ac929caec7e5313e5a53033db68673c47a84c42c/skills/docker-local-dev/SKILL.md",
+      "license": "Apache-2.0",
+      "license_file": "tools/skills/licenses/awesome-ai-agent-skills-Apache-2.0.txt",
+      "adaptation": "Проверка Compose/readiness адаптирована к core/obs/sim/ml Hydro без генерации нового стека и автоматического удаления данных."
+    },
+    {
+      "id": "systematic-debugging",
+      "repository": "obra/superpowers",
+      "commit": "22f0b463e7a5e579904dd6211a520321035526f7",
+      "path": "skills/systematic-debugging/SKILL.md",
+      "blob_sha": "62fc752aaef59a8bbed5d305f4cadc60f8ae07ed",
+      "url": "https://github.com/obra/superpowers/blob/22f0b463e7a5e579904dd6211a520321035526f7/skills/systematic-debugging/SKILL.md",
+      "license": "MIT",
+      "license_file": "tools/skills/licenses/obra-superpowers-MIT.txt",
+      "adaptation": "Сбор доказательств и проверка гипотез адаптированы к Laravel→AE3→HL→MQTT→ESP32; нет обязательного глобального TDD/субагентов/изменения архитектуры."
+    },
+    {
+      "id": "skill-creator",
+      "repository": "anthropics/skills",
+      "commit": "ca45fc496a3436251f191354091d557da31c15b5",
+      "path": "skills/skill-creator/SKILL.md",
+      "blob_sha": "65b3a402dbd09b8e83f9d637c6b553875189085c",
+      "url": "https://github.com/anthropics/skills/blob/ca45fc496a3436251f191354091d557da31c15b5/skills/skill-creator/SKILL.md",
+      "license": "Apache-2.0",
+      "license_file": "tools/skills/licenses/anthropic-skill-creator-Apache-2.0.txt",
+      "adaptation": "Формат, progressive disclosure и сценарии оценки адаптированы к локальным skills Hydro; структурная проверка отделена от модельных evals, нет автоделегации."
+    }
+  ],
+  "skills": [
+    {
+      "name": "hydro2-command-flow",
+      "path": ".grok/skills/hydro2-command-flow",
+      "sources": [],
+      "aliases": [
+        ".agents/skills/hydro2-command-flow",
+        ".claude/skills/hydro2-command-flow"
+      ]
+    },
+    {
+      "name": "hydro2-mqtt-security",
+      "path": ".grok/skills/hydro2-mqtt-security",
+      "sources": [],
+      "aliases": [
+        ".agents/skills/hydro2-mqtt-security",
+        ".claude/skills/hydro2-mqtt-security"
+      ]
+    },
+    {
+      "name": "hydro2-ae3-automation",
+      "path": ".grok/skills/hydro2-ae3-automation",
+      "sources": [],
+      "aliases": [
+        ".agents/skills/hydro2-ae3-automation",
+        ".claude/skills/hydro2-ae3-automation"
+      ]
+    },
+    {
+      "name": "hydro2-firmware-nodes",
+      "path": ".grok/skills/hydro2-firmware-nodes",
+      "sources": [],
+      "aliases": [
+        ".agents/skills/hydro2-firmware-nodes",
+        ".claude/skills/hydro2-firmware-nodes"
+      ]
+    },
+    {
+      "name": "hydro2-frontend-dashboard",
+      "path": ".grok/skills/hydro2-frontend-dashboard",
+      "sources": [],
+      "aliases": [
+        ".agents/skills/hydro2-frontend-dashboard",
+        ".claude/skills/hydro2-frontend-dashboard"
+      ]
+    },
+    {
+      "name": "hydro2-doc-sot",
+      "path": ".grok/skills/hydro2-doc-sot",
+      "sources": [],
+      "aliases": [
+        ".agents/skills/hydro2-doc-sot",
+        ".claude/skills/hydro2-doc-sot"
+      ]
+    },
+    {
+      "name": "hydro2-laravel-backend",
+      "path": ".grok/skills/hydro2-laravel-backend",
+      "sources": [
+        "laravel-specialist"
+      ],
+      "aliases": [
+        ".agents/skills/hydro2-laravel-backend",
+        ".claude/skills/hydro2-laravel-backend"
+      ]
+    },
+    {
+      "name": "hydro2-postgres-recovery",
+      "path": ".grok/skills/hydro2-postgres-recovery",
+      "sources": [
+        "postgres-pro"
+      ],
+      "aliases": [
+        ".agents/skills/hydro2-postgres-recovery",
+        ".claude/skills/hydro2-postgres-recovery"
+      ]
+    },
+    {
+      "name": "hydro2-docker-dev",
+      "path": ".grok/skills/hydro2-docker-dev",
+      "sources": [
+        "docker-local-dev"
+      ],
+      "aliases": [
+        ".agents/skills/hydro2-docker-dev",
+        ".claude/skills/hydro2-docker-dev"
+      ]
+    },
+    {
+      "name": "hydro2-systematic-debugging",
+      "path": ".grok/skills/hydro2-systematic-debugging",
+      "sources": [
+        "systematic-debugging"
+      ],
+      "aliases": [
+        ".agents/skills/hydro2-systematic-debugging",
+        ".claude/skills/hydro2-systematic-debugging"
+      ]
+    },
+    {
+      "name": "hydro2-skill-maintenance",
+      "path": ".grok/skills/hydro2-skill-maintenance",
+      "sources": [
+        "skill-creator"
+      ],
+      "aliases": [
+        ".agents/skills/hydro2-skill-maintenance",
+        ".claude/skills/hydro2-skill-maintenance"
+      ]
+    },
+    {
+      "name": "two-tank-debug",
+      "path": ".claude/skills/two-tank-debug",
+      "sources": [],
+      "aliases": [
+        ".agents/skills/two-tank-debug",
+        ".grok/skills/two-tank-debug"
+      ]
+    }
+  ]
+}

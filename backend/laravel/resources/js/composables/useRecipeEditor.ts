@@ -21,12 +21,11 @@ import { logger } from '@/utils/logger'
 
 interface SaveRecipeOptions {
   redirectToRecipe?: boolean
+  publish?: boolean
 }
 
 interface EnsureDraftRevisionResult {
   revisionId: number
-  createdFromClone: boolean
-  clonedPhaseIds: number[]
 }
 
 export function useRecipeEditor(initialRecipe?: Partial<Recipe> | null) {
@@ -35,6 +34,8 @@ export function useRecipeEditor(initialRecipe?: Partial<Recipe> | null) {
   const form = reactive<RecipeEditorFormState>(createRecipeEditorFormState(initialRecipe ?? null))
   const recipeId = ref<number | null>(typeof initialRecipe?.id === 'number' ? initialRecipe.id : null)
   const draftRevisionId = ref<number | null>(typeof initialRecipe?.draft_revision_id === 'number' ? initialRecipe.draft_revision_id : null)
+  const publishedRevisionId = ref(initialRecipe?.latest_published_revision_id ?? null)
+  const sourcePhaseIndices = ref(new Map((initialRecipe?.phases ?? []).map(phase => [phase.id, phase.phase_index])))
   const processing = ref(false)
   const plants = ref<PlantOption[]>([])
   const plantsLoading = ref(false)
@@ -114,6 +115,8 @@ export function useRecipeEditor(initialRecipe?: Partial<Recipe> | null) {
     form.phases.splice(0, form.phases.length, ...nextForm.phases)
     recipeId.value = nextForm.id
     draftRevisionId.value = nextForm.draft_revision_id
+    publishedRevisionId.value = nextRecipe?.latest_published_revision_id ?? null
+    sourcePhaseIndices.value = new Map((nextRecipe?.phases ?? []).map(phase => [phase.id, phase.phase_index]))
     initialPhaseIds.value = Array.isArray(nextRecipe?.phases)
       ? nextRecipe.phases
         .map((phase) => (typeof phase.id === 'number' ? phase.id : null))
@@ -217,14 +220,10 @@ export function useRecipeEditor(initialRecipe?: Partial<Recipe> | null) {
     if (draftRevisionId.value) {
       return {
         revisionId: draftRevisionId.value,
-        createdFromClone: false,
-        clonedPhaseIds: [],
       }
     }
 
-    const cloneFromRevisionId = typeof initialRecipe?.latest_published_revision_id === 'number'
-      ? initialRecipe.latest_published_revision_id
-      : null
+    const cloneFromRevisionId = publishedRevisionId.value
     const revision = await api.recipes.createRevision(currentRecipeId, {
       clone_from_revision_id: cloneFromRevisionId,
       description: recipeId.value ? 'Updated via unified editor' : 'Initial revision',
@@ -244,11 +243,17 @@ export function useRecipeEditor(initialRecipe?: Partial<Recipe> | null) {
         .filter((phaseId): phaseId is number => phaseId !== null)
       : []
 
-    return {
-      revisionId: nextRevisionId,
-      createdFromClone: cloneFromRevisionId !== null,
-      clonedPhaseIds,
+    // Keep cloned phases (and their steps) attached to the corresponding source phase.
+    // Published phase IDs must never be used for draft updates or deletion.
+    const clonedByIndex = new Map((revision.phases ?? []).map(phase => [phase.phase_index, phase.id]))
+    for (const phase of form.phases) {
+      const sourceIndex = phase.id == null ? undefined : sourcePhaseIndices.value.get(phase.id)
+      const clonedId = sourceIndex == null ? undefined : clonedByIndex.get(sourceIndex)
+      if (typeof clonedId === 'number') phase.id = clonedId
+      else delete phase.id
     }
+    initialPhaseIds.value = clonedPhaseIds
+    return { revisionId: nextRevisionId }
   }
 
   async function saveRecipe(options: SaveRecipeOptions = {}): Promise<Recipe | null> {
@@ -265,17 +270,6 @@ export function useRecipeEditor(initialRecipe?: Partial<Recipe> | null) {
       const currentRecipeId = await ensureRecipeShell()
       const draftRevision = await ensureDraftRevision(currentRecipeId)
       const currentRevisionId = draftRevision.revisionId
-
-      if (draftRevision.createdFromClone && draftRevision.clonedPhaseIds.length > 0) {
-        for (const phaseId of draftRevision.clonedPhaseIds) {
-          await api.recipes.deletePhase(phaseId)
-        }
-
-        initialPhaseIds.value = []
-        form.phases.forEach((phase) => {
-          delete phase.id
-        })
-      }
 
       const persistedPhaseIds = new Set<number>()
 
@@ -300,14 +294,22 @@ export function useRecipeEditor(initialRecipe?: Partial<Recipe> | null) {
         }
       }
 
-      await api.recipes.publishRevision(currentRevisionId)
+      if (options.publish) {
+        await api.recipes.publishRevision(currentRevisionId)
+        publishedRevisionId.value = currentRevisionId
+        draftRevisionId.value = null
+        form.draft_revision_id = null
+        sourcePhaseIndices.value = new Map(form.phases.flatMap(phase => typeof phase.id === 'number' ? [[phase.id, phase.phase_index] as const] : []))
+      } else {
+        initialPhaseIds.value = [...persistedPhaseIds]
+      }
       const recipe = await api.recipes.getById(currentRecipeId)
       if (!recipe?.id) {
         throw new Error('Recipe details not returned')
       }
 
       reset(recipe)
-      showToast('Рецепт сохранён', 'success', TOAST_TIMEOUT.NORMAL)
+      showToast(options.publish ? 'Ревизия опубликована. Активные циклы не переключены.' : 'Черновик сохранён', 'success', TOAST_TIMEOUT.NORMAL)
       if (options.redirectToRecipe) {
         router.visit(`/recipes/${recipe.id}`)
       }
@@ -342,6 +344,7 @@ export function useRecipeEditor(initialRecipe?: Partial<Recipe> | null) {
     addPhase,
     removePhase,
     saveRecipe,
+    validate,
     nutrientRatioSum,
     isNutrientRatioValid,
     normalizePhaseRatios,

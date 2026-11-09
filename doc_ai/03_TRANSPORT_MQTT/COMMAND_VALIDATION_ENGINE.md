@@ -5,7 +5,7 @@
 Документ описывает полную архитектуру проверки команд (Command Validation)
 в системе 2.0. Это критический слой безопасности на пути **backend/Python-сервисы → MQTT → ESP32**.
 
-**Дата обновления:** 2026-08-02 (HMAC/timestamp fail → status ERROR; sync с firmware `node_command_handler.c` и MQTT_SPEC §8.2.1).
+**Дата сверки с кодом:** 2026-11-07 (`command_service.py`, `commands/validation.py`, node-specific handlers).
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 Breaking-change: обратная совместимость со старыми форматами и алиасами не поддерживается.
@@ -63,23 +63,23 @@ Laravel проверяет:
 5. **params валидны** (Form Request — see `app/Http/Requests/`)
 6. **нет активных блокировок safety на уровне UI/API** (ZonePolicy)
 
-Status: **planned / not implemented** — централизованный whitelist допустимых `cmd` значений на стороне Laravel. Сейчас проверка `cmd` делается per-controller (например, `ZoneCommandController`, `NodeCommandController`) или дальше в history-logger (`backend/services/history-logger/commands/command_service.py`). Любой код, добавляющий новый `cmd`, должен синхронно расширить и backend, и firmware.
+Централизованного whitelist допустимых `cmd` в Laravel и history-logger нет. `StoreNodeCommandRequest` проверяет форму запроса и наличие `state` для `set_state`/`set_relay`; `commands/validation.py` в HL требует `cmd` и отвергает legacy `type`. HL не гарантирует поддержку произвольного `cmd` прошивкой: конечный набор задаётся регистрациями обработчиков конкретной ноды. Любой код, добавляющий новый `cmd`, должен синхронно расширить backend и firmware.
 
-Laravel НЕ публикует команду напрямую в MQTT. Laravel вызывает `PythonBridgeService::sendCommand(...)` → `POST {history-logger}/zones/{zone_id}/commands` (или `/nodes/{node_uid}/commands` для node-level), и история lifecycle ведётся в таблице `commands` через history-logger.
+Laravel НЕ публикует команду напрямую в MQTT. Laravel вызывает `PythonBridgeService::sendZoneCommand(...) / sendNodeCommand(...)` → `POST {history-logger}/zones/{zone_id}/commands` (или `/nodes/{node_uid}/commands` для node-level), и история lifecycle ведётся в таблице `commands` через history-logger.
 
 ---
 
 # 4. Уровень 2 — валидация в Python-сервисе (history-logger)
 
-Перед публикацией в MQTT **history-logger** выполняет валидацию sanity caps в `commands/command_service.py`. Это runaway-protection, а не agrobusiness-логика (которая живёт в AE3 planner).
+Перед публикацией в MQTT **history-logger** выполняет валидацию sanity caps в `backend/services/history-logger/command_service.py::_validate_command_params`. Это runaway-protection; доменные ограничения задаёт AE3 planner. HL проверяет числовые `ml`/`duration_ms`, если они переданы, и параметры `set_position`. Обязательность и типы остальных параметров нужно проверять по API и обработчику конкретной ноды.
 
 ## 4.1. Проверка срока годности команды
 
 ```
-abs(now - ts) < 10 секунд
+abs(now - ts) <= 10 секунд
 ```
 
-`now` и `ts` — Unix timestamp в секундах. Реализация: `command_service.py` (`_MAX_TIMESTAMP_SKEW_SEC = 10`); firmware: `node_command_handler.c` (`HMAC_TIMESTAMP_TOLERANCE_SEC 10`).
+`now` и `ts` — Unix timestamp в секундах. Реализация: `command_service.py` (`_MAX_COMMAND_TS_OFFSET_SEC = 10`); firmware: `node_command_handler.c` (`HMAC_TIMESTAMP_TOLERANCE_SEC 10`). HL подставляет текущее время, если caller не передал `ts`; переданную caller-подпись игнорирует и подписывает payload заново серверным секретом ноды.
 
 ## 4.2. Sanity caps на параметры (history-logger)
 
@@ -89,20 +89,20 @@ abs(now - ts) < 10 секунд
 ```
 0 < ml <= _MAX_DOSE_ML_SANITY (500)
 ```
-Реальный production-диапазон: 0.05..50 ml per dose, ограничивается `controllers.{ec,ph}.max_dose_ml` в zone correction config.
+Доменный cap задаётся `controllers.{ec,ph}.max_dose_ml` в resolved zone correction config. Текущие base defaults `ZoneCorrectionConfigCatalog` — pH **35 ml**, EC **80 ml**; phase overrides и длительность дозы могут ограничить их сильнее. Диапазон `0.05..50 ml` не является общим production-контрактом.
 
 ### Команда run_pump:
 ```
 1 <= duration_ms <= _MAX_DURATION_MS_SANITY (300_000)
 ```
-Hard cap = 5 минут на одну команду в history-logger (`_MAX_DURATION_MS_SANITY`). AE3 planner для pH/EC dose использует согласованный default `pump_calibration.max_dose_ms=60_000` ms (firmware ph/ec node). Для timed-start IRR (`pump_main/set_relay {state,timeout_ms,stage}`) cap применяется к `timeout_ms`.
+HL ограничивает числовой `duration_ms` пятью минутами (`_MAX_DURATION_MS_SANITY`). AE3 planner для pH/EC dose использует default `pump_calibration.max_dose_ms=60_000` ms (firmware ph/ec node). На `timeout_ms` timed-start IRR (`pump_main/set_relay {state,timeout_ms,stage}`) этот HL cap **не распространяется**: параметры проверяют planner и IRR firmware.
 
 ### Команда set_position (roof vent / greenhouse climate):
 ```
 0 <= position_pct <= 100
 max_step_pct optional, 0..100
 ```
-Валидация в `history-logger` `POST /commands` (см. `HISTORY_LOGGER_API.md`, `GREENHOUSE_CLIMATE_CONTROL_PLAN.md`).
+Валидация в `history-logger` `POST /commands` (см. `HISTORY_LOGGER_API.md`, `GREENHOUSE_CLIMATE_CONTROL_SPEC.md`).
 
 ### Команда set_relay:
 ```
@@ -112,9 +112,16 @@ params.timeout_ms + params.stage для timed-start IRR (только pump_main,
 ```
 
 ### Команда set_pwm:
-```
-0 <= value <= 255 (или 0..100% в зависимости от nodeConfig)
-```
+
+Канонический параметр — `params.duty` в процентах `0..100`. AE3 формирует его, а текущие `climate_node` и `test_node` принимают через общий `node_pwm_decode` (`node_utils/node_pwm_command.h`). Нечисловые, не конечные и выходящие за диапазон значения отклоняются; при одновременных `duty` и `value` приоритет имеет `duty`.
+
+Для совместимости сохранён `params.value`:
+
+- `climate_node`: целая часть `0..100` — проценты; выше `100` — шкала `0..255` с ограничением сверху;
+- `test_node`: шкала `0..255` с ограничением границ;
+- `light_node` остаётся сенсорной нодой без `set_pwm`.
+
+HL передаёт параметры без преобразования и не проверяет PWM-диапазон. Исправление совместимости находится в прошивках; уже установленные старые бинарники требуют обновления. Host regression проверяет обе шкалы, границы, NaN/Infinity и приоритет OFF.
 
 ## 4.3. Проверка состояния зоны
 
@@ -131,11 +138,7 @@ History-logger такие проверки не делает — он публи
 
 Status: **planned / not enforced by history-logger**. В текущей реализации `min_interval_sec` между дозами pH/EC обеспечивается AE3 `correction_planner.py` через `pid_state.last_dose_at` и `controllers.{ec,ph}.min_interval_sec` из authority bundle.
 
-Типовые production-значения (конфигурируемо per controller):
-- pH: 60..120 сек
-- EC: 60..120 сек
-
-Старые значения «pH ≥ 20 сек, EC ≥ 10 сек» устарели и не должны использоваться как контракт.
+Текущие base defaults `ZoneCorrectionConfigCatalog` (конфигурируемо per controller/phase): pH — **20 сек**, EC — **25 сек**. Фактическое значение нужно брать из pinned bundle активного цикла. Диапазон `60..120 сек` не является фиксированным runtime-default.
 
 ## 4.5. HMAC Sign
 
@@ -161,7 +164,7 @@ sig = HMAC_SHA256(node_secret, canonical_json(command_without_sig))
 ## 5.1. Timestamp
 
 ```
-abs(now - ts) < 10 секунд
+abs(now - ts) <= 10 секунд
 ```
 
 Где `now` и `ts` — Unix timestamp в секундах.
@@ -175,7 +178,7 @@ sig == HMAC_SHA256(node_secret, canonical_json(command_without_sig))
 ```
 
 Где:
-- `node_secret` — секретный ключ из NodeConfig (поле `node_secret`) или дефолтный
+- `node_secret` — секрет ноды из NVS; доставка в NodeConfig выполняется через `node_secret_enc`, plaintext в MQTT не публикуется. Production HL требует per-node secret из БД; `NODE_DEFAULT_SECRET` разрешён только вне production и не заменяет настройку секрета на устройстве.
 - `canonical_json` — каноническая JSON-строка команды без `sig` (см. выше)
 - Подпись в hex формате (64 символа, нижний регистр)
 - Сравнение регистронезависимое
@@ -191,7 +194,7 @@ sig == HMAC_SHA256(node_secret, canonical_json(command_without_sig))
 | dose | `params.ml > 0`, тип number | `safe_limits.max_duration_ms` per pump channel; нода считает duration из `ml_per_second`, при превышении cap — `details.duration_limited=true` |
 | run_pump | `params.duration_ms >= 1`, integer | `safe_limits.max_duration_ms`, `safe_limits.min_off_ms` |
 | set_relay | `params.state ∈ {true,false}`; для timed-start IRR ноды поддерживается `duration_ms`/`timeout_ms+stage` | interlock checks для `pump_main` |
-| set_pwm | `params.value` integer/number | per-channel range |
+| set_pwm | `params.duty` number `0..100` в `climate_node` / `test_node`; legacy `value` имеет разные шкалы (§4.2) | firmware проверяет finite/range; HL не преобразует params |
 | calibrate | `params.type ∈ {PH_4, PH_7, PH_10, EC_DRY, EC_84, EC_1413, ...}` (зависит от sensor type) | — |
 | test_sensor | `params={}` | — |
 | restart, state | `params={}` | — |
@@ -280,8 +283,8 @@ Sanity-runaway пределы и source of truth:
 
 | Контроль | Где enforced | Source of truth |
 |----------|--------------|-----------------|
-| pH-pump dose min interval | AE3 `correction_planner.py` | `zone.correction.resolved_config.controllers.ph.min_interval_sec` (typical 60..120s) |
-| EC-pump dose min interval | AE3 `correction_planner.py` | `zone.correction.resolved_config.controllers.ec.min_interval_sec` (typical 60..120s) |
+| pH-pump dose min interval | AE3 `correction_planner.py` | `zone.correction.resolved_config.controllers.ph.min_interval_sec` (base default 20s) |
+| EC-pump dose min interval | AE3 `correction_planner.py` | `zone.correction.resolved_config.controllers.ec.min_interval_sec` (base default 25s) |
 | pH-pump max dose per shot | AE3 + sanity cap HL | `controllers.ph.max_dose_ml` + HL `_MAX_DOSE_ML_SANITY=500` |
 | EC-pump max dose per shot | AE3 + sanity cap HL | `controllers.ec.max_dose_ml` + HL `_MAX_DOSE_ML_SANITY=500` |
 | pump max duration per command | AE3 planner + HL + firmware NodeConfig | AE3 default `pump_calibration.max_dose_ms=60_000` (firmware ph/ec), HL `_MAX_DURATION_MS_SANITY=300_000`, NodeConfig `safe_limits.max_duration_ms` |
@@ -322,14 +325,9 @@ Dispatcher:
 
 ---
 
-# 10. Автоматический rollback
+# 10. Ошибки и безопасная остановка
 
-Если команда вызывает ошибку:
-
-- pH дозировка отменяется
-- насос останавливается
-- valve сбрасывается в idle
-- создаётся alert
+Универсального rollback физического действия нет: уже внесённую дозу pH/EC программно отменить невозможно. Ограничение длительности, auto-stop и E-Stop выполняет прошивка соответствующего канала; AE3 обрабатывает terminal outcome и выбирает дальнейший переход FSM. Ошибка сама по себе не гарантирует возврат каждого клапана в idle или создание отдельного alert. Для IRR действуют `AE3_IRR_FAILSAFE_AND_ESTOP_CONTRACT.md` и `AE3_RUNTIME_EVENT_CONTRACT.md` из backend-слоя.
 
 ---
 

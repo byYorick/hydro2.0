@@ -56,5 +56,12 @@ backend/.env.prod
 .claude/scheduled_tasks.lock
 .claude/settings.local.json
 
-# Cursor agent skills (копии из npx skills add; lock-файл skills-lock.json в git)
-.agents/skills/
+# Optional upstream skills остаются локальными; Hydro discovery aliases хранятся в Git.
+.agents/skills/*
+!.agents/skills/hydro2-*
+!.agents/skills/two-tank-debug
+
+# Локальные выгрузки браузера и временные результаты проверок
+/output/playwright/
+/test-results/
+/tmp_nsim_*.json

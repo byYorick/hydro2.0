@@ -175,7 +175,7 @@ UI/Operator → Laravel Controller → PythonBridgeService → history-logger (P
 2. Laravel:
    - валидирует права (Sanctum + role middleware + `ZonePolicy`);
    - вычисляет HMAC-подпись через `App\Services\CommandSignatureService`;
-   - вызывает `App\Services\PythonBridgeService::sendCommand()` → `POST {history-logger}/zones/{id}/commands`.
+   - вызывает `App\Services\PythonBridgeService::sendZoneCommand()` → `POST {history-logger}/zones/{id}/commands`.
 3. `history-logger` принимает payload, проверяет sanity caps, пересчитывает HMAC, публикует в MQTT, сохраняет lifecycle команды в `commands` (`status=QUEUED → SENT → ACK → DONE/...`).
 4. Нода исполняет команду и публикует `command_response`. `history-logger` обновляет `commands.status` и `command_acks`.
 5. AE3 reconcile терминальных статусов команд — через polling (`SequentialCommandGateway.recover_waiting_command`). Laravel Scheduler Cockpit получает обновления через `LISTEN ae_command_status` (+ webhook `ExecutionChainUpdated` для causal chain).

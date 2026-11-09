@@ -1,85 +1,17 @@
-# 07_FRONTEND — Frontend и UI/UX
+# Frontend и UI
 
-Этот раздел содержит документацию по архитектуре фронтенда, UI/UX спецификации и тестированию.
+**Статус:** навигационный guide.
 
+Архитектура Inertia/Vue, ролевой интерфейс и тестирование.
 
-Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
-Breaking-change: обратная совместимость со старыми форматами и алиасами не поддерживается.
+## Документы
 
----
+- [API_MAPPING.md](API_MAPPING.md) — Маппинг API endpoints: Frontend ↔ Backend
+- [FRONTEND_ARCH_FULL.md](FRONTEND_ARCH_FULL.md) — Полная архитектура Frontend 2.0 (UI/UX + функционал, детальная версия)
+- [FRONTEND_TESTING.md](FRONTEND_TESTING.md) — Стратегия тестирования Frontend 2.0
+- [FRONTEND_UI_UX_SPEC.md](FRONTEND_UI_UX_SPEC.md) — Полная спецификация UI/UX фронтенда 2.0 (Laravel + Inertia + Vue 3)
+- [ROLE_BASED_UI_SPEC.md](ROLE_BASED_UI_SPEC.md) — Спецификация ролевых интерфейсов UI/UX
+- [FRONTEND_AE3_AUDIT_2026_11.md](FRONTEND_AE3_AUDIT_2026_11.md) — Аудит и рефакторинг планировщика, runtime-настроек и единого редактора коррекции/PID (2026-11-02)
 
-## 📋 Документы раздела
-
-### Основные документы
-
-#### [FRONTEND_ARCH_FULL.md](FRONTEND_ARCH_FULL.md)
-**Полная архитектура фронтенда**
-- Цели и принципы UI/UX
-- Основные разделы фронтенда
-- Подробное описание экранов
-- Компоненты и UI элементы
-- Real-time и WebSocket
-- State Management
-
-#### [FRONTEND_UI_UX_SPEC.md](FRONTEND_UI_UX_SPEC.md)
-**Спецификация UI/UX**
-- Дизайн-система
-- Компоненты интерфейса
-- Пользовательские сценарии
-- Навигация
-
-#### [FRONTEND_TESTING.md](FRONTEND_TESTING.md)
-**Стратегия тестирования фронтенда**
-- Unit/Component тесты (Vitest)
-- Интеграционные тесты
-- E2E тесты (Playwright)
-- Конфигурация тестов
-
-### Вспомогательные документы
-
-#### [FRONTEND_AE3_AUDIT_2026_11.md](FRONTEND_AE3_AUDIT_2026_11.md)
-Аудит и рефакторинг планировщика, runtime-настроек и единого редактора коррекции/PID (2026-11-02).
-
-#### [API_MAPPING.md](API_MAPPING.md)
-Маппинг API endpoints между фронтендом и бэкендом
-
-#### [ROLE_BASED_UI_SPEC.md](ROLE_BASED_UI_SPEC.md)
-Спецификация ролевого UI (`canonical`)
-
-### Living plans (`plan`)
-
-- [ROLE_BASED_UX_IMPROVEMENT_PLAN.md](ROLE_BASED_UX_IMPROVEMENT_PLAN.md) — ролевой UI/UX и доработка страниц (оператор, агроном, инженер, админ)
-- [LAUNCH_REDESIGN.md](LAUNCH_REDESIGN.md)
-- [AUTOMATION_WIZARD_UNIFICATION_PLAN.md](AUTOMATION_WIZARD_UNIFICATION_PLAN.md)
-- [ZONE_AUTOMATION_PRESETS_PLAN.md](ZONE_AUTOMATION_PRESETS_PLAN.md)
-- [SCHEDULER_COCKPIT_REDESIGN.md](SCHEDULER_COCKPIT_REDESIGN.md)
-- [SCHEDULER_COCKPIT_IMPLEMENTATION.md](SCHEDULER_COCKPIT_IMPLEMENTATION.md)
-- [SCHEDULER_COCKPIT_MONITORING.md](SCHEDULER_COCKPIT_MONITORING.md)
-
-### Архив plans (`archive` stubs → [`../00_ARCHIVE/PLANS/`](../00_ARCHIVE/PLANS/))
-
-- [UI_UX_IMPROVEMENT_PLAN.md](UI_UX_IMPROVEMENT_PLAN.md)
-- [FRONTEND_REWORK_PLAN.md](FRONTEND_REWORK_PLAN.md)
-- [LAUNCH_LEGACY_CLEANUP_PLAN.md](LAUNCH_LEGACY_CLEANUP_PLAN.md)
-
-Канон UI/UX — `FRONTEND_UI_UX_SPEC.md` + `FRONTEND_ARCH_FULL.md`; планы не подменяют спеки.
-
----
-
-## 🔗 Связанные разделы
-
-- **[01_SYSTEM](../01_SYSTEM/)** — системная архитектура
-- **[04_BACKEND_CORE](../04_BACKEND_CORE/)** — backend интеграция и API
-- **[06_DOMAIN_ZONES_RECIPES](../06_DOMAIN_ZONES_RECIPES/)** — доменная логика
-
----
-
-## 🎯 С чего начать
-
-1. **Архитектура фронтенда?** → Изучите [FRONTEND_ARCH_FULL.md](FRONTEND_ARCH_FULL.md)
-2. **UI/UX спецификация?** → См. [FRONTEND_UI_UX_SPEC.md](FRONTEND_UI_UX_SPEC.md)
-3. **Тестирование?** → Прочитайте [FRONTEND_TESTING.md](FRONTEND_TESTING.md)
-
----
-
-**См. также:** [Главный индекс документации](../INDEX.md)
+Нормативные контракты сверяются с текущим кодом по правилам `AGENTS.md`.
+[Главный индекс](../INDEX.md).

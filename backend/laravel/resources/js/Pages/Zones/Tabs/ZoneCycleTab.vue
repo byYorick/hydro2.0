@@ -11,7 +11,7 @@
             </p>
             <div class="mt-1 flex flex-wrap items-center gap-2">
               <h2 class="text-lg font-bold text-[color:var(--text-primary)] truncate">
-                {{ zone.name }}
+                {{ recipeName || 'Текущий цикл' }}
               </h2>
               <Badge
                 :variant="variant"
@@ -52,6 +52,7 @@
             </div>
           </div>
           <CycleActionsDropdown
+            v-if="!hideActions"
             :cycle-status="activeGrowCycle?.status ?? null"
             :can-manage="canManageCycle"
             :can-manage-recipe="canManageRecipe"
@@ -201,6 +202,7 @@ interface Props {
   controlMode?: AutomationControlMode | null
   /** true если phase_started_at + duration_hours/days < now (фаза готова к advance). */
   phaseDurationComplete?: boolean
+  hideActions?: boolean
 }
 
 const props = defineProps<Props>()

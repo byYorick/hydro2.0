@@ -10,6 +10,8 @@
 альтернативные сроки. При изменении политики обновлять этот файл и связанные
 env/compose/миграции/cron в той же итерации.
 
+**Сверено с кодом:** 2026-11-07. Ниже разделены действующие механизмы очистки и целевые сроки архивов, для которых автоматизация отсутствует. Наличие миграции не подтверждает, что job успешно установлен в конкретной БД.
+
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 Breaking-change: обратная совместимость со старыми форматами и алиасами не поддерживается.
 
@@ -78,8 +80,8 @@ Telemetry хранится в двух формах:
 Таблицы:
 
 ```
-telemetry_last
-telemetry_raw   (= telemetry_samples — актуальное имя таблицы)
+telemetry_samples — история, retention 30 дней
+telemetry_last — одна последняя запись на sensor_id; возрастная очистка 30d на неё не распространяется
 ```
 
 ## 3.2. Warm Telemetry (L2)
@@ -108,16 +110,8 @@ telemetry_raw   (= telemetry_samples — актуальное имя табли�
 Last-value кэш хранится в **PostgreSQL** в таблице `telemetry_last` (PK по `sensor_id`). Redis для последних значений telemetry **не используется** (исторический паттерн ранних версий проекта, удалён).
 
 ## 3.3. Cold Telemetry (архив)
-Формат:
 
-- CSV/Parquet,
-- хранение в S3-совместимом хранилище.
-
-Срок хранения:
-
-```
-5 лет
-```
+Автоматического экспорта telemetry в CSV/Parquet/S3 и пятилетней ротации cold telemetry в текущем pipeline нет. `telemetry_daily` остаётся в PostgreSQL без автоматического TTL. Внешнее архивирование нужно настраивать отдельно; наличие daily-агрегатов его не обеспечивает.
 
 ---
 
@@ -133,10 +127,12 @@ Last-value кэш хранится в **PostgreSQL** в таблице `telemetr
 
 ```
 commands: 365 дней hot (retention_policy_commands функция + pg_cron job `retention-commands` @ 02:00 ежедневно)
-commands_archive: 3 года
+commands_archive: автоматического TTL нет; целевой срок архива — 3 года
 ```
 
 Источник hot retention: миграция `2025_12_25_152231_add_partitioning_and_retention_for_commands_and_zone_events.php` (Timescale/pg_cron, **365 дней**).
+
+Retention удаляет hot-записи, не копируя их в архив. Миграция пытается установить pg_cron/Timescale policy и может пропустить её при отсутствии extension или ошибке; работающую job нужно проверять в БД.
 
 > **Secondary path (не в Schedule):** artisan `commands:archive --days=90` копирует/чистит в `commands_archive`. Дефолт **90** ≠ hot policy 365; команда ручная/опциональная, не заменяет Timescale retention. Архивные таблицы восстановлены миграцией `2026_04_30_195000_restore_archive_tables_*`.
 
@@ -161,10 +157,12 @@ Events имеют ключевое значение для анализа про
 
 ```
 zone_events: 365 дней hot (retention_policy_zone_events функция + pg_cron job `retention-zone_events` @ 02:00 ежедневно)
-zone_events_archive: 5 лет
+zone_events_archive: автоматического TTL нет; целевой срок архива — 5 лет
 ```
 
 Источник hot retention: миграция `2025_12_25_152231_add_partitioning_and_retention_for_commands_and_zone_events.php` (**365 дней**).
+
+Hot cleanup удаляет записи без автоматического переноса в `zone_events_archive`; успешное создание retention job проверяется в конкретной БД.
 
 > **Secondary path (не в Schedule):** artisan `zone-events:archive --days=180` — дефолт **180** ≠ hot policy 365; ручная/опциональная архивация в `zone_events_archive`, не заменяет Timescale retention.
 
@@ -209,11 +207,8 @@ Lifecycle: создание через Laravel `AlertService`; ack/resolve → �
 # 7. Хранение логов
 
 ## 7.1. Hot Logs
-Срок:
 
-```
-7–30 дней
-```
+`logs:cleanup --days=30` запускается Laravel Schedule еженедельно, в воскресенье в `02:00` (`routes/console.php`). Команда удаляет записи старше 30 дней; между запусками они могут оставаться дольше. Параметр `--days` доступен для ручного запуска.
 
 Таблицы:
 
@@ -225,60 +220,33 @@ scheduler_logs
 ```
 
 ## 7.2. Warm Logs
-Сжатые архивы:
 
-```
-tar.gz
-```
-
-Срок:
-
-```
-1 год
-```
+Автоматического переноса удаляемых строк в годовые `tar.gz`-архивы нет. `CleanupLogs` выполняет `DELETE` по существующим таблицам.
 
 ## 7.3. Cold Logs
-Хранятся на S3/Backblaze:
 
-```
-до 5 лет
-```
+Встроенного экспорта этих логов в S3/Backblaze и пятилетней ротации нет. Срок внешнего хранения определяется отдельно настроенным сборщиком логов.
 
 ---
 
 # 8. Бэкапы
 
-Система создаёт 3 типа резервных копий:
+В `routes/console.php` запланированы `backup:full` ежедневно в `03:00` и вызов `rotate_backups.sh` в `03:30`. Для исполнения нужны доступные shell-скрипты, утилиты, Docker и каталоги в окружении запуска; расписание само по себе не подтверждает успешную копию.
 
-## 8.1. Daily Backup
-- полный дамп БД,
-- хранение 14–30 дней.
+Стандартный Laravel Compose предоставляет `/scripts/backup` и read-only `/backup-sources`. `backup:full` создаёт application scope без Docker volumes по умолчанию; пропуски/ошибки видны в manifest. Правила состава, сохранение активного APP_KEY и проверка восстановления описаны в `BACKUP_AND_RECOVERY.md`.
 
-## 8.2. Weekly Backup
-- инкрементальные архивы,
-- хранение 3–6 месяцев.
+| Механизм | Фактическая ротация |
+|---|---|
+| `backend/scripts/backup/rotate_backups.sh` | `FULL_BACKUP_RETENTION_DAYS=30` для full/component каталогов; `WAL_RETENTION_DAYS=7` для WAL-архива |
+| Artisan `backup:database` | удаляет файлы старше **7 дней** в своём output-каталоге при каждом запуске |
 
-## 8.3. Monthly Backup (long-term)
-- шифрованные архивы,
-- хранение 3–5 лет.
-
-Формат:
-
-```
-pg_dump + compression + encryption
-```
+Логический PostgreSQL backup использует `pg_dump`; weekly incremental, monthly encrypted и многолетняя offsite-ротация этими механизмами не реализованы. Требования к физическому PITR и восстановлению — в [BACKUP_AND_RECOVERY.md](../08_SECURITY_AND_OPS/BACKUP_AND_RECOVERY.md).
 
 ---
 
 # 9. Оптимизация размера базы
 
-Еженедельные задачи:
-
-- очистка старых telemetry_raw,
-- очистка логов,
-- VACUUM FULL,
-- уплотнение архивных таблиц,
-- анализ больших таблиц.
+Автоматическая очистка выполняется только перечисленными выше app/DB jobs. Еженедельного `VACUUM FULL` или уплотнения архивов в Schedule нет. Обслуживание PostgreSQL и анализ размеров таблиц настраиваются отдельно; `VACUUM FULL` не является штатной командой этого retention pipeline.
 
 ---
 
@@ -289,10 +257,10 @@ Retention raw samples: Laravel `telemetry:cleanup-raw` по расписанию
 Laravel `telemetry:aggregate` — seed/backfill, не production schedule.
 
 ```
-raw → agg_1m → agg_1h → daily → cold archive
+telemetry_samples → telemetry_agg_1m → telemetry_agg_1h → telemetry_daily
 ```
 
-Ротация выполняется автоматически по выбранной политике окружения.
+Cold archive не входит в этот исполняемый pipeline. Retention raw/1m/1h удаляет записи; он не гарантирует предварительную архивацию.
 
 ---
 
@@ -315,23 +283,11 @@ AI получает доступ к:
 
 # 12. Политика удаления данных
 
-При удалении зоны или узла:
+Удаление зоны/ноды выполняют `ZoneService::delete` / `NodeService::delete` в транзакции. Зона с active grow cycle или привязанными нодами не удаляется; ноду сначала нужно отвязать. Дальнейшие изменения зависимостей определяют FK и model hooks.
 
-```
-telemetry_last — удаляется
-telemetry_raw — удаляется
-agg/daily — анонимизируется
-events — архивируются
-logs — архивируются
-```
+В частности, `telemetry_last.sensor_id` и `telemetry_samples.sensor_id` имеют `ON DELETE CASCADE`; zone/node FK агрегатов используют `SET NULL`. Обнуление FK не является полной анонимизацией данных. Автоматической архивации events/logs при этих delete-операциях сервисы не выполняют.
 
-При удалении пользователя:
-
-```
-команды анонимизируются
-логи API очищаются
-session tokens уничтожаются
-```
+`UserController::destroy` запрещает удалить собственную учётную запись и вызывает `$user->delete()`. Отдельного pipeline анонимизации команд и очистки API-логов в этом методе нет. Сохранность истории и удаление зависимых записей нельзя выводить из общей retention-политики: нужно проверять фактические FK/hooks соответствующей сущности.
 
 ---
 

@@ -117,6 +117,30 @@ hydro/{gh}/{zone}/{node}/{channel}/telemetry
 
 > **Важно:** Поля `node_id` и `channel` **не включаются** в JSON payload, так как они уже присутствуют в структуре MQTT топика (`hydro/{gh}/{zone}/{node}/{channel}/telemetry`). Формат соответствует эталону node-sim, который успешно проходит E2E тесты.
 
+### 3.2.1. Границы JSON Schema и runtime-ingest
+
+Сверено 2026-11-07. Минимальный payload выше соответствует
+`backend/services/common/schemas/telemetry.schema.json` и её firmware-зеркалу.
+Эта строгая схема покрывает базовое подмножество wire-контракта; её паритет
+с зеркалом не подтверждает полноту покрытия фактического ingest.
+
+| Область | Строгая JSON Schema | Текущий HL `TelemetryPayloadModel` |
+|---|---|---|
+| `metric_type` | фиксированный enum из §3.2 | непустая строка; распознавание метрики проверяется отдельно |
+| `tds`, `health` | отсутствуют; при `additionalProperties=false` schema-validation их отклоняет | объявлены как дополнительные поля модели |
+| Другие поля | отклоняются вне `properties` | `extra=allow`; это не разрешение вводить новые wire-поля |
+| `ts` | обязательный integer | модель допускает более широкий ввод; затем выполняется нормализация timestamp |
+
+`tds`/`health` описывают фактические расширения ingest, но не являются fixtures,
+которые проходят текущую строгую схему. Weather-типы вне её enum перечислены с
+ограничением в `MQTT_NAMESPACE.md`. Новые отправители используют нормативный
+payload; расширение покрываемого schema-контракта требует согласованного изменения
+схемы, firmware-зеркала и положительных/отрицательных contract fixtures.
+Изменение этой документации само по себе не меняет runtime-валидацию.
+
+Сохраняется расширение `ec_node`: `TDS` на `ec_tds_ppm` отсутствует в enum строгой схемы; HL относит его к `OTHER`. Для `light_node` исправлено: `METRIC_TYPE_LIGHT_INTENSITY` и общий `node_metric_type_for_channel` публикуют нормативный `LIGHT_INTENSITY` для `light` / `light_level`. Старые бинарники могли публиковать `LIGHT`; прежняя история `OTHER` автоматически не переписывается.
+
+
 ## 3.3. Requirements
 - QoS = 1
 - Retain = false
@@ -355,11 +379,14 @@ hydro/{gh}/{zone}/{node}/{channel}/command
 ```
 
 ### 4) PWM
+
+Канонический параметр текущих `climate_node` / `test_node` — `duty` в процентах `0..100`. Legacy `value` сохранён с прежними шкалами; см. `COMMAND_VALIDATION_ENGINE.md` §4.2.
+
 ```json
 {
  "cmd": "set_pwm",
  "params": {
-   "value": 128
+   "duty": 50
  },
  "cmd_id": "cmd-594",
  "ts": 1737355115,
@@ -369,7 +396,7 @@ hydro/{gh}/{zone}/{node}/{channel}/command
 
 ### 5) Позиция привода (roof vent, greenhouse climate)
 
-Каналы `roof_vent_left` / `roof_vent_right` (см. `NODE_CHANNELS_REFERENCE.md`, `GREENHOUSE_CLIMATE_CONTROL_PLAN.md`).
+Каналы `roof_vent_left` / `roof_vent_right` (см. `NODE_CHANNELS_REFERENCE.md`, `GREENHOUSE_CLIMATE_CONTROL_SPEC.md`).
 Сегмент `{zone}` в топике — UID anchor-зоны при greenhouse-only приводе (см. `MQTT_NAMESPACE.md`).
 
 ```json
@@ -473,7 +500,7 @@ sig = HMAC_SHA256(node_secret, canonical_json(command_without_sig))
 2. Если любого поля нет, команда отклоняется с ошибкой `invalid_hmac_format`.
 3. Если поля присутствуют, выполняется проверка:
    - Формат: `ts` должен быть числом, `sig` должен быть строкой длиной 64 символа (hex)
-   - Timestamp: `abs(now - ts) < 10 секунд` (где `now` и `ts` в секундах Unix timestamp)
+   - Timestamp: `abs(now - ts) <= 10 секунд` (где `now` и `ts` в секундах Unix timestamp)
    - HMAC подпись: вычисляется ожидаемая подпись и сравнивается с полученной (регистронезависимое сравнение hex)
 4. Если проверки не пройдены, команда отклоняется с ошибкой:
    - `invalid_hmac_format` — неверный формат полей или длина подписи

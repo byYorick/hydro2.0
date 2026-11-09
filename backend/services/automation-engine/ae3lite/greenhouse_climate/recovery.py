@@ -47,6 +47,10 @@ async def recover_stale_greenhouse_automation(
           AND i.claimed_at IS NOT NULL
           AND i.claimed_at < $1
           AND COALESCE(i.retry_count, 0) < COALESCE(i.max_retries, 3)
+          AND NOT EXISTS (
+              SELECT 1 FROM greenhouse_automation_leases AS lease
+              WHERE lease.greenhouse_id = i.greenhouse_id AND lease.leased_until > $2
+          )
         RETURNING i.id
         """,
         stale_before,
@@ -65,6 +69,10 @@ async def recover_stale_greenhouse_automation(
           AND i.claimed_at IS NOT NULL
           AND i.claimed_at < $1
           AND COALESCE(i.retry_count, 0) >= COALESCE(i.max_retries, 3)
+          AND NOT EXISTS (
+              SELECT 1 FROM greenhouse_automation_leases AS lease
+              WHERE lease.greenhouse_id = i.greenhouse_id AND lease.leased_until > $2
+          )
         RETURNING i.id
         """,
         stale_before,
@@ -82,6 +90,10 @@ async def recover_stale_greenhouse_automation(
             updated_at = $2
         WHERE t.status IN ('claimed', 'running', 'waiting_command')
           AND t.updated_at < $1
+          AND NOT EXISTS (
+              SELECT 1 FROM greenhouse_automation_leases AS lease
+              WHERE lease.greenhouse_id = t.greenhouse_id AND lease.leased_until > $2
+          )
         RETURNING t.id
         """,
         stale_before,

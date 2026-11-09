@@ -3,6 +3,7 @@
 # Архивирует конфигурации MQTT (mosquitto)
 
 set -euo pipefail
+umask 077
 
 # Цвета для вывода
 RED='\033[0;31m'
@@ -46,11 +47,28 @@ trap "rm -rf ${TEMP_DIR}" EXIT
 
 log "Начало создания бэкапа MQTT конфигураций..."
 
-# Копирование mosquitto конфигураций из services/mqtt-bridge
-if [ -f "${MQTT_CONFIG_DIR}/mosquitto.dev.conf" ]; then
-    mkdir -p "${TEMP_DIR}/mqtt-bridge"
-    cp "${MQTT_CONFIG_DIR}/mosquitto.dev.conf" "${TEMP_DIR}/mqtt-bridge/"
-    log "Скопирован mosquitto.dev.conf"
+# Match the broker bind mounts, including credentials and TLS material.
+mkdir -p "${TEMP_DIR}/mqtt-bridge"
+for required in passwords.txt acl; do
+    if [ ! -f "${MQTT_CONFIG_DIR}/${required}" ]; then
+        error "Required MQTT source is missing: ${required}"
+        exit 1
+    fi
+    cp "${MQTT_CONFIG_DIR}/${required}" "${TEMP_DIR}/mqtt-bridge/"
+done
+config_found=false
+for config_name in mosquitto.dev.conf mosquitto.prod.conf; do
+    if [ -f "${MQTT_CONFIG_DIR}/${config_name}" ]; then
+        cp "${MQTT_CONFIG_DIR}/${config_name}" "${TEMP_DIR}/mqtt-bridge/"
+        config_found=true
+    fi
+done
+if [ "${config_found}" != true ]; then
+    error "Mosquitto configuration is missing"
+    exit 1
+fi
+if [ -d "${MQTT_CONFIG_DIR}/certs" ]; then
+    cp -RL "${MQTT_CONFIG_DIR}/certs" "${TEMP_DIR}/mqtt-bridge/"
 fi
 
 # Копирование конфигураций из configs (если есть mosquitto директория)
@@ -77,7 +95,7 @@ fi
 # Проверка наличия файлов для бэкапа
 if [ -z "$(find "${TEMP_DIR}" -type f)" ]; then
     warning "Не найдено файлов MQTT конфигураций для бэкапа"
-    # Создаем пустой архив с предупреждением
+    exit 1
 fi
 
 # Создание ZIP архива

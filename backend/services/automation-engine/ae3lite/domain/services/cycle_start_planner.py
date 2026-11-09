@@ -935,7 +935,7 @@ class CycleStartPlanner:
         (только если `dose_*_channel` пустой). Fail-closed:
         `dose_*_channel` обязан ссылаться на канонический физический канал
         (`pump_acid`/`pump_base`/`pump_a..d`) — legacy alias'ы больше не
-        резолвятся (см. `doc_ai/01_SYSTEM/PUMP_NAMING_UNIFICATION_PLAN.md`).
+        резолвятся (см. `doc_ai/02_HARDWARE_FIRMWARE/NODE_CHANNELS_REFERENCE.md`).
         """
         def _resolve(channel_name: str, node_types: List[str]) -> Any:
             requested = str(channel_name or "").strip().lower()

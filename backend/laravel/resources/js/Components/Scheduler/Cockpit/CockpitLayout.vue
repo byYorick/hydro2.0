@@ -1,16 +1,18 @@
 <template>
-  <div
-    class="scheduler-cockpit-layout grid min-h-0 gap-3"
-    data-testid="scheduler-cockpit-layout"
-  >
-    <div class="scheduler-cockpit-layout__rail scheduler-cockpit-layout__left flex min-h-0 flex-col gap-3">
-      <slot name="left"></slot>
-    </div>
-    <div class="scheduler-cockpit-layout__main flex min-h-0 flex-col gap-3">
-      <slot name="center"></slot>
-    </div>
-    <div class="scheduler-cockpit-layout__rail scheduler-cockpit-layout__details flex min-h-0 flex-col gap-3">
-      <slot name="right"></slot>
+  <div class="scheduler-cockpit-container">
+    <div
+      class="scheduler-cockpit-layout grid min-h-0 gap-3"
+      data-testid="scheduler-cockpit-layout"
+    >
+      <div class="scheduler-cockpit-layout__rail scheduler-cockpit-layout__left flex min-h-0 flex-col gap-3">
+        <slot name="left"></slot>
+      </div>
+      <div class="scheduler-cockpit-layout__main flex min-h-0 flex-col gap-3">
+        <slot name="center"></slot>
+      </div>
+      <div class="scheduler-cockpit-layout__rail scheduler-cockpit-layout__details flex min-h-0 flex-col gap-3">
+        <slot name="right"></slot>
+      </div>
     </div>
   </div>
 </template>
@@ -19,9 +21,14 @@
 </script>
 
 <style scoped>
+.scheduler-cockpit-container {
+  min-width: 0;
+  container: scheduler-cockpit / inline-size;
+}
+
 .scheduler-cockpit-layout {
-  grid-template-columns: minmax(240px, 0.7fr) minmax(0, 2fr);
-  grid-template-areas: 'status content' 'details details';
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: 'status' 'content' 'details';
   align-items: start;
 }
 
@@ -33,10 +40,17 @@
 .scheduler-cockpit-layout__main { grid-area: content; }
 .scheduler-cockpit-layout__details { grid-area: details; }
 
-@media (max-width: 767px) {
+@container scheduler-cockpit (min-width: 768px) {
   .scheduler-cockpit-layout {
-    grid-template-columns: 1fr;
-    grid-template-areas: 'status' 'content' 'details';
+    grid-template-columns: minmax(240px, 0.7fr) minmax(0, 2fr);
+    grid-template-areas: 'status content' 'details details';
+  }
+}
+
+@container scheduler-cockpit (min-width: 1200px) {
+  .scheduler-cockpit-layout {
+    grid-template-columns: minmax(290px, 0.9fr) minmax(520px, 1.7fr) minmax(320px, 1fr);
+    grid-template-areas: 'status content details';
   }
 }
 </style>

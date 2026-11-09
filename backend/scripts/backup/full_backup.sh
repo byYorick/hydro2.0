@@ -1,141 +1,72 @@
-#!/bin/bash
-# Master Backup Script
-# Координирует создание всех компонентных бэкапов
-
+#!/usr/bin/env bash
+# Coordinate application backups; Docker volumes are explicitly optional.
 set -euo pipefail
+umask 077
 
-# Цвета для вывода
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
-
-# Параметры по умолчанию
 BACKUP_DIR="${BACKUP_DIR:-/backups}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BACKUP_SOURCE_ROOT="${BACKUP_SOURCE_ROOT:-$(cd "${SCRIPT_DIR}/../.." && pwd)}"
+export LARAVEL_DIR="${LARAVEL_DIR:-${BACKUP_SOURCE_ROOT}/laravel}"
+export SERVICES_DIR="${SERVICES_DIR:-${BACKUP_SOURCE_ROOT}/services}"
+export MQTT_CONFIG_DIR="${MQTT_CONFIG_DIR:-${SERVICES_DIR}/mqtt-bridge}"
+export CONFIGS_DIR="${CONFIGS_DIR:-${BACKUP_SOURCE_ROOT}/configs}"
+export DEPLOY_ENV_FILE="${DEPLOY_ENV_FILE:-${BACKUP_SOURCE_ROOT}/.env}"
+export DEPLOY_COMPOSE_FILE="${DEPLOY_COMPOSE_FILE:-${BACKUP_SOURCE_ROOT}/docker-compose.dev.yml}"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-BACKUP_SUBDIR="${BACKUP_DIR}/full/${TIMESTAMP}"
-
-# Логирование
-log() {
-    echo -e "${GREEN}[$(date +'%Y-%m-%d %H:%M:%S')]${NC} $1"
-}
-
-error() {
-    echo -e "${RED}[ERROR]${NC} $1" >&2
-}
-
-warning() {
-    echo -e "${YELLOW}[WARNING]${NC} $1"
-}
-
-# Создание директории для полного бэкапа
-mkdir -p "${BACKUP_SUBDIR}"
-log "Начало полного бэкапа системы"
-log "Директория бэкапа: ${BACKUP_SUBDIR}"
-
-# Массив для хранения результатов
+command -v jq >/dev/null || { echo "jq is required" >&2; exit 1; }
+mkdir -p "${BACKUP_DIR}/full"
+BACKUP_SUBDIR=$(mktemp -d "${BACKUP_DIR}/full/${TIMESTAMP}_XXXXXX")
 BACKUP_RESULTS=()
-FAILED_BACKUPS=()
 
-# Функция для выполнения бэкапа компонента
 backup_component() {
-    local component=$1
-    local script=$2
-    local description=$3
-    
-    log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    log "Бэкап компонента: ${description}"
-    log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    
-    if [ -f "${SCRIPT_DIR}/${script}" ]; then
-        # Экспорт BACKUP_DIR для всех скриптов
-        export BACKUP_DIR="${BACKUP_SUBDIR}"
-        
-        if OUTPUT=$("${SCRIPT_DIR}/${script}" 2>&1); then
-            BACKUP_FILE=$(echo "${OUTPUT}" | tail -n 1)
-            BACKUP_RESULTS+=("{\"component\":\"${component}\",\"status\":\"success\",\"file\":\"${BACKUP_FILE}\"}")
-            log "✓ ${description} - успешно"
-        else
-            FAILED_BACKUPS+=("${component}")
-            BACKUP_RESULTS+=("{\"component\":\"${component}\",\"status\":\"failed\"}")
-            error "✗ ${description} - ошибка"
-        fi
-    else
-        error "Скрипт ${script} не найден"
-        FAILED_BACKUPS+=("${component}")
-        BACKUP_RESULTS+=("{\"component\":\"${component}\",\"status\":\"skipped\",\"reason\":\"script_not_found\"}")
+    local component=$1 script=$2 skip=$3 output artifact status
+    if [ "${skip}" = 1 ]; then
+        BACKUP_RESULTS+=("$(jq -cn --arg component "${component}" '{component:$component,status:"skipped",reason:"explicitly_disabled"}')")
+        return
     fi
-}
-
-# Выполнение бэкапов компонентов
-backup_component "postgres" "postgres_backup.sh" "PostgreSQL Database"
-backup_component "laravel" "laravel_backup.sh" "Laravel Backend"
-backup_component "python" "python_backup.sh" "Python Services"
-backup_component "mqtt" "mqtt_backup.sh" "MQTT Configuration"
-backup_component "docker" "docker_volumes_backup.sh" "Docker Volumes"
-
-# Создание общего manifest файла
-log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-log "Создание общего manifest файла"
-
-RESULTS_JSON=$(printf '%s\n' "${BACKUP_RESULTS[@]}" | jq -s . 2>/dev/null || echo "[]")
-FAILED_JSON=$(printf '%s\n' "${FAILED_BACKUPS[@]}" | jq -R . 2>/dev/null | jq -s . 2>/dev/null || echo "[]")
-
-cat > "${BACKUP_SUBDIR}/manifest.json" <<EOF
-{
-  "timestamp": "${TIMESTAMP}",
-  "backup_dir": "${BACKUP_SUBDIR}",
-  "created_by": "full_backup.sh",
-  "components": ${RESULTS_JSON},
-  "failed_components": ${FAILED_JSON},
-  "total_components": ${#BACKUP_RESULTS[@]},
-  "failed_count": ${#FAILED_BACKUPS[@]},
-  "success_count": $((${#BACKUP_RESULTS[@]} - ${#FAILED_BACKUPS[@]}))
-}
-EOF
-
-# Проверка целостности бэкапов
-log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-log "Проверка целостности бэкапов"
-
-INTEGRITY_CHECK_PASSED=true
-
-# Проверка наличия файлов бэкапов
-for result in "${BACKUP_RESULTS[@]}"; do
-    STATUS=$(echo "${result}" | jq -r '.status' 2>/dev/null || echo "unknown")
-    if [ "${STATUS}" = "success" ]; then
-        FILE=$(echo "${result}" | jq -r '.file' 2>/dev/null || echo "")
-        if [ -n "${FILE}" ] && [ -f "${FILE}" ]; then
-            FILE_SIZE=$(stat -f%z "${FILE}" 2>/dev/null || stat -c%s "${FILE}" 2>/dev/null || echo 0)
-            if [ "${FILE_SIZE}" -eq 0 ]; then
-                warning "Файл бэкапа пуст: ${FILE}"
-                INTEGRITY_CHECK_PASSED=false
-            fi
-        else
-            warning "Файл бэкапа не найден: ${FILE}"
-            INTEGRITY_CHECK_PASSED=false
+    echo "Backing up ${component}"
+    status=failed
+    artifact=""
+    if output=$(BACKUP_DIR="${BACKUP_SUBDIR}" bash "${SCRIPT_DIR}/${script}" 2>&1); then
+        artifact=$(printf '%s\n' "${output}" | tail -n 1)
+        if [ -f "${artifact}" ] && [ -s "${artifact}" ]; then
+            status=success
+        elif [ -d "${artifact}" ] && [ -f "${artifact}/manifest.json" ] &&
+             [ -n "$(find "${artifact}" -type f -name '*.tar.gz' -size +0c -print -quit)" ]; then
+            status=success
         fi
     fi
-done
+    if [ "${status}" != success ]; then
+        printf '%s\n' "${output}" >&2
+        echo "Backup failed or artifact is empty: ${component}" >&2
+    fi
+    BACKUP_RESULTS+=("$(jq -cn --arg component "${component}" --arg status "${status}" --arg file "${artifact}" '{component:$component,status:$status,file:$file}')")
+}
 
-# Итоговый отчет
-log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-log "Итоговый отчет"
-log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+backup_component postgres postgres_backup.sh 0
+backup_component laravel laravel_backup.sh 0
+backup_component python python_backup.sh 0
+backup_component mqtt mqtt_backup.sh "${SKIP_MQTT:-0}"
+backup_component docker docker_volumes_backup.sh "${SKIP_DOCKER:-0}"
 
-if [ ${#FAILED_BACKUPS[@]} -eq 0 ] && [ "${INTEGRITY_CHECK_PASSED}" = true ]; then
-    log "✓ Все бэкапы успешно созданы и проверены"
-    log "✓ Директория бэкапа: ${BACKUP_SUBDIR}"
-    TOTAL_SIZE=$(du -sh "${BACKUP_SUBDIR}" | cut -f1)
-    log "✓ Общий размер: ${TOTAL_SIZE}"
+RESULTS_JSON=$(printf '%s\n' "${BACKUP_RESULTS[@]}" | jq -s .)
+SCOPE=full
+if [ "${SKIP_DOCKER:-0}" = 1 ]; then SCOPE=application; fi
+if [ "${SKIP_MQTT:-0}" = 1 ]; then SCOPE=partial_application; fi
+jq -n --arg timestamp "${TIMESTAMP}" --arg dir "${BACKUP_SUBDIR}" \
+    --arg scope "${SCOPE}" --argjson components "${RESULTS_JSON}" '
+    {timestamp:$timestamp,backup_dir:$dir,created_by:"full_backup.sh",scope:$scope,
+     components:$components,
+     failed_components:[$components[] | select(.status=="failed") | .component],
+     total_components:($components|length),
+     failed_count:([$components[]|select(.status=="failed")]|length),
+     success_count:([$components[]|select(.status=="success")]|length),
+     skipped_count:([$components[]|select(.status=="skipped")]|length)}
+    ' > "${BACKUP_SUBDIR}/manifest.json"
+if jq -e '.failed_count == 0' "${BACKUP_SUBDIR}/manifest.json" >/dev/null; then
+    echo "Backup completed (scope=${SCOPE}); see manifest for skipped components"
     echo "${BACKUP_SUBDIR}"
-    exit 0
 else
-    error "Некоторые бэкапы не удались или не прошли проверку целостности"
-    if [ ${#FAILED_BACKUPS[@]} -gt 0 ]; then
-        error "Неудачные компоненты: ${FAILED_BACKUPS[*]}"
-    fi
+    echo "Backup failed; inspect ${BACKUP_SUBDIR}/manifest.json" >&2
     exit 1
 fi
-

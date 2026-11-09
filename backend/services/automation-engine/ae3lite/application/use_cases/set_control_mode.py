@@ -55,19 +55,28 @@ class SetControlModeUseCase:
         normalized_control_mode = normalize_control_mode(control_mode)
 
         previous_mode = await self._fetch_current_mode(zone_id=zone_id)
+        get_active = getattr(self._task_repository, "get_active_for_zone", None)
+        active_task = None
         if previous_mode == normalized_control_mode:
-            return normalized_control_mode
+            if normalized_control_mode != "manual":
+                return normalized_control_mode
+            # A previous manual switch may have lost the task CAS race. Retry
+            # cancellation, but keep an already-idle manual switch idempotent.
+            active_task = await get_active(zone_id=zone_id) if callable(get_active) else None
+            if active_task is None:
+                return normalized_control_mode
 
-        await self._execute_fn(
-            """
-            UPDATE zones
-            SET control_mode = $2,
-                updated_at = NOW()
-            WHERE id = $1
-            """,
-            zone_id,
-            normalized_control_mode,
-        )
+        if previous_mode != normalized_control_mode:
+            await self._execute_fn(
+                """
+                UPDATE zones
+                SET control_mode = $2,
+                    updated_at = NOW()
+                WHERE id = $1
+                """,
+                zone_id,
+                normalized_control_mode,
+            )
         await self._task_repository.update_control_mode_snapshot_for_zone(
             zone_id=zone_id,
             control_mode=normalized_control_mode,
@@ -76,35 +85,40 @@ class SetControlModeUseCase:
 
         active_task_id: Optional[int] = None
         active_task_action = "none"
-        get_active = getattr(self._task_repository, "get_active_for_zone", None)
-        active_task = await get_active(zone_id=zone_id) if callable(get_active) else None
+        if previous_mode != normalized_control_mode:
+            active_task = await get_active(zone_id=zone_id) if callable(get_active) else None
         if active_task is not None:
             active_task_id = int(getattr(active_task, "id", 0) or 0) or None
 
-            if normalized_control_mode == "manual" and previous_mode in {"auto", "semi"}:
+            if normalized_control_mode == "manual":
                 await self._fail_safe_shutdown_before_fail(task=active_task, now=now)
-                fail_fn = getattr(self._task_repository, "fail_for_recovery", None)
-                if callable(fail_fn):
-                    try:
-                        await fail_fn(
-                            task_id=active_task_id,
-                            error_code="control_mode_switched_to_manual",
-                            error_message=(
-                                f"Активная задача {active_task_id} отменена из-за смены control_mode "
-                                f"с {previous_mode} на manual"
-                            ),
-                            now=now,
-                            owner=str(getattr(active_task, "claimed_by", "") or ""),
-                            claim_generation=int(getattr(active_task, "claim_generation", 0) or 0),
-                        )
-                        active_task_action = "cancelled"
-                    except Exception:
-                        logger.warning(
-                            "AE3 set_control_mode: не смог прервать task %s при switch в manual",
-                            active_task_id,
-                            exc_info=True,
-                        )
-                        active_task_action = "cancel_failed"
+                status = str(getattr(active_task, "status", "") or "").strip().lower()
+                error_message = (
+                    f"Активная задача {active_task_id} отменена из-за смены control_mode "
+                    f"с {previous_mode} на manual"
+                )
+                if status == "pending":
+                    fail_fn = getattr(self._task_repository, "fail_pending_or_active_for_recovery", None)
+                    if not callable(fail_fn):
+                        raise RuntimeError("control_mode_pending_transition_unavailable")
+                    failed = await fail_fn(
+                        task_id=active_task_id, error_code="control_mode_switched_to_manual",
+                        error_message=error_message, now=now,
+                        claim_generation=int(getattr(active_task, "claim_generation", 0) or 0),
+                    )
+                else:
+                    fail_fn = getattr(self._task_repository, "fail_for_recovery", None)
+                    if not callable(fail_fn):
+                        raise RuntimeError("control_mode_active_transition_unavailable")
+                    failed = await fail_fn(
+                        task_id=active_task_id, error_code="control_mode_switched_to_manual",
+                        error_message=error_message, now=now,
+                        owner=str(getattr(active_task, "claimed_by", "") or ""),
+                        claim_generation=int(getattr(active_task, "claim_generation", 0) or 0),
+                    )
+                if failed is None:
+                    raise RuntimeError(f"control_mode_task_transition_failed: task_id={active_task_id}")
+                active_task_action = "cancelled"
 
         # При возврате из manual ставим reconcile-флаг, чтобы runtime прошёл cleanup.
         needs_reconcile = (
@@ -132,6 +146,7 @@ class SetControlModeUseCase:
     async def _fail_safe_shutdown_before_fail(self, *, task: Any, now: datetime) -> None:
         from ae3lite.application.services.correction_interrupt_safety import (
             attempt_task_fail_safe_shutdown,
+            emit_task_fail_safe_failure_alert,
         )
 
         try:
@@ -148,12 +163,17 @@ class SetControlModeUseCase:
                 getattr(task, "zone_id", None),
                 exc_info=True,
             )
+            await emit_task_fail_safe_failure_alert(task=task, reason="exception", source="set_control_mode")
             return
         if result.attempted and not result.success:
             logger.warning(
                 "AE3 set_control_mode: fail-safe shutdown non-success task_id=%s reason=%s",
                 getattr(task, "id", None),
                 result.reason,
+            )
+        if not result.success:
+            await emit_task_fail_safe_failure_alert(
+                task=task, reason=str(result.reason or "unknown"), source="set_control_mode",
             )
 
     async def _fetch_current_mode(self, *, zone_id: int) -> str:

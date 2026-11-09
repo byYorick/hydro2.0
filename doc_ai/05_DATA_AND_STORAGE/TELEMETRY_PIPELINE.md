@@ -61,8 +61,8 @@ Payload (пример):
   по канону `../03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md`, **без** широкого `hydro/#`:
   - `hydro/+/+/+/+/{telemetry|command_response|event}`
   - `hydro/+/+/+/{status|lwt|config_report|heartbeat|diagnostics|error|node_hello}`
-  - `hydro/+/+/+/storage_state/event` (aggregate events irrig-нод)
-  - плюс системные `hydro/time/request` / обработка time sync на стороне backend.
+  - `storage_state/event` входит в channel-level pattern `hydro/+/+/+/+/event`; отдельной подписки на него нет.
+  - системные `hydro/node_hello` и `hydro/time/request` (обработка time sync на стороне backend).
 
 ---
 

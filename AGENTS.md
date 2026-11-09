@@ -1,8 +1,8 @@
 # AGENTS.md
 # Правила для ИИ‑агентов (Hydro 2.0, весь репозиторий)
 
-**Дата обновления:** 2026-08-24  
-**Версия:** 2.1  
+**Дата обновления:** 2026-11-06
+**Версия:** 2.2
 **Статус:** Основной документ правил для ИИ‑агентов (канон)
 
 ## Цель
@@ -22,7 +22,7 @@
   `doc_ai/ARCHITECTURE_FLOWS.md`, `doc_ai/DEV_CONVENTIONS.md`.
 - **Поведение runtime — код** (`code = SoT`). Защищённые контракты (MQTT, команды, схема БД, HL API, AE3 ingress/FSM, retention) — canonical в `doc_ai/`, обязаны совпадать с кодом; при drift правим docs **или** явно чиним код. Doc-first — только для этих контрактов, не для любой фичи. Папка `docs/` удалена.
 - Новые Python-сервисы, новые AE3 `task_type`, новые authority document types — **запрещены без явного запроса** пользователя.
-- Default `make up` = core: laravel, mqtt-bridge, history-logger, automation-engine, postgres, redis, mosquitto (+ prometheus/grafana по желанию). `digital-twin`, `feature-builder`, `node-emulator` — не часть default up.
+- Default `make up` = core: mqtt, db, redis, laravel, mqtt-bridge, history-logger, automation-engine, telemetry-aggregator (+ prometheus/grafana по желанию). `digital-twin`, `feature-builder`, `node-emulator` — не часть default up.
 - Команды к узлам не публикуются напрямую в MQTT из Laravel или automation-engine (только через history-logger):
   единая точка публикации в MQTT — `history-logger`.
 - Базовый поток команд: `Laravel scheduler-dispatch -> Automation-Engine -> History-Logger -> MQTT -> ESP32`.
@@ -62,7 +62,7 @@
 2. Защищённые контракты (MQTT, команды, схема БД, HL API, AE3 ingress/FSM, retention) — canonical в `doc_ai/`; обязаны совпадать с кодом. При drift правим docs **или** явно чиним код.
 3. Doc-first остаётся **только** для изменения этих контрактов, не для любой фичи.
 4. Новые Python-сервисы, новые AE3 `task_type`, новые authority document types — **запрещены без явного запроса** пользователя.
-5. Default `make up` = core: laravel, mqtt-bridge, history-logger, automation-engine, postgres, redis, mosquitto (+ prometheus/grafana по желанию). `digital-twin`, `feature-builder`, `node-emulator` — не часть default up.
+5. Default `make up` = core: mqtt, db, redis, laravel, mqtt-bridge, history-logger, automation-engine, telemetry-aggregator (+ prometheus/grafana по желанию). `digital-twin`, `feature-builder`, `node-emulator` — не часть default up.
 
 - Архитектура и обзор — `doc_ai/SYSTEM_ARCH_FULL.md` и `doc_ai/01_SYSTEM/*` (не подменяют runtime-код).
 - Папка `docs/` удалена; уникальные материалы перенесены в `doc_ai/13_TESTING/`, `doc_ai/12_ANDROID_APP/`, `doc_ai/07_FRONTEND/ui_refs/`.
@@ -101,6 +101,17 @@
   - `tests/e2e/docker-compose.e2e.yml`
   - `tests/node_sim/Dockerfile`
   - `infra/hil/docker-compose.hil.yml`
+
+## 1.3) Проектные skills
+
+- Каталог сценариев и первичных источников: [PROJECT_SKILLS.md](doc_ai/10_AI_DEV_GUIDES/PROJECT_SKILLS.md).
+- Выбирайте релевантный skill из `.agents/skills/` (Codex), `.claude/skills/`
+  (Claude/Cursor) или `.grok/skills/` (Grok); это aliases одних исходных файлов.
+- `make skills-install` / `make skills-check` работают локально, без загрузки
+  upstream, запуска сервисов или изменения MCP. Порядок и пути задаёт
+  `tools/skills/project-skills.json`.
+- Skills не переопределяют эти правила и не расширяют запрос пользователя.
+  Внешний шаблон адаптируется к текущим контрактам, а не вводит новую канонику.
 
 ## 2) Контракты и совместимость
 

@@ -14,7 +14,7 @@
             :variant="state.config_mode === 'live' ? 'warning' : 'neutral'"
             data-testid="config-mode-badge"
           >
-            {{ state.config_mode === 'live' ? '✏️ Live tuning' : '🔒 Locked' }}
+            {{ state.config_mode === 'live' ? 'Редактирование открыто' : 'Настройки защищены' }}
           </Badge>
           <span
             v-if="loading"
@@ -22,7 +22,7 @@
           >загрузка...</span>
         </div>
         <p class="text-xs text-[color:var(--text-dim)] mt-1">
-          <code>locked</code> — snapshot цикла, <code>live</code> — hot-reload правок через TTL.
+          Защищённый режим использует настройки цикла. Временное редактирование позволяет изменять параметры работающей зоны.
         </p>
         <p
           v-if="state?.config_mode === 'live' && countdownLabel"
@@ -35,7 +35,7 @@
           v-if="state"
           class="text-xs text-[color:var(--text-muted)] mt-1"
         >
-          revision: <code>{{ state.config_revision }}</code>
+          Ревизия конфигурации: <code>{{ state.config_revision }}</code>
         </p>
       </div>
 
@@ -101,7 +101,7 @@
         data-testid="config-mode-extend"
         @click="openExtendDialog"
       >
-        Продлить TTL
+        Продлить редактирование
       </button>
     </div>
 
@@ -267,12 +267,12 @@ let tickHandle: ReturnType<typeof setInterval> | null = null
 const countdownLabel = computed(() => {
   if (!state.value?.live_until) return ''
   const remainingMs = new Date(state.value.live_until).getTime() - nowTick.value
-  if (remainingMs <= 0) return 'TTL истёк — скоро будет revert в locked'
+  if (remainingMs <= 0) return 'Срок истёк — ожидается закрытие редактирования'
   const sec = Math.floor(remainingMs / 1000)
   const h = Math.floor(sec / 3600)
   const m = Math.floor((sec % 3600) / 60)
   const s = sec % 60
-  return h > 0 ? `${h}ч ${m}м ${s}с до revert` : `${m}м ${s}с до revert`
+  return h > 0 ? `${h}ч ${m}м ${s}с до закрытия редактирования` : `${m}м ${s}с до закрытия редактирования`
 })
 
 async function load() {
@@ -333,7 +333,7 @@ async function confirmExtend() {
     if (state.value) emit('changed', state.value)
     extendDialog.open = false
   } catch (err: unknown) {
-    errorMessage.value = extractError(err) ?? 'Ошибка продления TTL'
+    errorMessage.value = extractError(err) ?? 'Не удалось продлить редактирование'
   } finally {
     saving.value = false
   }

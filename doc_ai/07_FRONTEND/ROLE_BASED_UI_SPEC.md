@@ -3,7 +3,7 @@
 **Дата создания:** 2025-01-27
 **Дата обновления:** 2026-08-24 (канон production = Unified Dashboard; ролевые Dashboards/*.vue и `/admin/{zones,recipes}` — overlay/superseded)
 **Версия:** 1.4
-**Статус:** Намерение ролей. Production-канон UI — Unified Dashboard. План UX — [`ROLE_BASED_UX_IMPROVEMENT_PLAN.md`](ROLE_BASED_UX_IMPROVEMENT_PLAN.md).
+**Статус:** guide ролевой модели. Production UI — Unified Dashboard; фактические permissions и доступные действия сверяются с кодом и [FRONTEND_UI_UX_SPEC.md](FRONTEND_UI_UX_SPEC.md).
 
 > **Канон production UI:** Unified Dashboard `Pages/Dashboard/Index.vue` (views `operations|agronomy|engineering|admin`) через `UnifiedDashboardController`. Отдельные `AgronomistDashboard` / `AdminDashboard` / `EngineerDashboard` / `OperatorDashboard` / `ViewerDashboard` — **superseded** (Vue-файлы удалены). Примеры с ними и с `DefaultDashboard.vue` ниже — historical / hypothetical, **не реализовывать**.
 >

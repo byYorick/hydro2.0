@@ -901,12 +901,12 @@ describe('Zones/Show.vue', () => {
     expect(wrapper.find('.zone-telemetry-tab').exists()).toBe(true)
   })
 
-  it('показывает вкладку «Раствор» для агронома', () => {
+  it('показывает вкладку «Цели и автоматика» для агронома', () => {
     usePageMockInstance.props.auth.user.role = 'agronomist'
     const wrapper = mount(ZonesShow)
     const tablist = wrapper.get('[role="tablist"]')
 
-    expect(tablist.text()).toContain('Раствор')
+    expect(tablist.text()).toContain('Цели и автоматика')
     expect(tablist.text()).toContain('Цикл')
   })
 
@@ -916,7 +916,7 @@ describe('Zones/Show.vue', () => {
     const tablist = wrapper.get('[role="tablist"]')
 
     expect(tablist.text()).toContain('Узлы')
-    expect(tablist.text()).toContain('Процесс')
+    expect(tablist.text()).toContain('Работа процесса')
     expect(wrapper.text()).toContain('Настройки коррекции и PID')
   })
 

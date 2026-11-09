@@ -1,6 +1,8 @@
 # ANDROID_APP_API_INTEGRATION.md
 # Интеграция Android-приложения с backend и узлами
 
+**Сверено с кодом:** 2026-11-07.
+
 Документ описывает, как Android-приложение общается с системой:
 
 - с backend (Laravel);
@@ -32,11 +34,11 @@ Android использует те же REST-эндпоинты, что и веб
 - `GET /api/zones/{id}/telemetry/history?metric={PH|EC|TEMPERATURE|...}&from={ISO8601}&to={ISO8601}` — история для графиков
 
 **Команды:**
-- `POST /api/zones/{id}/commands` — команды на зону (требует роль operator/admin)
+- `POST /api/zones/{id}/commands` — команды на зону (route role: operator/admin/agronomist/engineer)
 - `POST /api/nodes/{id}/commands` — локальные команды на узел (калибровка и т.п.)
 
 **Алерты:**
-- `GET /api/alerts` — список алертов (опционально `?zone_id={id}&status={open|acknowledged}`)
+- `GET /api/alerts` — список алертов (опционально `?zone_id={id}&status={ACTIVE|RESOLVED}`)
 - `GET /api/alerts/{id}` — детали алерта
 - `PATCH /api/alerts/{id}/ack` — подтверждение алерта
 
@@ -70,72 +72,65 @@ Android использует те же REST-эндпоинты, что и веб
 
 Аутентификация: передача токена в заголовке `Authorization: Bearer <token>`.
 
-### 1.2. Realtime обновления
+### 1.2. Обновление данных
 
-Реализованы два механизма:
+Активные operator ViewModel выполняют REST polling:
 
-1. **Polling (текущая реализация)** — периодические запросы к REST API для обновления данных:
-   - Теплицы/зоны: каждые 10 секунд
-   - Алерты: каждые 5 секунд
-   - Телеметрия: по запросу пользователя
+- `OverviewViewModel` — обзор теплиц каждые 10 s;
+- `ZoneListViewModel`, `ZoneOperatorViewModel`, `NodeOperatorViewModel` — каждые 8 s;
+- `OperatorAlertsViewModel` — ACTIVE alerts каждые 5 s.
 
-2. **WebSocket (подготовлено)** — `RealtimeService` поддерживает подключение к WebSocket каналам:
-   - Подключение к `wss://{backend}/ws/{channel}`
-   - Автоматическое переподключение при разрыве
-   - Fallback на polling при недоступности WebSocket
+Источник — `features/operator/ListViewModels.kt` и `DetailViewModels.kt`. Это задержки цикла; фактическое время запросов зависит от сети.
 
-### 1.3. Кэширование данных
+`RealtimeService.connectWebSocket` строит URL `/ws/{channel}`, которого нет в Laravel/Reverb. В классе отсутствуют Pusher subscribe/private-channel auth, а активные operator ViewModel его не вызывают. Автоматический переход WS → polling не реализован; наличие OkHttp WebSocket не означает рабочую Reverb-интеграцию.
 
-Используется **Room Database** для локального кэширования:
-- **Greenhouses** — кэш списка теплиц
-- **Zones** — кэш зон с привязкой к теплицам
-- **Nodes** — кэш узлов с привязкой к зонам
-- **Telemetry** — кэш истории телеметрии (до 1000 точек на метрику)
-- **Alerts** — кэш алертов с фильтрацией по статусу и зоне
+### 1.3. Состояние UI и Room
 
-Стратегия кэширования:
-- При первом запуске загружаются данные из API и сохраняются в Room
-- UI отображает данные из Room (Flow из DAO)
-- Фоновое обновление через polling обновляет кэш
-- При отсутствии сети показываются кэшированные данные
+Основной путь — Compose → operator ViewModel → `OperatorRepository` → Retrofit APIs; результат хранится в `StateFlow` в памяти. Ошибка запроса показывается в UI, отдельные ViewModel могут сохранить предыдущий список в памяти.
+
+Room entities/DAOs и старые repository/use-case цепочки существуют для Greenhouses/Zones/Nodes/Telemetry/Alerts, но не являются универсальным источником текущих operator screens. `TelemetryDao.getHistory(limit=1000)` ограничивает результат SELECT, а не размер базы. Гарантированного offline-кэша всех экранов и синхронизации offline-команд нет.
 
 ---
 
 ## 2. Режим provisioning узлов (первая настройка)
 
-Android-приложение используется для первичной настройки узлов ESP32:
+**Статус на 2026-11-06: Android provisioning — scaffold, сквозная настройка
+несовместима с текущим ESP32 setup portal.** Не выдавать её за рабочую функцию.
+`ProvisioningRepository.kt` отправляет `/api/provision` с `wifi_ssid`,
+`wifi_password`, `backend_base_url`; в текущей прошивке такого маршрута нет.
 
-### 2.1. Процесс настройки
+### 2.1. Текущий рабочий путь через браузер
 
-1. **Сканирование устройств:**
-   - Приложение сканирует Wi-Fi сети с префиксом `HYDRO-NODE-*` или `HYDRO-SETUP`
-   - Используется `WifiManager.scanResults` для поиска доступных узлов
-   - Требуется разрешение `ACCESS_FINE_LOCATION` (Android 6.0+)
+1. Подключитесь к AP узла (`HYDRO-NODE-*` / `HYDRO-SETUP`, по конфигурации устройства).
+2. Откройте `http://192.168.4.1/` и заполните форму сети и MQTT.
+3. Portal отправляет `POST /wifi/connect` с полями `ssid`, `password`,
+   `mqtt_host`, `mqtt_port`. Сейчас `mqtt_host` принимает IPv4; hostname не поддержан.
+4. После успешной валидации узел сохраняет NodeConfig в NVS и перезагружается.
+   Регистрация идёт через `hydro/node_hello`; затем проверяются lifecycle/bind и
+   `config_report` по их контрактам. Успешный POST не равен готовности узла к командам.
 
-2. **Подключение к узлу:**
-   - Пользователь выбирает найденный узел из списка
-   - Приложение подключается к Wi-Fi сети узла (режим AP)
-   - По умолчанию используется IP `192.168.4.1` (стандартный для ESP32 AP mode)
+Пример формы запроса (значения условные, не credentials стенда):
 
-3. **Отправка конфигурации:**
-   - Приложение отправляет POST запрос на `http://192.168.4.1/api/provision` с JSON:
-   ```json
-   {
-     "wifi_ssid": "SSID основной сети",
-     "wifi_password": "пароль Wi-Fi",
-     "backend_base_url": "https://your-backend",
-     "gh_uid": "gh-main",  // опционально
-     "zone_uid": "zone-a",  // опционально
-     "node_name": "Имя узла"
-   }
-   ```
+```json
+{
+  "ssid": "example-network",
+  "password": "example-password",
+  "mqtt_host": "192.168.1.10",
+  "mqtt_port": 1883
+}
+```
 
-4. **Завершение:**
-   - Узел сохраняет настройки в NVS и перезагружается
-   - После успешного подключения к Wi-Fi и MQTT узел сообщает о себе через `hydro/system/announce/{node_uid}`
-   - Приложение показывает сообщение об успехе
+Канон: [WIFI_PROVISIONING_FIRST_RUN.md](../02_HARDWARE_FIRMWARE/WIFI_PROVISIONING_FIRST_RUN.md).
+Код portal: `firmware/nodes/common/components/setup_portal/setup_portal.c`.
 
-### 2.2. Требуемые разрешения
+### 2.2. Что требуется для завершения Android provisioning
+
+Клиент должен согласовать endpoint и поля с portal, передавать MQTT host/port,
+обрабатывать ошибки валидации и отдельно проверять появление/готовность ноды.
+Одна замена URL несовместимость не устраняет. `hydro/system/announce/*` — planned,
+а не действующий канал регистрации. До проверки интеграции используйте путь через браузер.
+
+### 2.3. Требуемые разрешения
 
 В `AndroidManifest.xml`:
 ```xml
@@ -167,7 +162,8 @@ com.hydro.app/
 │   ├── greenhouses/     # Список теплиц
 │   ├── zones/           # Список зон и детали зоны
 │   ├── alerts/          # Алерты с acknowledge
-│   └── provisioning/    # Мастер настройки узлов
+│   ├── operator/        # Активные operator ViewModel и REST repository
+│   └── provisioning/    # Scaffold настройки узлов
 └── ui/
     └── screens/         # Compose экраны
 ```
@@ -182,10 +178,12 @@ com.hydro.app/
 
 ### 3.3. Data Flow
 
-1. **ViewModel** запрашивает данные через **Repository**
-2. **Repository** проверяет кэш в **Room**, возвращает Flow
-3. Фоновое обновление через **RealtimeService** (polling) обновляет кэш
-4. UI автоматически обновляется через Compose StateFlow
+1. `OperatorScreens` подписываются на `StateFlow` своих operator ViewModel.
+2. ViewModel вызывает `OperatorRepository`; repository выполняет REST-запросы.
+3. ViewModel обновляет in-memory state; периодический цикл повторяет refresh.
+4. Login и Settings используют отдельные auth/settings ViewModel и DataStore для token/server preferences.
+
+Room-цепочки нужно проверять по конкретному consumer; они не подменяют этот активный путь.
 
 ---
 
@@ -201,7 +199,7 @@ com.hydro.app/
 
 ### 4.2. Конфигурационные файлы
 
-Файлы конфигурации находятся в `mobile/configs/`:
+Шаблоны окружений находятся в `mobile/configs/`; копии для `ConfigLoader` — в `app/src/main/assets/configs/`:
 - `env.dev.json` — для разработки
 - `env.staging.json` — для staging
 - `env.prod.json` — для production
@@ -214,47 +212,19 @@ com.hydro.app/
 }
 ```
 
-Конфиги копируются в `app/src/main/assets/configs/` при сборке и загружаются через `ConfigLoader`.
+Gradle выбирает имя assets-файла через `ENV_CONFIG_FILE`; автоматической задачи синхронизации `mobile/configs/` в `app/build.gradle.kts` нет. Активные Retrofit-запросы используют `ServerEndpointStore` и `DynamicBaseUrlInterceptor`: сервер меняется на экране Settings и хранится в preferences. `ConfigLoader` остаётся для отдельных consumers, включая WebSocket-заготовку; изменение одного JSON не заменяет выбранный оператором endpoint. Для эмулятора default — `10.0.2.2:8080`; `localhost` на телефоне указывает на сам телефон.
 
 ---
 
 ## 5. UX-паттерны в Android
 
-Основные экраны (см. `ANDROID_APP_SCREENS.md`):
+Подключённые экраны и действия — [ANDROID_APP_SCREENS.md](ANDROID_APP_SCREENS.md).
 
-### 5.1. Авторизация
-- Экран входа с полями email/password
-- Токен сохраняется в DataStore
-- Автоматический переход к списку теплиц после успешного входа
-
-### 5.2. Список теплиц
-- Карточки теплиц с названием, расположением, количеством зон
-- Индикатор статуса (OK/WARNING/ALERT)
-- FAB для алертов и provisioning
-
-### 5.3. Список зон
-- Фильтрация по теплице
-- Карточки зон с названием, культурой, статусом
-- Переход к детальной странице зоны
-
-### 5.4. Детальная страница зоны
-- Текущие значения телеметрии (pH, EC, температура, влажность)
-- Графики истории (выбор метрики: PH, EC, TEMPERATURE, HUMIDITY_AIR)
-- Команды (запуск полива и т.п.)
-- Автоматическое обновление телеметрии
-
-### 5.5. Алерты
-- Список алертов с фильтрацией (все/открытые/подтвержденные)
-- Индикатор уровня (critical/warning/info)
-- Кнопка подтверждения (acknowledge)
-- Автоматическое обновление каждые 5 секунд
-
-### 5.6. Provisioning мастер
-- Сканирование доступных узлов
-- Выбор узла из списка
-- Форма ввода: SSID Wi-Fi, пароль, имя узла
-- Отправка конфигурации на узел
-- Сообщение об успехе/ошибке
+- Login получает token; `NetworkModule` добавляет его как Bearer.
+- Settings задаёт хост, порт и HTTPS.
+- Operator screens показывают последние данные, control mode и stage; history charts и редактор grow-cycle в них не подключены.
+- Список алертов показывает ACTIVE; ack переводит алерт в RESOLVED. Отдельного статуса acknowledged нет.
+- Provisioning экран существует как scaffold; его несовместимость с firmware описана в §2.
 
 ---
 
@@ -293,7 +263,7 @@ com.hydro.app/
 1. **Не хардкодить URL-адреса backend-сервера** — они должны быть настраиваемыми через конфиги
 2. **Следить за форматом API-запросов** — соответствие backend-документации (`../04_BACKEND_CORE/API_SPEC_FRONTEND_BACKEND_FULL.md`, `../04_BACKEND_CORE/REST_API_REFERENCE.md`)
 3. **Использовать формат ответов `status/data`** — все API ответы обернуты в `ApiResponse<T>`
-4. **Кэширование через Room** — все данные должны кэшироваться локально для работы offline
+4. **Учитывать текущий путь данных** — operator screens используют REST и in-memory StateFlow; offline/Room поведение проверяется отдельно по consumer
 5. **Обработка ошибок** — показывать понятные сообщения пользователю при ошибках сети
 6. **Любые изменения протокола provisioning** отражать в этом документе и на стороне прошивки узла
 
@@ -301,12 +271,6 @@ Android-приложение — это прежде всего **клиент b
 
 ---
 
-## 8. Известные ограничения
+## 8. Границы реализации
 
-1. **Графики телеметрии** — текущая реализация использует простой Canvas. Для production рекомендуется использовать специализированную библиотеку (например, `vico` или `compose-charts`).
-
-2. **WebSocket** — реализован базовый функционал, но в текущей версии используется только polling. WebSocket можно активировать при необходимости.
-
-3. **Wi-Fi сканирование** — требует разрешения на местоположение (Android 6.0+). Пользователь должен предоставить разрешение вручную.
-
-4. **Offline режим** — приложение показывает кэшированные данные при отсутствии сети, но не поддерживает полный offline режим с синхронизацией изменений.
+History Canvas, Room DAOs и OkHttp WebSocket присутствуют как отдельные компоненты, но не подтверждают подключение этих сценариев в operator UI. Текущие границы — [ANDROID_APP_ARCH.md](ANDROID_APP_ARCH.md); фактический grow-cycle coverage — [ANDROID_GROW_CYCLE_UI.md](ANDROID_GROW_CYCLE_UI.md).

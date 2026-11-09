@@ -1,0 +1,36 @@
+{
+  "skill_name": "hydro2-docker-dev",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Исправь dev Compose, не запуская сервисы.",
+      "expected_output": "Проверяет конфигурацию без вывода секретов и без запуска/удаления данных.",
+      "expectations": [
+        "Uses static Compose validation",
+        "Does not start services",
+        "Does not print expanded secrets"
+      ],
+      "should_trigger": true
+    },
+    {
+      "id": 2,
+      "prompt": "После make up нет Grafana. Почини.",
+      "expected_output": "Проверяет профиль obs и предлагает make up-obs в рамках запроса; не включает sim/ml и не сбрасывает volumes.",
+      "expectations": [
+        "Recognizes obs profile",
+        "No volume deletion",
+        "No optional simulation services"
+      ],
+      "should_trigger": true
+    },
+    {
+      "id": 3,
+      "prompt": "Автоматизируй production Terraform в другом проекте.",
+      "expected_output": "Распознаёт, что skill ограничен dev Compose Hydro, и не переносит команды этого проекта на чужую инфраструктуру.",
+      "expectations": [
+        "Respects Hydro dev scope"
+      ],
+      "should_trigger": false
+    }
+  ]
+}

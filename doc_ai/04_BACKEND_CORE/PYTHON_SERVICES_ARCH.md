@@ -1,9 +1,9 @@
 # PYTHON_SERVICES_ARCH.md
 # Архитектура Python-сервисов hydro2.0 (AE3)
 
-**Версия:** 3.8
-**Дата обновления:** 2026-09-30
-**Статус:** Актуально (канонично для runtime; sync 2026-09-30: TopologyPack, `single_tank`, `lighting_tick` в реестре; ранее 2026-08-24: mqtt-bridge = ops leftover, feature-builder = skeleton)
+**Версия:** 3.9
+**Дата обновления:** 2026-11-06
+**Статус:** Актуально (mqtt-bridge command/config routes удалены; feature-builder = skeleton)
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 Breaking-change: HTTP-транспорт задач планировщика удалён из runtime; обратная совместимость не поддерживается.
@@ -20,7 +20,7 @@ Breaking-change: HTTP-транспорт задач планировщика у�
   автодолив — `POST /zones/{id}/start-solution-topup`,
   подмена раствора — `POST /zones/{id}/start-solution-change`,
   **тик климата теплицы (крыша)** — `POST /greenhouses/{id}/start-climate-tick`
-  (intents `greenhouse_automation_intents`, см. `GREENHOUSE_CLIMATE_CONTROL_PLAN.md`);
+  (intents `greenhouse_automation_intents`, см. `GREENHOUSE_CLIMATE_CONTROL_SPEC.md`);
 - direct SQL read-model в runtime path automation-engine;
 - AE3 LISTEN только `scheduler_intent_terminal` + `ae_zone_event`; terminal статусы команд — **poll**
   (не LISTEN для telemetry/command status).
@@ -68,15 +68,17 @@ Breaking-change: HTTP-транспорт задач планировщика у�
 - команды к узлам — `history-logger` `POST /commands` (порт `9300`);
 - NodeConfig — `history-logger` `POST /nodes/{uid}/config` из Laravel `PublishNodeConfigJob`.
 
-`POST /bridge/{zones|nodes}/commands` отвечают **410** (`endpoint_deprecated_use_history_logger`) и **пока живы до P1** (удаление роутов — отдельная фаза). Не использовать как мост команд.
+Command/config routes `mqtt-bridge` удалены: обращения к ним возвращают **404**.
+Промежуточный ответ `410 endpoint_deprecated_use_history_logger` относится к истории.
+Не использовать этот сервис как мост команд или конфигураций.
 
 | Метод | Путь | Статус |
 |-------|------|--------|
 | GET | `/metrics` | active — ops probe |
 | GET | `/bridge/nodes/{node_uid}/live-status` | active — MQTT live probe |
-| POST | `/bridge/nodes/{node_uid}/config` | **legacy**; канон уже HL `POST /nodes/{uid}/config` (`PublishNodeConfigJob`) |
-| POST | `/bridge/zones/{zone_id}/commands` | **410** (жив до P1) → history-logger |
-| POST | `/bridge/nodes/{node_uid}/commands` | **410** (жив до P1) → history-logger |
+| POST | `/bridge/nodes/{node_uid}/config` | **removed / 404**; канон HL `POST /nodes/{uid}/config` (`PublishNodeConfigJob`) |
+| POST | `/bridge/zones/{zone_id}/commands` | **removed / 404**; запуск workflow через Laravel/AE3 |
+| POST | `/bridge/nodes/{node_uid}/commands` | **removed / 404**; device-команды публикует history-logger |
 
 README: `backend/services/mqtt-bridge/README.md`.
 
@@ -88,11 +90,11 @@ README: `backend/services/mqtt-bridge/README.md`.
 
 Канон калибровки: `POST /v1/calibrate/zone/{zone_id}?persist=true` (не legacy `/calibrate/zone/...`).  
 Live: `/simulations/live/start|stop` (связь с `node-sim-manager` `:9100`).  
-Доки: `doc_ai/09_AI_AND_DIGITAL_TWIN/DIGITAL_TWIN_ENGINE.md`, `backend/services/digital-twin/README.md`.
+Доки: `doc_ai/09_AI_AND_DIGITAL_TWIN/README.md`, `backend/services/digital-twin/README.md`.
 
 ### 2.6 `feature-builder` / `node-sim-manager`
 
-- `feature-builder` — **skeleton**, не writer витрин в runtime. Не часть default `make up` (compose profile `ml`, `make up-ml`). Порт **9410** health/metrics; фазы — `ML_FEATURE_PIPELINE.md`. Не расширять без явного запроса.
+- `feature-builder` — **skeleton**, не writer витрин в runtime. Не часть default `make up` (compose profile `ml`, `make up-ml`). Порт **9410** health/metrics; текущий интерфейс — `backend/services/feature-builder/README.md`. Не расширять без явного запроса.
 - `node-sim-manager` — управление node_sim для live-sim / HIL (порт **9100`); не часть default `make up` (profile `sim`).
 
 ---
@@ -332,13 +334,22 @@ Status: **planned / not implemented** — `POST /zones/{id}/start-relay-autotune
 
 ## 8. Freshness и fail-closed
 
-`effective_ts = COALESCE(sample_ts, updated_at)`
+`zone_snapshot_read_model.py` читает `COALESCE(tl.last_ts, tl.updated_at) AS sample_ts`
+из `telemetry_last`; `sample_ts` — SQL alias/поле DTO, а не колонка таблицы.
 
-Пороги (дефолты):
-- pH/EC: `<= 300s`
-- gating flags (`flow_active/stable/corrections_allowed`): `<= 60s`
-- irr state: `<= 30s`
-- level switches: `<= 120s`
+Порог задаётся resolved `zone.correction` и конкретным stage, а не общей таблицей
+фиксированных TTL. Текущие base defaults в Laravel `ZoneCorrectionConfigCatalog`:
+
+- `timing.telemetry_max_age_sec = 10` — свежесть correction telemetry;
+- `timing.irr_state_max_age_sec = 30` — свежесть IRR snapshot;
+- `timing.level_poll_interval_sec = 10` — период опроса уровней, **не** срок их хранения/свежести.
+
+`base/phases.*` могут переопределять эти значения; `runtime_plan_builder.py` передаёт
+их в runtime plan. Отдельный worker interrupt guard использует
+`correction_interrupt_irr_state_max_age_sec` (default `90` в runtime/env.py).
+Универсальные TTL `300s` для pH/EC, `60s` для gating flags и `120s` для level switches
+текущим кодом не задаются. Проверки observe-window и runtime flags описаны в
+`CORRECTION_CYCLE_SPEC.md`.
 
 Fail-closed:
 - stale critical сигнал -> коррекция/шаг блокируется;

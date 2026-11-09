@@ -243,6 +243,11 @@ class TriggerSolutionTopupFromLevelEventUseCase:
             )
         except TaskCreateError as exc:
             error_code = str(exc.code or "ae3_task_create_failed")
+            if error_code in {"start_cycle_zone_busy", "start_solution_topup_zone_busy"}:
+                await self._zone_intent_repository.requeue_claimed_intent(
+                    intent_id=int(intent_id), now=now_utc,
+                )
+                return {"triggered": False, "reason": "zone_busy", "intent_id": intent_id}
             await self._mark_intent_terminal(
                 intent_row=intent_row,
                 now=now_utc,

@@ -1,7 +1,7 @@
 """
 Telemetry Aggregator - агрегация телеметрии.
 Периодически агрегирует telemetry_samples в telemetry_agg_1m, telemetry_agg_1h, telemetry_daily.
-Согласно BACKEND_REFACTOR_PLAN.md раздел 17.
+Контракт хранения: doc_ai/05_DATA_AND_STORAGE/DATA_RETENTION_POLICY.md.
 """
 import asyncio
 import logging
@@ -176,7 +176,7 @@ async def _record_success() -> None:
 
 # ML Phase 1: текущая версия агрегатной формулы.
 # Меняется при изменении формулы std/slope/p10/p90 или quality-фильтра.
-# См. doc_ai/09_AI_AND_DIGITAL_TWIN/ML_FEATURE_PIPELINE.md §5.1 + Приложение C.
+# См. backend/laravel/database/migrations/2026_04_23_120000_extend_telemetry_aggregates_for_ml.php.
 AGG_VERSION_CURRENT = 2
 
 
@@ -319,7 +319,7 @@ async def aggregate_1m() -> int:
             # Агрегируем данные из telemetry_samples.
             # ML-поля (value_std, p10, p90, slope_per_min) считаются только по GOOD-записям
             # через FILTER, классические avg/min/max/median — по всем (backward compat).
-            # Подробности: doc_ai/09_AI_AND_DIGITAL_TWIN/ML_FEATURE_PIPELINE.md §5.1 + Приложение C.
+            # Подробности: backend/laravel/database/migrations/2026_04_23_120000_extend_telemetry_aggregates_for_ml.php.
             try:
                 rows = await fetch(
                     _build_agg_1m_query(bucket_expr="time_bucket('1 minute', ts.ts)"),

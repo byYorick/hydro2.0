@@ -180,10 +180,13 @@ class SequentialCommandGateway:
                 }
 
         for seq_index, command in enumerate(commands):
+            # Batch execution can wait for earlier commands to reach DONE.
+            # Admission and persisted timestamps must use the current time.
+            command_now = _utcnow()
             admission_failure = self._dose_stage_admission_failure(
                 task=current_task,
                 command=command,
-                now=now,
+                now=command_now,
             )
             if admission_failure is not None:
                 return {
@@ -211,7 +214,7 @@ class SequentialCommandGateway:
             result = await self._run_command(
                 task=current_task,
                 command=command,
-                now=now,
+                now=command_now,
                 track_task_state=track_task_state,
                 seq_index=seq_index,
                 planner_step=planner_step,

@@ -1,5 +1,0 @@
-# SCHEDULER_COCKPIT_REDESIGN.md
-
-**Статус:** `archive`. Не исполнять.
-
-Полный текст: [`../00_ARCHIVE/PLANS/SCHEDULER_COCKPIT_REDESIGN.md`](../00_ARCHIVE/PLANS/SCHEDULER_COCKPIT_REDESIGN.md)

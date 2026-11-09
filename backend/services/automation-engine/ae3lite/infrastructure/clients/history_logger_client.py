@@ -70,6 +70,11 @@ class _HlCircuitBreaker:
         self._half_open_probe_in_flight = False
         HL_BREAKER_STATE.set(_BREAKER_CLOSED)
 
+    def record_non_retryable_response(self) -> None:
+        # A 4xx is a request error, not a service outage. It also completes
+        # a half-open probe and breaks any streak of transport/5xx failures.
+        self.record_success()
+
     def record_failure(self) -> None:
         self._half_open_probe_in_flight = False
         if self._state == _BREAKER_HALF_OPEN:
@@ -218,6 +223,7 @@ class HistoryLoggerClient:
 
             if response.status_code not in _RETRYABLE_STATUS_CODES:
                 HL_REQUEST_ERRORS.labels(kind="4xx").inc()
+                self._breaker.record_non_retryable_response()
                 return response
 
             if attempt >= self._max_retries:

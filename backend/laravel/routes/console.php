@@ -1,8 +1,11 @@
 <?php
 
+use App\Jobs\GeneratePredictionsJob;
+use App\Services\AlertService;
 use App\Services\AutomationRuntimeConfigService;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Schedule;
 
 Artisan::command('inspire', function () {
@@ -20,7 +23,7 @@ Schedule::command('telemetry:cleanup-raw --days='.config('hydro.telemetry_retent
 // Artisan telemetry:aggregate не в Schedule: seed/backfill (TelemetrySeeder, ручной backfill), ON CONFLICT DO NOTHING.
 
 // Генерация прогнозов AI: каждые 15 минут
-Schedule::job(new \App\Jobs\GeneratePredictionsJob)
+Schedule::job(new GeneratePredictionsJob)
     ->everyFifteenMinutes()
     ->description('Генерация прогнозов параметров для активных зон');
 
@@ -34,10 +37,10 @@ Schedule::command('backup:full')
     ->dailyAt('03:00')
     ->description('Полный бэкап всех компонентов системы')
     ->onFailure(function () {
-        \Log::error('Ошибка при создании полного бэкапа (scheduled backup:full)');
+        Log::error('Ошибка при создании полного бэкапа (scheduled backup:full)');
 
         try {
-            app(\App\Services\AlertService::class)->createOrUpdateActive([
+            app(AlertService::class)->createOrUpdateActive([
                 'source' => 'infra',
                 'code' => 'infra_backup_full_failed',
                 'type' => 'Scheduled full backup failed',
@@ -47,8 +50,8 @@ Schedule::command('backup:full')
                     'backup_dir' => env('BACKUP_DIR', '/backups'),
                 ],
             ]);
-        } catch (\Throwable $e) {
-            \Log::error('Не удалось создать infra-алерт о провале backup:full', [
+        } catch (Throwable $e) {
+            Log::error('Не удалось создать infra-алерт о провале backup:full', [
                 'error' => $e->getMessage(),
             ]);
         }
@@ -56,16 +59,16 @@ Schedule::command('backup:full')
 
 // Ротация бэкапов: ежедневно в 3:30 (после создания бэкапа)
 Schedule::call(function () {
-    $scriptPath = base_path('../scripts/backup/rotate_backups.sh');
+    $scriptPath = config('backup.script_directory').'/rotate_backups.sh';
     if (file_exists($scriptPath)) {
-        $backupDir = env('BACKUP_DIR', '/backups');
-        $process = \Illuminate\Support\Facades\Process::path(base_path('..'))
+        $backupDir = config('backup.directory');
+        $process = Process::path(base_path('..'))
             ->env(['BACKUP_DIR' => $backupDir])
             ->timeout(600)
-            ->run("bash {$scriptPath}");
+            ->run(['bash', $scriptPath]);
 
         if (! $process->successful()) {
-            \Log::error('Ошибка при ротации бэкапов: '.$process->errorOutput());
+            Log::error('Ошибка при ротации бэкапов: '.$process->errorOutput());
         }
     }
 })
@@ -129,7 +132,7 @@ try {
         $dispatchScheduleMutexMinutes,
         app(AutomationRuntimeConfigService::class)->schedulerMutexExpiryMinutes(),
     );
-} catch (\Throwable) {
+} catch (Throwable) {
     // bootstrap без БД (artisan list): оставляем config-fallback
 }
 $automationDispatchSchedules
