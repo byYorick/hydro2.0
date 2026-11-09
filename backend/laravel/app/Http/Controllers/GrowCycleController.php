@@ -120,12 +120,7 @@ class GrowCycleController extends Controller
                 'readiness' => $e->readiness(),
             ], Response::HTTP_UNPROCESSABLE_ENTITY);
         } catch (UnsupportedHydroponicSystemException $e) {
-            return $this->localizedError(
-                $e->errorCode,
-                $e->getMessage(),
-                Response::HTTP_UNPROCESSABLE_ENTITY,
-                $e->extra(),
-            );
+            return $this->unsupportedHydroponicSystem($e);
         } catch (\DomainException $e) {
             return response()->json([
                 'status' => 'error',
@@ -182,12 +177,7 @@ class GrowCycleController extends Controller
                 'data' => $cycle,
             ]);
         } catch (UnsupportedHydroponicSystemException $e) {
-            return $this->localizedError(
-                $e->errorCode,
-                $e->getMessage(),
-                Response::HTTP_UNPROCESSABLE_ENTITY,
-                $e->extra(),
-            );
+            return $this->unsupportedHydroponicSystem($e);
         } catch (\DomainException $e) {
             return response()->json([
                 'status' => 'error',
@@ -244,12 +234,7 @@ class GrowCycleController extends Controller
                 'data' => $cycle,
             ]);
         } catch (UnsupportedHydroponicSystemException $e) {
-            return $this->localizedError(
-                $e->errorCode,
-                $e->getMessage(),
-                Response::HTTP_UNPROCESSABLE_ENTITY,
-                $e->extra(),
-            );
+            return $this->unsupportedHydroponicSystem($e);
         } catch (\DomainException $e) {
             return response()->json([
                 'status' => 'error',
@@ -311,12 +296,7 @@ class GrowCycleController extends Controller
                 'data' => $cycle,
             ]);
         } catch (UnsupportedHydroponicSystemException $e) {
-            return $this->localizedError(
-                $e->errorCode,
-                $e->getMessage(),
-                Response::HTTP_UNPROCESSABLE_ENTITY,
-                $e->extra(),
-            );
+            return $this->unsupportedHydroponicSystem($e);
         } catch (\DomainException $e) {
             return response()->json([
                 'status' => 'error',
@@ -377,12 +357,7 @@ class GrowCycleController extends Controller
                 'data' => $cycle,
             ]);
         } catch (UnsupportedHydroponicSystemException $e) {
-            return $this->localizedError(
-                $e->errorCode,
-                $e->getMessage(),
-                Response::HTTP_UNPROCESSABLE_ENTITY,
-                $e->extra(),
-            );
+            return $this->unsupportedHydroponicSystem($e);
         } catch (\DomainException $e) {
             return response()->json([
                 'status' => 'error',
@@ -466,12 +441,7 @@ class GrowCycleController extends Controller
                 'readiness' => $e->readiness(),
             ], Response::HTTP_UNPROCESSABLE_ENTITY);
         } catch (UnsupportedHydroponicSystemException $e) {
-            return $this->localizedError(
-                $e->errorCode,
-                $e->getMessage(),
-                Response::HTTP_UNPROCESSABLE_ENTITY,
-                $e->extra(),
-            );
+            return $this->unsupportedHydroponicSystem($e);
         } catch (\DomainException $e) {
             return response()->json([
                 'status' => 'error',
@@ -630,12 +600,7 @@ class GrowCycleController extends Controller
                 'data' => $cycle,
             ]);
         } catch (UnsupportedHydroponicSystemException $e) {
-            return $this->localizedError(
-                $e->errorCode,
-                $e->getMessage(),
-                Response::HTTP_UNPROCESSABLE_ENTITY,
-                $e->extra(),
-            );
+            return $this->unsupportedHydroponicSystem($e);
         } catch (\DomainException $e) {
             return response()->json([
                 'status' => 'error',
@@ -698,12 +663,7 @@ class GrowCycleController extends Controller
                 'data' => $cycle,
             ]);
         } catch (UnsupportedHydroponicSystemException $e) {
-            return $this->localizedError(
-                $e->errorCode,
-                $e->getMessage(),
-                Response::HTTP_UNPROCESSABLE_ENTITY,
-                $e->extra(),
-            );
+            return $this->unsupportedHydroponicSystem($e);
         } catch (\DomainException $e) {
             return response()->json([
                 'status' => 'error',
@@ -771,12 +731,7 @@ class GrowCycleController extends Controller
                 'data' => $cycle,
             ]);
         } catch (UnsupportedHydroponicSystemException $e) {
-            return $this->localizedError(
-                $e->errorCode,
-                $e->getMessage(),
-                Response::HTTP_UNPROCESSABLE_ENTITY,
-                $e->extra(),
-            );
+            return $this->unsupportedHydroponicSystem($e);
         } catch (\DomainException $e) {
             return response()->json([
                 'status' => 'error',

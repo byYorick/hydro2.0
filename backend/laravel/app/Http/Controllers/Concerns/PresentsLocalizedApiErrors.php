@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Concerns;
 
+use App\Exceptions\UnsupportedHydroponicSystemException;
 use App\Services\ErrorCodeCatalogService;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\Client\Response;
@@ -17,6 +18,16 @@ trait PresentsLocalizedApiErrors
     /**
      * @param  array<string, mixed>  $extra
      */
+    protected function unsupportedHydroponicSystem(UnsupportedHydroponicSystemException $exception): JsonResponse
+    {
+        return $this->localizedError(
+            $exception->errorCode,
+            $exception->getMessage(),
+            422,
+            $exception->extra(),
+        );
+    }
+
     protected function localizedError(
         string $code,
         ?string $message = null,

@@ -2,11 +2,9 @@
 
 namespace App\Services\AutomationScheduler;
 
-use App\Exceptions\UnsupportedHydroponicSystemException;
 use App\Services\AlertService;
 use App\Services\AutomationConfigDocumentService;
 use App\Services\CropDay\SolutionRefreshRecommendation;
-use App\Services\HydroponicSystemGuard;
 use App\Services\ZoneAutomationIntentService;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Client\Response;
@@ -221,30 +219,12 @@ class ScheduleDispatcher
             triggerTime: $triggerTime,
             payload: $payload,
         );
-        $blockedCode = $intentSnapshot['blocked_code'] ?? null;
-        if (is_string($blockedCode) && $blockedCode !== '') {
-            $writeLog($taskName, 'failed', [
-                'zone_id' => $zoneId,
-                'task_type' => $taskType,
-                'error' => $blockedCode,
-                'schedule_key' => $scheduleKey,
-                'correlation_id' => $correlationId,
-            ]);
-
-            return [
-                'ready' => false,
-                'result' => [
-                    'dispatched' => false,
-                    'retryable' => false,
-                    'reason' => $blockedCode,
-                ],
-            ];
-        }
+        $blockedCode = is_string($intentSnapshot['blocked_code'] ?? null) ? $intentSnapshot['blocked_code'] : '';
         if (! $intentSnapshot['ok']) {
             $writeLog($taskName, 'failed', [
                 'zone_id' => $zoneId,
                 'task_type' => $taskType,
-                'error' => 'intent_upsert_failed',
+                'error' => $blockedCode !== '' ? $blockedCode : 'intent_upsert_failed',
                 'schedule_key' => $scheduleKey,
                 'correlation_id' => $correlationId,
             ]);
@@ -253,8 +233,8 @@ class ScheduleDispatcher
                 'ready' => false,
                 'result' => [
                     'dispatched' => false,
-                    'retryable' => true,
-                    'reason' => 'intent_upsert_failed',
+                    'retryable' => $blockedCode === '',
+                    'reason' => $blockedCode !== '' ? $blockedCode : 'intent_upsert_failed',
                 ],
             ];
         }
@@ -642,26 +622,9 @@ class ScheduleDispatcher
                 'lighting' => 'lighting_tick',
                 default => $topology,
             };
-            $explicitTopology = strtolower(trim($topology));
-            $hydraulicTask = in_array($aeTaskType, ['irrigation_start', 'solution_topup', 'solution_change'], true)
-                || ($aeTaskType === 'cycle_start' && ! in_array($explicitTopology, ['generic_cycle_start', 'lighting_tick'], true));
-            if ($hydraulicTask) {
-                try {
-                    app(HydroponicSystemGuard::class)->assertZoneIrrigationExecutable($zoneId);
-                } catch (UnsupportedHydroponicSystemException $exception) {
-                    Log::warning('scheduler_intent_blocked_unsupported_hydroponic_system', [
-                        'zone_id' => $zoneId,
-                        'task_type' => $taskType,
-                        'requested_type' => $exception->requestedType,
-                        'supported_types' => $exception->supportedTypes,
-                    ]);
-
-                    return [
-                        'ok' => false,
-                        'intent_id' => null,
-                        'blocked_code' => $exception->errorCode,
-                    ];
-                }
+            $blockedCode = app(HydroponicDispatchGate::class)->blockCode($zoneId, $aeTaskType, $topology);
+            if (is_string($blockedCode) && $blockedCode !== '') {
+                return ['ok' => false, 'intent_id' => null, 'blocked_code' => $blockedCode];
             }
             $irrigationMode = $taskType === 'irrigation' ? 'normal' : null;
             $irrigationDurationSec = null;

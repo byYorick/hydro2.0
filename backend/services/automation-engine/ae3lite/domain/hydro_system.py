@@ -26,7 +26,7 @@ def load_catalog() -> dict[str, Any]:
     with path.open(encoding="utf-8") as handle:
         payload = json.load(handle)
     if not isinstance(payload, dict):
-        raise RuntimeException(f"Каталог hydro_system не объект: {path}")
+        raise RuntimeError(f"Каталог hydro_system не объект: {path}")
     return payload
 
 
@@ -180,4 +180,4 @@ def _catalog_path() -> Path:
     for candidate in candidates:
         if candidate.is_file():
             return candidate
-    raise RuntimeException("Не найден schemas/hydro_system.enum.json")
+    raise RuntimeError("Не найден schemas/hydro_system.enum.json")
