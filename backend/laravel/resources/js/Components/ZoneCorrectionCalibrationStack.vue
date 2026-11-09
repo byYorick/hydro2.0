@@ -1,69 +1,54 @@
 <template>
-  <div class="space-y-4">
-    <section class="space-y-4">
-      <div>
-        <div class="text-sm font-semibold text-[color:var(--text-primary)]">
-          Порядок работы
-        </div>
-        <div class="text-xs text-[color:var(--text-dim)] mt-1">
-          {{ stackIntroText }}
-        </div>
-      </div>
-
-      <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-        <div class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] p-3 text-xs text-[color:var(--text-dim)]">
-          <div class="font-medium text-[color:var(--text-primary)]">
-            1. Сенсоры
-          </div>
-          <div class="mt-1">
-            Сначала приведите в порядок pH/EC sensor calibration, чтобы дальнейшие настройки опирались на корректные измерения.
-          </div>
-        </div>
-        <div class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] p-3 text-xs text-[color:var(--text-dim)]">
-          <div class="font-medium text-[color:var(--text-primary)]">
-            2. Насосы
-          </div>
-          <div class="mt-1">
-            После этого откалибруйте дозирующие насосы. Пределы насоса остаются в расширенных настройках мастера калибровки и нужны только для нестандартных зон.
-          </div>
-        </div>
-        <div class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] p-3 text-xs text-[color:var(--text-dim)]">
-          <div class="font-medium text-[color:var(--text-primary)]">
-            3. Процесс и PID
-          </div>
-          <div class="mt-1">
-            {{ processAndPidHint }}
-          </div>
-        </div>
-      </div>
+  <div
+    class="space-y-4"
+    data-testid="zone-correction-workspace"
+  >
+    <p class="text-sm text-[color:var(--text-muted)]">
+      Сначала проверьте датчики и дозирование насосов, затем настройте процесс и коэффициенты PID. Цели pH и EC берутся из фазы рецепта.
+    </p>
+    <Tabs
+      v-model="activeSection"
+      :tabs="sections"
+      list-role="group"
+      aria-label="Настройки коррекции AE3"
+    />
+    <section
+      v-if="loadedSections.has('readiness') && showRuntimeReadiness"
+      v-show="activeSection === 'readiness'"
+      class="space-y-3"
+      aria-label="Готовность коррекции"
+    >
+      <CorrectionRuntimeReadinessCard
+        :zone-id="zoneId"
+        :refresh-token="readinessRefreshToken"
+        @focus-process-calibration="selectSection('process')"
+        @open-pump-calibration="$emit('open-pump-calibration')"
+        @focus-pid-config="selectSection('pid')"
+      />
     </section>
-
-    <section class="space-y-4 border-t border-[color:var(--border-muted)] pt-4">
-      <div>
-        <div class="text-sm font-semibold text-[color:var(--text-primary)]">
-          1. Калибровка сенсоров
-        </div>
-        <div class="text-xs text-[color:var(--text-dim)] mt-1">
-          Отдельный контур pH/EC sensor calibration и его история.
-        </div>
-      </div>
-
+    <section
+      v-if="loadedSections.has('sensors')"
+      v-show="activeSection === 'sensors'"
+      class="space-y-3"
+      aria-label="Калибровка датчиков"
+    >
+      <h3 class="text-sm font-semibold">
+        Калибровка датчиков pH и EC
+      </h3>
       <SensorCalibrationStatus
         :zone-id="zoneId"
         :settings="sensorCalibrationSettings"
       />
     </section>
-
-    <section class="space-y-4 border-t border-[color:var(--border-muted)] pt-4">
-      <div>
-        <div class="text-sm font-semibold text-[color:var(--text-primary)]">
-          2. Калибровка дозирующих насосов
-        </div>
-        <div class="text-xs text-[color:var(--text-dim)] mt-1">
-          Статус и история pump calibration для насосов, участвующих в in-flow correction.
-        </div>
-      </div>
-
+    <section
+      v-if="loadedSections.has('pumps')"
+      v-show="activeSection === 'pumps'"
+      class="space-y-3"
+      aria-label="Калибровка насосов"
+    >
+      <h3 class="text-sm font-semibold">
+        Дозирующие насосы
+      </h3>
       <PumpCalibrationsPanel
         :zone-id="zoneId"
         :save-success-seq="saveSuccessSeq"
@@ -71,104 +56,68 @@
         @open-pump-calibration="$emit('open-pump-calibration')"
       />
     </section>
-
-    <section class="space-y-4 border-t border-[color:var(--border-muted)] pt-4">
-      <div>
-        <div class="text-sm font-semibold text-[color:var(--text-primary)]">
-          3. Калибровка процесса
-        </div>
-        <div class="text-xs text-[color:var(--text-dim)] mt-1">
-          Настройка observe-window и process gain для фаз `solution_fill`, `tank_recirc`, `irrigation` и `generic`.
-        </div>
-      </div>
-
-      <div id="zone-process-calibration-panel-shared">
-        <ProcessCalibrationPanel
-          :zone-id="zoneId"
-          @saved="handleAuthorityUpdated"
-        />
-      </div>
-    </section>
-
-    <details
-      class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)]"
-      data-testid="zone-correction-config-details"
-    >
-      <summary class="cursor-pointer list-none px-4 py-3 text-sm font-semibold text-[color:var(--text-primary)]">
-        4. Correction config и presets
-        <div class="mt-1 text-xs font-normal text-[color:var(--text-dim)]">
-          Authority-редактор correction family: base config, phase overrides, history и preset lifecycle.
-        </div>
-      </summary>
-
-      <div class="border-t border-[color:var(--border-muted)] p-4">
-        <CorrectionConfigForm
-          :zone-id="zoneId"
-          @saved="handleAuthorityUpdated"
-        />
-      </div>
-    </details>
-
     <section
-      v-if="showRuntimeReadiness"
-      class="space-y-4 border-t border-[color:var(--border-muted)] pt-4"
+      v-if="loadedSections.has('process')"
+      v-show="activeSection === 'process'"
+      id="zone-process-calibration-panel-shared"
+      class="space-y-3"
+      aria-label="Калибровка процесса"
     >
-      <div>
-        <div class="text-sm font-semibold text-[color:var(--text-primary)]">
-          4. Итоговая готовность correction runtime
-        </div>
-        <div class="text-xs text-[color:var(--text-dim)] mt-1">
-          Финальная проверка, что process calibration и pump calibration закрывают обязательные runtime-контракты.
-        </div>
-      </div>
-
-      <CorrectionRuntimeReadinessCard
+      <h3 class="text-sm font-semibold">
+        Отклик раствора и время стабилизации
+      </h3>
+      <ProcessCalibrationPanel
         :zone-id="zoneId"
-        :refresh-token="readinessRefreshToken"
-        @focus-process-calibration="scrollToSection('zone-process-calibration-panel-shared')"
-        @open-pump-calibration="$emit('open-pump-calibration')"
-        @focus-pid-config="openPidConfigPanel"
+        @saved="handleAuthorityUpdated"
       />
     </section>
-
-    <details
-      :open="pidDetailsOpen"
-      class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)]"
-      @toggle="handlePidDetailsToggle"
+    <section
+      v-if="loadedSections.has('pid')"
+      v-show="activeSection === 'pid'"
+      id="zone-pid-config-panel-shared"
+      aria-label="Коэффициенты PID"
     >
-      <summary class="cursor-pointer list-none px-4 py-3 text-sm font-semibold text-[color:var(--text-primary)]">
-        Расширенная тонкая настройка PID и autotune
-        <div class="mt-1 text-xs font-normal text-[color:var(--text-dim)]">
-          Открывайте этот блок после базовой калибровки, если нужно довести correction loop, изменить zone PID override или запустить autotune.
-        </div>
-      </summary>
-
-      <div
-        id="zone-pid-config-panel-shared"
-        class="border-t border-[color:var(--border-muted)] p-4"
-      >
-        <section class="grid gap-4 xl:grid-cols-2">
-          <PidConfigForm
-            :zone-id="zoneId"
-            :phase-targets="phaseTargets"
-            @saved="handlePidConfigSaved"
-          />
-          <RelayAutotuneTrigger :zone-id="zoneId" />
-        </section>
-      </div>
-    </details>
+      <PidConfigForm
+        :zone-id="zoneId"
+        :phase-targets="phaseTargets"
+        :disabled="!canEdit"
+        @saved="handlePidConfigSaved"
+      />
+    </section>
+    <section
+      v-if="loadedSections.has('history')"
+      v-show="activeSection === 'history'"
+      aria-label="История PID"
+    >
+      <PidLogsTable :zone-id="zoneId" />
+    </section>
+    <section
+      v-if="loadedSections.has('limits')"
+      v-show="activeSection === 'limits'"
+      aria-label="Параметры коррекции"
+    >
+      <p class="mb-3 text-sm text-[color:var(--text-muted)]">
+        Лимиты доз, ожидание эффекта и профили коррекции. Коэффициенты Kp/Ki/Kd редактируются в разделе «PID».
+      </p>
+      <CorrectionConfigForm
+        :zone-id="zoneId"
+        @saved="handleAuthorityUpdated"
+      />
+    </section>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
+import Tabs from '@/Components/Tabs.vue'
 import CorrectionConfigForm from '@/Components/CorrectionConfigForm.vue'
 import CorrectionRuntimeReadinessCard from '@/Components/CorrectionRuntimeReadinessCard.vue'
 import PidConfigForm from '@/Components/PidConfigForm.vue'
+import PidLogsTable from '@/Components/PidLogsTable.vue'
 import ProcessCalibrationPanel from '@/Components/ProcessCalibrationPanel.vue'
 import PumpCalibrationsPanel from '@/Components/PumpCalibrationsPanel.vue'
-import RelayAutotuneTrigger from '@/Components/RelayAutotuneTrigger.vue'
 import SensorCalibrationStatus from '@/Components/SensorCalibrationStatus.vue'
+import { useRole } from '@/composables/useRole'
 import type { RecipePhasePidTargets } from '@/composables/recipePhasePidTargets'
 import type { PidConfigWithMeta } from '@/types/PidConfig'
 import type { SensorCalibrationSettings } from '@/types/SystemSettings'
@@ -180,73 +129,32 @@ const props = withDefaults(defineProps<{
   showRuntimeReadiness?: boolean
   saveSuccessSeq?: number
   runSuccessSeq?: number
-}>(), {
-  phaseTargets: null,
-  showRuntimeReadiness: true,
-  saveSuccessSeq: 0,
-  runSuccessSeq: 0,
-})
-
+}>(), { phaseTargets: null, showRuntimeReadiness: true, saveSuccessSeq: 0, runSuccessSeq: 0 })
 const emit = defineEmits<{
-  (e: 'open-pump-calibration'): void
-  (e: 'pid-config-saved', config: PidConfigWithMeta): void
-  (e: 'authority-updated'): void
+  'open-pump-calibration': []
+  'pid-config-saved': [config: PidConfigWithMeta]
+  'authority-updated': []
 }>()
-
-const pidDetailsOpen = ref(false)
+const { canEdit } = useRole()
+const activeSection = ref(props.showRuntimeReadiness ? 'readiness' : 'sensors')
+const loadedSections = ref(new Set([activeSection.value]))
+watch(activeSection, section => loadedSections.value.add(section), { flush: 'sync' })
+const sections = computed(() => [
+  ...(props.showRuntimeReadiness ? [{ id: 'readiness', label: 'Готовность' }] : []),
+  { id: 'sensors', label: 'Датчики' }, { id: 'pumps', label: 'Насосы' },
+  { id: 'process', label: 'Процесс' }, { id: 'pid', label: 'PID' },
+  { id: 'history', label: 'История PID' }, { id: 'limits', label: 'Параметры коррекции' },
+])
 const authorityRefreshSeq = ref(0)
 const readinessRefreshToken = computed(() => `${props.saveSuccessSeq}:${props.runSuccessSeq}:${authorityRefreshSeq.value}`)
-
-const stackIntroText = computed(() => {
-  if (props.showRuntimeReadiness) {
-    return 'Шаг выстроен по зависимостям calibration-контура: от достоверности измерений и дозирования к process calibration и финальной проверке runtime. PID и autotune вынесены в расширенную тонкую настройку.'
-  }
-
-  return 'Шаг выстроен по зависимостям calibration-контура: от достоверности измерений и дозирования к process calibration. Финальная проверка correction runtime вынесена в следующий шаг запуска.'
+function selectSection(section: string) { activeSection.value = section }
+function handlePidConfigSaved(config: PidConfigWithMeta) { handleAuthorityUpdated(); emit('pid-config-saved', config) }
+function handleAuthorityUpdated() { authorityRefreshSeq.value += 1; emit('authority-updated') }
+onMounted(() => {
+  if (window.location.hash === '#zone-pid-config-panel-shared') activeSection.value = 'pid'
 })
-
-const processAndPidHint = computed(() => {
-  if (props.showRuntimeReadiness) {
-    return 'Только затем заполняйте process calibration. PID и autotune открывайте только для тонкой доводки, если базовый контур уже стабилен.'
-  }
-
-  return 'Только затем заполняйте process calibration. PID и autotune открывайте только для тонкой доводки; итоговая readiness теперь проверяется уже в финальном шаге запуска.'
+watch(() => props.zoneId, () => {
+  activeSection.value = props.showRuntimeReadiness ? 'readiness' : 'sensors'
+  loadedSections.value = new Set([activeSection.value])
 })
-
-function scrollToSection(id: string): void {
-  if (typeof document === 'undefined') {
-    return
-  }
-
-  const element = document.getElementById(id)
-  if (!element) {
-    return
-  }
-
-  element.scrollIntoView({ behavior: 'smooth', block: 'start' })
-}
-
-function openPidConfigPanel(): void {
-  pidDetailsOpen.value = true
-  scrollToSection('zone-pid-config-panel-shared')
-}
-
-function handlePidDetailsToggle(event: Event): void {
-  const target = event.target
-  if (!(target instanceof HTMLDetailsElement)) {
-    return
-  }
-
-  pidDetailsOpen.value = target.open
-}
-
-function handlePidConfigSaved(config: PidConfigWithMeta): void {
-  handleAuthorityUpdated()
-  emit('pid-config-saved', config)
-}
-
-function handleAuthorityUpdated(): void {
-  authorityRefreshSeq.value += 1
-  emit('authority-updated')
-}
 </script>

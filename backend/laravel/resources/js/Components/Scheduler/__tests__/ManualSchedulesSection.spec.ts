@@ -55,6 +55,21 @@ const baseProps = {
 }
 
 describe('ManualSchedulesSection.vue', () => {
+  it('фильтрует действующие и приостановленные правила без потери списка при обновлении', async () => {
+    const wrapper = mount(ManualSchedulesSection, {
+      props: { ...baseProps, schedules: [schedule({ id: 1, label: 'Утро' }), schedule({ id: 2, label: 'Вечер', enabled: false })] },
+      global: { stubs: { ManualScheduleFormModal: true, Modal: true } },
+    })
+    await wrapper.get('[data-testid="manual-schedules-filter"]').setValue('paused')
+    expect(wrapper.findAll('[data-testid="manual-schedule-row"]')).toHaveLength(1)
+    expect(wrapper.text()).toContain('Вечер')
+    await wrapper.setProps({ loading: true })
+    expect(wrapper.findAll('[data-testid="manual-schedule-row"]')).toHaveLength(1)
+    expect(wrapper.find('[data-testid="manual-schedules-loading"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="manual-schedules-search"]').setValue('Нет такого правила')
+    expect(wrapper.text()).toContain('Расписаний по выбранному фильтру нет')
+    wrapper.unmount()
+  })
   it('показывает skeleton при loading и скрывает пустое состояние', () => {
     const wrapper = mount(ManualSchedulesSection, {
       props: {

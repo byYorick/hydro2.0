@@ -26,10 +26,12 @@ export function useSchedulerHotkeys(handlers: SchedulerHotkeyHandlers): void {
     const tag = target.tagName
     if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true
     if (target.isContentEditable) return true
+    if (target.closest('button, a, [role="button"], [role="tab"], [role="dialog"], [aria-modal="true"]')) return true
     return false
   }
 
   function handle(event: KeyboardEvent): void {
+    if (event.defaultPrevented || event.repeat) return
     if (event.ctrlKey || event.metaKey || event.altKey) return
     if (isEditableTarget(event.target)) return
 

@@ -11,6 +11,7 @@
 - [FRONTEND_TESTING.md](FRONTEND_TESTING.md) — Стратегия тестирования Frontend 2.0
 - [FRONTEND_UI_UX_SPEC.md](FRONTEND_UI_UX_SPEC.md) — Полная спецификация UI/UX фронтенда 2.0 (Laravel + Inertia + Vue 3)
 - [ROLE_BASED_UI_SPEC.md](ROLE_BASED_UI_SPEC.md) — Спецификация ролевых интерфейсов UI/UX
+- [FRONTEND_AE3_AUDIT_2026_11.md](FRONTEND_AE3_AUDIT_2026_11.md) — Аудит и рефакторинг планировщика, runtime-настроек и единого редактора коррекции/PID (2026-11-02)
 
 Нормативные контракты сверяются с текущим кодом по правилам `AGENTS.md`.
 [Главный индекс](../INDEX.md).

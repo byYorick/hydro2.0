@@ -292,7 +292,7 @@ export const zonesApi = {
     return apiPost<unknown>(`/zones/${zoneId}/manual-step`, payload)
   },
 
-  // ─── PID / pump calibration / relay autotune ────────────────────────────
+  // ─── PID / pump calibration ────────────────────────────
   getPidLogs<T = unknown>(
     zoneId: number,
     params?: { type?: string; limit?: number; offset?: number },
@@ -312,16 +312,7 @@ export const zonesApi = {
     return apiPut<T>(`/zones/${zoneId}/pump-calibrations/${channelId}`, payload)
   },
 
-  startRelayAutotune(zoneId: number, payload: { pid_type: string }): Promise<unknown> {
-    return apiPost<unknown>(`/zones/${zoneId}/relay-autotune`, payload)
-  },
 
-  getRelayAutotuneStatus<T = unknown>(
-    zoneId: number,
-    params?: { pid_type?: string },
-  ): Promise<T> {
-    return apiGet<T>(`/zones/${zoneId}/relay-autotune/status`, { params })
-  },
 
   attachRecipe<T = Record<string, unknown>>(
     zoneId: number,

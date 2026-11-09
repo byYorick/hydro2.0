@@ -22,23 +22,6 @@ vi.mock('@/composables/useWebSocket', () => ({
   })
 }))
 
-vi.mock('@/composables/useApi', () => ({
-  useApi: () => ({
-    api: {
-      get: vi.fn(() => Promise.resolve({
-        data: {
-          data: {
-            zonesCount: 5,
-            zonesByStatus: { RUNNING: 3 },
-            devicesCount: 10,
-            nodesByStatus: { online: 8, offline: 2 }
-          }
-        }
-      }))
-    }
-  })
-}))
-
 vi.mock('@/utils/formatTime', () => ({
   formatTime: (date: Date) => date.toISOString()
 }))

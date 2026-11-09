@@ -9,7 +9,7 @@
           Ручные расписания
         </h3>
         <p class="mt-0.5 max-w-2xl text-xs text-[color:var(--text-dim)]">
-          Дополняют рецепт и участвуют в dispatch планировщика. Время — UTC.
+          Дополняют расписание рецепта. Здесь можно создать правило, временно выключить его или изменить время. Время — UTC.
         </p>
       </div>
       <Button
@@ -24,7 +24,35 @@
     </div>
 
     <div
-      v-if="loading"
+      v-if="schedules.length"
+      class="mt-3 grid gap-2 sm:grid-cols-2"
+    >
+      <TextField
+        v-model="query"
+        type="search"
+        aria-label="Поиск расписаний"
+        placeholder="Название или тип задачи"
+        data-testid="manual-schedules-search"
+      />
+      <SelectField
+        v-model="statusFilter"
+        aria-label="Статус расписания"
+        data-testid="manual-schedules-filter"
+      >
+        <option value="all">
+          Все расписания ({{ schedules.length }})
+        </option><option value="enabled">
+          Действующие
+        </option><option value="paused">
+          Приостановленные
+        </option><option value="completed">
+          Разовые выполненные
+        </option>
+      </SelectField>
+    </div>
+
+    <div
+      v-if="loading && !schedules.length"
       class="mt-4 rounded-xl border border-[color:var(--border-muted)] px-4 py-8 text-center"
       data-testid="manual-schedules-loading"
     >
@@ -32,6 +60,14 @@
         Загрузка расписаний…
       </p>
     </div>
+
+    <p
+      v-else-if="schedules.length > 0 && !visibleSchedules.length"
+      class="mt-4 text-sm text-[color:var(--text-muted)]"
+      role="status"
+    >
+      Расписаний по выбранному фильтру нет.
+    </p>
 
     <div
       v-else-if="schedules.length === 0"
@@ -77,7 +113,7 @@
         </thead>
         <tbody>
           <tr
-            v-for="schedule in schedules"
+            v-for="schedule in visibleSchedules"
             :key="schedule.id"
             class="border-b border-[color:var(--border-muted)]/60"
             data-testid="manual-schedule-row"
@@ -92,7 +128,7 @@
                   :aria-label="schedule.label ? `Активно: ${schedule.label}` : `Активно: ${laneLabel(schedule.task_type)}`"
                   class="relative inline-flex h-5 w-9 shrink-0 rounded-full transition motion-reduce:transition-none"
                   :class="schedule.enabled ? 'bg-[color:var(--status-ok)]' : 'bg-[color:var(--border-muted)]'"
-                  :disabled="togglingId === schedule.id"
+                  :disabled="togglingId !== null"
                   @click="toggleEnabled(schedule)"
                 >
                   <span
@@ -227,6 +263,8 @@ import { computed, ref } from 'vue'
 import Badge from '@/Components/Badge.vue'
 import Button from '@/Components/Button.vue'
 import Modal from '@/Components/Modal.vue'
+import TextField from '@/Components/TextField.vue'
+import SelectField from '@/Components/SelectField.vue'
 import ManualScheduleFormModal from '@/Components/Scheduler/ManualScheduleFormModal.vue'
 import type {
   PlanWindow,
@@ -257,6 +295,16 @@ const emit = defineEmits<{
 }>()
 
 const { showToast } = useToast()
+const query = ref('')
+const statusFilter = ref('all')
+const visibleSchedules = computed(() => props.schedules.filter(schedule => {
+  const completed = isOnceCompleted(schedule)
+  if (statusFilter.value === 'enabled' && (!schedule.enabled || completed)) return false
+  if (statusFilter.value === 'paused' && (schedule.enabled || completed)) return false
+  if (statusFilter.value === 'completed' && !completed) return false
+  const term = query.value.trim().toLocaleLowerCase('ru')
+  return !term || [schedule.label, props.laneLabel(schedule.task_type), schedule.summary].some(value => String(value ?? '').toLocaleLowerCase('ru').includes(term))
+}))
 
 const modalOpen = ref(false)
 const saving = ref(false)
