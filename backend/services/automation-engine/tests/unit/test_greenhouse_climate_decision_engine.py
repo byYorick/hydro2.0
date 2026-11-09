@@ -762,3 +762,82 @@ def test_greenhouse_targets_keep_optional_vpd_pair() -> None:
     )
     assert "vpd_min_kpa" not in bare
     assert "vpd_max_kpa" not in bare
+
+
+def test_explicit_zero_day_max_is_not_replaced_by_default() -> None:
+    ex = _exec(day_max_open_pct=0, day_min_open_pct=0, day_base_open_pct=0)
+    decision = compute_climate_decision(
+        execution=ex,
+        control_mode="auto",
+        manual_override=None,
+        inside_temp_median=30.0,
+        inside_temp_max=30.0,
+        inside_rh_max=50.0,
+        outside_temp=20.0,
+        outside_humidity=40.0,
+        wind_speed=1.0,
+        wind_direction_deg=None,
+        rain_detected=False,
+        outside_light_lux=20000.0,
+        schedule_day=True,
+        weather_fresh=True,
+        inside_fresh=True,
+        current_left_pct=0,
+        current_right_pct=0,
+        now_ts=1_000_000.0,
+        last_command_ts=None,
+    )
+    assert decision.left_target_pct == 0
+    assert decision.right_target_pct == 0
+
+
+def test_explicit_zero_fallback_stays_closed_when_inside_is_stale() -> None:
+    ex = _exec(fallback_open_pct=0, day_min_open_pct=0, day_max_open_pct=100)
+    decision = compute_climate_decision(
+        execution=ex,
+        control_mode="auto",
+        manual_override=None,
+        inside_temp_median=None,
+        inside_temp_max=None,
+        inside_rh_max=None,
+        outside_temp=20.0,
+        outside_humidity=40.0,
+        wind_speed=1.0,
+        wind_direction_deg=None,
+        rain_detected=False,
+        outside_light_lux=20000.0,
+        schedule_day=True,
+        weather_fresh=True,
+        inside_fresh=False,
+        current_left_pct=0,
+        current_right_pct=0,
+        now_ts=1_000_000.0,
+        last_command_ts=None,
+    )
+    assert decision.requested_symmetric_pct == 0
+
+
+def test_explicit_zero_overheat_threshold_is_not_replaced() -> None:
+    ex = _exec(overheat_emergency_temp_c=0)
+    decision = compute_climate_decision(
+        execution=ex,
+        control_mode="auto",
+        manual_override=None,
+        inside_temp_median=1.0,
+        inside_temp_max=1.0,
+        inside_rh_max=50.0,
+        outside_temp=0.0,
+        outside_humidity=40.0,
+        wind_speed=0.0,
+        wind_direction_deg=None,
+        rain_detected=False,
+        outside_light_lux=20000.0,
+        schedule_day=True,
+        weather_fresh=True,
+        inside_fresh=True,
+        current_left_pct=0,
+        current_right_pct=0,
+        now_ts=1_000_000.0,
+        last_command_ts=None,
+    )
+    assert decision.emergency_overheat is True
