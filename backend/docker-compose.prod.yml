@@ -184,6 +184,7 @@ services:
     environment:
       - WEB_DOCUMENT_ROOT=/app/public
       - APP_ENV=production
+      - TRUSTED_PROXIES=${TRUSTED_PROXIES:-10.0.0.0/8,172.16.0.0/12,192.168.0.0/16}
       - APP_DEBUG=false
       - APP_KEY=${APP_KEY:?APP_KEY must be set}
       - APP_URL=${APP_URL:?APP_URL must be set}
@@ -363,6 +364,7 @@ services:
       - SCHEDULER_API_TOKEN=${AUTOMATION_LARAVEL_SCHEDULER_API_TOKEN:-${PY_INGEST_TOKEN:?AUTOMATION_LARAVEL_SCHEDULER_API_TOKEN or PY_INGEST_TOKEN must be set}}
       - PY_API_TOKEN=${PY_API_TOKEN:?PY_API_TOKEN must be set}
       - PY_INGEST_TOKEN=${PY_INGEST_TOKEN:?PY_INGEST_TOKEN must be set}
+      - HISTORY_LOGGER_AE_TOKEN=${HISTORY_LOGGER_AE_TOKEN:?HISTORY_LOGGER_AE_TOKEN must be set}
       - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:?LARAVEL_API_TOKEN must be set}
     depends_on:
       mqtt:
@@ -401,6 +403,10 @@ services:
       - MQTT_USER=${MQTT_HISTORY_LOGGER_USER:-history_logger}
       # ВАЖНО: Замените на уникальный пароль через переменную окружения
       - MQTT_PASS=${MQTT_HISTORY_LOGGER_PASS:?MQTT_HISTORY_LOGGER_PASS must be set}
+      # Пароль узла esp32_node и ключ обёртки node_secret_enc. Без них новые ноды
+      # получают конфиг без секрета (missing_node_secret). Значения не хардкодятся.
+      - MQTT_ESP32_NODE_PASS=${MQTT_ESP32_NODE_PASS:?MQTT_ESP32_NODE_PASS must be set}
+      - NODE_SECRET_WRAP_PASSPHRASE=${NODE_SECRET_WRAP_PASSPHRASE:?NODE_SECRET_WRAP_PASSPHRASE must be set}
       - PG_HOST=db
       - PG_DB=hydro
       - PG_USER=hydro
@@ -410,6 +416,7 @@ services:
       - PY_API_TOKEN=${PY_API_TOKEN:?PY_API_TOKEN must be set}
       - PY_INGEST_TOKEN=${PY_INGEST_TOKEN:?PY_INGEST_TOKEN must be set}
       - HISTORY_LOGGER_API_TOKEN=${HISTORY_LOGGER_API_TOKEN:-${PY_INGEST_TOKEN:?HISTORY_LOGGER_API_TOKEN or PY_INGEST_TOKEN must be set}}
+      - HISTORY_LOGGER_AE_TOKEN=${HISTORY_LOGGER_AE_TOKEN:?HISTORY_LOGGER_AE_TOKEN must be set}
       - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:?LARAVEL_API_TOKEN must be set}
       - REDIS_HOST=redis
       - REDIS_PORT=6379

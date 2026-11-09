@@ -18,8 +18,9 @@ def auth_headers():
 
 
 @pytest.fixture(autouse=True)
-def auth_settings():
+def auth_settings(monkeypatch):
     """Ensure auth uses a stable test token unless overridden."""
+    monkeypatch.delenv("HISTORY_LOGGER_AE_TOKEN", raising=False)
     with patch("auth.get_settings") as mock_settings:
         mock_settings.return_value = Mock(history_logger_api_token="unit-test-service-token")
         yield mock_settings
@@ -690,6 +691,158 @@ async def test_publish_command_rejects_when_ae3_lease_held(client, auth_headers,
     assert response.status_code == 409
     assert response.json()["detail"]["error"] == "ae3_zone_lease_held"
     assert not mock_mqtt_client._client._client.publish.called
+
+
+def _lease_held_fetch(query, *args):
+    normalized = " ".join(str(query).split()).lower()
+    if "select status from commands where cmd_id = $1" in normalized:
+        return [{"status": "SENT"}]
+    if "from ae_zone_leases" in normalized:
+        return [{"ok": 1}]
+    if "from nodes where uid = $1" in normalized and "zone_id = $2" not in normalized:
+        return [{"id": 1, "zone_id": 1, "pending_zone_id": None}]
+    if "from nodes where uid = $1 and zone_id = $2" in normalized:
+        return [{"id": 1}]
+    return []
+
+
+@pytest.mark.asyncio
+async def test_spoofed_automation_engine_source_is_rejected(
+    client, auth_headers, mock_mqtt_client, monkeypatch
+):
+    """Body source=automation-engine не даёт lease bypass и не принимается от API-токена."""
+    monkeypatch.delenv("HISTORY_LOGGER_AE_TOKEN", raising=False)
+    with patch("command_routes.fetch", new_callable=AsyncMock) as mock_fetch, \
+         patch("command_routes.get_mqtt_client", new_callable=AsyncMock) as mock_get_mqtt, \
+         patch("command_routes.get_settings") as mock_settings:
+        mock_fetch.side_effect = _lease_held_fetch
+        mock_get_mqtt.return_value = mock_mqtt_client
+        mock_settings.return_value = Mock(mqtt_zone_format="id")
+
+        response = client.post(
+            "/zones/1/commands",
+            json={
+                "cmd": "run_pump",
+                "greenhouse_uid": "gh-1",
+                "node_uid": "nd-irrig-1",
+                "channel": "pump_main",
+                "params": {"duration_ms": 5000},
+                "source": "automation-engine",
+            },
+            headers=auth_headers,
+        )
+
+    assert response.status_code == 403
+    assert response.json()["detail"]["error"] == "command_source_untrusted"
+    assert not mock_mqtt_client._client._client.publish.called
+
+
+@pytest.mark.asyncio
+async def test_shared_token_cannot_impersonate_ae_principal(
+    client, auth_headers, mock_mqtt_client, monkeypatch
+):
+    monkeypatch.setenv("HISTORY_LOGGER_AE_TOKEN", "unit-test-service-token")
+    with patch("command_routes.fetch", new_callable=AsyncMock) as mock_fetch, \
+         patch("command_routes.get_mqtt_client", new_callable=AsyncMock) as mock_get_mqtt, \
+         patch("command_routes.get_settings") as mock_settings:
+        mock_fetch.side_effect = _lease_held_fetch
+        mock_get_mqtt.return_value = mock_mqtt_client
+        mock_settings.return_value = Mock(mqtt_zone_format="id")
+
+        response = client.post(
+            "/commands",
+            json={
+                "cmd": "run_pump",
+                "greenhouse_uid": "gh-1",
+                "zone_id": 1,
+                "node_uid": "nd-irrig-1",
+                "channel": "pump_main",
+                "params": {"duration_ms": 5000},
+                "source": "automation-engine",
+            },
+            headers=auth_headers,
+        )
+
+    assert response.status_code == 403
+    assert response.json()["detail"]["error"] == "command_source_untrusted"
+
+
+@pytest.mark.asyncio
+async def test_ae_principal_ignores_spoofed_body_source(
+    client, mock_mqtt_client, monkeypatch
+):
+    """Даже source=laravel в body не меняет principal AE и не блокирует lease."""
+    monkeypatch.setenv("HISTORY_LOGGER_AE_TOKEN", "ae-only-token")
+    inserted = {}
+
+    async def _execute(query, *args):
+        normalized = " ".join(str(query).split()).lower()
+        if "insert into commands" in normalized:
+            inserted["source"] = args[5]
+        return "OK"
+
+    with patch("command_routes.fetch", new_callable=AsyncMock) as mock_fetch, \
+         patch("command_routes.execute", new=_execute), \
+         patch("command_routes.get_mqtt_client", new_callable=AsyncMock) as mock_get_mqtt, \
+         patch("command_routes.get_settings") as mock_settings:
+        mock_fetch.side_effect = _lease_held_fetch
+        mock_get_mqtt.return_value = mock_mqtt_client
+        mock_settings.return_value = Mock(mqtt_zone_format="id")
+
+        response = client.post(
+            "/commands",
+            json={
+                "cmd": "run_pump",
+                "greenhouse_uid": "gh-1",
+                "zone_id": 1,
+                "node_uid": "nd-irrig-1",
+                "channel": "pump_main",
+                "params": {"duration_ms": 5000},
+                "source": "laravel",
+            },
+            headers={"Authorization": "Bearer ae-only-token"},
+        )
+
+    assert response.status_code == 200
+    assert inserted["source"] == "automation-engine"
+    assert mock_mqtt_client._client._client.publish.called
+
+
+@pytest.mark.asyncio
+async def test_api_principal_persists_its_own_source_not_body(
+    client, auth_headers, mock_mqtt_client
+):
+    """Непривилегированный source из body игнорируется: в БД пишется principal."""
+    inserted = {}
+
+    async def _execute(query, *args):
+        normalized = " ".join(str(query).split()).lower()
+        if "insert into commands" in normalized:
+            inserted["source"] = args[5]
+        return "OK"
+
+    with patch("command_routes.execute", new=_execute), \
+         patch("command_routes.get_mqtt_client", new_callable=AsyncMock) as mock_get_mqtt, \
+         patch("command_routes.get_settings") as mock_settings:
+        mock_get_mqtt.return_value = mock_mqtt_client
+        mock_settings.return_value = Mock(mqtt_zone_format="id")
+
+        response = client.post(
+            "/commands",
+            json={
+                "cmd": "run_pump",
+                "greenhouse_uid": "gh-1",
+                "zone_id": 1,
+                "node_uid": "nd-irrig-1",
+                "channel": "pump_main",
+                "params": {"duration_ms": 5000},
+                "source": "operator-spoof",
+            },
+            headers=auth_headers,
+        )
+
+    assert response.status_code == 200
+    assert inserted["source"] == "laravel"
 
 
 @pytest.mark.asyncio

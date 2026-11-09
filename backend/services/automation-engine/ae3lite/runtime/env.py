@@ -91,7 +91,8 @@ class Ae3RuntimeConfig:
                 .rstrip("/")
             ),
             history_logger_api_token=str(
-                os.getenv("HISTORY_LOGGER_API_TOKEN")
+                os.getenv("HISTORY_LOGGER_AE_TOKEN")
+                or os.getenv("HISTORY_LOGGER_API_TOKEN")
                 or os.getenv("AE_API_TOKEN")
                 or os.getenv("PY_INGEST_TOKEN")
                 or os.getenv("PY_API_TOKEN")
@@ -262,6 +263,23 @@ class Ae3RuntimeConfig:
                 "APP_ENV=local|dev|development|test|testing "
                 f"(текущий APP_ENV={self.app_env!r}). Включите security baseline или смените APP_ENV."
             )
+        if self.app_env not in non_production_envs:
+            ae_command_token = str(os.getenv("HISTORY_LOGGER_AE_TOKEN") or "").strip()
+            general_hl_token = str(
+                os.getenv("HISTORY_LOGGER_API_TOKEN")
+                or os.getenv("PY_INGEST_TOKEN")
+                or ""
+            ).strip()
+            if not ae_command_token:
+                raise ValueError(
+                    "HISTORY_LOGGER_AE_TOKEN обязателен в production/staging. "
+                    "Lease bypass AE привязан к отдельному Bearer, не к полю source."
+                )
+            if general_hl_token and ae_command_token == general_hl_token:
+                raise ValueError(
+                    "HISTORY_LOGGER_AE_TOKEN должен отличаться от HISTORY_LOGGER_API_TOKEN "
+                    "(и от PY_INGEST_TOKEN). Общий токен не даёт principal automation-engine."
+                )
         if self.start_cycle_rate_limit_enabled:
             if int(self.start_cycle_rate_limit_max_requests) <= 0:
                 raise ValueError(

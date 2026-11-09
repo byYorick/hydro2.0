@@ -11,14 +11,20 @@ from common.env import get_settings
 from metrics import INGEST_AUTH_FAILED
 
 
+AE_COMMAND_PRINCIPAL = "automation-engine"
+API_COMMAND_PRINCIPAL = "laravel"
+
+
 def _tokens_equal(provided: str, expected: str) -> bool:
     """Timing-safe сравнение Bearer-токенов.
 
     Использует ``hmac.compare_digest``, чтобы исключить timing side-channel при
     проверке `Authorization: Bearer …` против ожидаемого значения. Также безопасен
-    для пустых/None входов.
+    для пустых/None входов и строк разной длины.
     """
     if not provided or not expected:
+        return False
+    if len(provided) != len(expected):
         return False
     return hmac.compare_digest(provided, expected)
 
@@ -104,6 +110,30 @@ def _auth_ingest(request: Request) -> None:
         )
 
     logger.debug(f"Allowing localhost request without token (dev mode): client_ip={client_ip}")
+
+
+def resolve_command_principal(request: Request) -> str:
+    """Кто публикует команду: только по Bearer, никогда по полю body ``source``.
+
+    ``HISTORY_LOGGER_AE_TOKEN`` даёт principal ``automation-engine`` и обязан
+    отличаться от общего ingest-токена. Совпадение или отсутствие AE-токена
+    оставляет вызывающего обычным API-клиентом (``laravel``).
+    """
+    settings = get_settings()
+    general = str(getattr(settings, "history_logger_api_token", "") or "").strip()
+    ae_token = os.getenv("HISTORY_LOGGER_AE_TOKEN", "").strip()
+    provided = request.headers.get("Authorization", "")
+
+    if (
+        ae_token
+        and general
+        and ae_token != general
+        and _tokens_equal(provided, f"Bearer {ae_token}")
+    ):
+        return AE_COMMAND_PRINCIPAL
+
+    _auth_ingest(request)
+    return API_COMMAND_PRINCIPAL
 
 
 def _check_rate_limit(client_id: str) -> bool:

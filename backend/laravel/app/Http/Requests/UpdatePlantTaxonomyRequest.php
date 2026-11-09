@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Models\Plant;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -12,7 +13,7 @@ class UpdatePlantTaxonomyRequest extends FormRequest
      */
     public function authorize(): bool
     {
-        return true;
+        return $this->user()?->can('manage', Plant::class) ?? false;
     }
 
     /**

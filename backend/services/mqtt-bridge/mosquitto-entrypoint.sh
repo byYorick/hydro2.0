@@ -24,12 +24,20 @@ if [ "$use_mounted_pass" -eq 1 ]; then
     PASSFILE=$MOUNTED_PASS
 else
     echo "mosquitto-entrypoint: passwords file missing, generating from MQTT_*_PASS env" >&2
+    if [ -z "${MQTT_PYTHON_SERVICE_PASS:-}" ] \
+        || [ -z "${MQTT_AUTOMATION_ENGINE_PASS:-}" ] \
+        || [ -z "${MQTT_HISTORY_LOGGER_PASS:-}" ] \
+        || [ -z "${MQTT_MQTT_BRIDGE_PASS:-}" ] \
+        || [ -z "${MQTT_ESP32_NODE_PASS:-}" ]; then
+        echo "mosquitto-entrypoint: MQTT_PYTHON_SERVICE_PASS, MQTT_AUTOMATION_ENGINE_PASS, MQTT_HISTORY_LOGGER_PASS, MQTT_MQTT_BRIDGE_PASS and MQTT_ESP32_NODE_PASS are required" >&2
+        exit 1
+    fi
     rm -f "$GENERATED_PASS"
-    mosquitto_passwd -b -c "$GENERATED_PASS" python_service "${MQTT_PYTHON_SERVICE_PASS:-python_service_pass}"
-    mosquitto_passwd -b "$GENERATED_PASS" automation_engine "${MQTT_AUTOMATION_ENGINE_PASS:-automation_pass}"
-    mosquitto_passwd -b "$GENERATED_PASS" history_logger "${MQTT_HISTORY_LOGGER_PASS:-logger_pass}"
-    mosquitto_passwd -b "$GENERATED_PASS" mqtt_bridge "${MQTT_MQTT_BRIDGE_PASS:-bridge_pass}"
-    mosquitto_passwd -b "$GENERATED_PASS" esp32_node "${MQTT_ESP32_NODE_PASS:-esp32_pass}"
+    mosquitto_passwd -b -c "$GENERATED_PASS" python_service "${MQTT_PYTHON_SERVICE_PASS}"
+    mosquitto_passwd -b "$GENERATED_PASS" automation_engine "${MQTT_AUTOMATION_ENGINE_PASS}"
+    mosquitto_passwd -b "$GENERATED_PASS" history_logger "${MQTT_HISTORY_LOGGER_PASS}"
+    mosquitto_passwd -b "$GENERATED_PASS" mqtt_bridge "${MQTT_MQTT_BRIDGE_PASS}"
+    mosquitto_passwd -b "$GENERATED_PASS" esp32_node "${MQTT_ESP32_NODE_PASS}"
     # Mosquitto drops root privileges before opening its password file.
     if [ "$(id -u)" = "0" ]; then
         chown mosquitto:mosquitto "$GENERATED_PASS"

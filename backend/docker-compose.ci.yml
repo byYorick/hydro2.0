@@ -3,11 +3,11 @@ services:
     image: eclipse-mosquitto:2
     entrypoint: ["/bin/sh", "/mosquitto-entrypoint.sh"]
     environment:
-      MQTT_PYTHON_SERVICE_PASS: ${MQTT_PYTHON_SERVICE_PASS:-python_service_pass}
-      MQTT_AUTOMATION_ENGINE_PASS: ${MQTT_AUTOMATION_ENGINE_PASS:-automation_pass}
-      MQTT_HISTORY_LOGGER_PASS: ${MQTT_HISTORY_LOGGER_PASS:-logger_pass}
-      MQTT_MQTT_BRIDGE_PASS: ${MQTT_MQTT_BRIDGE_PASS:-bridge_pass}
-      MQTT_ESP32_NODE_PASS: ${MQTT_ESP32_NODE_PASS:-esp32_pass}
+      MQTT_PYTHON_SERVICE_PASS: ${MQTT_PYTHON_SERVICE_PASS:?MQTT_PYTHON_SERVICE_PASS must be set}
+      MQTT_AUTOMATION_ENGINE_PASS: ${MQTT_AUTOMATION_ENGINE_PASS:?MQTT_AUTOMATION_ENGINE_PASS must be set}
+      MQTT_HISTORY_LOGGER_PASS: ${MQTT_HISTORY_LOGGER_PASS:?MQTT_HISTORY_LOGGER_PASS must be set}
+      MQTT_MQTT_BRIDGE_PASS: ${MQTT_MQTT_BRIDGE_PASS:?MQTT_MQTT_BRIDGE_PASS must be set}
+      MQTT_ESP32_NODE_PASS: ${MQTT_ESP32_NODE_PASS:?MQTT_ESP32_NODE_PASS must be set}
     volumes:
       - ./services/mqtt-bridge/mosquitto-entrypoint.sh:/mosquitto-entrypoint.sh:ro
       - ./services/mqtt-bridge/mosquitto.dev.conf:/mosquitto/config/mosquitto.conf:ro

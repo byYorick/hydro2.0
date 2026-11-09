@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Models\Plant;
 use Illuminate\Foundation\Http\FormRequest;
 
 class StorePlantRequest extends FormRequest
@@ -11,7 +12,7 @@ class StorePlantRequest extends FormRequest
      */
     public function authorize(): bool
     {
-        return true;
+        return $this->user()?->can('create', Plant::class) ?? false;
     }
 
     /**

@@ -108,12 +108,16 @@ Content-Type: application/json
 - `channel` (string, required) — канал ноды (всегда сегмент topic; для system-команд — `"system"`)
 - `cmd` (string, required) — device-level команда; HL проверяет наличие `cmd` и отвергает legacy `type`, **не** валидирует enum-каталог §3
 - `params` (object, required) — параметры команды
-- `source` (string, optional) — источник команды (`automation-engine`, `laravel`, `api`, …)
+- `source` (string, optional) — **не** авторитет для lease gate. Поле из body игнорируется как решение о правах. Если клиент присылает `automation-engine` (или префикс `automation-engine:`), а Bearer не является principal automation-engine, HL отвечает `403` `command_source_untrusted` и команду не публикует. В `commands.source` пишется principal: `automation-engine` либо `laravel`.
 - `cmd_id` (string, optional, max 128 символов) — внешний command id, который будет сохранён в
   `commands.cmd_id`; тот же лимит обязателен для Laravel status ingress и retry/DLQ-очередей
 
-**AE3 lease gate:** если у `zone_id` есть активная запись в `ae_zone_leases` (`leased_until > now()`), HL отклоняет mutating ON-команды от источников, отличных от `automation-engine`, ответом `409` `ae3_zone_lease_held`. Разрешены:
-- `source=automation-engine` (держатель lease);
+**AE3 lease gate:** если у `zone_id` есть активная запись в `ae_zone_leases` (`leased_until > now()`), HL отклоняет mutating ON-команды от principal, отличного от `automation-engine`, ответом `409` `ae3_zone_lease_held`. Principal выводится только из Bearer:
+- `Authorization: Bearer ${HISTORY_LOGGER_AE_TOKEN}` → `automation-engine`, если токен задан и **не совпадает** с `HISTORY_LOGGER_API_TOKEN` / `PY_INGEST_TOKEN`;
+- любой другой допущенный ingest-токен (и localhost без токена вне production) → `laravel`.
+
+Поле `source` в JSON на это решение не влияет. Разрешены:
+- principal `automation-engine` (держатель lease; AE передаёт `HISTORY_LOGGER_AE_TOKEN`);
 - read-only `state` / `test_sensor`;
 - fail-safe OFF (`set_relay`/`set_state` с `state=false|0`, `set_pwm` с duty ≤ 0);
 - diagnostic `set_fault_mode` **только** для `test_node`. Достаточно одного надёжного признака: `nodes.uid` начинается с `nd-test-` (канон e2e/firmware virtual nodes: `nd-test-irrig-1`, `nd-test-ph-1`, …; их `nodes.type` = `irrig`/`ph`/`ec`, не `test_node`) **или** `LOWER(nodes.type)` ∈ {`test`, `test_node`}. Иначе при активной lease — `409` `ae3_zone_lease_held`. Без `node_uid`/`node_id` или если узел не найден в `nodes` — diagnostic не пропускается (fail-closed, проверяется lease как обычно). Realhw e2e seed уровней / pH / EC / E-Stop на `nd-test-*`, без актуаторов.

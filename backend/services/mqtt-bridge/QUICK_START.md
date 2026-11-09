@@ -17,19 +17,19 @@ docker run --rm -it -v ${PWD}:/data eclipse-mosquitto:2 sh
 # Внутри контейнера:
 cd /data
 mosquitto_passwd -c passwords.txt python_service
-# Введите пароль: python_service_pass
+# Пароль: MQTT_PYTHON_SERVICE_PASS из backend/.env
 
 mosquitto_passwd passwords.txt automation_engine
-# Введите пароль: automation_pass
+# Пароль: MQTT_AUTOMATION_ENGINE_PASS из backend/.env
 
 mosquitto_passwd passwords.txt history_logger
-# Введите пароль: logger_pass
+# Пароль: MQTT_HISTORY_LOGGER_PASS из backend/.env
 
 mosquitto_passwd passwords.txt mqtt_bridge
-# Введите пароль: bridge_pass
+# Пароль: MQTT_MQTT_BRIDGE_PASS из backend/.env
 
 mosquitto_passwd passwords.txt esp32_node
-# Введите пароль: esp32_pass
+# Пароль: значение MQTT_ESP32_NODE_PASS из backend/.env (make ensure-dev-secrets)
 
 exit
 ```
@@ -64,7 +64,7 @@ docker-compose -f backend/docker-compose.dev.yml restart mqtt
 
 ```bash
 # Проверка подключения
-docker exec backend-mqtt-1 mosquitto_sub -h localhost -p 1883 -u automation_engine -P automation_pass -t 'test' -v
+docker exec backend-mqtt-1 mosquitto_sub -h localhost -p 1883 -u automation_engine -P "$MQTT_AUTOMATION_ENGINE_PASS" -t 'test' -v
 ```
 
 ## Важно для Production

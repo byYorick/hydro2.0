@@ -138,13 +138,30 @@ class TestAe3RuntimeConfigValidate:
             cfg = _config(app_env=env, scheduler_security_baseline_enforce=False)
             cfg.validate()  # must not raise
 
-    def test_security_enabled_in_production_does_not_raise(self) -> None:
+    def test_security_enabled_in_production_does_not_raise(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("HISTORY_LOGGER_AE_TOKEN", "ae-only-token")
+        monkeypatch.setenv("HISTORY_LOGGER_API_TOKEN", "api-token")
         cfg = _config(
             app_env="production",
             scheduler_security_baseline_enforce=True,
             scheduler_api_token="prod-token",
         )
         cfg.validate()
+
+    def test_production_requires_distinct_ae_command_token(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("HISTORY_LOGGER_AE_TOKEN", raising=False)
+        monkeypatch.setenv("HISTORY_LOGGER_API_TOKEN", "api-token")
+        cfg = _config(
+            app_env="production",
+            scheduler_security_baseline_enforce=True,
+            scheduler_api_token="prod-token",
+        )
+        with pytest.raises(ValueError, match="HISTORY_LOGGER_AE_TOKEN"):
+            cfg.validate()
+
+        monkeypatch.setenv("HISTORY_LOGGER_AE_TOKEN", "api-token")
+        with pytest.raises(ValueError, match="должен отличаться"):
+            cfg.validate()
 
     def test_hl_retry_backoff_negative_raises(self) -> None:
         cfg = _config(hl_retry_backoff_sec=-0.1)
@@ -184,6 +201,14 @@ class TestAe3RuntimeConfigValidate:
         cfg = _config(stale_task_reconcile_sec=0.0)
         with pytest.raises(ValueError, match="stale_task_reconcile_sec"):
             cfg.validate()
+
+
+class TestAe3RuntimeConfigCommandToken:
+    def test_from_env_sends_ae_token_to_history_logger(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("HISTORY_LOGGER_AE_TOKEN", "ae-only-token")
+        monkeypatch.setenv("HISTORY_LOGGER_API_TOKEN", "shared-token")
+        cfg = Ae3RuntimeConfig.from_env()
+        assert cfg.history_logger_api_token == "ae-only-token"
 
 
 class TestAe3RuntimeConfigFromEnvClamps:
