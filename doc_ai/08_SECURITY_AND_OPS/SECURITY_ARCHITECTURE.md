@@ -51,6 +51,8 @@ Breaking-change: обратная совместимость со старыми
 
 `node_secret` не кладётся в MQTT NodeConfig открытым текстом. History-logger при заданном `NODE_SECRET_WRAP_PASSPHRASE` (должен совпадать с `mqtt.password` узла, обычно `MQTT_ESP32_NODE_PASS`) публикует `node_secret_enc`. Прошивка расшифровывает его и, если поля нет или расшифровка не удалась, оставляет секрет, уже записанный в NVS. Команды по-прежнему подписываются секретом из БД (`nodes.config.node_secret`).
 
+Production `docker-compose.prod.yml` передаёт в сервис `history-logger` и `NODE_SECRET_WRAP_PASSPHRASE`, и `MQTT_ESP32_NODE_PASS` (оба обязательны, без значений по умолчанию). `setup-prod-env.sh` записывает passphrase равным `MQTT_ESP32_NODE_PASS`. Если переменные не доходят до контейнера, NodeConfig уходит без секрета и узел отвечает `missing_node_secret`.
+
 ## 2.2. Production
 
 `mosquitto.prod.conf`: `allow_anonymous false`, `password_file`, `acl_file`, listener 1883.

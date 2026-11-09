@@ -401,6 +401,10 @@ services:
       - MQTT_USER=${MQTT_HISTORY_LOGGER_USER:-history_logger}
       # ВАЖНО: Замените на уникальный пароль через переменную окружения
       - MQTT_PASS=${MQTT_HISTORY_LOGGER_PASS:?MQTT_HISTORY_LOGGER_PASS must be set}
+      # Пароль узла esp32_node и ключ обёртки node_secret_enc. Без них новые ноды
+      # получают конфиг без секрета (missing_node_secret). Значения не хардкодятся.
+      - MQTT_ESP32_NODE_PASS=${MQTT_ESP32_NODE_PASS:?MQTT_ESP32_NODE_PASS must be set}
+      - NODE_SECRET_WRAP_PASSPHRASE=${NODE_SECRET_WRAP_PASSPHRASE:?NODE_SECRET_WRAP_PASSPHRASE must be set}
       - PG_HOST=db
       - PG_DB=hydro
       - PG_USER=hydro

@@ -70,6 +70,7 @@ make prod-down
 | `PY_API_TOKEN` / `PY_INGEST_TOKEN` | Токены Laravel ↔ Python |
 | `LARAVEL_API_TOKEN` | Токен Python → Laravel API |
 | `MQTT_*_PASS` | Пароли MQTT для сервисов и `MQTT_ESP32_NODE_PASS` для узлов |
+| `NODE_SECRET_WRAP_PASSPHRASE` | Пароль обёртки `node_secret_enc`. Должен совпадать с `MQTT_ESP32_NODE_PASS`. Production compose передаёт обе переменные в `history-logger`; без них новый узел получает `missing_node_secret` |
 | `GRAFANA_ADMIN_PASSWORD` | Пароль Grafana |
 
 Опционально: `PUBLIC_SCHEME` (`https`), `PUBLIC_WS_PORT`, `PUBLIC_WS_TLS`, `SESSION_DOMAIN`.
