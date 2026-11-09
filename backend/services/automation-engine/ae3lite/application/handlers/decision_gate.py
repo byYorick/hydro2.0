@@ -289,11 +289,11 @@ class DecisionGateHandler(BaseStageHandler):
                 code="biz_solution_temp_hot_stop" if stopping else "biz_solution_temp_hot_warn",
                 alert_type="AE3 Solution Temperature",
                 message=(
-                    "Полив остановлен: раствор достиг аварийного порога."
+                    "Новый полив не запущен: раствор достиг аварийного порога. Уже идущий полив дорабатывает до лимита длительности рецепта."
                     if stopping
                     else "Раствор теплее порога предупреждения, полив продолжается."
                 ),
-                severity="error" if stopping else "warning",
+                severity="critical" if stopping else "warning",
                 zone_id=int(getattr(task, "zone_id", 0) or 0),
                 dedupe_key=_irrigation_decision_alert_dedupe_key(
                     outcome="stop" if stopping else "warn",
