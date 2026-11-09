@@ -20,7 +20,6 @@ class AlertSafetyAcknowledgementTest extends TestCase
     {
         $user = User::factory()->create(['role' => 'operator']);
         $zone = Zone::factory()->create();
-        $user->zones()->attach($zone->id);
         $alert = Alert::factory()->create([
             'zone_id' => $zone->id,
             'code' => 'biz_dry_run',
@@ -55,7 +54,6 @@ class AlertSafetyAcknowledgementTest extends TestCase
     {
         $user = User::factory()->create(['role' => 'engineer']);
         $zone = Zone::factory()->create();
-        $user->zones()->attach($zone->id);
         $alert = Alert::factory()->create([
             'zone_id' => $zone->id,
             'code' => 'biz_node_offline',
@@ -83,7 +81,6 @@ class AlertSafetyAcknowledgementTest extends TestCase
     {
         $user = User::factory()->create(['role' => 'operator']);
         $zone = Zone::factory()->create();
-        $user->zones()->attach($zone->id);
         $alert = Alert::factory()->create([
             'zone_id' => $zone->id,
             'code' => 'biz_dry_run',
@@ -114,7 +111,6 @@ class AlertSafetyAcknowledgementTest extends TestCase
     {
         $user = User::factory()->create(['role' => 'agronomist']);
         $zone = Zone::factory()->create();
-        $user->zones()->attach($zone->id);
         $alert = Alert::factory()->create([
             'zone_id' => $zone->id,
             'code' => 'biz_high_ph',
