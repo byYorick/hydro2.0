@@ -17,6 +17,7 @@
 #include "wifi_manager.h"
 #include "i2c_bus.h"
 #include "trema_ph.h"
+#include "ds18b20.h"
 #include "oled_ui.h"
 #include "pump_driver.h"
 #include "mqtt_manager.h"
@@ -173,6 +174,11 @@ esp_err_t ph_node_init_step_ph_sensor(ph_node_init_context_t *ctx,
                                       ph_node_init_step_result_t *result) {
     (void)ctx;
     ESP_LOGI(TAG, "[Step 4/8] pH Sensor init...");
+    if (ds18b20_init(PH_NODE_DS18B20_GPIO) != ESP_OK) {
+        ESP_LOGW(TAG, "DS18B20 GPIO init failed; solution_temp_c stays unavailable");
+    } else {
+        ESP_LOGI(TAG, "DS18B20 1-Wire on GPIO %d (external 4.7k pull-up required)", PH_NODE_DS18B20_GPIO);
+    }
 
 #if PH_NODE_TREMA_PH_I2C_TRACE_INFO
     trema_ph_set_read_trace_verbose(true);
