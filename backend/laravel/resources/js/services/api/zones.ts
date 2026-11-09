@@ -5,6 +5,7 @@
  * Composables/stores импортируют `api.zones`, а не `apiClient` напрямую.
  */
 import type { Zone } from '@/types'
+import type { ZoneEstopApplyResult, ZoneEstopView } from '@/types/ZoneEstop'
 import { normalizePaginatedList } from '@/utils/apiHelpers'
 import type { PumpCalibrationRunPayload, PumpCalibrationSavePayload } from '@/types/Calibration'
 import type {
@@ -240,6 +241,24 @@ export const zonesApi = {
 
   getSnapshot<T = unknown>(zoneId: number): Promise<T> {
     return apiGet<T>(`/zones/${zoneId}/snapshot`)
+  },
+
+  /**
+   * Защёлка аварийной остановки зоны.
+   */
+  getEstop(zoneId: number): Promise<ZoneEstopView> {
+    return apiGet<ZoneEstopView>(`/zones/${zoneId}/estop`)
+  },
+
+  /**
+   * Включить или снять аварийную остановку.
+   * Для release причина обязательна (не короче 3 символов).
+   */
+  applyEstop(
+    zoneId: number,
+    payload: { action: 'engage' | 'release'; reason?: string },
+  ): Promise<ZoneEstopApplyResult> {
+    return apiPost<ZoneEstopApplyResult>(`/zones/${zoneId}/estop`, payload)
   },
 
   getExecution<T = unknown>(zoneId: number, executionId: string): Promise<T> {

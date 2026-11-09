@@ -109,6 +109,20 @@ describe('ZoneDashboardCard', () => {
     vi.mocked(router.visit).mockClear()
   })
 
+  it('показывает аварийную остановку на карточке зоны', () => {
+    const wrapper = mount(ZoneDashboardCard, {
+      props: {
+        zone: makeZone({
+          estop: { active: true, source: 'operator', since: '2026-04-30T06:40:00.000Z' },
+        }),
+      },
+    })
+
+    expect(wrapper.get('[data-testid="zone-card-estop"]').text()).toContain('Аварийная остановка')
+    expect(wrapper.get('[data-testid="zone-card-estop-banner"]').text())
+      .toBe('Аварийная остановка активна, ручные команды заблокированы')
+  })
+
   it('рендерит ключевые поля карточки', () => {
     const wrapper = mount(ZoneDashboardCard, {
       props: {

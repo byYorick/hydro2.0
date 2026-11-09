@@ -54,35 +54,48 @@
         <p class="text-xs text-[color:var(--text-muted)]">
           Ручное управление
         </p>
+        <p
+          v-if="commandsLocked"
+          class="text-xs text-[color:var(--status-critical)]"
+          data-testid="zone-manual-commands-locked"
+        >
+          {{ estopLockedText }}. Остановка контуров по-прежнему доступна.
+        </p>
         <div class="grid gap-2 grid-cols-1 sm:grid-cols-3">
           <Button
             size="sm"
-            :disabled="!canOperateAutomation || irrigationActionLoading"
-            @click="$emit('start-irrigation')"
+            :disabled="manualStartLocked || irrigationActionLoading"
+            :title="commandsLocked ? estopLockedText : undefined"
+            data-testid="zone-ops-start-irrigation"
+            @click="emitStartIrrigation"
           >
             {{ irrigationActionLoading ? 'Отправка...' : 'Запустить полив' }}
           </Button>
           <Button
             size="sm"
             variant="outline"
-            :disabled="!canOperateAutomation || irrigationActionLoading"
-            @click="$emit('force-irrigation')"
+            :disabled="manualStartLocked || irrigationActionLoading"
+            :title="commandsLocked ? estopLockedText : undefined"
+            data-testid="zone-ops-force-irrigation"
+            @click="emitForceIrrigation"
           >
             {{ irrigationActionLoading ? 'Отправка...' : 'Принудительный полив' }}
           </Button>
           <Button
             size="sm"
             variant="secondary"
-            :disabled="!canOperateAutomation || diagnosticsActionLoading"
-            @click="$emit('run-diagnostics')"
+            :disabled="manualStartLocked || diagnosticsActionLoading"
+            :title="commandsLocked ? estopLockedText : undefined"
+            @click="emitDiagnostics"
           >
             {{ diagnosticsActionLoading ? 'Отправка...' : 'Диагностика' }}
           </Button>
           <Button
             size="sm"
             variant="outline"
-            :disabled="!canOperateAutomation || solutionChangeActionLoading"
-            @click="$emit('start-solution-change')"
+            :disabled="manualStartLocked || solutionChangeActionLoading"
+            :title="commandsLocked ? estopLockedText : undefined"
+            @click="emitSolutionChange"
           >
             {{ solutionChangeActionLoading ? 'Отправка...' : 'Подмена раствора' }}
           </Button>
@@ -115,8 +128,9 @@
             :key="step.code"
             size="sm"
             :variant="step.variant"
-            :disabled="!canOperateAutomation || manualStepLoading[step.code]"
-            @click="$emit('run-manual-step', step.code)"
+            :disabled="!canOperateAutomation || manualStepLoading[step.code] || stepLocked(step.code)"
+            :title="stepLocked(step.code) ? estopLockedText : undefined"
+            @click="emitManualStep(step.code)"
           >
             {{ manualStepLoading[step.code] ? 'Отправка...' : step.label }}
           </Button>
@@ -147,6 +161,7 @@ import {
   controlModeDisabledReason,
   isControlModeTransitionAllowed,
 } from '@/utils/zoneAutomationControlMode'
+import { ESTOP_ACTIVE_BANNER, isEstopSafeManualStep } from '@/utils/zoneEstop'
 
 type ModeValue = 'auto' | 'semi' | 'manual'
 
@@ -166,6 +181,7 @@ interface Props {
   solutionChangeActionLoading?: boolean
   currentStage?: string | null
   workflowPhase?: string | null
+  commandsLocked?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -174,7 +190,49 @@ const props = withDefaults(defineProps<Props>(), {
   solutionChangeActionLoading: false,
   currentStage: null,
   workflowPhase: null,
+  commandsLocked: false,
 })
+
+const estopLockedText = ESTOP_ACTIVE_BANNER
+const manualStartLocked = computed(() => !props.canOperateAutomation || props.commandsLocked)
+
+function stepLocked(step: AutomationManualStep): boolean {
+  return props.commandsLocked && !isEstopSafeManualStep(step)
+}
+
+const emit = defineEmits<{
+  (e: 'start-irrigation'): void
+  (e: 'force-irrigation'): void
+  (e: 'run-diagnostics'): void
+  (e: 'start-solution-change'): void
+  (e: 'select-mode', mode: ModeValue): void
+  (e: 'run-manual-step', step: AutomationManualStep): void
+}>()
+
+function emitStartIrrigation(): void {
+  if (manualStartLocked.value) return
+  emit('start-irrigation')
+}
+
+function emitForceIrrigation(): void {
+  if (manualStartLocked.value) return
+  emit('force-irrigation')
+}
+
+function emitDiagnostics(): void {
+  if (manualStartLocked.value) return
+  emit('run-diagnostics')
+}
+
+function emitSolutionChange(): void {
+  if (manualStartLocked.value) return
+  emit('start-solution-change')
+}
+
+function emitManualStep(step: AutomationManualStep): void {
+  if (!props.canOperateAutomation || stepLocked(step)) return
+  emit('run-manual-step', step)
+}
 
 const controlModeLabels = CONTROL_MODE_LABELS
 
@@ -197,15 +255,6 @@ function modeDisabledTitle(mode: AutomationControlMode): string | undefined {
   )
   return reason ?? undefined
 }
-
-defineEmits<{
-  (e: 'start-irrigation'): void
-  (e: 'force-irrigation'): void
-  (e: 'run-diagnostics'): void
-  (e: 'start-solution-change'): void
-  (e: 'select-mode', mode: ModeValue): void
-  (e: 'run-manual-step', step: AutomationManualStep): void
-}>()
 
 const MANUAL_STEP_LABELS: Record<AutomationManualStep, string> = {
   clean_fill_start: 'Набрать чистую воду',

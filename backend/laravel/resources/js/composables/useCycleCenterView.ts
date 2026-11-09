@@ -101,6 +101,12 @@ export interface ZoneSummary {
   system_state?: ZoneSystemState | null
   /** Уровни двух баков (clean/solution) в процентах. */
   tank_levels?: ZoneTankLevels | null
+  /** Защёлка аварийной остановки. Дашборд добирает её отдельным запросом. */
+  estop?: {
+    active: boolean
+    source?: string | null
+    since?: string | null
+  } | null
   /** Статус irrig-ноды для карточки system state. */
   irrig_node?: ZoneIrrigNodeState | null
   /**

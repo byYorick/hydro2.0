@@ -1,4 +1,5 @@
 import catalogJson from '@/constants/error_codes.json'
+import { describeManualCommandRejection } from '@/utils/manualCommandErrors'
 
 interface ErrorCatalogEntry {
   code: string
@@ -300,12 +301,20 @@ function translatePumpInaFaultMessage(message: string): string | null {
 export function resolveHumanErrorMessage(input: HumanErrorInput, fallback?: string | null): string | null {
   const humanMessage = typeof input.humanMessage === 'string' ? input.humanMessage.trim() : ''
   if (humanMessage) {
-    return humanMessage
+    const mappedHuman = !isLocalizedErrorMessage(humanMessage)
+      ? describeManualCommandRejection(humanMessage)
+      : null
+    return mappedHuman ?? humanMessage
   }
 
   const message = typeof input.message === 'string' ? input.message.trim() : ''
   if (message && isLocalizedErrorMessage(message)) {
     return message
+  }
+
+  const safetyMessage = describeManualCommandRejection(input.code) ?? describeManualCommandRejection(message)
+  if (safetyMessage) {
+    return safetyMessage
   }
 
   if (message) {

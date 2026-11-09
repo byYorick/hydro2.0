@@ -94,6 +94,13 @@
         data-testid="zone-card-current-status"
       >
         <div
+          v-if="estopActive"
+          class="status-chip status-chip--alarm shrink-0"
+          data-testid="zone-card-estop"
+        >
+          Аварийная остановка
+        </div>
+        <div
           v-if="automationBlock"
           class="status-chip status-chip--alarm shrink-0 animate-pulse"
           data-testid="zone-card-automation-block"
@@ -149,6 +156,14 @@
         </div>
       </div>
     </header>
+
+    <div
+      v-if="estopActive"
+      class="rounded-xl border border-[color:var(--badge-danger-border)] bg-[color:var(--badge-danger-bg)] px-3 py-2 text-[11px] font-medium leading-snug text-[color:var(--status-critical)]"
+      data-testid="zone-card-estop-banner"
+    >
+      Аварийная остановка активна, ручные команды заблокированы
+    </div>
 
     <div
       v-if="automationBlock"
@@ -516,6 +531,8 @@ const irrigNodeOnline = computed(() => Boolean(props.zone.irrig_node?.online))
 
 // ── Блокировка автоматики ────────────────────────────────────────────────────
 
+const estopActive = computed(() => props.zone.estop?.active === true)
+
 const automationBlock = computed(() => {
   const block = props.zone.automation_block
   return block && block.blocked ? block : null
@@ -709,7 +726,7 @@ function extractAlertMessage(details: unknown): string | null {
 // ── Визуальные классы ─────────────────────────────────────────────────────────
 
 const cardBorderClass = computed(() => {
-  if (automationBlock.value) return 'border-[color:var(--status-critical)]/40 hover:border-[color:var(--status-critical)]/55'
+  if (estopActive.value || automationBlock.value) return 'border-[color:var(--status-critical)]/40 hover:border-[color:var(--status-critical)]/55'
   if (props.zone.status === 'ALARM') return 'border-[color:var(--status-critical)]/35 hover:border-[color:var(--status-critical)]/50'
   if (props.zone.status === 'WARNING') return 'border-[color:var(--status-warning)]/35 hover:border-[color:var(--status-warning)]/50'
   if (props.zone.status === 'RUNNING') return 'border-[color:var(--border-muted)] hover:border-[color:var(--status-ok)]/40'
@@ -717,7 +734,7 @@ const cardBorderClass = computed(() => {
 })
 
 const accentBarClass = computed(() => {
-  if (automationBlock.value || props.zone.status === 'ALARM') return 'bg-[color:var(--status-critical)]'
+  if (estopActive.value || automationBlock.value || props.zone.status === 'ALARM') return 'bg-[color:var(--status-critical)]'
   if (props.zone.status === 'WARNING' || telemetryHealth.value === 'warn') return 'bg-[color:var(--status-warning)]'
   if (props.zone.status === 'RUNNING') return 'bg-[color:var(--status-ok)]'
   if (props.zone.status === 'PAUSED') return 'bg-[color:var(--text-dim)]'

@@ -153,6 +153,35 @@ describe('ZoneAutomationOpsPanel', () => {
     expect(wrapper.text()).toContain('gate-шаги solution_change доступны')
   })
 
+  it('при аварийной остановке блокирует включение и оставляет стоп', async () => {
+    const wrapper = mount(ZoneAutomationOpsPanel, {
+      props: {
+        ...baseProps,
+        commandsLocked: true,
+        allowedManualSteps: ['clean_fill_start', 'irrigation_stop'],
+      },
+    })
+
+    expect(wrapper.get('[data-testid="zone-manual-commands-locked"]').text())
+      .toContain('Аварийная остановка активна, ручные команды заблокированы')
+
+    const startIrrigation = wrapper.get('[data-testid="zone-ops-start-irrigation"]')
+    const forceIrrigation = wrapper.get('[data-testid="zone-ops-force-irrigation"]')
+    expect(startIrrigation.attributes('disabled')).toBeDefined()
+    expect(forceIrrigation.attributes('disabled')).toBeDefined()
+    expect(startIrrigation.attributes('title')).toContain('ручные команды заблокированы')
+
+    const fill = wrapper.findAll('button').find((btn) => btn.text() === 'Набрать чистую воду')
+    const stop = wrapper.findAll('button').find((btn) => btn.text() === 'Стоп полива')
+    expect(fill?.attributes('disabled')).toBeDefined()
+    expect(stop?.attributes('disabled')).toBeUndefined()
+
+    await startIrrigation.trigger('click')
+    await stop!.trigger('click')
+    expect(wrapper.emitted('start-irrigation')).toBeUndefined()
+    expect(wrapper.emitted('run-manual-step')?.[0]).toEqual(['irrigation_stop'])
+  })
+
   it('в auto без allowed_manual_steps показывает, что шаги недоступны', () => {
     const wrapper = mount(ZoneAutomationOpsPanel, {
       props: {
