@@ -75,6 +75,37 @@
         "responses": { "200": { "description": "OK" } }
       }
     },
+    "/api/zones/{zone}/estop": {
+      "get": {
+        "summary": "Текущая защёлка E-STOP зоны",
+        "parameters": [{ "name": "zone", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "responses": { "200": { "description": "data.estop.active/source/since/node_uid" } }
+      },
+      "post": {
+        "summary": "Engage или release зонного E-STOP",
+        "parameters": [{ "name": "zone", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "action": { "type": "string", "enum": ["engage", "release"] },
+                  "reason": { "type": "string" }
+                },
+                "required": ["action"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "data.result = engaged|already_active|released|already_released" },
+          "403": { "description": "Policy engageEstop/releaseEstop" },
+          "422": { "description": "release без reason" }
+        }
+      }
+    },
     "/api/zones/{zone}/commands": {
       "post": {
         "summary": "Send zone command",

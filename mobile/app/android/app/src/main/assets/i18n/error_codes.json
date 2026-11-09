@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "updated_at": "2026-10-04T16:12:21Z",
+  "updated_at": "2026-11-09T15:51:28Z",
   "codes": [
     {
       "code": "actuator_apply_failed",
@@ -53,6 +53,11 @@
       "code": "ae3_command_send_retry_exhausted",
       "title": "Исчерпаны повторы отправки",
       "message": "Исчерпаны повторы публикации команды."
+    },
+    {
+      "code": "ae3_command_stage_budget_insufficient",
+      "title": "Не хватает бюджета этапа",
+      "message": "Остаток бюджета этапа не покрывает объявленную длительность команды."
     },
     {
       "code": "ae3_complete_transition_failed",
@@ -540,6 +545,26 @@
       "message": "Проверьте канал света: нужна единица ppfd или umol_m2_s. Люксы не пересчитываются, свет не гасится."
     },
     {
+      "code": "dose_below_min_dose_ms",
+      "title": "Доза короче минимума",
+      "message": "Длительность дозы меньше минимального импульса насоса."
+    },
+    {
+      "code": "dose_interval_active",
+      "title": "Интервал между дозами",
+      "message": "Следующая доза этого контура ещё не разрешена."
+    },
+    {
+      "code": "dose_limit_exceeded",
+      "title": "Превышен лимит дозы",
+      "message": "Доза больше разового лимита контроллера."
+    },
+    {
+      "code": "dose_window_limit_exceeded",
+      "title": "Превышена суммарная доза",
+      "message": "Суммарная доза зоны за окно превышает бюджет контроллера."
+    },
+    {
       "code": "drain_abandon",
       "title": "Drain прерван",
       "message": "Очередь команд history-logger прервала drain без завершения."
@@ -559,6 +584,12 @@
       "code": "esp_esp_err_invalid_state",
       "title": "Некорректное состояние ESP",
       "message": "Узел в недопустимом состоянии для операции (ESP_ERR_INVALID_STATE). Проверьте NodeConfig, журнал узла и состояние канала.",
+      "source_layer": "firmware_mqtt"
+    },
+    {
+      "code": "estop_active",
+      "title": "Активен E-STOP",
+      "message": "Аварийный стоп активен на зоне. Включающие команды отклонены до снятия E-STOP.",
       "source_layer": "firmware_mqtt"
     },
     {
@@ -724,6 +755,11 @@
       "message": "Зона не перешла в workflow_phase=ready за отведённое время."
     },
     {
+      "code": "manual_command_rate_limited",
+      "title": "Слишком много ручных команд",
+      "message": "Слишком много ручных команд в эту зону. Повторите позже."
+    },
+    {
       "code": "manual_step_forbidden_in_auto_mode",
       "title": "Ручной шаг запрещён",
       "message": "Ручной шаг недоступен, пока зона работает в автоматическом режиме."
@@ -760,6 +796,11 @@
       "title": "Узел не активирован",
       "message": "Команда отклонена: узел ещё не активирован.",
       "source_layer": "firmware_mqtt"
+    },
+    {
+      "code": "node_offline",
+      "title": "Узел не в сети",
+      "message": "Узел не в сети. Команда не отправлена."
     },
     {
       "code": "node_operation_rejected",
@@ -1028,6 +1069,11 @@
       "title": "Таймаут solution fill",
       "message": "Этап наполнения раствора превысил лимит времени.",
       "source_layer": "firmware_mqtt"
+    },
+    {
+      "code": "solution_level_interlock",
+      "title": "Низкий уровень раствора",
+      "message": "Полив и насос раствора заблокированы: уровень раствора ниже минимума."
     },
     {
       "code": "solution_refresh_recommended",
