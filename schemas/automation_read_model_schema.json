@@ -591,6 +591,16 @@
         },
         "alerts": {
             "columns": {
+                "acknowledged_at": {
+                    "data_type": "timestamp without time zone",
+                    "udt_name": "timestamp",
+                    "is_nullable": "YES"
+                },
+                "acknowledged_by": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "YES"
+                },
                 "category": {
                     "data_type": "character varying",
                     "udt_name": "varchar",

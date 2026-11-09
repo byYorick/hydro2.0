@@ -174,7 +174,7 @@ class SyncController extends Controller
 
         try {
             $query = Alert::query()
-                ->select(['id', 'zone_id', 'type', 'status', 'details', 'code', 'source', 'created_at'])
+                ->select(['id', 'zone_id', 'type', 'status', 'details', 'code', 'source', 'created_at', 'acknowledged_at', 'acknowledged_by'])
                 ->with('zone:id,name')
                 ->where('status', 'ACTIVE')
                 ->orderBy('created_at', 'desc')
@@ -206,6 +206,8 @@ class SyncController extends Controller
                     'status' => $alert->status,
                     'details' => $alert->details,
                     'created_at' => $alert->created_at?->toIso8601String(),
+                    'acknowledged_at' => $alert->acknowledged_at?->toIso8601String(),
+                    'acknowledged_by' => $alert->acknowledged_by,
                 ];
             });
 

@@ -223,7 +223,7 @@ Gradle выбирает имя assets-файла через `ENV_CONFIG_FILE`; �
 - Login получает token; `NetworkModule` добавляет его как Bearer.
 - Settings задаёт хост, порт и HTTPS.
 - Operator screens показывают последние данные, control mode и stage; history charts и редактор grow-cycle в них не подключены.
-- Список алертов показывает ACTIVE; ack переводит алерт в RESOLVED. Отдельного статуса acknowledged нет.
+- Список алертов показывает ACTIVE. `PATCH /api/alerts/{id}/ack` пишет `acknowledged_at` и не переводит статус в RESOLVED: подтверждённый safety-алерт остаётся активным и блокирующим. Отдельного статуса `acknowledged` нет. Ручное закрытие — `PATCH /api/alerts/{id}/resolve`; для safety-кодов при активном условии API отвечает `409`.
 - Provisioning экран существует как scaffold; его несовместимость с firmware описана в §2.
 
 ---

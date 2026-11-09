@@ -81,20 +81,28 @@ class AlertsTest extends TestCase
 
     public function test_acknowledge_alert(): void
     {
-        $token = $this->token();
-        $alert = Alert::factory()->create(['status' => 'active']);
+        $user = User::factory()->create(['role' => 'operator']);
+        $this->actingAs($user);
+        $token = $user->createToken('test')->plainTextToken;
+        $alert = Alert::factory()->create([
+            'status' => 'ACTIVE',
+            'code' => 'biz_high_ph',
+        ]);
 
         $resp = $this->withHeader('Authorization', 'Bearer '.$token)
             ->patchJson("/api/alerts/{$alert->id}/ack");
 
         $resp->assertOk()
-            ->assertJsonPath('data.status', 'RESOLVED')
-            ->assertJsonPath('data.details.resolved_by', 'user_ack_api')
-            ->assertJsonPath('data.details.resolved_via', 'manual');
+            ->assertJsonPath('data.status', 'ACTIVE')
+            ->assertJsonPath('data.acknowledged_by', $user->id)
+            ->assertJsonPath('data.details.acknowledged_via', 'user_ack_api');
+        $this->assertNotNull($resp->json('data.acknowledged_at'));
         $this->assertDatabaseHas('alerts', [
             'id' => $alert->id,
-            'status' => 'RESOLVED',
+            'status' => 'ACTIVE',
+            'acknowledged_by' => $user->id,
         ]);
+        $this->assertNull($alert->fresh()->resolved_at);
     }
 
     public function test_viewer_cannot_acknowledge_alert(): void
@@ -125,7 +133,8 @@ class AlertsTest extends TestCase
             ->patchJson("/api/alerts/{$alert->id}/ack");
 
         $resp->assertOk()
-            ->assertJsonPath('data.status', 'RESOLVED');
+            ->assertJsonPath('data.status', 'active');
+        $this->assertNotNull($resp->json('data.acknowledged_at'));
     }
 
     public function test_acknowledge_already_resolved_alert_returns_error(): void

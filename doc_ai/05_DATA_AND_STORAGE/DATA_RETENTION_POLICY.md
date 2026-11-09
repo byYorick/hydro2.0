@@ -184,7 +184,7 @@ Alerts важны для истории безопасности.
 **Целевой срок (planned):** `alerts` ≈ 365 дней.
 
 **Факт 2026-08-02:** отдельного Schedule/`alerts:cleanup` / Timescale policy на таблице `alerts` **нет**.  
-Lifecycle: создание через Laravel `AlertService`; ack/resolve → статус **`RESOLVED`** (отдельного статуса `acknowledged` нет).  
+Lifecycle: создание через Laravel `AlertService`. Подтверждение пишет `acknowledged_at` / `acknowledged_by` и **не** меняет `status` (остаётся `ACTIVE`, отдельного статуса `acknowledged` нет). Закрытие (`RESOLVED`) — автоматический resolve при снятии условия или ручной resolve некритичных кодов. Ручное закрытие safety-кодов при ещё активном условии отклоняется (`409 alert_manual_resolve_refused`).  
 Рост таблицы — до ручной очистки или будущей команды purge.  
 `alerts:dlq-replay` относится к `pending_alerts`, не к retention `alerts`.
 

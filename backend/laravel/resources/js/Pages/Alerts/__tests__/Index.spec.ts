@@ -207,7 +207,7 @@ describe('Alerts/Index.vue', () => {
     subscribeManagedChannelEventsMock.mockClear()
     axiosGetMock.mockResolvedValue({ data: { data: itemsDataValue } })
     axiosPatchMock.mockImplementation((url: string) => {
-      const id = Number(String(url).match(/\/alerts\/(\d+)\/ack/)?.[1])
+      const id = Number(String(url).match(/\/alerts\/(\d+)\/(?:ack|resolve)/)?.[1])
       const source = itemsDataValue.find((item) => item.id === id)
       return Promise.resolve({
         data: {

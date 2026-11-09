@@ -81,7 +81,7 @@ class AlertWebhookController extends Controller
                 ->first();
 
             if ($alert) {
-                $this->alertService->acknowledge($alert, [
+                $this->alertService->resolveExisting($alert, [
                     'resolved_by' => 'alertmanager_webhook',
                     'resolved_via' => 'auto',
                     'resolved_source' => 'alertmanager',
