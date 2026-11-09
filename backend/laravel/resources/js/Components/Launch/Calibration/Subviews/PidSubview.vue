@@ -6,7 +6,6 @@
         :phase-targets="phaseTargets"
         @saved="$emit('saved')"
       />
-      <RelayAutotuneTrigger :zone-id="zoneId" />
     </div>
     <div class="flex flex-col gap-3">
       <ShellCard
@@ -40,7 +39,6 @@
 
 <script setup lang="ts">
 import PidConfigForm from '@/Components/PidConfigForm.vue'
-import RelayAutotuneTrigger from '@/Components/RelayAutotuneTrigger.vue'
 import PidChart from '../PidChart.vue'
 import ShellCard from '@/Components/Launch/Shell/ShellCard.vue'
 import { Hint } from '@/Components/Shared/Primitives'

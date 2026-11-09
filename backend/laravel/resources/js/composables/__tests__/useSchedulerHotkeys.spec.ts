@@ -44,6 +44,22 @@ function fireKey(key: string, options: Partial<KeyboardEventInit> = {}): void {
 }
 
 describe('useSchedulerHotkeys', () => {
+  it('не перехватывает Enter на кнопках и клавиши внутри диалогов', () => {
+    const handlers = makeHandlers()
+    const wrapper = mount(createHarness(handlers))
+    const button = document.createElement('button')
+    document.body.append(button)
+    button.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+    expect(handlers.open).not.toHaveBeenCalled()
+    button.remove()
+    const dialog = document.createElement('div')
+    dialog.setAttribute('role', 'dialog')
+    document.body.append(dialog)
+    dialog.dispatchEvent(new KeyboardEvent('keydown', { key: 'j', bubbles: true }))
+    expect(handlers.next).not.toHaveBeenCalled()
+    dialog.remove()
+    wrapper.unmount()
+  })
   afterEach(() => {
     vi.restoreAllMocks()
   })

@@ -9,7 +9,7 @@
           ></span>
           <div class="min-w-0">
             <p class="text-[10px] font-bold uppercase tracking-[0.22em] text-[color:var(--text-dim)]">
-              Scheduler cockpit
+              Управление автоматикой
             </p>
             <h3 class="font-headline text-lg font-bold tracking-tight text-[color:var(--text-primary)] md:text-xl">
               Планировщик зоны
@@ -23,7 +23,7 @@
             size="sm"
           >
             <span class="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-[color:var(--status-info)] shadow-[0_0_0_3px_color-mix(in_srgb,var(--status-info)_20%,transparent)]"></span>
-            Live sync
+            {{ error ? 'Нет связи' : loading ? 'Обновление' : updatedLabel ? `Обновлено: ${updatedLabel}` : 'Ожидание данных' }}
           </Badge>
           <Badge
             :variant="statusVariant(hasActiveRun ? 'running' : 'accepted')"
@@ -45,7 +45,7 @@
             class="h-7 px-2.5 text-[11px]"
             @click="$emit('change-horizon', '24h')"
           >
-            24h
+            24 часа
           </Button>
           <Button
             size="sm"
@@ -53,7 +53,7 @@
             class="h-7 px-2.5 text-[11px]"
             @click="$emit('change-horizon', '7d')"
           >
-            7d
+            7 дней
           </Button>
         </div>
         <Button
@@ -66,16 +66,16 @@
           <span class="md:hidden">{{ loading ? '...' : '↻' }}</span>
           <span class="hidden md:inline">{{ loading ? 'Обновляем...' : 'Обновить' }}</span>
         </Button>
+        <Button
+          size="sm"
+          variant="secondary"
+          data-testid="scheduler-manage-schedules"
+          @click="$emit('manage-schedules')"
+        >
+          Расписания
+        </Button>
       </div>
     </div>
-
-    <SchedulerStatCounters
-      class="mt-3"
-      :active="counters.active"
-      :completed-24h="counters.completed_24h"
-      :failed-24h="counters.failed_24h"
-      :executable-windows="executableWindowsCount"
-    />
 
     <p
       v-if="error"
@@ -89,29 +89,22 @@
 <script setup lang="ts">
 import Badge from '@/Components/Badge.vue'
 import Button from '@/Components/Button.vue'
-import SchedulerStatCounters from './SchedulerStatCounters.vue'
-
-interface ExecutionCounters {
-  active: number
-  completed_24h: number
-  failed_24h: number
-}
 
 defineProps<{
   zoneId: number | string
   horizon: '24h' | '7d'
   loading: boolean
   error: string | null
-  counters: ExecutionCounters
-  executableWindowsCount: number
   hasActiveRun: boolean
   controlMode: string | null | undefined
   controlModeLabel: (controlMode: string | null | undefined) => string
   statusVariant: (status: string) => any
+  updatedLabel?: string | null
 }>()
 
 defineEmits<{
   refresh: []
+  'manage-schedules': []
   'change-horizon': ['24h' | '7d']
 }>()
 </script>
