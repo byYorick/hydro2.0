@@ -1,7 +1,7 @@
 # Индекс документации Hydro 2.0
 
-**Версия:** 2.7
-**Дата обновления:** 2026-11-06
+**Версия:** 2.8
+**Дата обновления:** 2026-11-09
 
 ## Начало работы
 
@@ -35,6 +35,7 @@
 | [12_ANDROID_APP](12_ANDROID_APP/README.md) | Android-клиент, API и ограничения provisioning |
 | [13_TESTING](13_TESTING/README.md) | Python E2E, realhw, Playwright и диагностика тестов |
 | [14_GROWING_REFERENCE](14_GROWING_REFERENCE/README.md) | Агрономические и аппаратные справочники выращивания |
+| [adr](adr/README.md) | Архитектурные решения (`proposed`): перечень систем, общий бак, failsafe канала, MQTT prod |
 
 ## Защищённые контракты
 
@@ -51,6 +52,7 @@
 
 ## Практические точки входа
 
+- [Архитектурные решения](adr/README.md) — ADR-0001…0004 (`proposed`, не runtime и не замена контрактов слоя).
 - [Сводка реализации](IMPLEMENTATION_STATUS.md) — состояние репозитория; не акт приёмки стенда.
 - [Суточный контур](04_BACKEND_CORE/CROP_DAY_RUNTIME.md) — существующие crop-day функции и их владельцы.
 - [REST API](04_BACKEND_CORE/REST_API_REFERENCE.md) — endpoint-ы и авторизация.
