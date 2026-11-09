@@ -99,4 +99,27 @@ describe('ZonePageHeader', () => {
     expect(wrapper.find('[data-testid="zone-header-pause"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="zone-header-water"]').exists()).toBe(true)
   })
+
+  it('показывает аварийную остановку оператору, агроному, инженеру и администратору', () => {
+    for (const role of ['operator', 'agronomist', 'engineer', 'admin'] as UserRole[]) {
+      const wrapper = mountHeader(role, { cycleStatus: null })
+      expect(wrapper.get('[data-testid="zone-estop-engage"]').text()).toBe('Аварийная остановка')
+      wrapper.unmount()
+    }
+  })
+
+  it('скрывает аварийную остановку у наблюдателя', () => {
+    const wrapper = mountHeader('viewer', { cycleStatus: null, canOperateZone: false, canManageCycle: false })
+    expect(wrapper.find('[data-testid="zone-estop-engage"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="zone-estop-release"]').exists()).toBe(false)
+  })
+
+  it('блокирует полив, пока аварийная остановка активна', () => {
+    const wrapper = mountHeader('operator', { estopActive: true })
+    const water = wrapper.get('[data-testid="zone-header-water"]')
+    expect(water.attributes('disabled')).toBeDefined()
+    expect(water.attributes('title')).toContain('Аварийная остановка активна, ручные команды заблокированы')
+    expect(wrapper.get('[data-testid="zone-estop-release"]').text()).toBe('Снять аварийную остановку')
+    expect(wrapper.find('[data-testid="zone-estop-engage"]').exists()).toBe(false)
+  })
 })

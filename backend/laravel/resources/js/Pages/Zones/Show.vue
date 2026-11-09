@@ -12,6 +12,11 @@
         @open-alerts="activeTab = 'alerts'"
         @unblock="onOperatorUnblock"
       />
+      <ZoneEstopBanner
+        v-if="estopActive"
+        :since="estopStatus?.since ?? null"
+        :solution-label="solutionLabel"
+      />
       <ZonePageHeader
         :zone-name="zone.name"
         :crop-label="headerCropLabel"
@@ -25,11 +30,16 @@
         :can-manage-cycle="canManageCycle"
         :pause-loading="loading.cyclePause"
         :next-phase-loading="loading.nextPhase"
-        @water="openActionModal('START_IRRIGATION')"
+        :estop-active="estopActive"
+        :estop-busy="estopBusy"
+        :solution-label="solutionLabel"
+        @water="onManualIrrigation('START_IRRIGATION')"
         @pause="onCyclePause"
         @next-phase="onNextPhase"
         @open-actions="activeTab = 'automation'"
         @diagnose="router.visit(`/?nodeZone=${zoneId}&nodes=all`)"
+        @estop-engage="onEstopEngage"
+        @estop-release="onEstopRelease"
       >
         <template
           v-if="isAgronomist && activeGrowCycle"
@@ -162,10 +172,11 @@
         :pump-calibration-run-seq="pumpCalibrationRunSeq"
         :automation-state-refresh-seq="automationStateRefreshSeq"
         :irrigation-action-loading="loading.actionSubmit && (currentActionType === 'START_IRRIGATION' || currentActionType === 'FORCE_IRRIGATION')"
+        :commands-locked="estopActive"
         @open-pump-calibration="openPumpCalibrationModal"
         @refresh-automation-state="onPolicyAlertResolved"
-        @start-irrigation="openActionModal('START_IRRIGATION')"
-        @force-irrigation="openActionModal('FORCE_IRRIGATION')"
+        @start-irrigation="onManualIrrigation('START_IRRIGATION')"
+        @force-irrigation="onManualIrrigation('FORCE_IRRIGATION')"
       />
       <ZoneSchedulerTab
         v-else-if="activeTab === 'scheduler'"
@@ -248,8 +259,13 @@ import { computed, ref } from 'vue';
 import { router } from '@inertiajs/vue3';
 import AppLayout from "@/Layouts/AppLayout.vue";
 import CycleActionsDropdown from '@/Components/GrowCycle/CycleActionsDropdown.vue';
+import ZoneEstopBanner from '@/Components/ZoneEstopBanner.vue';
 import { useRole } from '@/composables/useRole';
-const { isAgronomist } = useRole();
+import { useToast } from '@/composables/useToast';
+import { useZoneEstop } from '@/composables/useZoneEstop';
+import { TOAST_TIMEOUT } from '@/constants/timeouts';
+import { extractHumanErrorMessage } from '@/utils/errorMessage';
+import { ESTOP_ACTIVE_BANNER, estopResultMessage, formatSolutionLevelLabel } from '@/utils/zoneEstop';
 import Tabs from "@/Components/Tabs.vue";
 import Dropdown from "@/Components/Dropdown.vue";
 import ZonePageHeader from "@/Components/ZonePageHeader.vue";
@@ -268,6 +284,9 @@ import { computeAutomationBlock } from "@/utils/automationBlock";
 import { zonesApi } from "@/services/api/zones";
 import { normalizeDurationHours } from "@/utils/growCycleProgress";
 import { translateStatus } from "@/utils/i18n";
+
+const { isAgronomist } = useRole();
+const { showToast } = useToast();
 
 const {
     zoneTabs,
@@ -339,6 +358,45 @@ const {
     onCycleChangeRecipe,
     confirmChangeRecipe,
 } = useZoneShowPage();
+
+const estopZoneId = computed(() => zoneId.value ?? null);
+const {
+    status: estopStatus,
+    active: estopActive,
+    solutionPercent,
+    busy: estopBusy,
+    engage: engageEstop,
+    release: releaseEstop,
+} = useZoneEstop(estopZoneId);
+const solutionLabel = computed(() => formatSolutionLevelLabel(solutionPercent.value));
+
+function onManualIrrigation(action: 'START_IRRIGATION' | 'FORCE_IRRIGATION'): void {
+    if (estopActive.value) {
+        showToast(ESTOP_ACTIVE_BANNER, 'warning', TOAST_TIMEOUT.NORMAL);
+        return;
+    }
+    openActionModal(action);
+}
+
+async function onEstopEngage(): Promise<void> {
+    try {
+        const result = await engageEstop();
+        const variant = result.result === 'engaged' ? 'success' : 'warning';
+        showToast(estopResultMessage(result.result), variant, TOAST_TIMEOUT.LONG);
+    } catch (err) {
+        showToast(extractHumanErrorMessage(err, 'Не удалось включить аварийную остановку'), 'error', TOAST_TIMEOUT.LONG);
+    }
+}
+
+async function onEstopRelease(reason: string): Promise<void> {
+    try {
+        const result = await releaseEstop(reason);
+        const variant = result.result === 'released' ? 'success' : 'warning';
+        showToast(estopResultMessage(result.result), variant, TOAST_TIMEOUT.LONG);
+    } catch (err) {
+        showToast(extractHumanErrorMessage(err, 'Не удалось снять аварийную остановку'), 'error', TOAST_TIMEOUT.LONG);
+    }
+}
 
 /**
  * Признак «AE3 остановлен ACTIVE-алертом» из массива `alerts` страницы зоны.

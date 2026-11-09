@@ -201,4 +201,6 @@ export interface ZoneAutomationTabProps {
   automationStateRefreshSeq?: number
   /** true пока выполняется START_IRRIGATION/FORCE_IRRIGATION (общий индикатор кнопок полива). */
   irrigationActionLoading?: boolean
+  /** Аварийная остановка зоны: включающие ручные команды недоступны. */
+  commandsLocked?: boolean
 }
