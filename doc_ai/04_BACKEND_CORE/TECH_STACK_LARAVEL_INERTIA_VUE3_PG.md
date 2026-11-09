@@ -12,11 +12,11 @@ Breaking-change: обратная совместимость со старыми
 
 ## 1. Общая идея архитектуры
 
-1. **Backend:** Laravel 10/11 (PHP 8.2+) + PostgreSQL.
+1. **Backend:** Laravel 12 (PHP 8.2+) + PostgreSQL.
 2. **Frontend:** Inertia SPA + Vue 3 (Composition API).
 3. **Маршрутизация:** `routes/web.php` (Inertia + защищённые страницы) и `routes/api.php` (REST).
 4. **Доступ к данным:** Eloquent-модели, запросы через репозитории/сервисы.
-5. **Реалтайм:** Laravel Broadcasting/WebSockets (по мере внедрения).
+5. **Реалтайм:** Laravel Reverb + Echo/Pusher (подключены в web UI).
 
 Backend остаётся «толстым» (доменная логика внутри Laravel/Services), 
 Frontend — «тонкий» (отображение, валидация на UI, UX).
@@ -26,7 +26,7 @@ Frontend — «тонкий» (отображение, валидация на U
 ## 2. Структура Laravel-проекта
 
 ```text
-backend-laravel/
+backend/laravel/
  app/
  Http/
  Controllers/
@@ -121,18 +121,9 @@ resources/js/
  (например, `PythonBridgeService`, `AiGatewayService`). 
 - Нельзя рассыпать вызовы внешних API по контроллерам.
 
-Пример:
+Фактический controller — `ZoneCommandController::store(StoreZoneCommandRequest, Zone, PythonBridgeService)`: проверяет Policy, маршрутизирует `FORCE_IRRIGATION` в AE3 bridge, остальные поддерживаемые zone-команды передаёт в `PythonBridgeService::sendZoneCommand`. Node-level путь использует `sendNodeCommand`. Прямого MQTT publish в Laravel нет.
 
-```php
-class ZoneCommandController extends Controller
-{
- public function store(SendZoneCommandRequest $request, Zone $zone, PythonBridgeService $bridge)
- {
- $commandId = $bridge->sendZoneCommand($zone, $request->validated());
- return response()->json(['status' => 'ok', 'command_id' => $commandId]);
- }
-}
-```
+Успешный обычный zone command response содержит `status=ok` и `data.command_id`; HTTP-ответ не означает terminal `DONE`. Точные формы ответов и guards — [API_SPEC_FRONTEND_BACKEND_FULL.md](API_SPEC_FRONTEND_BACKEND_FULL.md), transport — [HISTORY_LOGGER_API.md](HISTORY_LOGGER_API.md).
 
 ---
 

@@ -1,108 +1,41 @@
 # ANDROID_APP_ARCH.md
-# Архитектура Android-приложения Hydro 2.0
-# Provisioning • Мониторинг • Управление • Оповещения
+# Архитектура текущего Android-приложения
 
-Документ описывает архитектуру Android-приложения,
-которое используется для:
-
-- первичной настройки узлов (Wi-Fi provisioning),
-- мониторинга теплиц и зон,
-- приёма алертов,
-- базового управления.
-
+**Сверено с кодом:** 2026-11-07. Проект — [mobile/app/android](../../mobile/app/android/), Kotlin + Jetpack Compose. Runtime определяется подключёнными экранами и ViewModel, а не наличием заготовок классов.
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
-Breaking-change: обратная совместимость со старыми форматами и алиасами не поддерживается.
 
----
+## Стек
 
-## 1. Технологический стек
+[app/build.gradle.kts](../../mobile/app/android/app/build.gradle.kts) задаёт `minSdk=24`, `compileSdk=34`, `targetSdk=34`, Java 17 и flavors `dev/staging/prod`. UI использует Compose/Navigation, DI — Hilt, HTTP — Retrofit/OkHttp/Moshi. Room и DataStore присутствуют; токен хранится через `PreferencesDataSource`/`TokenAtRest` с Android Keystore cipher.
 
-Рекомендуемый стек:
+## Активный UI и слои
 
-- Язык: **Kotlin**
-- UI: **Jetpack Compose**
-- Архитектура: **MVVM + Clean Architecture** (слои: data, domain, presentation)
-- DI: **Hilt**
-- Сетевое API: **Retrofit + OkHttp**
-- Realtime: **OkHttp WebSocket** (+ polling fallback) к Laravel/Reverb; прямой MQTT-клиент в app **не** реализован (`PLANNED`)
-- Хранение:
- - локальный кэш: Room / DataStore
- - secure-хранилище токенов (Android Keystore)
+[MainActivity.kt](../../mobile/app/android/app/src/main/java/com/hydro/app/MainActivity.kt) подключает login, server settings, greenhouses, zones, zone details, node details, alerts и provisioning. Точный состав — [ANDROID_APP_SCREENS.md](ANDROID_APP_SCREENS.md).
 
----
+Основные операторские экраны из `ui/screens/OperatorScreens.kt` используют:
 
-## 2. Слои приложения
+- `OverviewViewModel`, `ZoneListViewModel`, `OperatorAlertsViewModel` из `features/operator/ListViewModels.kt`;
+- `ZoneOperatorViewModel`, `NodeOperatorViewModel` из `features/operator/DetailViewModels.kt`;
+- [OperatorRepository.kt](../../mobile/app/android/app/src/main/java/com/hydro/app/features/operator/OperatorRepository.kt), который вызывает Retrofit APIs и возвращает `Result`;
+- `StateFlow` в памяти для состояния UI.
 
-### 2.1. Presentation (UI + ViewModel)
+Room DAOs и старые repository/use-case/ViewModel цепочки остаются в коде, но текущие operator screens не читают все данные через Room. Универсальный offline-first flow для этих экранов не реализован. `TelemetryDao.getHistory(limit=1000)` ограничивает выборку, а не общий размер базы.
 
-- Экраны Compose (**as-is**): Login, Greenhouses, Zones, ZoneDetails, Alerts, Provisioning.  
-  **PLANNED:** Node Details, Settings, Welcome/Onboarding.
+## Сеть и обновление данных
 
-- ViewModel’ы: as-is — `ZoneDetailsViewModel`, `AlertsViewModel`, provisioning/greenhouses/zones VMs; **PLANNED** — `NodeDetailsViewModel`.
+[BackendApis.kt](../../mobile/app/android/app/src/main/java/com/hydro/app/core/data/BackendApis.kt) и `features/auth/data/AuthApi.kt` определяют HTTP-контракт. `NetworkModule` добавляет Bearer token и `DynamicBaseUrlInterceptor`; выбранный сервер хранит `ServerEndpointStore` и меняет экран Settings.
 
-### 2.2. Domain
+Активные экраны обновляются REST polling: обзор теплиц — каждые 10 секунд, список зон и детали зоны/ноды — каждые 8 секунд, алерты — каждые 5 секунд; также доступно ручное обновление. Это интервалы задержки цикла, а не гарантия точной частоты запросов.
 
-- Use case’ы: многие из списка ниже — **target Clean Architecture**; as-is часто inline в ViewModel.
- - `GetZoneDetailsUseCase` / ack alerts — частично as-is
- - `GetNodeDetailsUseCase`, `UpdateNodeConfigUseCase` — **PLANNED**
+`RealtimeService.connectWebSocket` — отдельная заготовка, которая строит `/ws/{channel}`. Она не вызывается активными operator ViewModel и не реализует Reverb/Pusher subscribe/private-channel auth. Рабочая WebSocket-синхронизация и автоматический fallback между WS и polling не подтверждены этим классом. Прямого MQTT-клиента в app нет.
 
-### 2.3. Data
+## Возможности и границы
 
-- Репозитории: Zones/Alerts as-is; `UserSettingsRepository` / full Nodes — **PLANNED**.
-- Источники: REST + OkHttp WebSocket (+ polling); MQTT-клиент в app — **PLANNED**.
+- Просмотр теплиц, зон, нод, последних метрик и ACTIVE alerts.
+- Подтверждение алерта через `PATCH /api/alerts/{id}/ack`.
+- Принудительный полив через product command `FORCE_IRRIGATION`, перевод зоны в `manual`, перезапуск ноды и переключение relay channel.
+- Полный редактор рецептов, lifecycle grow-cycle, history charts и push notifications не подключены в текущих operator screens.
+- Provisioning экран существует, но его `/api/provision` несовместим с ESP32 portal `/wifi/connect`; рабочий браузерный путь описан в [ANDROID_APP_API_INTEGRATION.md](ANDROID_APP_API_INTEGRATION.md).
 
----
-
-## 3. Основные функции приложения
-
-1. **Provisioning узлов**
- - поиск узла по Wi-Fi (SSID типа `HYDRO-NODE-XXXX`);
- - подключение к AP узла;
- - конфигурирование Wi-Fi и привязки;
- - передача данных на узел через HTTP (`/configure`).
-
-2. **Авторизация и мульти-теплицы**
- - логин пользователя (email/пароль или другой метод);
- - выбор активной теплицы (если их несколько).
-
-3. **Мониторинг**
- - список зон с ключевыми метриками;
- - деталка зоны:
- - текущие pH/EC/температура/влажность;
- - состояние исполнительных устройств;
- - активный рецепт.
-
-4. **Оповещения и события**
- - push-уведомления;
- - список алертов;
- - подтверждение/закрытие алертов (если предусмотрено бизнес-логикой).
-
-5. **Базовое управление**
- - режимы: ручной/авто;
- - изменение целевых значений в рецептах (при наличии прав);
- - временная пауза/остановка подачи раствора, света и т.п.
-
----
-
-## 4. Взаимодействие с backend
-
-См. `ANDROID_APP_API_INTEGRATION.md`.
-
-Основной принцип:
-
-- все долгоживущие состояния (телеметрия, статусы узлов, рецепты)
- приходят от backend:
- - либо по REST (pull),
- - либо через WebSocket/stream (push).
-
-Приложение **не общается с узлами напрямую**, кроме режима provisioning.
-
----
-
-## 5. Требования к ИИ-агенту
-
-1. ИИ должен создавать новые экраны и ViewModel’ы в соответствии с этой архитектурой.
-2. Нельзя шить бизнес-логику напрямую в Compose-экраны — только через ViewModel.
-3. Любые изменения в API-интерфейсах должны быть согласованы с
- `../04_BACKEND_CORE/API_SPEC_FRONTEND_BACKEND_FULL.md` и `ANDROID_APP_API_INTEGRATION.md`.
+Изменения команд и прав всегда сверяются с Laravel: доступная кнопка не заменяет backend authorization. Архитектура не разрешает публиковать MQTT из приложения.

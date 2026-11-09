@@ -84,7 +84,7 @@ Acceptance criteria (commands):
 - `mosquitto` - MQTT брокер
 - `laravel` - Laravel приложение + Reverb (WebSocket)
 - `history-logger` - Обработка телеметрии
-- `mqtt-bridge` - HTTP → MQTT мост
+- `mqtt-bridge` - ops live-status/metrics probe; device-команды публикует history-logger
 - `telemetry-aggregator` - Агрегация телеметрии
 - `automation-engine` - Автоматизация (опционально)
 - `node-sim` - Эмулятор ноды (**не** для realhw launcher — там только физическая `test_node`)

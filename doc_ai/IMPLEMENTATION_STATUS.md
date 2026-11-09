@@ -2,7 +2,10 @@
 
 Краткая сводка статуса. **Не SoT runtime** — поведение смотреть в коде.
 
-Product-gaps и агро-автономия: [`AGRO_AUTONOMY_MASTER_PLAN.md`](AGRO_AUTONOMY_MASTER_PLAN.md) (`plan`, не SoT runtime).
+**Сверено:** 2026-11-06, runtime-код `28a62e9e`. Это снимок репозитория;
+наличие реализации не подтверждает её установку и приёмку на физическом стенде.
+
+Суточный контур: [`CROP_DAY_RUNTIME.md`](04_BACKEND_CORE/CROP_DAY_RUNTIME.md) (`guide` существующей реализации).
 
 Легенда:
 
@@ -20,11 +23,11 @@ Product-gaps и агро-автономия: [`AGRO_AUTONOMY_MASTER_PLAN.md`](AG
 |------|------------|
 | Laravel | API Gateway, Sanctum, Inertia/Vue, NodeConfig, recipes, scheduler-dispatch |
 | Python core (боевое ядро default `make up`) | mqtt, db, redis, laravel, `history-logger` (единственный MQTT-publish команд), `automation-engine`/`ae3lite`, `telemetry-aggregator` |
-| `mqtt-bridge` | **ops leftover / probe**, не боевой command path (410 на command-роутах zones/nodes до P1) |
+| `mqtt-bridge` | **ops probe**, только metrics/live-status; command/config routes удалены (404) |
 | Firmware | `ph`/`ec`/`climate`/`pump`/`storage_irrigation`/`relay` + `light_node` **как сенсор** (`LIGHT`) + `test_node` — **MVP_DONE** |
 | Frontend | Unified Dashboard, Zones/Devices/Recipes/Alerts, WebSocket |
-| Data/ops | PostgreSQL+Timescale, retention 30d raw, backups; Grafana/Prometheus — **ops** (пока ещё в default compose; вынос в profile `obs` = P3) |
-| Android | `mobile/app/android/` — **IN_PROGRESS** (login, greenhouses/zones, telemetry, alerts, `sendCommand`, provisioning scaffold) |
+| Data/ops | PostgreSQL+Timescale, retention 30d raw, логические backups; Grafana/Prometheus/Alertmanager — profile `obs`, `make up-obs` |
+| Android | `mobile/app/android/` — **IN_PROGRESS** (login, greenhouses/zones, telemetry, alerts, `sendCommand`); provisioning scaffold несовместим с текущим ESP32 portal API |
 
 HW-стенд / полный HW acceptance нод — **IN_PROGRESS** (не путать с отсутствием прошивок).
 
@@ -53,5 +56,5 @@ HW-стенд / полный HW acceptance нод — **IN_PROGRESS** (не пу
 | `feature-builder` | **frozen skeleton**; не writer витрин в runtime; не часть default `make up` (profile `ml`) |
 | `/admin`, `/admin/zones`, `/admin/recipes` | overlay/дубль Unified Dashboard + Settings; код пока жив (удаление = P4) |
 | AI-карточки (`AIPredictionsSection`, linear `PredictionService`) | overlay/toy, не ML pipeline |
-| `09_AI_AND_DIGITAL_TWIN` | `plan` / engine draft, не default runtime |
+| `09_AI_AND_DIGITAL_TWIN` | guide существующих опциональных компонентов, не default runtime |
 | отдельный Python `scheduler` / `device-registry` / `api-gateway` | деревья сняты; owner — Laravel |

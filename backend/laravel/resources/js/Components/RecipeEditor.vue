@@ -203,15 +203,20 @@
       Фазы роста
     </div>
 
-    <div class="space-y-3">
+    <RecipePhaseWorkspace
+      v-slot="{ isVisible }"
+      :phases="sortedPhases"
+      :enabled="singlePhase"
+    >
       <section
         v-for="(phase, index) in sortedPhases"
+        v-show="isVisible(index)"
         :key="phase.id || index"
         :data-testid="`phase-item-${index}`"
         class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)] p-3 space-y-2.5"
       >
         <div class="flex items-center justify-between gap-2">
-          <div class="flex items-end gap-4">
+          <div class="flex flex-wrap items-end gap-3">
             <div>
               <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">Название</label>
               <TextField
@@ -470,7 +475,7 @@
                 pH
               </div>
               <div class="flex flex-wrap gap-3">
-                <div :class="phase.day_night_enabled ? 'flex-1 min-w-[280px] max-w-sm' : 'w-full max-w-sm'">
+                <div :class="phase.day_night_enabled ? 'w-full min-w-0 sm:min-w-[280px] sm:flex-1 max-w-sm' : 'w-full max-w-sm'">
                   <div
                     v-if="phase.day_night_enabled"
                     class="text-[10px] text-[color:var(--text-dim)] uppercase tracking-wider mb-1"
@@ -521,7 +526,7 @@
                 </div>
                 <div
                   v-if="phase.day_night_enabled"
-                  class="flex-1 min-w-[280px] max-w-sm"
+                  class="w-full min-w-0 sm:min-w-[280px] sm:flex-1 max-w-sm"
                 >
                   <div class="text-[10px] text-[color:var(--text-dim)] uppercase tracking-wider mb-1">
                     ☾ ночь
@@ -576,7 +581,7 @@
                 EC
               </div>
               <div class="flex flex-wrap gap-3">
-                <div :class="phase.day_night_enabled ? 'flex-1 min-w-[280px] max-w-sm' : 'w-full max-w-sm'">
+                <div :class="phase.day_night_enabled ? 'w-full min-w-0 sm:min-w-[280px] sm:flex-1 max-w-sm' : 'w-full max-w-sm'">
                   <div
                     v-if="phase.day_night_enabled"
                     class="text-[10px] text-[color:var(--text-dim)] uppercase tracking-wider mb-1"
@@ -627,7 +632,7 @@
                 </div>
                 <div
                   v-if="phase.day_night_enabled"
-                  class="flex-1 min-w-[280px] max-w-sm"
+                  class="w-full min-w-0 sm:min-w-[280px] sm:flex-1 max-w-sm"
                 >
                   <div class="text-[10px] text-[color:var(--text-dim)] uppercase tracking-wider mb-1">
                     ☾ ночь
@@ -1193,7 +1198,7 @@
           </div>
         </div>
       </section>
-    </div>
+    </RecipePhaseWorkspace>
 
     <!-- ── Кнопки внизу ──────────────────────────────────────── -->
     <div class="flex items-center justify-between pt-2">
@@ -1212,7 +1217,7 @@
         data-testid="save-recipe-bottom-button"
         @click="$emit('save')"
       >
-        Сохранить
+        {{ saveLabel }}
       </Button>
     </div>
 
@@ -1231,6 +1236,8 @@ import TextField from '@/Components/TextField.vue'
 
 import { computed, ref, watch } from 'vue'
 import Button from '@/Components/Button.vue'
+import RecipePhaseWorkspace from '@/Components/RecipePhaseWorkspace.vue'
+import { useRecipeIdentity } from '@/composables/useRecipeIdentity'
 import RecipeEditorProductField from '@/Components/RecipeEditorProductField.vue'
 import RecipePhaseChartsPanel from '@/Components/Recipes/RecipePhaseChartsPanel.vue'
 import RecipePhaseTimeline from '@/Components/Recipes/RecipePhaseTimeline.vue'
@@ -1257,6 +1264,8 @@ interface Props {
   substrates?: Substrate[]
   hidePlantSelect?: boolean
   lockedPlantLabel?: string | null
+  singlePhase?: boolean
+  saveLabel?: string
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -1264,6 +1273,8 @@ const props = withDefaults(defineProps<Props>(), {
   substrates: () => [],
   hidePlantSelect: false,
   lockedPlantLabel: null,
+  singlePhase: false,
+  saveLabel: 'Сохранить',
 })
 
 const form = defineModel<RecipeEditorFormState>('form', { required: true })
@@ -1281,29 +1292,12 @@ const { showToast } = useToast()
 const { isAdmin } = useRole()
 const editorMode = ref<'simple' | 'advanced'>(isAdmin.value ? 'advanced' : 'simple')
 const isAdvanced = computed(() => editorMode.value === 'advanced')
-
 const plantMode = ref<'select' | 'create'>('select')
 const newPlantName = ref('')
 const newPlantSpecies = ref('')
 const newPlantVariety = ref('')
 const creatingPlant = ref(false)
-const recipeLabel = ref(form.value.description || '')
-
-const selectedPlantName = computed(() => {
-  const plant = props.plants.find(p => p.id === form.value.plant_id)
-  return plant?.name ?? ''
-})
-
-const recipeName = computed(() => {
-  const plant = selectedPlantName.value
-  const label = recipeLabel.value.trim()
-  if (plant && label) return `${plant} ${label}`
-  if (plant) return plant
-  return label || ''
-})
-
-watch(recipeName, (name) => { form.value.name = name }, { immediate: true })
-watch(recipeLabel, (label) => { form.value.description = label })
+const { recipeLabel, recipeName } = useRecipeIdentity(form, () => props.plants)
 
 // Дефолтный субстрат для каждого типа полива.
 const DEFAULT_SUBSTRATE_FOR: Record<string, string | null> = {
@@ -1518,7 +1512,7 @@ const sortedPhases = computed<RecipePhaseFormState[]>(() => {
   return [...form.value.phases].sort((left, right) => left.phase_index - right.phase_index)
 })
 
-const previewOpen = ref(true)
+const previewOpen = ref(!props.singlePhase)
 
 const previewPhases = computed(() => buildRecipePhaseVisuals(sortedPhases.value))
 

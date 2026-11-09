@@ -5,7 +5,7 @@ feature-builder — ML Phase 2 skeleton.
 dose_response_events. Phase 2A (этот файл) содержит скелет с health/metrics
 и poll-loop-заглушкой. Реальная логика сбора витрин — Phase 3.
 
-См. doc_ai/09_AI_AND_DIGITAL_TWIN/ML_FEATURE_PIPELINE.md §6.
+Текущий статус и интерфейсы: backend/services/feature-builder/README.md.
 """
 import asyncio
 import logging

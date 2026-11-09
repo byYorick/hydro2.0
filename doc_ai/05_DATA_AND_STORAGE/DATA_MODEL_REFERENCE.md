@@ -72,7 +72,7 @@ updated_at
 - В Backend/AI `greenhouse.uid` — основной внешний идентификатор теплицы.
 - Канонический справочник типа — `greenhouse_types`; `type` остаётся legacy-строкой.
 - `provisioning_token`: **deprecated, pending drop**. Колонка остаётся NOT NULL unique ради seeders/AE/e2e inserts; значение генерируется при create только для constraint, **скрыто в API** (`Greenhouse::$hidden`) и **не используется** для bind узлов (привязка только через UI).
-- `is_system=true` — служебные теплицы (не показывать в обычных списках). Зарезервирована системная теплица `uid='site'` + зона `uid='wx'` как MQTT-якорь для site-level метеостанций (DD-10, см. `GREENHOUSE_CLIMATE_CONTROL_PLAN.md`).
+- `is_system=true` — служебные теплицы (не показывать в обычных списках). Зарезервирована системная теплица `uid='site'` + зона `uid='wx'` как MQTT-якорь для site-level метеостанций (DD-10, см. `GREENHOUSE_CLIMATE_CONTROL_SPEC.md`).
 - `shared_weather_station_node_id` — opt-in теплицы на общую метеостанцию площадки; AE climate tick читает outdoor sensors этого node независимо от `sensors.greenhouse_id` пользовательской теплицы.
 
 ---
@@ -834,14 +834,14 @@ updated_at
 
 ## 6.1.2. commands_archive
 
-Архив исторических команд (retention beyond hot 365 дней).
+Архив исторических команд, заполняемый отдельно от hot retention (365 дней). Сам hot cleanup удаляет записи и не переносит их сюда.
 
 ```
 -- Структура зеркалит commands, плюс:
 archived_at TIMESTAMP NOT NULL DEFAULT NOW()
 ```
 
-Восстановлено миграцией `2026_04_30_195000_restore_archive_tables_for_commands_and_zone_events.php` после ошибочного удаления в `2025_12_25_151714_drop_legacy_tables.php`. Заполняется фоновой job `commands:archive` (см. Console/Commands).
+Восстановлено миграцией `2026_04_30_195000_restore_archive_tables_for_commands_and_zone_events.php` после ошибочного удаления в `2025_12_25_151714_drop_legacy_tables.php`. Заполняется ручной Artisan-командой `commands:archive --days=90` (`ArchiveOldCommands`); в Schedule её нет. Автоматического TTL архива нет.
 
 ## 6.1.3. pending_status_updates / pending_status_updates_dlq
 
@@ -1139,7 +1139,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 ## 6.9. greenhouse_automation_intents / greenhouse_automation_tasks / greenhouse_automation_leases / greenhouse_automation_state / greenhouse_manual_overrides
 
 Таблицы **greenhouse-level** автоматизации (климат крыши), ортогональны `zone_automation_intents` / `ae_tasks`.
-Семантика и алгоритм — `GREENHOUSE_CLIMATE_CONTROL_PLAN.md`.
+Семантика и алгоритм — `GREENHOUSE_CLIMATE_CONTROL_SPEC.md`.
 FK на `greenhouses` используют `ON DELETE RESTRICT`: runtime history не удаляется каскадом без отдельной retention policy.
 
 ### 6.9.1. greenhouse_automation_intents
@@ -1294,59 +1294,17 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - изменение runtime profile (`zone.logic_profile`) должно порождать `zone_events`
   типа `AUTOMATION_LOGIC_PROFILE_UPDATED`, чтобы инициировать `ae_signal_update` по `kind=zone_event`.
 
-Рекомендуемая структура `subsystems` для startup/recovery в `2 бака`:
+Структура profile должна соответствовать активному authority bundle и текущему builder:
 
-```json
-{
-  "solution_prepare": {
-    "enabled": true,
-    "topology": "two_tank_drip_substrate_trays",
-    "startup": {
-      "clean_fill_timeout_sec": 1200,
-      "solution_fill_timeout_sec": 1800,
-      "level_poll_interval_sec": 60,
-      "clean_fill_retry_cycles": 1,
-      "prepare_recirculation_timeout_sec": 1200
-    },
-    "dosing_rules": {
-      "prepare_allowed_components": ["npk"],
-      "prepare_ph_correction": true
-    }
-  },
-  "irrigation": {
-    "enabled": true,
-    "decision": {
-      "strategy": "smart_soil_v1",
-      "config": {
-        "lookback_sec": 1800,
-        "min_samples": 3,
-        "stale_after_sec": 600,
-        "hysteresis_pct": 2,
-        "spread_alert_threshold_pct": 12
-      }
-    },
-    "recovery": {
-      "max_continue_attempts": 5,
-      "auto_replay_after_setup": true,
-      "max_setup_replays": 1,
-      "degraded_tolerance": {
-        "ec_pct": 20,
-        "ph_pct": 10
-      }
-    },
-    "safety": {
-      "stop_on_solution_min": true
-    },
-    "dosing_rules": {
-      "irrigation_allowed_components": ["calcium", "magnesium", "micro"],
-      "irrigation_forbid_components": ["npk"],
-      "irrigation_ph_correction": true
-    }
-  }
-}
-```
+- `subsystems.diagnostics.execution.topology` выбирает two-tank workflow;
+- таймауты и freshness correction берутся из resolved `zone.correction.base/phases.*`, не из старого `solution_prepare.startup`;
+- fill разрешает calcium (`pump_b`) без pH; recirculation использует последовательность `Ca → pH → Mg → pH → NPK → pH → Micro → pH`;
+- `subsystems.irrigation.execution.irrigation_ec_component` допускает `none|calcium|npk`; Mg/Micro на поливе не разрешены;
+- post-irrigation chemistry recovery удалён; сохранённый deprecated `recovery` block не включает его обратно.
 
-## 6.11. AE3-Lite runtime tables (staged rollout)
+Прежний JSON с `solution_prepare`, NPK-only prepare и `irrigation_allowed_components=[calcium,magnesium,micro]` не соответствует runtime. Полный контракт настройки — [API_SPEC_FRONTEND_BACKEND_FULL.md](../04_BACKEND_CORE/API_SPEC_FRONTEND_BACKEND_FULL.md) §3.5.4 и [CORRECTION_CYCLE_SPEC.md](../06_DOMAIN_ZONES_RECIPES/CORRECTION_CYCLE_SPEC.md).
+
+## 6.11. AE3 runtime tables
 
 Ниже таблицы вводятся migration-пакетом AE3-Lite и используются runtime-слоем
 `backend/services/automation-engine/ae3lite/` (см. `04_BACKEND_CORE/ae3lite.md`).
@@ -1356,7 +1314,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 ```
 id BIGSERIAL PK
 zone_id BIGINT NOT NULL FK -> zones ON DELETE CASCADE
-task_type VARCHAR(64) NOT NULL         -- в v1 допустимо cycle_start|irrigation_start|lighting_tick (CHECK constraint)
+task_type VARCHAR(64) NOT NULL         -- cycle_start|irrigation_start|lighting_tick|solution_topup|solution_change (CHECK constraint)
 status VARCHAR(32) NOT NULL            -- pending|claimed|running|waiting_command|completed|failed|cancelled
 idempotency_key VARCHAR(191) NOT NULL
 intent_source VARCHAR(64) NULL
@@ -1453,7 +1411,7 @@ ae_tasks_topology_stage_idx (topology, current_stage) WHERE status IN ('running'
 Инварианты v1:
 - не более одной active task на зону;
 - `overall_deadline_at` ставится при первом claim и не меняется при requeue/restart/hot reload; срок включает manual/operator wait;
-- `claim_generation` монотонно растёт на каждый успешный claim (`+1`) и не сбрасывается в 0 при release/requeue. Право записи исполнителя — пара `(claimed_by, claim_generation)`, снятая в момент claim. Process run id (`process_run_id`, UUID запуска процесса) не заменяет generation: повторный claim того же процесса получает новое поколение, и старый outcome по прежнему generation не проходит;
+- `claim_generation` получает `nextval('ae_claim_generation_seq')` при каждом успешном claim и не сбрасывается при release/requeue. Это общая PostgreSQL sequence; прирост для отдельной task не обязан равняться `+1`. Право записи исполнителя — пара `(claimed_by, claim_generation)`, снятая в момент claim. Process run id (`process_run_id`, UUID запуска процесса) не заменяет generation: повторный claim того же процесса получает новое поколение, и старый outcome по прежнему generation не проходит;
 - `process_run_id` записывается вместе с claim и копируется в `ae_zone_leases` той же транзакцией. Пустое значение не является валидным захватом;
 - `idempotency_key` уникален только в рамках `zone_id`;
 - correction amount-поля (`corr_ec_amount_ml`, `corr_ph_amount_ml`) хранятся с точностью `NUMERIC(12,3)`;
@@ -1463,7 +1421,7 @@ ae_tasks_topology_stage_idx (topology, current_stage) WHERE status IN ('running'
   `corr_water_*` / `corr_nutrient_budget` / `corr_component_targets_json` /
   `corr_dilute_attempts` / `corr_ec_pid_frozen` / `corr_baseline_id` переживают
   requeue через `update_stage` (см. `CORRECTION_CYCLE_SPEC.md` §3.7);
-- `task_type IN ('cycle_start', 'irrigation_start', 'lighting_tick')` фиксируется DB check constraint (миграция `2026_04_04_*` расширила список).
+- `task_type IN ('cycle_start', 'irrigation_start', 'lighting_tick', 'solution_topup', 'solution_change')` фиксируется DB CHECK; текущий список задаёт миграция `2026_07_08_140000_extend_ae_tasks_task_type_for_solution_change.php`. `greenhouse_climate_tick` хранится отдельно в `greenhouse_automation_tasks`.
 - `workflow_phase` допускает `idle|tank_filling|tank_recirc|irrigating|ready`
   (`irrig_recirc` — **deprecated / removed** из канона sequential nutrient).
 
@@ -1728,14 +1686,14 @@ zone_events_zone_id_id_idx
 
 ## 8.1.1. zone_events_archive
 
-Архив исторических `zone_events` после истечения hot retention (365 дней).
+Архив исторических `zone_events`, заполняемый отдельно от hot retention (365 дней). Сам hot cleanup не выполняет архивацию.
 
 ```
 -- Структура зеркалит zone_events, плюс:
 archived_at TIMESTAMP NOT NULL DEFAULT NOW()
 ```
 
-Восстановлено миграцией `2026_04_30_195000_restore_archive_tables_for_commands_and_zone_events.php`. Заполняется фоновой job `zone-events:archive`.
+Восстановлено миграцией `2026_04_30_195000_restore_archive_tables_for_commands_and_zone_events.php`. Заполняется ручной Artisan-командой `zone-events:archive --days=180` (`ArchiveOldZoneEvents`); в Schedule её нет. Автоматического TTL архива нет.
 
 ## 8.2. simulation_events
 

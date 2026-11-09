@@ -4,50 +4,47 @@
     data-testid="dashboard-agronomy-overview"
   >
     <div class="space-y-4">
-      <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
-        <div>
+      <div class="grid grid-cols-3 gap-3">
+        <div class="min-w-0">
           <div class="text-xs text-[color:var(--text-muted)]">
-            В норме
+            Требуют решения
           </div>
-          <div class="text-xl font-semibold text-[color:var(--status-ok)]">
-            {{ corridor.inRange }}
+          <div class="mt-2 text-3xl font-semibold tabular-nums text-[color:var(--status-warning)]">
+            {{ decisionCount }}
           </div>
-          <div class="text-xs text-[color:var(--text-dim)]">
-            pH/EC в коридоре
+          <div class="mt-1 text-xs text-[color:var(--text-muted)]">
+            Отклонения и блокировки
           </div>
         </div>
-        <div>
-          <div class="text-xs text-[color:var(--text-muted)]">
-            Вне коридора
-          </div>
-          <div
-            class="text-xl font-semibold"
-            :class="corridor.outOfRange > 0 ? 'text-[color:var(--status-warning)]' : ''"
-          >
-            {{ corridor.outOfRange }}
-          </div>
-          <div class="text-xs text-[color:var(--text-dim)]">
-            из {{ corridor.total }} зон
-          </div>
-        </div>
-        <div
-          v-if="corridor.unknown > 0"
-          class="col-span-2 sm:col-span-1"
-        >
+        <div class="min-w-0">
           <div class="text-xs text-[color:var(--text-muted)]">
             Без оценки
           </div>
-          <div class="text-xl font-semibold text-[color:var(--text-muted)]">
+          <div class="mt-2 text-3xl font-semibold tabular-nums">
             {{ corridor.unknown }}
+          </div>
+          <div class="mt-1 text-xs text-[color:var(--text-muted)]">
+            Нет свежих данных или целей
+          </div>
+        </div>
+        <div class="min-w-0">
+          <div class="text-xs text-[color:var(--text-muted)]">
+            Фазы и сбор
+          </div>
+          <div class="mt-2 text-3xl font-semibold tabular-nums">
+            {{ transitions.length }}
+          </div>
+          <div class="mt-1 text-xs text-[color:var(--text-muted)]">
+            До пяти ближайших решений
           </div>
         </div>
       </div>
 
-      <div v-if="transitions.length > 0">
-        <h2 class="mb-2 text-sm font-semibold text-[color:var(--text-primary)]">
-          Ближайшие переходы фаз
-        </h2>
-        <ul class="space-y-1.5">
+      <details v-if="transitions.length > 0">
+        <summary class="cursor-pointer text-sm font-semibold text-[color:var(--text-primary)]">
+          Ближайшие фазы и сбор · {{ transitions.length }}
+        </summary>
+        <ul class="mt-3 space-y-1.5">
           <li
             v-for="item in transitions"
             :key="`${item.zoneId}-${item.at}`"
@@ -64,7 +61,7 @@
             </span>
           </li>
         </ul>
-      </div>
+      </details>
     </div>
   </section>
 </template>
@@ -74,6 +71,7 @@ import { Link } from '@inertiajs/vue3'
 import type { AgronomyCorridorSummary, UpcomingPhaseTransition } from './dashboardRoleView'
 
 defineProps<{
+  decisionCount: number
   corridor: AgronomyCorridorSummary
   transitions: UpcomingPhaseTransition[]
 }>()

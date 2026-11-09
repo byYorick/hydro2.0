@@ -111,6 +111,9 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
 - Тип: `SENSOR`
 - Единицы: lux или PPFD (фиксируется в конфиге канала). В интеграл DLI входят только токены конфига `ppfd` и `umol_m2_s`. Люкс и пустая единица не пересчитываются.
 
+**Фактический wire-тип `light_node`:** `METRIC_TYPE_LIGHT_INTENSITY` публикуется как `LIGHT_INTENSITY`. Общий mapper `node_metric_type_for_channel` также нормализует `light`/`light_level` к этому типу. Старые бинарники публиковали `LIGHT`, который HL относил к `OTHER`; старая история автоматически не меняется. `light_node` не содержит actuator handlers для света.
+
+
 ### 2.7. Уровень воды
 
 - Ключ: `water_level`
@@ -427,7 +430,7 @@ Production `ph_node`, `ec_node` и `pump_node` читают общую кноп�
   "cmd_id": "cmd-30002",
   "cmd": "set_pwm",
   "params": {
-    "value": 255
+    "duty": 100
   }
 }
 ```

@@ -139,7 +139,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 | `restart` | Да | Да (built-in) | `Direct` | Built-in в `node_command_handler`. |
 | `reboot` | Да (alias к restart) | Да (built-in alias) | `Direct` | Alias зарегистрирован в `node_command_handler`. |
 | `set_relay` | Да | Да (`storage_irrigation_node`, `relay_node`, `climate_node`) | `Direct` | Stage-arm `pump_main` с `timeout_ms`/`stage` на production сразу terminal `DONE` (parity с test_node / AE3). |
-| `set_pwm` | Да | Да (`climate_node`) | `Partial` | Для `light_node` команда отсутствует. |
+| `set_pwm` | Да, `duty` в процентах `0..100`; legacy `value` — `0..255` | Да (`climate_node`), `duty` в процентах; legacy `value` до `100` — проценты, выше — `0..255` | `Direct` для `duty` | Общий `node_pwm_decode` поддерживает выход AE3; legacy шкалы различаются. Для `light_node` команда отсутствует. |
 | `run_pump` | Да | Да (`ph/ec/pump`, `storage_irrigation_node/pump_main`) | `Direct` | На IRR — только `pump_main` (timed irrigation). |
 | `dose` | Да | Да (`ph/ec`) | `Direct` | В `ph/ec` добавлена firmware-поддержка `dose` с преобразованием `ml -> duration_ms` по `ml_per_second`. |
 | `emit_event` | Да | Нет | `Missing` | Специфично для test-node. |

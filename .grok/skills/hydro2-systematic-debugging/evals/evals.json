@@ -1,0 +1,36 @@
+{
+  "skill_name": "hydro2-systematic-debugging",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Команда полива не дошла до узла. Добавь ещё три retry.",
+      "expected_output": "Сначала трассирует intent/task/command и terminal response, не вводит retry поверх неизвестного результата дозы.",
+      "expectations": [
+        "Traces component boundaries",
+        "Avoids blind retries",
+        "Preserves command idempotency"
+      ],
+      "should_trigger": true
+    },
+    {
+      "id": 2,
+      "prompt": "CI упал после правки read-model. Исправь.",
+      "expected_output": "Читает фактическую ошибку и snapshot/manifest, проверяет гипотезу целевым тестом вместо сброса dev БД.",
+      "expectations": [
+        "Uses actual failure evidence",
+        "Checks manifest and snapshot",
+        "No dev DB reset"
+      ],
+      "should_trigger": true
+    },
+    {
+      "id": 3,
+      "prompt": "Schema fixtures зелёные, значит железо полностью исправно?",
+      "expected_output": "Объясняет границу проверки и не выдаёт schema validation за приёмку ESP32/актуаторов.",
+      "expectations": [
+        "Does not infer hardware acceptance from schema checks"
+      ],
+      "should_trigger": true
+    }
+  ]
+}

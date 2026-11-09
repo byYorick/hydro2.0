@@ -1244,7 +1244,7 @@ business alert, но сам по себе не повторяет гидравл
 
 ## 10. Полуавтоматическая подмена раствора (`solution_change` v1)
 
-> **Этап D.1** из `doc_ai/AGRO_AUTONOMY_MASTER_PLAN.md`.  
+> **Полуавтоматическая подмена раствора.**
 > **Статус:** doc-first SPEC (реализация runtime — отдельный PR после принятия контракта).  
 > **Связанные документы:** `doc_ai/04_BACKEND_CORE/ae3lite.md` §1 / §7.2.3, `WATER_FLOW_ENGINE.md` §19 (out-of-scope sibling `solution_topup`), `CONTROL_MODES_SPEC.md` §5.
 

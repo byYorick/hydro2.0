@@ -15,6 +15,7 @@
 #define NODE_FRAMEWORK_H
 
 #include "esp_err.h"
+#include "node_metric_type.h"
 #include "cJSON.h"
 #include <stdbool.h>
 #include <stdint.h>
@@ -33,18 +34,6 @@ typedef enum {
     NODE_STATE_SAFE_MODE    // Безопасный режим (критическая ошибка)
 } node_state_t;
 
-/**
- * @brief Типы метрик телеметрии
- */
-typedef enum {
-    METRIC_TYPE_PH,
-    METRIC_TYPE_EC,
-    METRIC_TYPE_TEMPERATURE,
-    METRIC_TYPE_HUMIDITY,
-    METRIC_TYPE_CURRENT,
-    METRIC_TYPE_PUMP_STATE,
-    METRIC_TYPE_CUSTOM  // Для пользовательских типов
-} metric_type_t;
 
 /**
  * @brief Callback для обработки специфичной логики ноды при применении конфига

@@ -69,9 +69,10 @@
       </div>
     </div>
     <div
-      v-if="hasActions"
+      v-if="hasActions || $slots['cycle-actions']"
       class="flex flex-wrap items-center gap-1.5"
     >
+      <slot name="cycle-actions"></slot>
       <Button
         v-if="showWater"
         size="sm"
@@ -83,7 +84,7 @@
         Полить
       </Button>
       <Button
-        v-if="showPause"
+        v-if="showPause && !$slots['cycle-actions']"
         size="sm"
         variant="outline"
         type="button"
@@ -94,7 +95,7 @@
         Пауза
       </Button>
       <Button
-        v-if="showNextPhase"
+        v-if="showNextPhase && !$slots['cycle-actions']"
         size="sm"
         variant="outline"
         type="button"

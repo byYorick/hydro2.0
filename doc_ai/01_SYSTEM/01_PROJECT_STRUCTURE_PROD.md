@@ -100,9 +100,7 @@ doc_ai/
 │  ├─ OPERATIONS_GUIDE.md
 │  └─ ...
 ├─ 09_AI_AND_DIGITAL_TWIN/
-│  ├─ AI_ARCH_FULL.md
-│  ├─ DIGITAL_TWIN_ENGINE.md
-│  └─ ...
+│  └─ README.md                   # Текущие опциональные компоненты
 ├─ 10_AI_DEV_GUIDES/
 │  └─ ...                         # Гайды для ИИ-агентов
 ├─ 12_ANDROID_APP/
@@ -110,6 +108,8 @@ doc_ai/
 │  ├─ ANDROID_APP_SCREENS.md
 │  ├─ ANDROID_APP_API_INTEGRATION.md
 │  └─ ...
+├─ 13_TESTING/                    # Тестовые контуры и инструкции
+├─ 14_GROWING_REFERENCE/          # Агрономия и оборудование
 ├─ INDEX.md                       # Главный индекс документации
 ├─ SYSTEM_ARCH_FULL.md            # Сводная архитектура (корень doc_ai)
 ├─ ARCHITECTURE_FLOWS.md          # Потоки и инварианты pipeline

@@ -1,0 +1,36 @@
+{
+  "skill_name": "hydro2-laravel-backend",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Добавь поле в Laravel, которое читает AE3.",
+      "expected_output": "Выбирает Laravel-миграцию, обновление manifest/snapshot и точечную Docker-проверку; не выполняет DDL вручную.",
+      "expectations": [
+        "Uses Laravel migrations",
+        "Updates AE3 read-model contract",
+        "Uses isolated test database"
+      ],
+      "should_trigger": true
+    },
+    {
+      "id": 2,
+      "prompt": "Отправь MQTT-команду из Laravel job.",
+      "expected_output": "Сохраняет цепочку Laravel→AE3/HL→MQTT, находит существующий owner вместо прямого publish.",
+      "expectations": [
+        "No direct MQTT publish from Laravel",
+        "Uses existing owner path"
+      ],
+      "should_trigger": true
+    },
+    {
+      "id": 3,
+      "prompt": "Исправь опечатку в описании Laravel API.",
+      "expected_output": "Делает ограниченную правку и статическую проверку, не запускает весь backend suite или reset БД.",
+      "expectations": [
+        "Proportional verification",
+        "No database reset"
+      ],
+      "should_trigger": true
+    }
+  ]
+}

@@ -16,8 +16,8 @@ class DigitalTwinClient
     /**
      * Builds an Http client with Bearer token if API token is configured.
      *
-     * Digital-twin требует Bearer token на mutating endpoints начиная с
-     * S1.2 в AUDIT_2026_05_28_BUGFIX_PLAN.md. Без токена клиент строит
+     * Digital-twin требует Bearer token на mutating endpoints.
+     * Без токена клиент строит
      * запросы без Authorization и DT в dev-режиме принимает localhost-вызовы.
      */
     private function http(int $timeoutSeconds = 30): PendingRequest

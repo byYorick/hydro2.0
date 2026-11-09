@@ -23,8 +23,8 @@ class PipelineMetricsService
     /**
      * Builds an Http client with Bearer token if token is configured.
      *
-     * History-logger `/internal/metrics/*` endpoints требуют auth начиная с
-     * S1.1 в `AUDIT_2026_05_28_BUGFIX_PLAN.md`. Если токен не задан (legacy
+     * History-logger `/internal/metrics/*` endpoints требуют auth.
+     * Если токен не задан (legacy
      * dev-окружение), запросы уйдут без Authorization — HL допускает это для
      * localhost dev-режима.
      */

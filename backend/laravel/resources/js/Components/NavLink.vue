@@ -7,6 +7,8 @@
     <Link
       ref="linkEl"
       :href="href"
+      :aria-label="label"
+      :aria-current="isActive ? 'page' : undefined"
       :prefetch="true"
       class="flex items-center justify-center w-10 h-10 rounded-xl transition-colors"
       :class="isActive
@@ -44,13 +46,14 @@
   <Link
     v-else
     :href="href"
+    :aria-current="isActive ? 'page' : undefined"
     :prefetch="true"
     :class="[
       mobile
-        ? 'flex flex-col items-center justify-center text-xs transition-colors px-2 py-2'
+        ? 'mobile-nav-link'
         : 'nav-link text-sm min-w-0',
       mobile
-        ? isActive ? 'text-[color:var(--text-primary)]' : 'text-[color:var(--text-dim)]'
+        ? isActive ? 'mobile-nav-link--active' : ''
         : isActive ? 'nav-link--active' : ''
     ]"
   >
@@ -86,8 +89,8 @@ const props = defineProps<{
 
 const page = usePage()
 const isActive = computed(() => {
-  const current = page.url || '/'
-  return current === props.href || (props.href !== '/' && current.startsWith(props.href))
+  const current = String(page.url || '/').split(/[?#]/)[0]
+  return current === props.href || (props.href !== '/' && current.startsWith(`${props.href}/`))
 })
 
 const linkEl = ref<{ $el: HTMLElement } | null>(null)

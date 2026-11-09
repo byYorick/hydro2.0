@@ -11,7 +11,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 
 ## 1. Цель
 
-Зафиксировать **осознанные single-instance ограничения** v1 стека и короткие процедуры восстановления без HA-кластера. HA вне скоупа текущего релиза (см. `AUDIT_2026_07_07_RELIABILITY_PLAN.md` R7.2).
+Зафиксировать **осознанные single-instance ограничения** v1 стека и короткие процедуры восстановления без HA-кластера. HA вне скоупа текущего релиза.
 
 ---
 
@@ -33,7 +33,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 
 ## 3. Критичные инварианты при recovery
 
-1. **Команды к узлам** — только через `history-logger` → MQTT (`POST /commands`). Не использовать deprecated `mqtt-bridge` `/bridge/.../commands` (HTTP 410).
+1. **Команды к узлам** — только через `history-logger` → MQTT (`POST /commands`). Command/config routes `mqtt-bridge` удалены (HTTP 404); этот сервис используется как ops probe.
 2. **Одна активная ae_task на зону** — partial unique index + `ZoneLease`. При split-brain: проверить `ae3_oldest_active_task_age_seconds`, `laravel_zone_hang_hints_active{code="waiting_command_stuck"}`.
 3. **Telemetry Redis queue** — при рестарте HL: processing-list reclaim; dead-list — `telemetry_dead_cli.py list|replay`.
 4. **Intent drift** — hang-hint `scheduler_intent_task_drift`; Laravel `ae3:reap-stale-tasks` reap только orphan pending intents без `ae_task` (не fail `ae_tasks`).
@@ -109,4 +109,4 @@ Grafana: dashboard **System Overview** → секция **Reliability (R2)**.
 - `SYSTEM_FAILURE_RECOVERY.md` — полная модель L1–L5 recovery
 - `BACKUP_AND_RECOVERY.md` — backup/restore RTO/RPO
 - `RUNBOOKS.md` — операционные процедуры
-- `AUDIT_2026_07_07_RELIABILITY_PLAN.md` — план надёжности R1–R7
+- `BACKUP_AND_RECOVERY.md` — действующий порядок восстановления

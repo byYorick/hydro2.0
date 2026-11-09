@@ -71,7 +71,7 @@ make logs-core   # laravel + AE + HL + mqtt-bridge
 | mqtt-bridge | http://localhost:9000 |
 | history-logger | http://localhost:9300 |
 | automation-engine | http://localhost:9405 |
-| Grafana | http://localhost:3000 |
+| Grafana (после `make up-obs`) | http://localhost:3000 |
 
 Подробнее: [`QUICK_START.md`](QUICK_START.md)
 

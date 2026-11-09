@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\Log;
  *
  * После миграции `channel_bindings.role` для насосов равен канонич-
  * ному имени физического канала из NodeConfig (см.
- * doc_ai/01_SYSTEM/PUMP_NAMING_UNIFICATION_PLAN.md).
+ * doc_ai/02_HARDWARE_FIRMWARE/NODE_CHANNELS_REFERENCE.md).
  *
  * Rewrite table:
  *   ph_acid_pump      -> pump_acid

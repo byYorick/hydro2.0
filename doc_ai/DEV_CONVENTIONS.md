@@ -36,7 +36,7 @@ Breaking-change: обратная совместимость со старыми
 5. **Среда разработки**  
    - Backend (Laravel), Python-сервисы, БД, e2e и смежные проверки — в Docker; команды запускать внутри контейнеров проекта.  
    - **Исключение:** прошивки ESP32 собираются на хосте в окружении ESP-IDF (`idf.py`, `source …/esp-idf/export.sh`), вне Docker.  
-   - Default `make up` = core: laravel, mqtt-bridge, history-logger, automation-engine, postgres, redis, mosquitto (+ prometheus/grafana по желанию). `digital-twin`, `feature-builder`, `node-emulator` — не часть default up.
+   - Default `make up` = core: mqtt, db, redis, laravel, mqtt-bridge, history-logger, automation-engine, telemetry-aggregator (+ prometheus/grafana по желанию). `digital-twin`, `feature-builder`, `node-emulator` — не часть default up.
 
 6. **Границы совместимости (проект в разработке)**  
    - Запрещены несовместимые изменения в пайплайне `ESP32 -> MQTT -> Python -> PostgreSQL -> Laravel -> Vue`
@@ -51,9 +51,9 @@ Breaking-change: обратная совместимость со старыми
 
 ## 2. Структура репозитория и папок
 
-- Корень репозитория содержит:
+- Каталог `doc_ai/` содержит:
   - Общие спецификации и правила (`SYSTEM_ARCH_FULL.md`, `DEV_CONVENTIONS.md`, `TASKS_FOR_AI_AGENTS.md` и др.).
-  - Каталоги `01_…`–`10_…`, `12_…`, `13_…` (и архив `00_ARCHIVE`), группирующие артефакты по слоям системы.
+  - Каталоги `01_…`–`10_…`, `12_…`–`14_…`, группирующие текущие спецификации и справочники по слоям системы.
 
 - **Запрещено**:
   - Создавать новые “версии” архитектуры в виде папок `v3`, `v4` и т.п.  
@@ -113,13 +113,9 @@ Breaking-change: обратная совместимость со старыми
 2. **Структура прошивки**
    - Общие принципы и дерево каталогов описаны в `02_HARDWARE_FIRMWARE/FIRMWARE_STRUCTURE.md`.  
    - Для каждой ноды:
-     - Отдельный каталог с именем ноды (например, `node_ph`, `node_ec`, `node_climate`).  
-     - Внутри — разделение на:
-       - `main` (точка входа, high‑level логика)
-       - `drivers` (работа с датчиками, железом)
-       - `ui` (OLED/экран)
-       - `net` (Wi‑Fi, MQTT)
-       - `config` (настройки, `sdkconfig.defaults`)
+     - Отдельный каталог с именем ноды (например, `ph_node`, `ec_node`, `climate_node`).
+     - `main/` содержит точку входа и код конкретной ноды; `sdkconfig.defaults` и `CMakeLists.txt` находятся в корне её проекта.
+     - Общие драйверы, OLED, Wi-Fi/MQTT и NVS вынесены в `firmware/nodes/common/components/`. Каталогов `drivers/`, `ui/`, `net/`, `config/` внутри каждой ноды текущая структура не требует.
 
 3. **Именование** (канон: `02_HARDWARE_FIRMWARE/ESP32_C_CODING_STANDARDS.md`)
    - Файлы:
@@ -160,8 +156,9 @@ Breaking-change: обратная совместимость со старыми
 
 ## 5. Конвенции для бэкенда и сервисов
 
-В проекте допускается несколько реализаций бэкенда (например, на Python/FastAPI или Node.js/NestJS),
-но для конкретного развёртывания используется строго одна выбранная связка. Общие правила:
+Текущий стек — Laravel 12 (конфигурация, схема БД, API, scheduler-dispatch)
+и Python-сервисы (AE3, history-logger, ops). Альтернативный backend не является
+поддерживаемым вариантом развёртывания. Правила относятся к этой реализации:
 
 1. **Организация кода**
    - Чёткое разделение слоёв:

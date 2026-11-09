@@ -104,7 +104,7 @@ const ICONS: Record<string, SvgNode[]> = {
 const HOME_LABELS: Record<string, string> = {
   operator: 'Сегодня',
   agronomist: 'Обзор',
-  engineer: 'Обзор',
+  engineer: 'Диагностика',
   admin: 'Система',
   viewer: 'Обзор',
 }
@@ -133,7 +133,7 @@ function catalog(role: string) {
     docs: navItem('/documentation/fertigation', 'Справочник', ICONS.docs),
     plants: navItem('/plants', 'Культуры', ICONS.recipes),
     nutrients: navItem('/nutrients', 'Удобрения', ICONS.docs),
-    devices: navItem('/devices', 'Узлы', ICONS.devices),
+    devices: navItem('/devices', 'Оборудование', ICONS.devices),
     monitoring: navItem('/monitoring', 'Здоровье системы', ICONS.monitoring),
     logs: navItem('/logs', 'Логи', ICONS.logs),
     journal: navItem('/audit', 'Журнал', ICONS.audit),
@@ -165,7 +165,7 @@ export function getRoleNavigationGroups(role: string): RoleNavGroup[] {
       break
     case 'engineer':
       groups = [
-        navGroup('work', 'Работа', [items.devices, items.home, items.zones, items.alerts]),
+        navGroup('work', 'Работа', [items.home, items.devices, items.zones, items.alerts]),
         navGroup('system', 'Система', [items.monitoring, items.logs]),
       ]
       break
@@ -194,7 +194,7 @@ export function getRoleNavigationItems(role: string): RoleNavItem[] {
     case 'agronomist':
       return [items.home, items.zones, items.recipes, items.analytics, items.alerts, items.launch, items.docs]
     case 'engineer':
-      return [items.devices, items.home, items.zones, items.alerts, items.monitoring, items.logs]
+      return [items.home, items.devices, items.zones, items.alerts, items.monitoring, items.logs]
     case 'admin':
       return [items.home, items.alerts, items.monitoring, items.users, items.journal, items.zones, items.devices, items.settings]
     case 'viewer':

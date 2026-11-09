@@ -1,7 +1,17 @@
-# 09_AI_AND_DIGITAL_TWIN
+# Опциональные AI / Digital Twin компоненты
 
-**Не исполнять.** Раздел не runtime и не очередь. Новый AI-сервис, digital-twin и ML-пайплайн без явного запроса запрещены.
+**Статус:** `guide` текущего состава репозитория.
 
-Полные тексты бывших charter и pipeline лежат в [`../00_ARCHIVE/PLANS/digital_twin/`](../00_ARCHIVE/PLANS/digital_twin/). Файлы в этой папке — заглушки.
+- `digital-twin` и `node-sim-manager` находятся в профиле `sim`; обычный `make up` их не запускает.
+- `feature-builder` — frozen skeleton в профиле `ml`, не непрерывный writer runtime-витрин.
+- Наличие кода симулятора и таблиц ML не означает готовый ML pipeline или принятую на железе оптимизацию.
+- Новые Python-сервисы и подсистемы создаются только по явному запросу.
 
-`feature-builder` не входит в обычный `make up`.
+Реализация и текущие интерфейсы:
+
+- [digital-twin README](../../backend/services/digital-twin/README.md)
+- [feature-builder README](../../backend/services/feature-builder/README.md)
+- [Архитектура Python-сервисов](../04_BACKEND_CORE/PYTHON_SERVICES_ARCH.md)
+- [Сводка реализации](../IMPLEMENTATION_STATUS.md)
+
+[Главный индекс](../INDEX.md).

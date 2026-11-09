@@ -2,16 +2,18 @@
 
 Быстрые процедуры на случай инцидентов.
 
+**Сверено:** 2026-11-07. Shell-примеры ниже — из корня репозитория для dev Compose. В production используйте `--env-file backend/.env.prod -f backend/docker-compose.prod.yml` вместо dev-файла и проверяйте доступ из Compose-сети. Пути `/backups` в примерах должны указывать на доступный выбранному инструменту архив; named volume контейнера не является одноимённым каталогом хоста.
+
 ## 1. Backend не стартует / 500
-- Проверить логи контейнера `laravel` (LOG_CHANNEL=stderr): `docker compose logs -f laravel`.
-- Применить миграции: `docker compose exec laravel php artisan migrate --force`.
-- Очистить кеши: `php artisan config:clear && php artisan cache:clear && php artisan view:clear`.
+- Проверить логи контейнера `laravel` (LOG_CHANNEL=stderr): `docker compose -f backend/docker-compose.dev.yml logs -f laravel`.
+- Применить миграции: `docker compose -f backend/docker-compose.dev.yml exec laravel php artisan migrate --force`.
+- Очистить кеши: `docker compose -f backend/docker-compose.dev.yml exec -T laravel php artisan config:clear && docker compose -f backend/docker-compose.dev.yml exec -T laravel php artisan cache:clear && docker compose -f backend/docker-compose.dev.yml exec -T laravel php artisan view:clear`.
 - Проверить переменные окружения (.env / compose): DB_HOST/DB_PORT/DB_DATABASE/DB_USERNAME/DB_PASSWORD.
 
 ## 2. БД недоступна
-- Проверить `docker compose ps` и логи `db`.
-- Локально: `docker compose exec db psql -U hydro -d hydro_dev -c '\l'`.
-- Восстановить из бэкапа (см. BACKUP_RESTORE.md).
+- Проверить `docker compose -f backend/docker-compose.dev.yml ps` и логи `db`.
+- Локально: `docker compose -f backend/docker-compose.dev.yml exec db psql -U hydro -d hydro_dev -c '\l'`.
+- Восстановить из бэкапа (см. [BACKUP_AND_RECOVERY.md](BACKUP_AND_RECOVERY.md)).
 
 ## 3. WebSockets/Realtime не работает
 - Проверить `reverb` конфиг (`config/reverb.php`) и переменные REVERB_*.
@@ -35,11 +37,11 @@
   - `PY_INGEST_TOKEN=<тот_же_token>`
 - В production запрещено оставлять разные значения для этих переменных:
   рассинхронизация даёт `401 unauthorized` на `POST /zones/{id}/start-cycle`.
-- После смены env: `docker compose up -d laravel`.
+- После смены env: `docker compose -f backend/docker-compose.dev.yml up -d laravel`.
 
 ### 3.1.2. Проверки
-- Команда зарегистрирована: `docker compose exec laravel php artisan list | rg automation:dispatch-schedules`.
-- Ручной прогон: `docker compose exec laravel php artisan automation:dispatch-schedules --zone-id=1`.
+- Команда зарегистрирована: `docker compose -f backend/docker-compose.dev.yml exec laravel php artisan list | rg automation:dispatch-schedules`.
+- Ручной прогон: `docker compose -f backend/docker-compose.dev.yml exec laravel php artisan automation:dispatch-schedules --zone-id=1`.
 - В compose не должно быть сервиса с именем `scheduler` — планирование выполняется в контейнере `laravel`.
 - Security smoke `POST /zones/{id}/start-cycle`:
   - без токена — `401`;
@@ -74,14 +76,15 @@ ORDER BY accepted_at ASC;
 Восстановление:
 1. Проверить readiness AE: `curl -fsS http://automation-engine:9405/health/ready`.
 2. Перезапустить `automation-engine` (startup recovery должен финализировать in-flight).
-3. Прогнать reconcile: `php artisan automation:dispatch-schedules --zone-id=<id>`.
+3. Прогнать reconcile: `docker compose -f backend/docker-compose.dev.yml exec -T laravel php artisan automation:dispatch-schedules --zone-id=<id>`.
 4. Если задача уже просрочена, убедиться что в `laravel_scheduler_active_tasks` выставлен terminal status (`timeout|failed`) и выполнен повторный dispatch.
 
 ## 3.2. Рестарт automation-engine и startup recovery
 
-Канонический план улучшений: `doc_ai/04_BACKEND_CORE/AE3_STARTUP_RECOVERY_IMPROVEMENT_PLAN.md`.
+Действующий контракт: [`ae3lite.md`, §9](../04_BACKEND_CORE/ae3lite.md).
+Startup-recovery plan архивирован; его фазы 1–6 реализованы. Проверено по runtime-коду 2026-11-06.
 
-### 3.2.1. Нормальный рестарт (deploy / `docker compose restart automation-engine`)
+### 3.2.1. Нормальный рестарт (deploy / `docker compose -f backend/docker-compose.dev.yml restart automation-engine`)
 
 1. Проверить readiness: `curl -fsS http://localhost:9405/health/ready` (или `automation-engine:9405` внутри compose-сети).
 2. В логах AE найти проход startup recovery (`Startup recovery` / `AE3 startup recovery outcome`).
@@ -96,28 +99,37 @@ ORDER BY accepted_at ASC;
 
 **Симптом:** зона в `waiting_command`, hint `waiting_command_stuck`, команда ещё не terminal в `commands`.
 
-**Причина:** recovery оставил задачу ждать ответа узла; runtime reconcile (фаза 3 плана) может ещё не быть развёрнут — опрос legacy-команды не идёт, пока задача не `pending`.
+**Разбор:** ожидание ответа узла само по себе не является ошибкой. Текущий worker
+запускает `WaitingCommandReconcileUseCase` и сверяет terminal команды без повторной
+публикации. Если прогресса нет, проверяются связь с узлом, дедлайны, claim/lease
+и ошибки reconcile loop, а не наличие исторической «фазы 3».
 
 **Действия оператора:**
 
 1. Проверить `ae_tasks` (`status`, `current_stage`, `claimed_by`, `updated_at`).
 2. Проверить последнюю строку `ae_commands` + `commands` по `cmd_id` / `external_id` (terminal status).
-3. Если команда **уже DONE** в `commands`, а task всё ещё `waiting_command` / `running` — это инцидент recovery (см. фазу 2 плана); зафиксировать `task_id` и логи AE.
-4. Если команда **ещё in-flight** — проверить связь с узлом (MQTT, питание); подождать janitor AE3 (`stale_task_reconcile`, fail-safe OFF → fail) или вручную fail/restart цикл после устранения причины. Laravel `ae3:reap-stale-tasks` **не** переводит `ae_tasks` в `failed`.
+3. Если команда **уже DONE**, проверьте `planner_step`, `stage_name` и остальные команды batch: один DONE не завершает весь stage. При отсутствии прогресса зафиксируйте `task_id`, `external_id`, дедлайны, lease и ошибки reconcile loop.
+4. Если команда **ещё in-flight** — проверить связь с узлом (MQTT, питание) и дедлайны task/stage; следить за janitor AE3 (`stale_task_reconcile`, fail-safe OFF → fail). Не переводить строки в `failed` ручным SQL и не отправлять повторную дозу. Laravel `ae3:reap-stale-tasks` **не** переводит `ae_tasks` в `failed`.
 5. Проверить `ae_zone_leases` — при stuck после fail не должно блокировать новый цикл.
-6. Прогнать `php artisan ae3:reap-stale-tasks` только для orphan pending intents без `ae_task` и для лога stale tasks; зомби-task reclaim — зона ответственности AE janitor.
+6. Прогнать `docker compose -f backend/docker-compose.dev.yml exec -T laravel php artisan ae3:reap-stale-tasks` только для orphan pending intents без `ae_task` и для лога stale tasks; зомби-task reclaim — зона ответственности AE janitor.
 
 ### 3.2.3. `startup_recovery_unconfirmed_command`
 
 **Симптом:** task `failed`, `error_code=startup_recovery_unconfirmed_command`, workflow rollback в `idle`.
 
-**Типичная причина:** AE упал в `claimed`/`running` между командами (handler не успел перейти на следующий stage).
+**Разбор:** recovery не смог безопасно подтвердить переход/возобновление задачи.
+Точный контекст берётся из `error_message`, `ae_commands` и событий recovery.
+Crash между командами batch не означает обязательный fail: текущий recovery умеет
+возобновлять batch и пропускать подтверждённые DONE steps в границах execution token.
 
-**Действия:** подтвердить в `commands`, что последняя команда stage была DONE; перезапустить цикл зоны; следить за внедрением фазы 2 плана (resume при DONE в БД).
+**Действия:** сохраните идентификаторы task/command, stage и terminal статусы,
+проверьте фактическое состояние оборудования. Новый цикл запускается оператором
+через UI/Laravel после устранения причины и проверки готовности; historical план
+не является инструкцией повторной отправки команд.
 
 ## 4. Playwright E2E падает (webServer)
-- Освободить порт 8000, проверить `php artisan serve` локально.
-- Запустить `php artisan migrate:fresh --seed` перед прогоном.
+- Проверить порт 8010 и `playwright.config.ts` выбранного suite; приложение запускается в проектном Docker-окружении.
+- Проверить отдельную тестовую БД и настройку миграций suite. Не выполнять `migrate:fresh` на dev/prod БД как способ исправить webServer.
 - См. артефакт `playwright-report` в GitHub Actions.
 
 ## 5. Миграции упали на CI
@@ -132,11 +144,11 @@ ORDER BY accepted_at ASC;
 
 ## 7. Метрики/здоровье сервисов
 - `GET /api/system/health` — базовая проверка приложения.
-- MQTT bridge: `http://localhost:9000/metrics` (healthcheck в docker-compose).
+- MQTT bridge: `http://localhost:9000/metrics` (metrics probe; Compose healthcheck проверяет TCP-порт).
 
 ## 8. Обновление зависимостей
-- Node: `rm -rf node_modules && npm install`.
-- PHP: `composer install` и `php artisan optimize:clear`.
+- Node: `docker compose -f backend/docker-compose.dev.yml exec -T laravel npm ci`.
+- PHP: `docker compose -f backend/docker-compose.dev.yml exec -T laravel composer install` и `docker compose -f backend/docker-compose.dev.yml exec -T laravel php artisan optimize:clear`.
 
 ## 9. Безопасность
 - Composer audit и NPM audit (см. CI). Критичные — оформить тикеты.
@@ -155,26 +167,31 @@ Breaking-change: обратная совместимость со старыми
 BACKUP_DIR=/backups/postgres/$(ls -t /backups/postgres | head -1)
 DUMP_FILE=$(find $BACKUP_DIR -name "*.dump" | head -1)
 
-# Восстановить
+# Восстановить в отдельную проверочную БД; параметры выбранного кластера настроены заранее.
+# Скрипт удаляет и пересоздаёт DB_NAME, не используйте действующую БД стенда.
 cd backend/scripts/restore
-./postgres_restore.sh $DUMP_FILE
+DB_NAME=hydro_restore_check ./postgres_restore.sh "$DUMP_FILE"
 ```
 
 ### 10.2. Восстановление с проверкой
 ```bash
 # Список доступных бэкапов
-php artisan backup:list
+docker compose -f backend/docker-compose.dev.yml exec -T laravel php artisan backup:list
 
-# Восстановление с проверкой целостности
-BACKUP_DIR=/backups/postgres/YYYYMMDD_HHMMSS
-./postgres_restore.sh $BACKUP_DIR/*.dump --wal-dir /wal_archive
+# Проверка содержимого выбранного custom dump до восстановления
+pg_restore --list /absolute/path/backup.dump
 ```
 
+Само восстановление удаляет и пересоздаёт целевую БД. Для проверки задайте отдельную
+`DB_NAME` и параметры изолированного кластера; порядок — в
+[BACKUP_AND_RECOVERY.md, §9.1](BACKUP_AND_RECOVERY.md).
+
 ### 10.3. Point-in-Time Recovery (PITR)
-1. Восстановить последний полный дамп
-2. Настроить `recovery.conf` (PostgreSQL 12+) или `postgresql.conf`
-3. Поместить WAL файлы в директорию восстановления
-4. Запустить PostgreSQL в режиме recovery
+Требуются физическая base backup и непрерывная цепочка WAL, не логический `pg_dump`.
+В PostgreSQL 16 используются `restore_command`, целевая точка recovery и
+`recovery.signal`; `recovery.conf` не поддерживается. `postgres_restore.sh --wal-dir`
+не выполняет WAL replay. Полный порядок и границы автоматизации — в
+[BACKUP_AND_RECOVERY.md, §9.1](BACKUP_AND_RECOVERY.md).
 
 ---
 
@@ -186,19 +203,20 @@ BACKUP_DIR=/backups/postgres/YYYYMMDD_HHMMSS
 ARCHIVE=$(find /backups/laravel -name "laravel_*.zip" | sort -r | head -1)
 
 # Восстановить
-cd backend/scripts/restore
-./laravel_restore.sh $ARCHIVE
+backend/scripts/restore/laravel_restore.sh $ARCHIVE
 ```
 
 ### 11.2. После восстановления
 ```bash
-cd backend/laravel
-composer install
-php artisan migrate --force
-php artisan config:clear
-php artisan cache:clear
-php artisan key:generate  # если нужно
+# Из корня репозитория, после восстановления dev-конфигурации:
+docker compose -f backend/docker-compose.dev.yml exec -T laravel php artisan migrate:status
+docker compose -f backend/docker-compose.dev.yml exec -T laravel php artisan config:clear
+docker compose -f backend/docker-compose.dev.yml exec -T laravel php artisan cache:clear
 ```
+
+Сохраняйте восстановленный `APP_KEY`. При его отсутствии восстановите исходный
+ключ из защищённой копии; генерация нового не является шагом восстановления.
+Миграции/зависимости применяются по процедуре выбранной версии приложения.
 
 ---
 
@@ -210,8 +228,7 @@ php artisan key:generate  # если нужно
 BACKUP_DIR=/backups/full/$(ls -t /backups/full | head -1)
 
 # Выполнить полное восстановление
-cd backend/scripts/restore
-./full_restore.sh $BACKUP_DIR
+backend/scripts/restore/full_restore.sh $BACKUP_DIR
 ```
 
 ### 12.2. Последовательность восстановления
@@ -224,13 +241,13 @@ cd backend/scripts/restore
 ### 12.3. После полного восстановления
 ```bash
 # Перезапуск сервисов
-docker-compose restart
+docker compose -f backend/docker-compose.dev.yml restart
 
 # Проверка логов
-docker-compose logs -f
+docker compose -f backend/docker-compose.dev.yml logs -f
 
 # Проверка миграций
-docker-compose exec laravel php artisan migrate:status
+docker compose -f backend/docker-compose.dev.yml exec laravel php artisan migrate:status
 ```
 
 ---
@@ -240,7 +257,7 @@ docker-compose exec laravel php artisan migrate:status
 ### 13.1. Проверка целостности бэкапов
 ```bash
 # Список бэкапов с проверкой
-php artisan backup:list --verify
+docker compose -f backend/docker-compose.dev.yml exec -T laravel php artisan backup:list --verify
 
 # Проверка конкретного бэкапа
 BACKUP_DIR=/backups/full/YYYYMMDD_HHMMSS
@@ -275,12 +292,14 @@ find /backups -type f -size +1G -ls
 
 ### 13.4. Проверка расписания бэкапов
 ```bash
-# Проверка расписания в Laravel
-docker-compose exec laravel php artisan schedule:list
+# План заданий, не история выполнения
+docker compose -f backend/docker-compose.dev.yml exec -T laravel php artisan schedule:list
 
-# Проверка последнего выполнения
-docker-compose exec laravel php artisan schedule:test
+# Результаты в логах
+docker compose -f backend/docker-compose.dev.yml logs --tail=200 laravel | rg -i 'backup|scheduler'
 ```
+
+`docker compose -f backend/docker-compose.dev.yml exec -T laravel php artisan schedule:test` запускает выбранный job. Для проверки прошлого выполнения его не используют. Стандартный Compose монтирует `/scripts/backup`; для backup проверяйте manifest scope, failed/skipped components и закрытые права; см. [BACKUP_AND_RECOVERY.md](BACKUP_AND_RECOVERY.md).
 
 ---
 
@@ -288,65 +307,20 @@ docker-compose exec laravel php artisan schedule:test
 
 ### 14.1. Полный сбой сервера
 
-**Последовательность восстановления:**
-
-1. **Поднять Docker инфраструктуру**
-   ```bash
-   cd backend
-   docker-compose up -d db
-   ```
-
-2. **Восстановить PostgreSQL**
-   ```bash
-   ./scripts/restore/postgres_restore.sh /backups/postgres/.../postgres_*.dump
-   ```
-
-3. **Восстановить Laravel**
-   ```bash
-   ./scripts/restore/laravel_restore.sh /backups/laravel/.../laravel_*.zip
-   ```
-
-4. **Запустить все сервисы**
-   ```bash
-   docker-compose up -d
-   ```
-
-5. **Проверить миграции**
-   ```bash
-   docker-compose exec laravel php artisan migrate --force
-   ```
-
-6. **Перепривязать ESP32 узлы** (если потеряли node_secret)
-   - Через UI: настройки узлов
-   - Через API: `POST /api/nodes/{id}/register`
+1. Выбрать проверенный revision, Compose/env, secrets и backup set. Сохранить прежний `APP_KEY`.
+2. Поднять PostgreSQL выбранного окружения. В dev из корня: `docker compose -f backend/docker-compose.dev.yml up -d db`.
+3. Проверить dump и восстановление в отдельной БД по [BACKUP_AND_RECOVERY.md](BACKUP_AND_RECOVERY.md). `postgres_restore.sh` использует host `pg_restore` и `DB_HOST/DB_PORT/DB_NAME/DB_USER/DB_PASSWORD`; production DB без host-порта требует подготовленного сетевого доступа.
+4. Восстановить файлы Laravel, Compose/env и полный набор MQTT ACL/passwords/config/certificates. `full_restore.sh` не заменяет ручные шаги для Python/MQTT.
+5. Проверить схему, secrets и состояние оборудования, затем запускать runtime. Для production — deployment guide и `make prod-check` / `make prod-up` / `make prod-migrate`.
+6. Дождаться `node_hello`, публикации NodeConfig и подтверждения `config_report`; lifecycle/binding — [NODE_LIFECYCLE_AND_PROVISIONING.md](../01_SYSTEM/NODE_LIFECYCLE_AND_PROVISIONING.md). Маршрута `/api/nodes/{id}/register` нет; device registration — `POST /api/nodes/register` с service auth, не восстановление секрета одним вызовом.
 
 ### 14.2. Потеря БД
 
-**Быстрое восстановление:**
-```bash
-# Остановить сервисы, использующие БД
-docker-compose stop laravel automation-engine history-logger
-
-# Восстановить БД
-./scripts/restore/postgres_restore.sh /backups/postgres/.../postgres_*.dump
-
-# Запустить сервисы
-docker-compose start
-```
+Остановить writers выбранной инсталляции (включая Laravel scheduler, AE3, history-logger и telemetry-aggregator), выбрать архив и параметры целевой БД. Сначала выполнить пробное восстановление в изоляции; порядок и destructive semantics скрипта — §10 и backup guide. После восстановления проверить БД/схему и только затем запускать writers и reconciliation.
 
 ### 14.3. Потеря MQTT конфигурации
 
-**Восстановление:**
-```bash
-# Распаковать архив MQTT
-unzip /backups/mqtt/.../mqtt_*.zip -d /tmp/mqtt_restore
-
-# Восстановить конфигурации
-cp /tmp/mqtt_restore/mosquitto*.conf ./services/mqtt-bridge/
-
-# Перезапустить MQTT
-docker-compose restart mqtt
-```
+Распаковать архив во временный каталог и проверить состав. Реальные bind-mount источники — `backend/services/mqtt-bridge/{mosquitto.dev.conf,mosquitto.prod.conf,passwords.txt,acl,certs/}` в зависимости от окружения. Текущий `mqtt_backup.sh` сохраняет этот набор; старые архивы до 2026-11-07 могли быть неполными, поэтому состав проверяется до восстановления. После восстановления перезапустить `mqtt` выбранного Compose и проверить listener/ACL и reconnect нод.
 
 ### 14.4. Потеря всех узлов ESP32
 
@@ -360,41 +334,25 @@ docker-compose restart mqtt
 2. **Загрузить конфиги NVS** (если есть бэкап)
    - Использовать `nvs_flash` утилиту ESP-IDF
 
-3. **Авто-регистрация узлов через API**
-   ```bash
-   curl -X POST http://localhost:8080/api/nodes/register \
-     -H "Authorization: Bearer TOKEN" \
-     -d '{"node_id": "...", "secret": "..."}'
-   ```
+3. **Регистрация и binding**
+   - после настройки Wi-Fi/MQTT дождаться `node_hello` и server-side registration;
+   - восстановить согласованные per-node secrets и NodeConfig;
+   - binding подтверждается только `config_report` из целевого namespace.
+
+Формат registration payload и service auth — `RegisterNodeRequest` / `NodeController::register`; поля `node_id` + `secret` из старого примера не являются текущим контрактом.
 
 ### 14.5. Перегрузка PostgreSQL
 
-**Действия:**
+Проверить CPU/I/O, соединения, blocking queries, размеры таблиц и backlog существующих очередей. Сопоставить telemetry-aggregator/retention jobs и AE3 readiness с временем деградации. Для уменьшения нагрузки использовать предусмотренные режимы остановки/паузы и инцидентные процедуры владельца системы.
 
-1. **Переход в read-only режим** (через Laravel)
-   ```php
-   // Временно в config/database.php
-   'pgsql' => [
-       'options' => [PDO::ATTR_EMULATE_PREPARES => true],
-       'read' => ['host' => 'db'],
-       'write' => ['host' => 'db'],
-   ]
-   ```
-
-2. **Локальное буферирование** (Python сервисы)
-   - Включить локальное кэширование телеметрии
-   - Отложить запись в БД
-
-3. **Ограничение AI** (если используется)
-   - Перевести AI в restricted mode
-   - Запретить генерацию команд
+Настройка Laravel read/write hosts на тот же `db` и `PDO::ATTR_EMULATE_PREPARES` не включает read-only. Универсального переключателя «локальное буферирование» или AI restricted mode для этого инцидента в коде нет; не считать их готовыми средствами восстановления.
 
 ---
 
 ## 15. Профилактика и мониторинг
 
 ### 15.1. Ежедневные проверки
-- Проверка успешности бэкапов: `php artisan backup:list`
+- Проверка успешности бэкапов: `docker compose -f backend/docker-compose.dev.yml exec -T laravel php artisan backup:list`
 - Проверка логов бэкапов: stdout `backup:full` / `docker compose -f backend/docker-compose.dev.yml logs laravel | rg -i backup` (отдельного `/var/log/backup.log` нет)
 - Проверка свободного места: `df -h /backups`
 
@@ -413,28 +371,30 @@ docker-compose restart mqtt
 ## 16. Полезные команды
 
 ### 16.1. Ручной бэкап
+
+`backup:full` в стандартном Compose создаёт application scope; Docker volumes по умолчанию пропущены и явно отмечены в manifest. Отдельный volume backup требует подготовленного окружения. Состав и проверка восстановления — в backup guide.
 ```bash
 # Полный бэкап через Laravel
-php artisan backup:full
+docker compose -f backend/docker-compose.dev.yml exec -T laravel php artisan backup:full
 
 # Только БД
-php artisan backup:database
+docker compose -f backend/docker-compose.dev.yml exec -T laravel php artisan backup:database
 
 # Список бэкапов
-php artisan backup:list --verify
+docker compose -f backend/docker-compose.dev.yml exec -T laravel php artisan backup:list --verify
 ```
 
 ### 16.2. Ручная ротация
 ```bash
 # Запуск ротации вручную
-./scripts/backup/rotate_backups.sh
+backend/scripts/backup/rotate_backups.sh
 ```
 
 ### 16.3. Проверка WAL архивирования
 ```bash
 # Проверка настройки WAL
-docker-compose exec db psql -U hydro -c "SHOW archive_mode;"
-docker-compose exec db psql -U hydro -c "SHOW archive_command;"
+docker compose -f backend/docker-compose.dev.yml exec db psql -U hydro -c "SHOW archive_mode;"
+docker compose -f backend/docker-compose.dev.yml exec db psql -U hydro -c "SHOW archive_command;"
 ```
 
 ---
@@ -442,8 +402,8 @@ docker-compose exec db psql -U hydro -c "SHOW archive_command;"
 ## 17. Контакты и эскалация
 
 При критических инцидентах:
-1. Проверить логи: `docker-compose logs`
-2. Проверить статус сервисов: `docker-compose ps`
-3. Проверить бэкапы: `php artisan backup:list`
+1. Проверить логи: `docker compose -f backend/docker-compose.dev.yml logs`
+2. Проверить статус сервисов: `docker compose -f backend/docker-compose.dev.yml ps`
+3. Проверить бэкапы: `docker compose -f backend/docker-compose.dev.yml exec -T laravel php artisan backup:list`
 4. При необходимости — восстановление из бэкапа
 5. Эскалация при невозможности восстановления

@@ -121,7 +121,7 @@ Breaking-change: обратная совместимость со старыми
 | PATCH | /api/zones/{id}/config-mode | auth:sanctum (operator+) | Переключить config mode |
 | PATCH | /api/zones/{id}/config-mode/extend | auth:sanctum (operator+) | Продлить live TTL |
 | GET | /api/zones/{id}/effective-targets | auth:sanctum | Effective targets зоны (UI/diagnostics; AE3 runtime читает SQL bundle) |
-| POST | /api/effective-targets/batch | auth:sanctum | Batch effective targets для нескольких зон |
+| POST | /api/internal/effective-targets/batch | verify.python.service (Sanctum или service token) | Batch effective targets для диагностики; AE3 runtime читает SQL bundle |
 | GET | /api/zones/{id}/snapshot | auth:sanctum | Снимок зоны для UI/diagnostics |
 | GET | /api/zones/{id}/executions/{executionId} | auth:sanctum | Детали одного execution run по canonical `ae_tasks.id` |
 | GET | /api/zones/{id}/scheduler-diagnostics | auth:sanctum (admin/engineer) | Инженерный diagnostics path: dispatcher state + historical `scheduler_logs`, вне operator flow |
@@ -259,7 +259,7 @@ Breaking-change: обратная совместимость со старыми
 - для calibration UX backend добавляет safe projection: `binding_role`, `pump_component`, `pump_calibration`;
 - `channels[*].pump_calibration` читается из активной записи `pump_calibrations` и нужен, чтобы setup wizard / grow-cycle wizard не теряли уже сохранённые calibration после refresh списка нод;
 - source of truth для dosing calibration остаётся `pump_calibrations`; `node_channels.config.pump_calibration` допускается только как денормализованное зеркало для узла.
-- deprecated internal endpoint `history-logger POST /zones/{zone_id}/calibrate-pump` больше не используется и должен возвращать `410 Gone`.
+- internal endpoint `history-logger POST /zones/{zone_id}/calibrate-pump` удалён (404); владельцем calibration orchestration остаётся Laravel.
 
 Контракт manual device-test для `POST /api/nodes/{id}/commands`:
 - production `irrig` actuator-каналы (`pump_main`, `valve_*`, `type=ACTUATOR`) в **ручном** device-test UI публикуются как `cmd=set_relay` (dry-run `duration_ms=3000`);
@@ -378,7 +378,7 @@ Breaking-change: обратная совместимость со старыми
 |-------|---------------------------------|------|-------------------------------------------|
 | GET | /api/system/config/full | verify.python.service (Sanctum или service token) | Экспорт полной конфигурации (для Python сервисов) |
 | GET | /api/system/health | public | Проверка здоровья сервиса |
-| GET | /api/system/scheduler/metrics | public | Prometheus exposition для Laravel scheduler: `laravel_scheduler_dispatches_total`, histogram `laravel_scheduler_cycle_duration_seconds`, gauges `laravel_scheduler_active_tasks_count`, `laravel_scheduler_pending_intents_count`, `laravel_scheduler_oldest_pending_intent_age_seconds`, `laravel_scheduler_dispatch_cycle_overrun_seconds` (p99 cycle − `dispatch_interval_sec`), counter `ae3_zone_config_auto_reverts_total`; counter/histogram читаются из персистентных aggregate tables, а не из `scheduler_logs` |
+| GET | /api/system/scheduler/metrics | verify.scheduler.metrics | Prometheus exposition для Laravel scheduler; при заданном `AUTOMATION_LARAVEL_SCHEDULER_METRICS_TOKEN` требуется Bearer token. Counter/histogram читаются из персистентных aggregate tables, а не из `scheduler_logs` |
 | GET | /api/automation-configs/system/0/{namespace} | auth:sanctum (admin) | Получить system authority document |
 | PUT | /api/automation-configs/system/0/{namespace} | auth:sanctum (admin) | Обновить system authority document |
 | GET | /api/automation-configs/system/0/{namespace}/history | auth:sanctum (admin) | История версий system authority document |
@@ -520,7 +520,7 @@ Preset rules:
 
 | Метод | Путь | Auth | Описание |
 |-------|-------------------------------------|------|-------------------------------------------|
-| POST | /api/alerts/webhook | public | Webhook от Alertmanager для создания алертов |
+| POST | /api/alerts/webhook | verify.alertmanager.webhook + ip.whitelist | Webhook Alertmanager: секрет (Bearer / `X-Webhook-Secret` / Basic password) или configured allowed IP; анонимный fallback без секрета разрешён middleware только в local/testing/dev |
 | POST | /api/internal/webhooks/history-logger/execution-event | HMAC-SHA256 | Live-обновления Scheduler Cockpit causal chain от history-logger |
 
 ### 16.1 Webhook history-logger → Laravel (Scheduler Cockpit causal chain)

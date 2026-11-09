@@ -57,10 +57,10 @@ docker compose -f docker-compose.e2e.yml logs -f
 
 ```bash
 # Запуск одного сценария
-python -m runner.e2e_runner scenarios/E01_bootstrap.yaml
+python -m runner.e2e_runner scenarios/core/E01_bootstrap.yaml
 
 # Запуск с подробным выводом
-python -m runner.e2e_runner scenarios/E01_bootstrap.yaml --verbose
+LOG_LEVEL=DEBUG python -m runner.e2e_runner scenarios/core/E01_bootstrap.yaml
 ```
 
 ## E2E Auth Bootstrap
@@ -558,7 +558,7 @@ for msg in timeline['mqtt_messages']:
 
 ```bash
 export LOG_LEVEL=DEBUG
-python -m runner.e2e_runner scenarios/E01_bootstrap.yaml --verbose
+python -m runner.e2e_runner scenarios/core/E01_bootstrap.yaml
 ```
 
 ### Проверка состояния сервисов
@@ -653,7 +653,7 @@ cleanup:
     cd tests/e2e
     docker compose -f docker-compose.e2e.yml up -d
     sleep 60  # Ожидание запуска сервисов
-    python -m runner.e2e_runner scenarios/E01_bootstrap.yaml
+    python -m runner.e2e_runner scenarios/core/E01_bootstrap.yaml
   env:
     LARAVEL_URL: http://localhost:8081
     MQTT_HOST: localhost

@@ -13,7 +13,7 @@ use Tests\TestCase;
 
 /**
  * Покрывает сервис {@see ExecutionChainAssembler}: успешный, failed, skip,
- * running — 4 сценария из спеки SCHEDULER_COCKPIT_IMPLEMENTATION.md §Ф2.1.
+ * running — 4 сценария lifecycle execution chain.
  */
 class ExecutionChainTest extends TestCase
 {

@@ -13,9 +13,6 @@ Goal: a reproducible local bootstrap so an agent can start the system and spot r
 ```bash
 make up
 make migrate
-make refresh
-make seed
-make reset-db
 make test
 make lint
 make smoke
@@ -27,7 +24,11 @@ Optional:
 ```bash
 make down
 make logs SERVICE=laravel TAIL=300
+make seed  # optional dev data
 ```
+
+`make refresh` and `make reset-db` are destructive maintenance commands, not
+bootstrap steps. Select them separately only when the local data reset is intended.
 
 ## What each target does
 

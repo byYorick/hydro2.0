@@ -5,17 +5,15 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * ML_FEATURE_PIPELINE Phase 2 — таблицы ML-витрин.
+ * Подготовленные таблицы ML-витрин.
  *
  * - zone_features_5m         — wide view, строка на 5-мин окно × зону
  * - ml_labels                — таргеты прогноза (horizons 5/15/60 мин)
  * - ml_data_quality_windows  — окна, непригодные для обучения
  *
- * Owner: feature-builder (единственный writer для первых двух; последнюю
- * пишет также Laravel calibration flow и админ-UI — см. §5.8).
- *
- * См. doc_ai/09_AI_AND_DIGITAL_TWIN/ML_FEATURE_PIPELINE.md §5.2/§5.4/§5.8
- * + Приложение C.6 (денормализованные phase_code/phase_id).
+ * Наличие схемы не означает активный ML pipeline.
+ * feature-builder остаётся optional skeleton; статус —
+ * backend/services/feature-builder/README.md.
  */
 return new class extends Migration
 {

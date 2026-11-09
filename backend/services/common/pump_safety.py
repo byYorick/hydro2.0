@@ -1,7 +1,7 @@
 """
 Pump Safety Engine - проверки безопасности насосов.
 Реализует проверки: no_flow, overcurrent, dry_run, pump_stuck_on.
-Согласно BACKEND_REFACTOR_PLAN.md раздел 14.
+Контракт sanity caps: doc_ai/03_TRANSPORT_MQTT/COMMAND_VALIDATION_ENGINE.md.
 """
 import logging
 from typing import Optional, Dict, Any, List

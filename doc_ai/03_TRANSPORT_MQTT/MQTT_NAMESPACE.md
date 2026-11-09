@@ -9,7 +9,7 @@
 
 Frontend и Android **не** обращаются к MQTT напрямую.
 
-**Дата обновления:** 2026-08-02 (`{channel}` = name/channel; `hydro/system/*` planned; topic ids `ph_sensor`/`ec_sensor`).
+**Дата обновления:** 2026-11-06 (границы telemetry JSON Schema; `{channel}` = name/channel; `hydro/system/*` planned).
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 Breaking-change: обратная совместимость со старыми форматами и алиасами не поддерживается.
@@ -33,7 +33,7 @@ hydro/{gh}/{zone}/{node}/{message_type}
 Где:
 
 - `{gh}` — UID теплицы (`greenhouses.uid`),
-- `{zone}` — UID зоны (`zones.uid`). Для **greenhouse-only** приводов (например крышные форточки), когда физически нет «своей» зоны, в топике используется UID **anchor-зоны**, выбранной в `greenhouse.logic_profile` (DD-9, см. `GREENHOUSE_CLIMATE_CONTROL_PLAN.md`); иерархия сегментов топика не меняется.
+- `{zone}` — UID зоны (`zones.uid`). Для **greenhouse-only** приводов (например крышные форточки), когда физически нет «своей» зоны, в топике используется UID **anchor-зоны**, выбранной в `greenhouse.logic_profile` (DD-9, см. `GREENHOUSE_CLIMATE_CONTROL_SPEC.md`); иерархия сегментов топика не меняется.
 - `{node}` — UID узла (`nodes.uid`),
 - `{channel}` — имя канала: в NodeConfig — `channels.name` / `channels.channel` (одинаковое значение, напр. `ph_sensor`, `system`, `storage_state`); в БД — `node_channels.channel`. Поле `channels.key` **не используется**. Сегмент нужен только для channel-level сообщений,
 - `{message_type}` — тип сообщения: 
@@ -84,7 +84,13 @@ Payload (пример):
 ```
 
 > **Важно:** Формат соответствует эталону node-sim. Поля `node_id` и `channel` не включаются в JSON, так как они уже есть в топике. `metric_type` передается в UPPERCASE.
-> Канонические примеры `metric_type`: `PH`, `EC`, `TEMPERATURE`, `HUMIDITY`, `WATER_LEVEL`, `WATER_LEVEL_SWITCH`, `SOIL_MOISTURE`, `SOIL_TEMP`, `WIND_SPEED`, `WIND_DIRECTION`, `OUTSIDE_TEMP`, `OUTSIDE_HUMIDITY`, `OUTSIDE_PRESSURE`, `OUTSIDE_LIGHT`, `RAIN_DETECTED`.
+> Базовые `metric_type`, покрытые текущей JSON Schema: `PH`, `EC`, `TEMPERATURE`, `HUMIDITY`, `CO2`, `LIGHT_INTENSITY`, `WATER_LEVEL`, `WATER_LEVEL_SWITCH`, `SOIL_MOISTURE`, `SOIL_TEMP`, `WIND_SPEED`, `OUTSIDE_TEMP`, `FLOW_RATE`, `PUMP_CURRENT`.
+>
+> `WIND_DIRECTION`, `OUTSIDE_HUMIDITY`, `OUTSIDE_PRESSURE`, `OUTSIDE_LIGHT`, `RAIN_DETECTED`
+> встречаются в weather/climate описаниях, но **не входят** в enum текущей строгой
+> telemetry JSON Schema. Приём произвольной строки HL-моделью не доказывает
+> поддержку конкретным sender/consumer или schema-validator. Границы и известное
+> расхождение схемы с runtime — `MQTT_SPEC_FULL.md` §3.2.1.
 
 ### 2.2. command
 
@@ -102,12 +108,14 @@ Payload (пример):
  "cmd_id": "cmd-2025-01-01-12-00-00-001",
  "cmd": "set_pwm",
  "params": {
-   "value": 128
+   "duty": 50
  },
  "ts": 1737355112,
  "sig": "a1b2c3d4e5f6..."
 }
 ```
+
+Текущие `climate_node` и `test_node` принимают `duty` в процентах `0..100`, включая выход AE3. Старый `value` сохранён с разными шкалами — см. `COMMAND_VALIDATION_ENGINE.md` §4.2. Для установленных старых бинарников требуется обновление прошивки.
 
 ### 2.3. status
 

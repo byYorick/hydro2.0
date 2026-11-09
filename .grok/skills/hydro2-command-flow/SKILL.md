@@ -1,8 +1,10 @@
 ---
 name: hydro2-command-flow
-description: Канонический поток команд Hydro 2.0: Laravel scheduler-dispatch → AE3 (ae3lite) → history-logger POST /commands → MQTT → ESP32; fail-closed и HMAC. Используй при любых изменениях публикации команд, MQTT publish, HL API, AE wake/ingress, расписаний или отладке «команда не дошла до узла».
-type: workflow
-lifecycle: active
+description: "Канонический поток команд Hydro 2.0: Laravel scheduler-dispatch → AE3 (ae3lite) → history-logger POST /commands → MQTT → ESP32; fail-closed и HMAC. Используй при любых изменениях публикации команд, MQTT publish, HL API, AE wake/ingress, расписаний или отладке «команда не дошла до узла»."
+metadata:
+  type: workflow
+  lifecycle: active
+  version: "0.2.0"
 ---
 
 # hydro2-command-flow
@@ -44,3 +46,10 @@ Laravel scheduler-dispatch → Automation-Engine (ae3lite) → history-logger PO
 1. Локальный AGENTS/AGENT в подкаталоге сервиса.
 2. Спека слоя из `doc_ai/`.
 3. Убедиться, что новый код не делает `mosquitto`/`paho` publish вне HL.
+
+## Актуализация 2026-11-06
+
+- mqtt-bridge command/config routes удалены (404); metrics/live-status не являются командным API.
+- Для runtime-bug проследи intent → ae_tasks → ae_commands.external_id → commands.cmd_id → response; не добавляй retry без понимания результата команды.
+- Health-check и запуск актуатора — разные сценарии; при активной lease сохраняй gate и idempotency.
+- Результат: участок отказа, доказательства, изменение и реально выполненная точечная проверка.

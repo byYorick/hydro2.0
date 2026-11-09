@@ -38,7 +38,7 @@ Breaking-change: обратная совместимость со старыми
  - REST/WS API.
 
 3. **Python-микросервисы** (см. `04_BACKEND_CORE/PYTHON_SERVICES_ARCH.md`)
- - `mqtt-bridge` — мост REST→MQTT;
+ - `mqtt-bridge` — ops probe (live-status и metrics); command/config routes удалены;
  - `history-logger` — MQTT→PostgreSQL, запись телеметрии и **единственная** публикация команд в MQTT;
  - `automation-engine` (AE3) — автоматизация зон; команды на узлы только через `history-logger`;
  - прочие сервисы (`digital-twin`, агрегаторы и т.д.) — по своим контрактам.
@@ -115,9 +115,8 @@ Breaking-change: обратная совместимость со старыми
 - **Frontend**: `07_FRONTEND/FRONTEND_ARCH_FULL.md`, `07_FRONTEND/FRONTEND_UI_UX_SPEC.md`
 - **Android**: `12_ANDROID_APP/ANDROID_APP_ARCH.md`, `12_ANDROID_APP/ANDROID_APP_API_INTEGRATION.md`
 - **AI / Digital Twin**:
- - `09_AI_AND_DIGITAL_TWIN/AI_OPTIMIZATION_ENGINE.md`
- - `09_AI_AND_DIGITAL_TWIN/DIGITAL_TWIN_ENGINE.md`
- - `09_AI_AND_DIGITAL_TWIN/ZONE_SIMULATION_ENGINE.md`
+ - `09_AI_AND_DIGITAL_TWIN/README.md` — состав опциональных сервисов и ограничения
+ - `../backend/services/digital-twin/README.md` — текущий интерфейс digital-twin
 - **Гайды для ИИ-агентов**:
  - `10_AI_DEV_GUIDES/*`
 

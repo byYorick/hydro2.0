@@ -33,13 +33,13 @@ help:
 	@echo "  migrate        - run Laravel migrations and dev bootstrap seeders"
 	@echo "  refresh        - full clean dev refresh with only base users in DB"
 	@echo "  seed           - run Laravel seeders"
-	@echo "  reset-db       - wipe hydro_dev (+ Redis/MQTT retained), seed base users, restart runtime
-                   (self-contained: поднимает core без зависимости от healthy HL/prometheus)"
+	@echo "  reset-db       - wipe hydro_dev (+ Redis/MQTT retained), seed base users, restart runtime"
+	@echo "                   (self-contained: starts core without healthy HL/prometheus)"
 	@echo "  test           - run PHP (phpunit) and Python (pytest) tests"
 	@echo "  lint           - run PHP lint (Pint)"
 	@echo "  smoke          - run bootstrap smoke (telemetry + command)"
 	@echo "  audit          - run hotspots audit report"
-	@echo "  protocol-check - local schemas/authority/ae3-lint/i18n/ae-crash (MQTT/WS contracts: CI protocol-check.yml)"
+	@echo "  protocol-check - schemas/authority/ae3-lint/i18n/ae-crash + MQTT/WS contracts (Docker)"
 	@echo "  test-ae-crash-windows - AE3 startup recovery crash-window contract (§9.2)"
 	@echo "  ae3-config-lint - check inline numeric literals in AE3 handlers"
 	@echo "  schemas-validate - validate JSON Schemas under schemas/ against meta-schema"
@@ -55,8 +55,8 @@ help:
 	@echo "  erd            - generate ERD SVG (docker mermaid-cli)"
 	@echo "  dev-tools-check   - check host CLI tools (rg, psql, mosquitto_pub, gh, ...)"
 	@echo "  dev-tools-install - install missing host CLI tools (apt + uv)"
-	@echo "  skills-install    - install Cursor agent skills (npx skills → .agents/skills/)"
-	@echo "  skills-check      - verify project + external Cursor skills manifest"
+	@echo "  skills-install    - install local project skill aliases (offline)"
+	@echo "  skills-check      - validate project skills, aliases and provenance (offline)"
 	@echo "  skills-list       - list expected and installed Cursor skills"
 	@echo "  mcp-setup         - write/update .cursor/mcp.json (Espressif, MQTT, PG, Redis, Laravel)"
 	@echo "  mcp-check         - verify MCP config and dev prerequisites"
@@ -379,10 +379,10 @@ erd:
 	@bash backend/laravel/generate-erd.sh
 
 # ---------------------------------------------------------------------------
-# Cursor Agent Skills (см. tools/cursor_skills.sh, skills-lock.json)
+# Project Agent Skills: offline aliases/checks; optional upstream/MCP отдельно.
 # ---------------------------------------------------------------------------
 
-.PHONY: skills-install skills-check skills-list mcp-setup mcp-check mcp-list
+.PHONY: skills-install skills-check skills-list skills-install-external skills-check-all mcp-setup mcp-check mcp-list
 skills-install:
 	@bash tools/cursor_skills.sh install
 
@@ -391,6 +391,12 @@ skills-check:
 
 skills-list:
 	@bash tools/cursor_skills.sh list
+
+skills-install-external:
+	@bash tools/cursor_skills.sh install-external
+
+skills-check-all:
+	@bash tools/cursor_skills.sh check-all
 
 mcp-setup:
 	@bash tools/cursor_skills.sh mcp-setup

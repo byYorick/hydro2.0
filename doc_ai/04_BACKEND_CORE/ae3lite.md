@@ -32,14 +32,14 @@ AE3-Lite v1 это:
    `POST /zones/{id}/start-lighting-tick` (dispatch света для `zones.automation_runtime='ae3'`, см. C1),
    `POST /zones/{id}/start-solution-topup` (автодолив бака раствора в фазе `ready`; реактивный trigger по `level_switch_changed` через `trigger_solution_topup_from_level_event` use case; consumer level-switch — `AE3_IRR_LEVEL_SWITCH_EVENT_CONTRACT.md` §7.5),
    `POST /zones/{id}/start-solution-change` (полуавтоматическая подмена раствора, см. D.1 / `CORRECTION_CYCLE_SPEC.md` §10),
-   `POST /greenhouses/{id}/start-climate-tick` (климат крыши на уровне теплицы; single-writer lease на `greenhouse_id`; см. `GREENHOUSE_CLIMATE_CONTROL_PLAN.md`).
+   `POST /greenhouses/{id}/start-climate-tick` (климат крыши на уровне теплицы; single-writer lease на `greenhouse_id`; см. `GREENHOUSE_CLIMATE_CONTROL_SPEC.md`).
 4. Один canonical status endpoint:
    `GET /internal/tasks/{task_id}`.
 5. Ручной rollout по зоне через `zones.automation_runtime='ae3'`.
 6. Recovery после restart для `claimed|running|waiting_command`.
 
 AE3-Lite v1 не включает:
-1. `ventilation_tick` на уровне зоны вне контура greenhouse climate (см. roadmap / `GREENHOUSE_CLIMATE_CONTROL_PLAN.md`)
+1. `ventilation_tick` на уровне зоны вне контура greenhouse climate (граница текущего контура — `GREENHOUSE_CLIMATE_CONTROL_SPEC.md`)
 2. **полностью автоматический** `solution_change` без operator gates и CIP (этап D.2; semi-auto v1 **в scope**, см. §1 и §7.2.3)
 3. `mist`
 4. `diagnostics` как отдельный productized runtime (compat через `start-cycle` допускается см. `SCHEDULER_AE3_NON_IRRIGATION_DISPATCH.md`)
@@ -331,7 +331,7 @@ Execution record внутри task:
 4. `solution_topup` — автодолив бака раствора в фазе `ready` (guard → start → check → stop → complete; реактивный trigger по `level_switch_changed`; не мутирует `workflow_phase`; см. `AE3_IRR_LEVEL_SWITCH_EVENT_CONTRACT.md` §7.5)
 5. `solution_change` — полуавтоматическая подмена раствора (drain → clean_fill → solution_fill → prepare_recirc → `ready` с operator gates; см. `CORRECTION_CYCLE_SPEC.md` §10)
 
-Greenhouse climate runtime (`greenhouse_climate_tick`) исполняется отдельной таблицей `greenhouse_automation_tasks` (и lease в `greenhouse_automation_leases`), не в `ae_tasks` — см. `GREENHOUSE_CLIMATE_CONTROL_PLAN.md`. Поэтому в DB CHECK constraint на `ae_tasks.task_type` лежат пять значений выше (миграции `2026_07_08_120000` для `solution_topup` и `2026_07_08_140000` для `solution_change`; валидируется `laravel_schema_contract.py`).
+Greenhouse climate runtime (`greenhouse_climate_tick`) исполняется отдельной таблицей `greenhouse_automation_tasks` (и lease в `greenhouse_automation_leases`), не в `ae_tasks` — см. `GREENHOUSE_CLIMATE_CONTROL_SPEC.md`. Поэтому в DB CHECK constraint на `ae_tasks.task_type` лежат пять значений выше (миграции `2026_07_08_120000` для `solution_topup` и `2026_07_08_140000` для `solution_change`; валидируется `laravel_schema_contract.py`).
 
 Другие task types считаются out of scope и не должны появляться ни в migration, ни в API, ни в runtime wiring `v1`.
 
@@ -394,7 +394,7 @@ Terminal:
 
 1. Zone/greenhouse wake-up ingress (`POST /zones/{id}/start-cycle` / `start-irrigation` / `start-lighting-tick` /
    `start-solution-topup` / `start-solution-change` / `POST /greenhouses/{id}/start-climate-tick`)
-   валидирует контракт и создаёт canonical execution context (зона: `AutomationTask` в `ae_tasks`; теплица: intent/lease/state в `greenhouse_automation_*` — см. `GREENHOUSE_CLIMATE_CONTROL_PLAN.md`).
+   валидирует контракт и создаёт canonical execution context (зона: `AutomationTask` в `ae_tasks`; теплица: intent/lease/state в `greenhouse_automation_*` — см. `GREENHOUSE_CLIMATE_CONTROL_SPEC.md`).
 2. Worker выбирает следующую `pending` task.
 3. Worker пытается получить `ZoneLease`.
 4. Если lease не получена, task не исполняется.
@@ -782,6 +782,8 @@ runtime = plan.runtime
 
 Контракт Pydantic: `ae3lite/api/contracts.py` → `StartLightingTickRequest`.
 
+Firmware-совместимость: текущие `climate_node` и `test_node` принимают PWM `duty` в процентах из AE3; преобразование в raw выполняет общий firmware decoder. Старые установленные бинарники требуют обновления — см. [COMMAND_VALIDATION_ENGINE.md](../03_TRANSPORT_MQTT/COMMAND_VALIDATION_ENGINE.md#команда-set_pwm).
+
 **Реализовано (2026-08-17):** `desired_state` / `brightness_pct` в HTTP + planner ON/OFF. Laravel: на границе окна фотопериода шлёт `on`/`off` даже если у того же `ScheduleItem` есть `interval_sec`; битый `desired_state` — fail-closed skip (не default ON). См. `SCHEDULER_AE3_NON_IRRIGATION_DISPATCH.md` §7.
 
 ### 7.2.3 `POST /zones/{id}/start-solution-change` (semi-auto v1)
@@ -847,7 +849,7 @@ Ingress для **greenhouse-level** rule-based климата крыши (две
 3. читает конфиг из `greenhouses.logic_profile` (compiled bundle namespace `greenhouse.logic_profile`) и телеметрию из read-model
 4. публикует команды только через `history-logger` `POST /commands` с `cmd='set_position'`
 5. обновляет строку `greenhouse_automation_state` (в т.ч. snapshot полей для UI)
-6. полная семантика, метрики и DD — в `GREENHOUSE_CLIMATE_CONTROL_PLAN.md`; воздушный VPD и точка росы форточек — §8 этого плана
+6. полная семантика, метрики и DD — в `GREENHOUSE_CLIMATE_CONTROL_SPEC.md`; воздушный VPD и точка росы форточек — §8 этой спецификации
 
 ### 7.3 `GET /internal/tasks/{task_id}`
 
@@ -947,8 +949,8 @@ Canonical status endpoint для зон на `ae3`.
 
 ### 9.1 Startup recovery
 
-> **Roadmap:** детальный план улучшений (фазы 1–6, матрица состояний, критерии приёмки) —  
-> `doc_ai/04_BACKEND_CORE/AE3_STARTUP_RECOVERY_IMPROVEMENT_PLAN.md`.
+Действующие правила startup recovery и reconciliation описаны в этом разделе.
+Операционная диагностика — `doc_ai/08_SECURITY_AND_OPS/RUNBOOKS.md` §3.2.
 
 При старте runtime обязан:
 1. проверить `waiting_command` задачи по строкам в `commands`
@@ -1288,7 +1290,7 @@ AE3-Lite `v1` считается готовым, когда выполнены �
     - `start-irrigation(force) -> DONE -> completed`
     - `restart during waiting_command -> recovered`
     - `runtime switch denied while zone busy`
-    - `start-climate-tick -> HL set_position -> snapshot в greenhouse_automation_state` (см. `GREENHOUSE_CLIMATE_CONTROL_PLAN.md`)
+    - `start-climate-tick -> HL set_position -> snapshot в greenhouse_automation_state` (см. `GREENHOUSE_CLIMATE_CONTROL_SPEC.md`)
     - sequential nutrient realhw live: `E106`, `E107`/`E109`, `E112`, `E118`, `E119`, `E120`; stub `E121` (см. §12.3)
 12. Каждый этап реализации был покрыт и проверен своими stage-level tests до перехода к следующему этапу.
 13. После завершения реализации покрыт и пройден полный обязательный `e2e`-набор.

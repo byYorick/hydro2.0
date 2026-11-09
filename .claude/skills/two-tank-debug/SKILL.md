@@ -1,154 +1,80 @@
 ---
 name: two-tank-debug
-description: Диагностика застрявшего two-tank startup workflow зоны. Используй когда зона не проходит idle/startup → tank_filling → tank_recirc → ready → irrigating → ready, зависла в промежуточной фазе, или корректировки pH/EC не запускаются.
-type: workflow
-lifecycle: active
+description: "Диагностика застрявшего two-tank startup workflow зоны. Используй когда зона не проходит idle/startup → tank_filling → tank_recirc → ready → irrigating → ready, зависла в промежуточной фазе, или корректировки pH/EC не запускаются."
+metadata:
+  type: workflow
+  lifecycle: active
+  version: "0.2.0"
 ---
 
-# Two-Tank Startup Workflow — Диагностика
+# Диагностика two-tank Hydro 2.0
 
-Различай два уровня состояния:
+## Контекст и границы
 
-| Уровень | Где смотреть | Примеры |
-|---------|--------------|---------|
-| **`workflow_phase`** | `zone_workflow_state.workflow_phase` | `idle`, `tank_filling`, `tank_recirc`, `ready`, `irrigating` |
-| **`stage`** | `ae_tasks.current_stage` / `payload.ae3_cycle_start_stage` | `startup`, `clean_fill_check`, `solution_fill_check`, `prepare_recirculation_check`, `complete_ready` |
+Выбери zone_id и контур из запроса; уточняй только отсутствующее. Dev — hydro_dev,
+AE integration — hydro_test, realhw — hydro_e2e. Для realhw сначала прочитай
+[guide](../../../doc_ai/13_TESTING/REALHW_TEST_NODE_AGENT_GUIDE.md); не переключай
+устройство на другой broker и не запускай тесты только ради диагностики.
 
-Канонический happy-path stages (`cycle_start`):
+Читай AGENTS.md, backend/services/AGENTS.md и automation-engine/AGENT.md.
+Диагностика начинается с read-only запросов и GET состояния. Секреты/NodeConfig
+не выводятся. Не используй пароль hydro по умолчанию и не копируй credentials
+из документации; используй настроенное соединение. psql -w не ждёт ввода пароля.
 
-```
-startup (phase=idle)
-  → clean_fill_* (phase=tank_filling)
-  → solution_fill_* (phase=tank_filling)   # Ca-only (pump_b), без pH
-  → prepare_recirculation_* (phase=tank_recirc)  # sequential pipeline + dilute
-  → complete_ready (phase=ready)
-```
+## Состояния и химия
 
-Полив — отдельный task `irrigation_start` (только при `workflow_phase=ready`):
+Различай workflow_phase (idle/tank_filling/tank_recirc/ready/irrigating),
+current_stage и task status. Stage не выводится только из workflow_phase.
 
-```
-await_ready → decision_gate → irrigation_* (phase=irrigating)
-  → irrigation_stop_to_ready (phase=ready)
-```
+- Startup проходит clean_fill → solution_fill → prepare_recirculation → ready.
+- Solution fill: calcium (pump_b) после water-baseline, без pH.
+- Recirculation: последовательный nutrient pipeline с pH-gate и dilute по контракту.
+- Irrigation: pH и один разрешённый EC-компонент calcium/npk; pH-only задаётся
+  irrigation_ec_component=none. Не считай любую EC-дозу на поливе ошибкой.
 
-Химия по фазам:
-- **fill** (`solution_fill_check`) — только calcium (`pump_b`); pH на fill **не канон**
-- **recirc** (`prepare_recirculation_check`) — sequential Ca→pH→… + dilute-on-overshoot
-- **irrig** (`irrigation_check`) — только pH inline; без EC dose / recovery chemistry
+Проверяй фактический RuntimePlan и pinned bundle; нормы —
+[CORRECTION_CYCLE_SPEC](../../../doc_ai/06_DOMAIN_ZONES_RECIPES/CORRECTION_CYCLE_SPEC.md)
+и [EFFECTIVE_TARGETS_SPEC](../../../doc_ai/06_DOMAIN_ZONES_RECIPES/EFFECTIVE_TARGETS_SPEC.md).
+Correction-capable стадии определены в
+[workflow_topology.py](../../../backend/services/automation-engine/ae3lite/application/services/workflow_topology.py).
 
-`irrig_recirc` / `irrigation_recovery_*` / `irrigation_stop_to_recovery` — **не happy-path**
-(removed from canon; legacy DB rows → migrate via `irrigation_stop_to_ready`).
+## Сбор доказательств
 
-Коррекции открываются **внутри check-stages** с `has_correction=True` в
-[`workflow_topology.py`](backend/services/automation-engine/ae3lite/application/services/workflow_topology.py):
-`solution_fill_check`, `prepare_recirculation_check`, `irrigation_check`.
-Отдельного `WORKFLOW_CORRECTION_OPEN_PHASES` больше нет.
+1. Запусти [diagnostics.sql](references/diagnostics.sql) для выбранной зоны.
+   Запросы используют текущий snapshot: telemetry_last.last_value/last_ts через
+   sensors, nodes.zone_id, commands.node_id и ae_tasks.error_code/deadlines.
+   Таблицы node_zones и поле ae_tasks.details не предполагаются.
+2. Сопоставь stage, task/stage deadline, lease и последний ae_commands.external_id
+   с commands.cmd_id. Статус waiting_command не доказывает потерю команды;
+   DONE одного planner_step не означает DONE всего batch.
+3. Для уровней смотри sensor label/spec и свежесть. Wire-метрика — WATER_LEVEL_SWITCH;
+   названия level_clean_min/max и level_solution_min/max обозначают каналы.
+   Нулевые значения сами по себе не доказывают broken wire: сверяй state/events/quality.
+4. Проверь nodes.status/last_seen_at, события LEVEL_SWITCH_CHANGED, ошибки E-Stop,
+   timestamp/HMAC и актуальность телеметрии. Начальный event будит reconcile,
+   но не заменяет DB-confirmation завершения stage.
+5. Сверь GET /api/zones/{id}/state через авторизованный Laravel UI/API.
+   Действующие startup recovery и waiting-command reconcile описаны в
+   [ae3lite.md §9](../../../doc_ai/04_BACKEND_CORE/ae3lite.md).
 
-## Шаг 0 — Уточни zone_id
+Пример для уже подготовленного dev Compose, из корня репозитория (замени 12
+на выбранный zone_id; соединение должно быть настроено без вывода пароля):
 
-Спроси у пользователя `zone_id` если не указан. Все запросы ниже идут к `hydro_dev` через локальный `psql` (host=localhost:5432 user=hydro).
+~~~bash
+docker compose -f backend/docker-compose.dev.yml exec -T db \
+  psql -U hydro -d hydro_dev -w --set=zone_id=12 \
+  < .claude/skills/two-tank-debug/references/diagnostics.sql
+~~~
 
-**Auth (обязательно):** TCP-логин требует пароль. Не вызывай голый `psql` без credentials — в non-interactive shell он зависнет на `Password for user hydro:`. Используй одно из:
-- `~/.pgpass` (`localhost:5432:*:hydro:hydro`, `chmod 600`) — предпочтительно;
-- `PGPASSWORD=hydro` перед командой (dev-пароль из `docker-compose.dev.yml`);
-- флаг `-w` (never prompt), чтобы при отсутствии credentials сразу получить ошибку, а не hang.
+При несовпадении установленной схемы со snapshot зафиксируй drift. Не переключайся
+на выдуманную legacy-таблицу. Не делай вывод «hang» по произвольным 5 минутам:
+сравни реальные stage_deadline_at/overall_deadline_at и состояние reconciliation.
 
-Пример префикса: `PGPASSWORD="${PGPASSWORD:-hydro}" psql -h localhost -U hydro -d hydro_dev -w -c "..."`.
+## Результат и следующие действия
 
-## Шаг 1 — Текущая фаза workflow
-
-```
-PGPASSWORD="${PGPASSWORD:-hydro}" psql -h localhost -U hydro -d hydro_dev -w -c "SELECT workflow_phase, payload->>'ae3_cycle_start_stage' AS stage, updated_at FROM zone_workflow_state WHERE zone_id=<ID>"
-```
-
-Если пусто — зона не инициализирована для two-tank. Если `workflow_phase` ∈ `{idle,tank_filling,tank_recirc}` и `updated_at` старше 10 мин при active task — **вероятно stuck**.
-Если видишь `irrig_recirc` — legacy row; канон после полива — `ready`.
-
-## Шаг 2 — Последние workflow-события
-
-```
-PGPASSWORD="${PGPASSWORD:-hydro}" psql -h localhost -U hydro -d hydro_dev -w -c "SELECT type, payload_json->>'phase', payload_json->>'reason', created_at FROM zone_events WHERE zone_id=<ID> AND (type LIKE '%WORKFLOW%' OR type LIKE '%PHASE%' OR type LIKE '%FILL%' OR type LIKE '%RECIRC%' OR type LIKE '%CORRECTION%') ORDER BY created_at DESC LIMIT 15"
-```
-
-Ищи: `*_TIMEOUT`, `LEVEL_SWITCH_CHANGED`, `CLEAN_FILL_*`, `SOLUTION_FILL_*`, `RECIRCULATION_*`, `TWO_TANK_*`, `CORRECTION_*`, `WATER_BASELINE_*`, `PIPELINE_STEP_*`, `RECIRC_DILUTE_*`.
-
-## Шаг 3 — Active task
-
-```
-PGPASSWORD="${PGPASSWORD:-hydro}" psql -h localhost -U hydro -d hydro_dev -w -c "SELECT id, task_type, status, current_stage, workflow_phase, details, updated_at FROM ae_tasks WHERE zone_id=<ID> AND status IN ('pending','claimed','running','waiting_command') ORDER BY created_at DESC"
-```
-
-Если таблица/колонки отличаются в окружении — смотри `zone_automation_tasks` / JSON `workflow`.  
-Если `status='waiting_command'` и нет недавних command responses — команда потерялась. Если `status='running'` > 5 мин — probable hang.
-
-**E2E realhw** (физическая `test_node`, compose `tests/e2e/`): БД **`hydro_e2e` на :5433**, не этот skill-контур `hydro_dev:5432`. Сначала `doc_ai/13_TESTING/REALHW_TEST_NODE_AGENT_GUIDE.md`.
-Если `current_stage` содержит `irrigation_recovery` — не канон; ожидается `irrigation_stop_to_ready` → `ready`.
-
-## Шаг 4 — Water level sensors
-
-Критично для two-tank.
-
-```
-PGPASSWORD="${PGPASSWORD:-hydro}" psql -h localhost -U hydro -d hydro_dev -w -c "SELECT metric_type, value, ts FROM telemetry_last WHERE zone_id=<ID> AND metric_type IN ('LEVEL_CLEAN_MIN','LEVEL_CLEAN_MAX','LEVEL_SOLUTION_MIN','LEVEL_SOLUTION_MAX')"
-```
-
-Интерпретация:
-- `LEVEL_CLEAN_MAX=0` на startup → ожидается `clean_fill` (клапан `valve_clean_fill` ON).
-- `LEVEL_CLEAN_MAX=1` → clean_fill пропускается / завершается.
-- `LEVEL_SOLUTION_MAX=1` → solution_fill complete.
-- Все `0` после fill → датчики не latched / узел перезагружался / broken wire / sim latch-delay.
-
-Production-нода **не** публикует `clean_fill_source_empty`; пустой источник clean → AE3 timeout/retry (`clean_fill_timeout_sec`, `clean_fill_retry_cycles`).
-
-## Шаг 5 — Узлы зоны и их online-статус
-
-```
-PGPASSWORD="${PGPASSWORD:-hydro}" psql -h localhost -U hydro -d hydro_dev -w -c "SELECT n.uid, n.type, n.status, n.last_seen_at FROM nodes n JOIN node_zones nz ON nz.node_id=n.id WHERE nz.zone_id=<ID>"
-```
-
-Если irrig/storage узел offline — fill-команды не дойдут → зависание в `clean_fill_*` / `solution_fill_*`.
-
-## Шаг 6 — Последние команды fill/drain
-
-```
-PGPASSWORD="${PGPASSWORD:-hydro}" psql -h localhost -U hydro -d hydro_dev -w -c "SELECT cmd, status, node_uid, channel, payload, created_at FROM commands WHERE zone_id=<ID> AND created_at > now() - interval '30 minutes' ORDER BY created_at DESC LIMIT 20"
-```
-
-Флаги для отчёта:
-- `status='INVALID'` → ошибка payload.
-- `status='ERROR'` + `estop_active` → E-Stop удерживается (ON-команды отвергаются нодой).
-- `status='ERROR'` → узел отверг (interlock, cooldown, I2C, safe-limit).
-- `status='TIMEOUT'` → нет response от узла.
-- `status='NO_EFFECT'` → 3 подряд для pid_type → alert + fail-closed.
-- На fill ожидай dose только на `pump_b` (Ca); `pump_acid`/`pump_base` на fill — drift от канона.
-- На irrig ожидай pH-only; EC dose на irrig — drift.
-
-## Шаг 7 — Correction gate
-
-Проверь, что active stage — один из correction-capable check-stages (см. выше).  
-В `ready` без активного check-stage коррекции не идут (кроме topup/irrigation path).
-
-```
-rg -n "has_correction=True" backend/services/automation-engine/ae3lite/application/services/workflow_topology.py
-```
-
-## Шаг 8 — AE3 runtime state
-
-```
-curl -s http://localhost:9405/zones/<ID>/state | jq .
-```
-
-Сверь `workflow_phase` / stage с БД (шаг 1). Расхождение = проблема синхронизации read-model.
-
-## Итоговый отчёт
-
-Структурируй вывод по секциям Шагов. В **конце** — краткий вердикт:
-- **Где застряла:** `workflow_phase=X`, `stage=Y`, с момента Z
-- **Вероятная причина:** (A) команда не дошла / (B) level sensors / (C) task hung / (D) узел offline / (E) correction не открыт на этом stage / (F) E-Stop / (G) stage timeout / (H) chemistry drift (fill≠Ca-only или irrig≠pH-only)
-- **Рекомендованное действие** (не выполняй без подтверждения пользователя):
-  - Если stuck и задача hung → предложить `/fix-stuck-zone <ID>`.
-  - Если levels = 0 после fill → перезапустить `POST /zones/<ID>/start-cycle`.
-  - Если узел offline → проверить firmware/power.
-  - Если `estop_active` → снять E-Stop и проверить restore snapshot.
-
-**Ничего destructive не делай без явного "да" от пользователя.**
+Сообщи контур/zone_id, phase/stage/status, последнюю подтверждённую команду,
+свежесть сигналов, доказанную причину или оставшиеся гипотезы. Предложи действие
+с учётом готовности оборудования и существующей авторизации пользователя.
+Не подделывай terminal SQL-записью, не удаляй lease и не повторяй дозу для проверки.
+Операторский запуск/recovery — отдельное действие через штатный owner-path,
+а не автоматическое следствие диагностического GET/SELECT.
