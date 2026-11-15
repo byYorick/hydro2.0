@@ -10,8 +10,9 @@ import pytest
 
 from _test_support_runtime_plan import make_runtime_plan, make_runtime_plan_dict
 from ae3lite.application.handlers.decision_gate import DecisionGateHandler
-from ae3lite.application.services.dry_run_guard import guard_pump_start
 from ae3lite.config.loader import load_runtime_plan
+from ae3lite.domain.entities import PlannedCommand
+from ae3lite.infrastructure.gateways.command_publish_pipeline import CommandPublishPipeline
 from ae3lite.config.runtime_plan_irrigation import _build_irrigation_decision
 from ae3lite.config.schema.runtime_plan import RadiationSumConfig
 from ae3lite.domain.errors import CommandPublishError
@@ -52,6 +53,7 @@ def _config(**overrides: object) -> dict:
         "max_daily_volume_l": 50.0,
         "pulse_ml_per_plant": 35.0,
         "plant_count": 10,
+        "irrigation_ml_per_sec": 2.0,
         "min_interval_sec": 1200,
     }
     payload.update(overrides)
@@ -152,13 +154,14 @@ async def test_max_interval_pulses_when_sum_stays_below_threshold() -> None:
 
 @pytest.mark.asyncio
 async def test_outside_window_is_silent_including_edges_and_simferopol_midnight() -> None:
-    runtime = _runtime(start="22:00", hours=4)
-    before = _local(21, 59, day=15)
-    start_edge = _local(22, 0, day=15)
+    # 22:00+8 ч, отступы по умолчанию 1 ч и 2 ч → эффективное окно 23:00–04:00.
+    runtime = _runtime(start="22:00", hours=8)
+    before = _local(22, 59, day=15)
+    start_edge = _local(23, 0, day=15)
     midnight = _local(0, 0, day=16)
-    before_end = _local(1, 59, 30, day=16)
-    end_edge = _local(2, 0, day=16)
-    bright_from_open = _series(_local(22, 0, day=15), midnight, 1400)
+    before_end = _local(3, 59, 30, day=16)
+    end_edge = _local(4, 0, day=16)
+    bright_from_open = _series(start_edge, midnight, 1400)
 
     night = await _eval(runtime, _Monitor([]), before)
     assert night.outcome == "skip" and night.reason_code == REASON_NIGHT
@@ -300,10 +303,21 @@ def test_config_validation_rejects_without_clamping() -> None:
     with pytest.raises(ValidationError):
         RadiationSumConfig.model_validate(_config(min_interval_sec=5400, max_interval_sec=5400))
     with pytest.raises(ValidationError):
+        RadiationSumConfig.model_validate(_config(max_interval_sec=3599))
+    with pytest.raises(ValidationError):
+        RadiationSumConfig.model_validate(_config(max_interval_sec=5401))
+    with pytest.raises(ValidationError):
         RadiationSumConfig.model_validate(_config(fallback_interval_sec=2699))
     with pytest.raises(ValidationError):
         RadiationSumConfig.model_validate(_config(fallback_interval_sec=3601))
-    for missing in ("threshold_par_mol_m2", "max_interval_sec", "fallback_interval_sec", "max_daily_volume_l"):
+    for missing in (
+        "threshold_par_mol_m2",
+        "max_interval_sec",
+        "fallback_interval_sec",
+        "max_daily_volume_l",
+        "plant_count",
+        "irrigation_ml_per_sec",
+    ):
         payload = _config()
         payload.pop(missing)
         with pytest.raises(ValidationError):
@@ -333,9 +347,11 @@ def test_config_validation_rejects_without_clamping() -> None:
 
 
 def test_pulse_sql_counts_done_commands_for_completed_runs() -> None:
-    assert "c.status = 'DONE'" in IRRIGATION_PULSE_SQL or "c.status IS NULL OR c.status = 'DONE'" in IRRIGATION_PULSE_SQL
+    assert "c.status IS NULL OR c.status = 'DONE'" in IRRIGATION_PULSE_SQL
     assert "ac.terminal_status = 'DONE'" in IRRIGATION_PULSE_SQL
-    assert "completed_run" in IRRIGATION_PULSE_SQL
+    assert "completed_run" not in IRRIGATION_PULSE_SQL
+    assert "t.status = 'completed'" not in IRRIGATION_PULSE_SQL
+    assert "run_pump" in IRRIGATION_PULSE_SQL
     assert "irrigation_start" in IRRIGATION_PULSE_SQL
 
 
@@ -405,6 +421,72 @@ async def test_hot_stop_overrides_radiation_pulse(monkeypatch: pytest.MonkeyPatc
 
 
 @pytest.mark.asyncio
+async def test_failed_pump_start_counts_and_blocks_the_next_ticks() -> None:
+    now = _local(12, 0)
+    par = _series(now - timedelta(minutes=40), now, 4000)
+    failed = {
+        "finished_at": now - timedelta(minutes=10),
+        "duration_sec": 300,
+        "config": _config(),
+        "liters": None,
+    }
+    blocked = await _eval(_runtime(), _Monitor(par, pulses=[failed]), now)
+    assert blocked.outcome == "skip"
+    assert blocked.reason_code == REASON_MIN_INTERVAL
+    assert blocked.details["daily_pulses"] == 1
+    assert blocked.details["daily_liters"] == pytest.approx(0.6)
+
+    again = await _eval(
+        _runtime(),
+        _Monitor(par, pulses=[{"finished_at": now - timedelta(minutes=1), "duration_sec": 300, "config": _config(), "liters": None}]),
+        now,
+    )
+    assert again.outcome == "skip"
+    assert again.reason_code == REASON_MIN_INTERVAL
+
+
+@pytest.mark.asyncio
+async def test_recipe_duration_times_flow_caps_liters_without_history() -> None:
+    now = _local(12, 0)
+    par = _series(now - timedelta(minutes=40), now, 4000)
+    decision = await IrrigationDecisionController().evaluate(
+        zone_id=7,
+        runtime_monitor=_Monitor(par, pulses=[]),
+        runtime=_runtime({"max_daily_volume_l": 0.5}),
+        mode="normal",
+        requested_duration_sec=400,
+        now=now,
+    )
+    assert decision.outcome == "skip"
+    assert decision.reason_code == REASON_DAILY_CAP
+    assert decision.details["pulse_liters"] == pytest.approx(0.8)
+
+
+@pytest.mark.asyncio
+async def test_sunrise_and_sunset_offsets_shrink_the_day_window() -> None:
+    runtime = _runtime(
+        {"first_pulse_after_sunrise_sec": 3600, "last_pulse_before_sunset_sec": 7200},
+        start="08:00",
+        hours=12,
+    )
+    early = await _eval(runtime, _Monitor([]), _local(8, 30))
+    assert early.reason_code == REASON_NIGHT
+    opened = await _eval(runtime, _Monitor(_series(_local(9, 0), _local(9, 0), 800)), _local(9, 0))
+    assert opened.reason_code == REASON_MIN_INTERVAL
+    closed = await _eval(runtime, _Monitor([]), _local(18, 0))
+    assert closed.reason_code == REASON_NIGHT
+
+    empty = _runtime(
+        {"first_pulse_after_sunrise_sec": 7200, "last_pulse_before_sunset_sec": 10800},
+        start="08:00",
+        hours=4,
+    )
+    rejected = await _eval(empty, _Monitor([]), _local(10, 0))
+    assert rejected.outcome == "fail"
+    assert rejected.reason_code == REASON_WINDOW
+
+
+@pytest.mark.asyncio
 async def test_dry_run_blocks_pump_after_radiation_would_run(monkeypatch: pytest.MonkeyPatch) -> None:
     now = _local(11, 0)
     decision = await _eval(
@@ -413,19 +495,51 @@ async def test_dry_run_blocks_pump_after_radiation_would_run(monkeypatch: pytest
         now,
     )
     assert decision.outcome == "run"
+    assert decision.reason_code == REASON_THRESHOLD
+
+    published: list[dict] = []
+
+    class _Repo:
+        async def allocate_and_create_pending(self, **_kwargs):
+            return (1, 1, False, "pending")
+
+        async def resolve_greenhouse_uid(self, **_kwargs):
+            return "gh-1"
+
+        async def assert_publish_authority(self, **_kwargs):
+            return None
+
+    class _HistoryLogger:
+        async def publish(self, **kwargs):
+            published.append(kwargs)
+            return kwargs.get("cmd_id")
 
     async def unsafe(*_args, **_kwargs):
         return False, "dry_run"
 
     monkeypatch.setattr("common.pump_safety.check_dry_run", unsafe)
+    pipeline = CommandPublishPipeline(
+        command_repository=_Repo(),
+        history_logger_client=_HistoryLogger(),
+        now_fn=lambda: now.replace(tzinfo=None),
+    )
+    command = PlannedCommand(
+        step_no=1,
+        node_uid="irrig-1",
+        channel="pump_main",
+        payload={"cmd": "run_pump", "params": {"duration_ms": 1000}},
+    )
+    task = SimpleNamespace(
+        id=11,
+        zone_id=7,
+        claimed_by="worker",
+        claim_generation=1,
+        current_stage="irrigation_start",
+        task_type="irrigation_start",
+    )
     with pytest.raises(CommandPublishError):
-        await guard_pump_start(
-            zone_id=7,
-            cmd="run_pump",
-            channel="pump_main",
-            params={"duration_ms": 1000},
-            stage="irrigation_start",
-        )
+        await pipeline.publish(task=task, command=command, now=now.replace(tzinfo=None), planner_step="irrigation_start")
+    assert published == []
 
 
 @pytest.mark.asyncio

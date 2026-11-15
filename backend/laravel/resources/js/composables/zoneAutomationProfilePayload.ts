@@ -409,11 +409,23 @@ export function buildGrowthCycleConfigPayload(
     1
   )
   const irrigationDecisionStrategy =
-    waterForm.irrigationDecisionStrategy === 'smart_soil_v1' || waterForm.irrigationDecisionStrategy === 'task'
+    waterForm.irrigationDecisionStrategy === 'smart_soil_v1' ||
+    waterForm.irrigationDecisionStrategy === 'task' ||
+    waterForm.irrigationDecisionStrategy === 'radiation_sum_v1'
       ? waterForm.irrigationDecisionStrategy
       : automationDefaults.water_irrigation_decision_strategy === 'smart_soil_v1'
         ? 'smart_soil_v1'
         : 'task'
+  const irrigationDecisionConfig =
+    irrigationDecisionStrategy === 'radiation_sum_v1'
+      ? { ...(waterForm.irrigationDecisionRawConfig ?? {}) }
+      : {
+          lookback_sec: irrigationDecisionLookbackSec,
+          min_samples: irrigationDecisionMinSamples,
+          stale_after_sec: irrigationDecisionStaleAfterSec,
+          hysteresis_pct: irrigationDecisionHysteresisPct,
+          spread_alert_threshold_pct: irrigationDecisionSpreadAlertThresholdPct,
+        }
   const irrigationAutoReplayAfterSetup =
     waterForm.irrigationAutoReplayAfterSetup ?? automationDefaults.water_irrigation_auto_replay_after_setup
   const irrigationMaxSetupReplays = clamp(
@@ -568,13 +580,7 @@ export function buildGrowthCycleConfigPayload(
         execution: irrigationExecution,
         decision: {
           strategy: irrigationDecisionStrategy,
-          config: {
-            lookback_sec: irrigationDecisionLookbackSec,
-            min_samples: irrigationDecisionMinSamples,
-            stale_after_sec: irrigationDecisionStaleAfterSec,
-            hysteresis_pct: irrigationDecisionHysteresisPct,
-            spread_alert_threshold_pct: irrigationDecisionSpreadAlertThresholdPct,
-          },
+          config: irrigationDecisionConfig,
         },
         recovery: {
           auto_replay_after_setup: Boolean(irrigationAutoReplayAfterSetup),

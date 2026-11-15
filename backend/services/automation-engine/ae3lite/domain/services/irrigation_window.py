@@ -74,3 +74,53 @@ def resolve_local_window(
     if start_min > end_min and now_min < end_min:
         start_local = start_local - timedelta(days=1)
     return LocalWindow(inside=True, invalid=False, start_utc=start_local.astimezone(timezone.utc))
+
+
+def resolve_effective_irrigation_window(
+    *,
+    now: datetime,
+    day_start_time: str | None,
+    day_hours: float | None,
+    timezone_name: str | None,
+    inset_start_sec: int,
+    inset_end_sec: int,
+) -> LocalWindow:
+    """Окно полива: day_start … day_start+day_hours, сдвинутое отступами.
+
+    Начало сдвигается на ``inset_start_sec`` вперёд, конец — на ``inset_end_sec``
+    назад. Пустой результат (отступы съели окно) — invalid.
+    """
+    base = resolve_local_window(
+        now=now,
+        day_start_time=day_start_time,
+        day_hours=day_hours,
+        timezone_name=timezone_name,
+    )
+    if base.invalid or not day_start_time or day_hours is None:
+        return LocalWindow(inside=False, invalid=True, start_utc=None)
+    try:
+        hours = float(day_hours)
+    except (TypeError, ValueError):
+        return LocalWindow(inside=False, invalid=True, start_utc=None)
+    if not (0.0 < hours < 24.0):
+        return LocalWindow(inside=False, invalid=True, start_utc=None)
+    duration_sec = int(round(hours * 60)) * 60
+    if inset_start_sec < 0 or inset_end_sec < 0 or inset_start_sec + inset_end_sec >= duration_sec:
+        return LocalWindow(inside=False, invalid=True, start_utc=None)
+
+    parts = str(day_start_time).strip().split(":")
+    start_h = int(parts[0])
+    start_m = int(parts[1])
+    local = greenhouse_local(now, timezone_name)
+    start_clock = local.replace(hour=start_h, minute=start_m, second=0, microsecond=0)
+    for shift in (-1, 0, 1):
+        base_start = start_clock + timedelta(days=shift)
+        effective_start = base_start + timedelta(seconds=int(inset_start_sec))
+        effective_end = base_start + timedelta(seconds=duration_sec - int(inset_end_sec))
+        if effective_start <= local < effective_end:
+            return LocalWindow(
+                inside=True,
+                invalid=False,
+                start_utc=effective_start.astimezone(timezone.utc),
+            )
+    return LocalWindow(inside=False, invalid=False, start_utc=None)

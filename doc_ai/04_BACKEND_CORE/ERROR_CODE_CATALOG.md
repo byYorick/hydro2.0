@@ -283,6 +283,7 @@ Stage-terminal коды используются `WorkflowRouter._fail_task` д�
 | `radiation_sum_window_missing` | `decision_gate` | Нет конечного окна полива в местном времени теплицы. |
 | `radiation_sum_ledger_unavailable` | `decision_gate` | Не прочитана история импульсов. Суточный лимит нельзя проверить, полив не стартует. |
 | `radiation_sum_daily_cap` | `decision_gate` | Исчерпан суточный лимит импульсов или литров. |
+| `radiation_sum_volume_unbounded` | `decision_gate` | Нет длительности рецепта: фактические литры импульса нечем ограничить. |
 
 ## Таблица кодов solution_change
 

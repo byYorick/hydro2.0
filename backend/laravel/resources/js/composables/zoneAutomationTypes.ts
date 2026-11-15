@@ -104,7 +104,8 @@ export interface WaterFormState {
   solutionFillSolutionMinCheckDelayMs?: number
   recirculationStopOnSolutionMin?: boolean
   estopDebounceMs?: number
-  irrigationDecisionStrategy?: 'task' | 'smart_soil_v1'
+  irrigationDecisionStrategy?: 'task' | 'smart_soil_v1' | 'radiation_sum_v1'
+  irrigationDecisionRawConfig?: Record<string, unknown>
   irrigationDecisionLookbackSeconds?: number
   irrigationDecisionMinSamples?: number
   irrigationDecisionStaleAfterSeconds?: number

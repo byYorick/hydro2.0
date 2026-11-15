@@ -215,7 +215,11 @@ function normalizeWaterRuntimeFields(form: WaterFormState): void {
   if (form.estopDebounceMs === undefined || !Number.isFinite(Number(form.estopDebounceMs))) {
     form.estopDebounceMs = automationDefaults.value.water_estop_debounce_ms
   }
-  if (form.irrigationDecisionStrategy !== 'task' && form.irrigationDecisionStrategy !== 'smart_soil_v1') {
+  if (
+    form.irrigationDecisionStrategy !== 'task' &&
+    form.irrigationDecisionStrategy !== 'smart_soil_v1' &&
+    form.irrigationDecisionStrategy !== 'radiation_sum_v1'
+  ) {
     form.irrigationDecisionStrategy = automationDefaults.value.water_irrigation_decision_strategy
   }
   if (

@@ -206,9 +206,11 @@ function profileFromCanonicalSubsystems(subsystems: Dict): AutomationProfile {
             estopDebounceMs: asNumber(failSafeGuards.estop_debounce_ms, fb.water_estop_debounce_ms),
             irrigationDecisionStrategy: asEnum(
                 irrigationDecision.strategy,
-                ['task', 'smart_soil_v1'] as const,
+                ['task', 'smart_soil_v1', 'radiation_sum_v1'] as const,
                 'task',
             ),
+            irrigationDecisionRawConfig:
+                irrigationDecision.strategy === 'radiation_sum_v1' ? { ...irrigationDecisionConfig } : undefined,
             irrigationDecisionLookbackSeconds: asNumber(irrigationDecisionConfig.lookback_sec, 0),
             irrigationDecisionMinSamples: asNumber(irrigationDecisionConfig.min_samples, 0),
             irrigationDecisionStaleAfterSeconds: asNumber(irrigationDecisionConfig.stale_after_sec, 0),
@@ -361,9 +363,13 @@ export function zoneLogicProfileToProfile(payload: unknown): AutomationProfile {
             estopDebounceMs: asNumber(startup.estop_debounce_ms, fb.water_estop_debounce_ms),
             irrigationDecisionStrategy: asEnum(
                 decision.strategy,
-                ['task', 'smart_soil_v1'] as const,
+                ['task', 'smart_soil_v1', 'radiation_sum_v1'] as const,
                 'task',
             ),
+            irrigationDecisionRawConfig:
+                decision.strategy === 'radiation_sum_v1'
+                    ? { ...(Object.keys(asDict(decision.config)).length ? asDict(decision.config) : decision) }
+                    : undefined,
             irrigationDecisionLookbackSeconds: asNumber(decision.lookback_sec, 0),
             irrigationDecisionMinSamples: asNumber(decision.min_samples, 0),
             irrigationDecisionStaleAfterSeconds: asNumber(decision.stale_after_sec, 0),

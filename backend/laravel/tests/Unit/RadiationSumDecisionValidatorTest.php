@@ -15,6 +15,8 @@ class RadiationSumDecisionValidatorTest extends TestCase
             'max_interval_sec' => 5400,
             'fallback_interval_sec' => 2700,
             'max_daily_volume_l' => 40,
+            'plant_count' => 20,
+            'irrigation_ml_per_sec' => 2,
         ]), 'decision');
 
         RadiationSumDecisionValidator::validate($this->decision([
@@ -23,6 +25,8 @@ class RadiationSumDecisionValidatorTest extends TestCase
             'max_interval_sec' => 3600,
             'fallback_interval_sec' => 3600,
             'max_daily_volume_l' => 20,
+            'plant_count' => 12,
+            'irrigation_ml_per_sec' => 1.5,
         ]), 'decision');
 
         $this->assertTrue(true);
@@ -62,13 +66,29 @@ class RadiationSumDecisionValidatorTest extends TestCase
             $this->assertStringContainsString('fallback_interval_sec', $exception->getMessage());
         }
 
+        foreach ([3599, 5401] as $maxInterval) {
+            try {
+                RadiationSumDecisionValidator::validate($this->decision([
+                    'threshold_par_mol_m2' => 1.3,
+                    'max_interval_sec' => $maxInterval,
+                    'fallback_interval_sec' => 2700,
+                    'max_daily_volume_l' => 10,
+                    'plant_count' => 10,
+                    'irrigation_ml_per_sec' => 2,
+                ]), 'decision');
+                $this->fail("max_interval_sec {$maxInterval} must be rejected");
+            } catch (InvalidArgumentException $exception) {
+                $this->assertStringContainsString('max_interval_sec', $exception->getMessage());
+            }
+        }
+
         $this->expectException(InvalidArgumentException::class);
         RadiationSumDecisionValidator::validate($this->decision([
             'threshold_par_mol_m2' => 1.3,
-            'min_interval_sec' => 1200,
-            'max_interval_sec' => 1200,
+            'max_interval_sec' => 5400,
             'fallback_interval_sec' => 2700,
             'max_daily_volume_l' => 10,
+            'irrigation_ml_per_sec' => 2,
         ]), 'decision');
     }
 

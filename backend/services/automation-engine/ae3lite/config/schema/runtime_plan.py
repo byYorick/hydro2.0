@@ -137,8 +137,12 @@ def _strict_int(value: Any) -> Any:
 class RadiationSumConfig(BaseModel):
     """Полив по накопленному PAR внутри теплицы. Вне диапазона — отказ, без clamp.
 
-    Обязательны threshold_par_mol_m2, max_interval_sec, fallback_interval_sec
-    и max_daily_volume_l. Окно полива берётся из day/night теплицы, не из этого блока.
+    Обязательны threshold_par_mol_m2, max_interval_sec (60–90 мин), fallback_interval_sec,
+    max_daily_volume_l, plant_count и irrigation_ml_per_sec. Без расхода длительность
+    рецепта не переводится в литры, и конфиг отклоняется.
+
+    Расписание irrigation_start должно тикать примерно раз в 5 минут: пауза 20 мин
+    проверяется только в момент тика, между тиками она не соблюдается точнее шага планировщика.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -148,7 +152,8 @@ class RadiationSumConfig(BaseModel):
     threshold_par_mol_m2: float
     crop: Literal["strawberry", "lettuce"] = "strawberry"
     pulse_ml_per_plant: Annotated[float, Field(gt=0.0, le=200.0)] = 35.0
-    plant_count: Annotated[int, Field(ge=1, le=20000)] | None = None
+    plant_count: Annotated[int, Field(ge=1, le=20000)]
+    irrigation_ml_per_sec: Annotated[float, Field(gt=0.0, le=500.0)]
     min_interval_sec: Annotated[int, Field(ge=1200, le=7200)] = 1200
     max_interval_sec: int
     first_pulse_after_sunrise_sec: Annotated[int, Field(ge=3600, le=7200)] = 3600
@@ -170,6 +175,7 @@ class RadiationSumConfig(BaseModel):
     @field_validator(
         "threshold_par_mol_m2",
         "pulse_ml_per_plant",
+        "irrigation_ml_per_sec",
         "max_daily_volume_l",
         "lux_proxy_umol_per_lux",
         "ec_max_step_per_day",
@@ -213,8 +219,8 @@ class RadiationSumConfig(BaseModel):
     @field_validator("max_interval_sec")
     @classmethod
     def _max_interval_band(cls, value: int) -> int:
-        if value < 1200 or value > 10800:
-            raise ValueError("max_interval_sec must be in [1200, 10800]")
+        if value < 3600 or value > 5400:
+            raise ValueError("max_interval_sec must be in [3600, 5400]")
         return value
 
     @model_validator(mode="after")

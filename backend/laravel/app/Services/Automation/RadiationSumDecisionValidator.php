@@ -20,7 +20,7 @@ class RadiationSumDecisionValidator
             throw new InvalidArgumentException("{$path}.config is required for radiation_sum_v1.");
         }
 
-        foreach (['threshold_par_mol_m2', 'max_interval_sec', 'fallback_interval_sec', 'max_daily_volume_l'] as $key) {
+        foreach (['threshold_par_mol_m2', 'max_interval_sec', 'fallback_interval_sec', 'max_daily_volume_l', 'plant_count', 'irrigation_ml_per_sec'] as $key) {
             if (! array_key_exists($key, $config) || $config[$key] === null || $config[$key] === '') {
                 throw new InvalidArgumentException("{$path}.config.{$key} is required.");
             }
@@ -42,7 +42,12 @@ class RadiationSumDecisionValidator
         $minInterval = array_key_exists('min_interval_sec', $config) && $config['min_interval_sec'] !== null
             ? self::integer($config['min_interval_sec'], "{$path}.config.min_interval_sec", 1200, 7200)
             : 1200;
-        $maxInterval = self::integer($config['max_interval_sec'], "{$path}.config.max_interval_sec", 1200, 10800);
+        $maxInterval = self::integer($config['max_interval_sec'], "{$path}.config.max_interval_sec", 3600, 5400);
+        self::integer($config['plant_count'], "{$path}.config.plant_count", 1, 20000);
+        $flow = self::number($config['irrigation_ml_per_sec'], "{$path}.config.irrigation_ml_per_sec");
+        if ($flow <= 0.0 || $flow > 500.0) {
+            throw new InvalidArgumentException("{$path}.config.irrigation_ml_per_sec must be in (0, 500].");
+        }
         if ($minInterval >= $maxInterval) {
             throw new InvalidArgumentException("{$path}.config.max_interval_sec must be greater than min_interval_sec.");
         }

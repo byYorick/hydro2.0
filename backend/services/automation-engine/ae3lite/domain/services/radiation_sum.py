@@ -22,7 +22,7 @@ from ae3lite.domain.services.greenhouse_clock import (
     as_aware_utc,
     greenhouse_local_date,
 )
-from ae3lite.domain.services.irrigation_window import LocalWindow, resolve_local_window
+from ae3lite.domain.services.irrigation_window import LocalWindow, resolve_effective_irrigation_window
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +39,7 @@ REASON_CONFIG = "radiation_sum_config_invalid"
 REASON_WINDOW = "radiation_sum_window_missing"
 REASON_LEDGER = "radiation_sum_ledger_unavailable"
 REASON_TIMEZONE = "radiation_sum_timezone_mismatch"
+REASON_VOLUME = "radiation_sum_volume_unbounded"
 
 ALERT_SENSOR_SILENT = "biz_sensor_silent"
 ALERT_DAILY_CAP = "biz_irrigation_daily_cap"
@@ -71,6 +72,8 @@ def placeholder_radiation_config() -> dict[str, Any]:
             "max_interval_sec": 5400,
             "fallback_interval_sec": 2700,
             "max_daily_volume_l": 1.0,
+            "plant_count": 1,
+            "irrigation_ml_per_sec": 1.0,
         }
     ).model_dump(mode="python")
 
@@ -91,32 +94,85 @@ def build_radiation_decision(raw_config: Mapping[str, Any] | None) -> dict[str, 
     }
 
 
-def configured_pulse_liters(config: RadiationSumConfig) -> float:
-    plants = float(config.plant_count) if config.plant_count else 1.0
-    return float(config.pulse_ml_per_plant) * plants / 1000.0
+def nominal_pulse_liters(config: RadiationSumConfig) -> float:
+    return float(config.pulse_ml_per_plant) * float(config.plant_count) / 1000.0
 
 
-def pulse_liters_from_mapping(raw: Any, *, fallback_liters: float) -> float:
+def conservative_pulse_liters(
+    *,
+    nominal_l: float,
+    duration_sec: float | None,
+    ml_per_sec: float,
+    unknown_duration_liters: float,
+) -> float:
+    """Большее из номинала и длительности×расход. Без длительности — не занижать."""
+    if duration_sec is None or duration_sec <= 0 or ml_per_sec <= 0:
+        return max(float(nominal_l), float(unknown_duration_liters))
+    delivered = float(duration_sec) * float(ml_per_sec) / 1000.0
+    return max(float(nominal_l), delivered)
+
+
+def _mapping(raw: Any) -> Mapping[str, Any] | None:
     if isinstance(raw, str) and raw.strip():
         try:
             raw = json.loads(raw)
         except (TypeError, ValueError):
-            return float(fallback_liters)
-    if not isinstance(raw, Mapping):
-        return float(fallback_liters)
-    try:
-        ml = float(raw["pulse_ml_per_plant"])
-    except (KeyError, TypeError, ValueError):
-        return float(fallback_liters)
-    plants = 1.0
-    if raw.get("plant_count") is not None:
+            return None
+    return raw if isinstance(raw, Mapping) else None
+
+
+def duration_sec_from_command(payload: Any, requested_duration_sec: Any) -> float | None:
+    parsed = _mapping(payload)
+    params = parsed.get("params") if isinstance(parsed, Mapping) else None
+    if isinstance(params, Mapping) and params.get("duration_ms") is not None:
         try:
-            plants = float(raw["plant_count"])
+            return float(params["duration_ms"]) / 1000.0
         except (TypeError, ValueError):
-            return float(fallback_liters)
-    if ml <= 0 or plants <= 0:
-        return float(fallback_liters)
-    return ml * plants / 1000.0
+            return None
+    if requested_duration_sec is not None:
+        try:
+            value = float(requested_duration_sec)
+        except (TypeError, ValueError):
+            return None
+        if value > 0:
+            return value
+    return None
+
+
+def pulse_liters_from_row(
+    row: Mapping[str, Any],
+    *,
+    fallback_ml_per_sec: float,
+    fallback_nominal_l: float,
+    unknown_duration_liters: float,
+) -> float:
+    if row.get("liters") is not None:
+        try:
+            return float(row["liters"])
+        except (TypeError, ValueError):
+            pass
+    config = _mapping(row.get("config")) or {}
+    try:
+        nominal = float(config["pulse_ml_per_plant"]) * float(config["plant_count"]) / 1000.0
+    except (KeyError, TypeError, ValueError):
+        nominal = float(fallback_nominal_l)
+    try:
+        rate = float(config["irrigation_ml_per_sec"]) if config.get("irrigation_ml_per_sec") is not None else fallback_ml_per_sec
+    except (TypeError, ValueError):
+        rate = float(fallback_ml_per_sec)
+    duration = row.get("duration_sec")
+    if duration is None:
+        duration = duration_sec_from_command(row.get("command_payload"), row.get("requested_duration_sec"))
+    try:
+        duration_value = float(duration) if duration is not None else None
+    except (TypeError, ValueError):
+        duration_value = None
+    return conservative_pulse_liters(
+        nominal_l=nominal,
+        duration_sec=duration_value,
+        ml_per_sec=rate,
+        unknown_duration_liters=unknown_duration_liters,
+    )
 
 
 def select_local_day_pulses(
@@ -263,11 +319,13 @@ def resolve_radiation_window(
     if not start or hours is None or not (0.0 < hours < 24.0):
         return LocalWindow(inside=False, invalid=True, start_utc=None), timezone_name, REASON_WINDOW
     try:
-        window = resolve_local_window(
+        window = resolve_effective_irrigation_window(
             now=now,
             day_start_time=start,
             day_hours=hours,
             timezone_name=timezone_name,
+            inset_start_sec=int(config.first_pulse_after_sunrise_sec),
+            inset_end_sec=int(config.last_pulse_before_sunset_sec),
         )
     except InvalidGreenhouseTimezone:
         return None, timezone_name, REASON_TIMEZONE
@@ -298,6 +356,7 @@ def decide_radiation_sum(
     pulses: Sequence[Mapping[str, Any]],
     par_samples: Sequence[tuple[datetime, float]] | None,
     lux_samples: Sequence[tuple[datetime, float]] | None,
+    duration_sec: float,
 ) -> Any:
     """Чистое решение. ``par_samples is None`` — ряд прочитать не удалось, это stale."""
     now_utc = as_aware_utc(now)
@@ -313,7 +372,12 @@ def decide_radiation_sum(
     if last_pulse is not None and last_pulse > anchor:
         anchor = last_pulse
     elapsed = max(0.0, (now_utc - anchor).total_seconds())
-    next_liters = configured_pulse_liters(config)
+    next_liters = conservative_pulse_liters(
+        nominal_l=nominal_pulse_liters(config),
+        duration_sec=duration_sec,
+        ml_per_sec=float(config.irrigation_ml_per_sec),
+        unknown_duration_liters=float(config.max_daily_volume_l),
+    )
     day_pulses = select_local_day_pulses(pulses, now=now_utc, timezone_name=timezone_name)
     used_liters = 0.0
     for pulse in day_pulses:
@@ -441,6 +505,19 @@ class RadiationSumDecisionStrategy:
                 reason=REASON_NIGHT,
                 details={"timezone": timezone_name, "requested_duration_sec": requested_duration_sec},
             )
+        duration_sec = _positive_duration(
+            requested_duration_sec,
+            getattr(getattr(runtime, "irrigation_execution", None), "duration_sec", None),
+        )
+        if duration_sec is None:
+            return _decision(
+                outcome="fail",
+                reason=REASON_VOLUME,
+                details={
+                    "timezone": timezone_name,
+                    "message": "Нет длительности рецепта: литры импульса нечем ограничить.",
+                },
+            )
 
         ledger = getattr(runtime_monitor, "read_irrigation_pulses", None)
         if not callable(ledger):
@@ -451,7 +528,7 @@ class RadiationSumDecisionStrategy:
             logger.warning("AE3 radiation_sum не прочитал историю импульсов zone_id=%s", zone_id, exc_info=True)
             return _decision(outcome="fail", reason=REASON_LEDGER, details={"timezone": timezone_name})
 
-        fallback_liters = configured_pulse_liters(config)
+        nominal = nominal_pulse_liters(config)
         pulses: list[dict[str, Any]] = []
         for row in raw_pulses or []:
             if not isinstance(row, Mapping):
@@ -459,13 +536,12 @@ class RadiationSumDecisionStrategy:
             moment = row.get("finished_at")
             if not isinstance(moment, datetime):
                 continue
-            liters = row.get("liters")
-            if liters is None:
-                liters = pulse_liters_from_mapping(row.get("config"), fallback_liters=fallback_liters)
-            try:
-                liters_value = float(liters)
-            except (TypeError, ValueError):
-                liters_value = fallback_liters
+            liters_value = pulse_liters_from_row(
+                row,
+                fallback_ml_per_sec=float(config.irrigation_ml_per_sec),
+                fallback_nominal_l=nominal,
+                unknown_duration_liters=float(config.max_daily_volume_l),
+            )
             pulses.append({"finished_at": moment, "liters": liters_value})
 
         anchor = window.start_utc or as_aware_utc(now)
@@ -497,10 +573,24 @@ class RadiationSumDecisionStrategy:
             pulses=pulses,
             par_samples=par_samples,
             lux_samples=lux_samples,
+            duration_sec=duration_sec,
         )
         if isinstance(decision.details, dict):
             decision.details["requested_duration_sec"] = requested_duration_sec
         return decision
+
+
+def _positive_duration(*candidates: Any) -> float | None:
+    for raw in candidates:
+        if raw is None or isinstance(raw, bool):
+            continue
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            continue
+        if value > 0:
+            return value
+    return None
 
 
 async def _read_series(
