@@ -3,6 +3,7 @@ import logging
 import signal
 import time
 from contextlib import asynccontextmanager
+from functools import partial
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
@@ -72,6 +73,27 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.warning("Failed to reclaim telemetry processing list on startup", exc_info=True)
 
+    # Install every callback before CONNECT: a persistent broker can replay
+    # inflight deliveries immediately after CONNACK, before startup resumes.
+    mqtt = await get_mqtt_client(manual_ack=True, start=False)
+    subscribe = partial(mqtt.subscribe, start=False)
+    await subscribe(
+        "hydro/+/+/+/+/telemetry", partial(handle_telemetry, durable=True), ack_after_handler=True
+    )
+    await subscribe("hydro/+/+/+/heartbeat", handle_heartbeat)
+    await subscribe("hydro/+/+/+/status", handle_status)
+    await subscribe("hydro/+/+/+/lwt", handle_lwt)
+    await subscribe("hydro/+/+/+/diagnostics", handle_diagnostics)
+    await subscribe("hydro/+/+/+/error", handle_error)
+    await subscribe("hydro/node_hello", handle_node_hello)
+    await subscribe("hydro/+/+/+/node_hello", handle_node_hello)
+    await subscribe("hydro/+/+/+/config_report", handle_config_report)
+    await subscribe("hydro/+/+/+/+/command_response", handle_command_response)
+    await subscribe("hydro/+/+/+/+/event", handle_node_event)
+    await subscribe("hydro/time/request", handle_time_request)
+
+    await mqtt.start()
+
     task = asyncio.create_task(process_telemetry_queue(), name="telemetry_queue_processor")
     state.background_tasks.append(task)
 
@@ -121,19 +143,6 @@ async def lifespan(app: FastAPI):
     offline_task = asyncio.create_task(monitor_offline_nodes())
     state.background_tasks.append(offline_task)
 
-    mqtt = await get_mqtt_client()
-    await mqtt.subscribe("hydro/+/+/+/+/telemetry", handle_telemetry)
-    await mqtt.subscribe("hydro/+/+/+/heartbeat", handle_heartbeat)
-    await mqtt.subscribe("hydro/+/+/+/status", handle_status)
-    await mqtt.subscribe("hydro/+/+/+/lwt", handle_lwt)
-    await mqtt.subscribe("hydro/+/+/+/diagnostics", handle_diagnostics)
-    await mqtt.subscribe("hydro/+/+/+/error", handle_error)
-    await mqtt.subscribe("hydro/node_hello", handle_node_hello)
-    await mqtt.subscribe("hydro/+/+/+/node_hello", handle_node_hello)
-    await mqtt.subscribe("hydro/+/+/+/config_report", handle_config_report)
-    await mqtt.subscribe("hydro/+/+/+/+/command_response", handle_command_response)
-    await mqtt.subscribe("hydro/+/+/+/+/event", handle_node_event)
-    await mqtt.subscribe("hydro/time/request", handle_time_request)
 
     logger.info("History Logger service started")
     logger.info(

@@ -2,7 +2,6 @@ package com.hydro.app.features.provisioning
 
 import android.content.Context
 import android.net.wifi.WifiManager
-import android.net.wifi.ScanResult
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -16,7 +15,8 @@ import javax.inject.Singleton
 
 @Singleton
 class ProvisioningRepository @Inject constructor(
-    private val client: OkHttpClient,
+    @com.hydro.app.core.di.ProvisioningClient private val client: OkHttpClient,
+    private val setupNetwork: ProvisioningNetwork,
     @ApplicationContext private val context: Context
 ) {
     suspend fun scanForDevices(): List<ProvisioningViewModel.ProvisioningDevice> = withContext(Dispatchers.IO) {
@@ -36,35 +36,29 @@ class ProvisioningRepository @Inject constructor(
 
     suspend fun provisionDevice(
         device: ProvisioningViewModel.ProvisioningDevice,
-        config: ProvisioningViewModel.ProvisioningConfig,
-        backendUrl: String
+        config: ProvisioningViewModel.ProvisioningConfig
     ): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
-            // Default IP for ESP32 AP mode
-            val deviceIp = device.ipAddress ?: "192.168.4.1"
-            val url = "http://$deviceIp/api/provision"
-            
+            require(device.ipAddress == null || device.ipAddress == "192.168.4.1") { "Unsupported setup address" }
+            val url = "http://192.168.4.1/wifi/connect"
+            require(config.mqttHost.matches(Regex("^(?:[0-9]{1,3}\\.){3}[0-9]{1,3}$")) &&
+                config.mqttHost.split('.').all { it.toInt() in 0..255 }) { "MQTT host must be an IPv4 address" }
+            require(config.mqttPort in 1..65535) { "Invalid MQTT port" }
             val json = JSONObject()
-                .put("wifi_ssid", config.wifiSsid)
-                .put("wifi_password", config.wifiPassword)
-                .put("backend_base_url", backendUrl)
-            if (config.greenhouseUid != null) {
-                json.put("gh_uid", config.greenhouseUid)
-            }
-            if (config.zoneUid != null) {
-                json.put("zone_uid", config.zoneUid)
-            }
-            json.put("node_name", config.nodeName)
-            
+                .put("ssid", config.wifiSsid)
+                .put("password", config.wifiPassword)
+                .put("mqtt_host", config.mqttHost)
+                .put("mqtt_port", config.mqttPort)
+
             val body = json.toString().toRequestBody("application/json".toMediaType())
             val req = Request.Builder()
                 .url(url)
                 .post(body)
                 .build()
             
-            client.newCall(req).execute().use { resp ->
+            setupNetwork.bind(client).newCall(req).execute().use { resp ->
                 if (!resp.isSuccessful) {
-                    error("Provision failed: ${resp.code} - ${resp.body?.string()}")
+                    error("Provision failed: ${resp.code}")
                 }
             }
         }

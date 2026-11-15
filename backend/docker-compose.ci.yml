@@ -25,7 +25,7 @@ services:
       start_period: 10s
 
   db:
-    image: timescale/timescaledb:latest-pg16
+    image: timescale/timescaledb:2.28.2-pg16
     environment:
       POSTGRES_DB: hydro_test
       POSTGRES_USER: hydro

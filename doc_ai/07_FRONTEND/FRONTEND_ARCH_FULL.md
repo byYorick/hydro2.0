@@ -109,6 +109,36 @@ Canonical recipe UX:
 - `targets` используется только как derived read-helper;
 - `PlantCreateModal` не создаёт `plant -> recipe -> revision -> phases` последовательностью запросов с фронта, а вызывает атомарный backend endpoint `POST /api/plants/with-recipe`.
 
+Внутри редактора `composables/recipePhaseFields.ts` отвечает за преобразования
+длительности/интервала, nullable-поля, day/night limits и вычисление EC preview.
+`composables/useRecipeIrrigation.ts` связывает режим полива всех фаз, совместимость
+субстратов и реактивный выбор значения при смене системы. Он получает текущую
+форму через `Ref` и каталог через getter, поэтому замена модели не оставляет
+ссылок на старую форму.
+
+Декомпозиция редактора (2026-11-15):
+
+- `RecipeEditor.vue` собирает режим, общий draft, workspace фаз и modal субстрата;
+  его внешние props/events и `data-testid` сохранены.
+- `Components/Recipes/Editor/RecipeEditorIdentity.vue` владеет выбором/созданием
+  культуры и label/name, `RecipeEditorPreview.vue` — вычислением и показом preview.
+- `RecipePhaseEditor.vue` сохраняет корневой section/testid и header фазы,
+  отдельные поля — `RecipePhaseIrrigationFields`, `RecipePhaseSolutionFields`,
+  `RecipePhaseNutrientFields`, `RecipePhaseClimateFields`,
+  `RecipePhaseSolutionHealthFields`, `RecipePhaseLightingFields`.
+- `recipePhaseFields.css` подключён scoped к phase editor; `:deep` переносит
+  существующее оформление на дочерние поля без глобальной утечки CSS.
+- `useRecipeEditor` остаётся координатором формы, добавления/удаления фаз и save;
+  `useRecipeCatalogs` владеет справочниками/loading и получает только plant-id Ref;
+  `recipeEditorValidationError` возвращает первую ошибку без UI side effects;
+  `useRecipeDraftPersistence` владеет IDs, clone mapping и phase CRUD/publish.
+
+API payload по-прежнему строит `recipeEditorShared`. Clone из опубликованной
+ревизии сопоставляется по исходному phase index, изменения применяются к draft,
+активный grow cycle автоматически не переключается. Изменение вложенных полей
+работает с тем же reactive draft; сортировка отображения не меняет индекс
+удаления в исходном массиве. UI/HTTP payload и права доступа не расширялись.
+
 ---
 
 # 3. Подробное описание экранов

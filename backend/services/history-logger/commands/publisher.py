@@ -25,6 +25,13 @@ from .alerts import emit_command_send_failed_alert
 from .constants import MAX_PUBLISH_RETRIES, MQTT_PUBLISH_RETRY_DELAYS_SEC
 from .lifecycle import ensure_post_publish_status_persisted
 
+from .dependencies import async_dependency
+
+get_mqtt_client = async_dependency("get_mqtt_client", get_mqtt_client)
+publish_command_mqtt = async_dependency("publish_command_mqtt", publish_command_mqtt)
+mark_command_sent = async_dependency("mark_command_sent", mark_command_sent)
+mark_command_send_failed = async_dependency("mark_command_send_failed", mark_command_send_failed)
+
 logger = logging.getLogger(__name__)
 
 

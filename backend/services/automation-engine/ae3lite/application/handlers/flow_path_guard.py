@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Mapping, Sequence
+from typing import Any, Mapping, Protocol, Sequence
 
 from ae3lite.application.dto.stage_outcome import StageOutcome
 from ae3lite.application.runtime_event_contract import with_runtime_event_contract
@@ -15,6 +15,20 @@ from ae3lite.hydraulics.failure_report import note_upward_report
 from common.db import create_zone_event
 
 _logger = logging.getLogger(__name__)
+
+
+class FlowPathSafetyPort(Protocol):
+    """Only the three operations required for a stop/probe safety boundary."""
+
+    def _require_runtime_plan(self, *, plan: Any) -> Any: ...
+
+    async def _run_command_batch_checked(
+        self, *, task: Any, commands: Sequence[Any], now: datetime,
+    ) -> Mapping[str, Any]: ...
+
+    async def _probe_irr_state(
+        self, *, task: Any, plan: Any, now: datetime, expected: Mapping[str, bool],
+    ) -> None: ...
 
 MANUAL_HOLD_STAGE = "manual_hold"
 MANUAL_HOLD_RETURN_PREFIX = "__mh_return:"
@@ -180,7 +194,7 @@ def _resolve_stop_commands(*, plan: Any, plan_names: Sequence[str]) -> tuple[Any
 
 
 async def ensure_flow_stopped(
-    handler: Any,
+    handler: FlowPathSafetyPort,
     *,
     task: Any,
     plan: Any,
@@ -264,7 +278,7 @@ async def ensure_flow_stopped(
 
 
 async def handle_control_mode_flow_path_interrupt(
-    handler: Any,
+    handler: FlowPathSafetyPort,
     *,
     task: Any,
     plan: Any,
