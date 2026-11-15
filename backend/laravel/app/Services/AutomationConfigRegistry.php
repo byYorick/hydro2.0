@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Services\Automation\RadiationSumDecisionValidator;
 use App\Support\Automation\ZonePidDefaults;
 use App\Support\Automation\ZoneProcessCalibrationDefaults;
 use InvalidArgumentException;
@@ -606,9 +607,15 @@ class AutomationConfigRegistry
         }
 
         $strategy = $decision['strategy'];
-        if (! is_string($strategy) || ! in_array($strategy, ['task', 'smart_soil_v1'], true)) {
+        if (! is_string($strategy) || ! in_array($strategy, ['task', 'smart_soil_v1', 'radiation_sum_v1'], true)) {
             throw new InvalidArgumentException(
-                "zone.logic_profile.profiles.{$mode}.subsystems.irrigation.decision.strategy must be task or smart_soil_v1."
+                "zone.logic_profile.profiles.{$mode}.subsystems.irrigation.decision.strategy must be task, smart_soil_v1 or radiation_sum_v1."
+            );
+        }
+        if ($strategy === 'radiation_sum_v1') {
+            RadiationSumDecisionValidator::validate(
+                $decision,
+                "zone.logic_profile.profiles.{$mode}.subsystems.irrigation.decision"
             );
         }
     }

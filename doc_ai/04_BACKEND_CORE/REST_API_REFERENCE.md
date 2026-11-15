@@ -680,7 +680,7 @@ Laravel публикует `ExecutionChainUpdated` на приватный ка�
 
 Инварианты `POST /zones/{id}/start-irrigation`:
 - endpoint принимает `source`, `idempotency_key`, `mode`, `requested_duration_sec`;
-- `mode=normal` проходит через configured irrigation decision strategy (`task|smart_soil_v1`);
+- `mode=normal` проходит через configured irrigation decision strategy (`task|smart_soil_v1|radiation_sum_v1`);
 - неизвестная irrigation decision strategy считается ошибкой конфигурации, завершает task fail-closed с `irrigation_decision_strategy_unknown` и поднимает `biz_irrigation_decision_fail`;
 - `mode=force` пропускает decision-gate, но остаётся canonical `ae_task`;
 - при `decision=skip` runtime завершает task успешно без device-command publish;

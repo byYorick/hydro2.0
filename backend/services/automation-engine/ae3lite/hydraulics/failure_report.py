@@ -7,7 +7,7 @@ from contextvars import ContextVar, Token
 from dataclasses import dataclass
 from typing import Any, Mapping
 
-from common.biz_alerts import send_biz_alert
+from common.biz_alerts import resolve_biz_alert, send_biz_alert
 
 _logger = logging.getLogger(__name__)
 
@@ -28,6 +28,7 @@ class UpwardReport:
     node_uid: str | None = None
     details: Mapping[str, Any] | None = None
     scope_parts: tuple[str, ...] = ()
+    status: str = "ACTIVE"
 
 
 def open_upward_capture() -> Token[list[UpwardReport] | None]:
@@ -65,6 +66,7 @@ async def note_upward_report(**kwargs: Any) -> None:
         node_uid=kwargs.get("node_uid"),
         details=dict(details) if isinstance(details, Mapping) else None,
         scope_parts=scope_parts,
+        status=str(kwargs.get("status") or "ACTIVE").strip().upper() or "ACTIVE",
     )
     current = _buffer.get()
     if current is None:
@@ -94,7 +96,10 @@ async def publish_upward_reports(reports: tuple[UpwardReport, ...] | list[Upward
         if report.scope_parts:
             payload["scope_parts"] = report.scope_parts
         try:
-            await send_biz_alert(**payload)
+            if report.status == "RESOLVED":
+                await resolve_biz_alert(**payload)
+            else:
+                await send_biz_alert(**payload)
         except Exception:
             _logger.warning(
                 "AE3 исполнитель не смог отправить upward report code=%s",

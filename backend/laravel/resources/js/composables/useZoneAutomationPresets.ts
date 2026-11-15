@@ -6,6 +6,7 @@ import type {
   ZoneAutomationPresetCreatePayload,
   ZoneAutomationPresetFilters,
   IrrigationSystemType,
+  IrrigationDecision,
   CorrectionProfile,
   StartupFailSafeGuardsConfig,
 } from '@/types/ZoneAutomationPreset'
@@ -173,17 +174,19 @@ export function buildPresetFromWaterForm(
     },
     irrigation_decision: {
       strategy: form.irrigationDecisionStrategy ?? 'task',
-      ...(form.irrigationDecisionStrategy === 'smart_soil_v1'
-        ? {
-            config: {
-              lookback_sec: form.irrigationDecisionLookbackSeconds,
-              min_samples: form.irrigationDecisionMinSamples,
-              stale_after_sec: form.irrigationDecisionStaleAfterSeconds,
-              hysteresis_pct: form.irrigationDecisionHysteresisPct,
-              spread_alert_threshold_pct: form.irrigationDecisionSpreadAlertThresholdPct,
-            },
-          }
-        : {}),
+      ...(form.irrigationDecisionStrategy === 'radiation_sum_v1'
+        ? { config: { ...(form.irrigationDecisionRawConfig ?? {}) } as IrrigationDecision['config'] }
+        : form.irrigationDecisionStrategy === 'smart_soil_v1'
+          ? {
+              config: {
+                lookback_sec: form.irrigationDecisionLookbackSeconds,
+                min_samples: form.irrigationDecisionMinSamples,
+                stale_after_sec: form.irrigationDecisionStaleAfterSeconds,
+                hysteresis_pct: form.irrigationDecisionHysteresisPct,
+                spread_alert_threshold_pct: form.irrigationDecisionSpreadAlertThresholdPct,
+              },
+            }
+          : {}),
     },
     startup: {
       clean_fill_timeout_sec: form.startupCleanFillTimeoutSeconds ?? 1200,

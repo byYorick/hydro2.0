@@ -163,6 +163,47 @@ describe('zoneLogicProfileToProfile', () => {
     });
 });
 
+describe('radiation_sum_v1 round-trip', () => {
+    it('не заменяет стратегию на task и сохраняет config', () => {
+        const config = {
+            threshold_par_mol_m2: 1.3,
+            plant_count: 24,
+            irrigation_ml_per_sec: 2,
+            max_interval_sec: 5400,
+            fallback_interval_sec: 2700,
+            max_daily_volume_l: 12,
+        }
+        const profile = zoneLogicProfileToProfile({
+            active_mode: 'working',
+            profiles: {
+                working: {
+                    subsystems: {
+                        irrigation: {
+                            decision: {
+                                strategy: 'radiation_sum_v1',
+                                config,
+                            },
+                        },
+                    },
+                },
+            },
+        })
+        expect(profile.waterForm.irrigationDecisionStrategy).toBe('radiation_sum_v1')
+        expect(profile.waterForm.irrigationDecisionRawConfig).toMatchObject(config)
+
+        const written = profileToZoneLogicProfile(profile)
+        const decision = (
+            ((written.profiles as Record<string, { subsystems: { irrigation: { decision: { strategy: string; config: Record<string, unknown> } } } }>).working)
+                .subsystems.irrigation.decision
+        )
+        expect(decision.strategy).toBe('radiation_sum_v1')
+        expect(decision.config.plant_count).toBe(24)
+        expect(decision.config.threshold_par_mol_m2).toBe(1.3)
+        expect(decision.config.irrigation_ml_per_sec).toBe(2)
+        expect(decision.config).not.toHaveProperty('lookback_sec')
+    })
+})
+
 describe('profileToZoneLogicProfile', () => {
     it('emits canonical active profile with subsystems', () => {
         const payload = profileToZoneLogicProfile(automationProfileDefaults);

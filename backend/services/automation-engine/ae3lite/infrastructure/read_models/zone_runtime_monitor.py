@@ -201,6 +201,28 @@ class PgZoneRuntimeMonitor:
             limit_per_sensor=limit_per_sensor,
         )
 
+    async def read_channel_samples(
+        self,
+        *,
+        zone_id: int,
+        label: str,
+        since_ts: datetime,
+        until_ts: datetime,
+    ) -> Mapping[str, Any]:
+        from ae3lite.infrastructure.read_models.radiation_sum_series import fetch_channel_samples
+
+        return await fetch_channel_samples(
+            zone_id=zone_id,
+            label=label,
+            since_ts=since_ts,
+            until_ts=until_ts,
+        )
+
+    async def read_irrigation_pulses(self, *, zone_id: int) -> list[dict[str, Any]]:
+        from ae3lite.infrastructure.read_models.radiation_sum_ledger import fetch_irrigation_pulses
+
+        return await fetch_irrigation_pulses(zone_id=zone_id)
+
     async def read_solution_temp_window(
         self,
         *,

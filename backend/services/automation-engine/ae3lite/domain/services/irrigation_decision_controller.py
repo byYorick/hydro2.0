@@ -11,8 +11,8 @@ from ae3lite.config.schema import RuntimePlan
 from ae3lite.domain.services.greenhouse_clock import (
     DEFAULT_GREENHOUSE_TIMEZONE,
     InvalidGreenhouseTimezone,
-    local_minutes,
 )
+from ae3lite.domain.services.irrigation_window import resolve_local_window
 
 
 @dataclass(frozen=True)
@@ -63,45 +63,13 @@ class SmartSoilDecisionStrategy:
         day_hours: float | None,
         timezone_name: str | None,
     ) -> tuple[bool, bool]:
-        if not day_start_time or day_hours is None:
-            return True, False
-
-        raw = str(day_start_time).strip()
-        if not raw:
-            return True, False
-
-        parts = raw.split(":")
-        if len(parts) < 2:
-            return False, True
-
-        try:
-            start_h = int(parts[0])
-            start_m = int(parts[1])
-        except ValueError:
-            return False, True
-
-        if start_h < 0 or start_h > 23 or start_m < 0 or start_m > 59:
-            return False, True
-
-        try:
-            hours = float(day_hours)
-        except (TypeError, ValueError):
-            return False, True
-
-        if hours <= 0:
-            return False, False
-        if hours >= 24:
-            return True, False
-
-        start_min = start_h * 60 + start_m
-        end_min = (start_min + int(round(hours * 60))) % (24 * 60)
-        now_min = local_minutes(now, timezone_name)
-
-        if start_min == end_min:
-            return False, True
-        if start_min < end_min:
-            return start_min <= now_min < end_min, False
-        return now_min >= start_min or now_min < end_min, False
+        window = resolve_local_window(
+            now=now,
+            day_start_time=day_start_time,
+            day_hours=day_hours,
+            timezone_name=timezone_name,
+        )
+        return window.inside, window.invalid
 
     @staticmethod
     def _resolve_target_band(
@@ -259,9 +227,12 @@ class SmartSoilDecisionStrategy:
 
 class IrrigationDecisionController:
     def __init__(self) -> None:
+        from ae3lite.domain.services.radiation_sum import RadiationSumDecisionStrategy
+
         self._strategies: dict[str, IrrigationDecisionStrategy] = {
             "task": TaskDecisionStrategy(),
             "smart_soil_v1": SmartSoilDecisionStrategy(),
+            "radiation_sum_v1": RadiationSumDecisionStrategy(),
         }
 
     async def evaluate(

@@ -218,8 +218,15 @@ function applyDecision(
   waterForm: WaterFormState,
 ): void {
   const irrigationDecisionStrategy = readString(irrigationDecision?.strategy)
-  if (irrigationDecisionStrategy === 'task' || irrigationDecisionStrategy === 'smart_soil_v1') {
+  if (
+    irrigationDecisionStrategy === 'task' ||
+    irrigationDecisionStrategy === 'smart_soil_v1' ||
+    irrigationDecisionStrategy === 'radiation_sum_v1'
+  ) {
     waterForm.irrigationDecisionStrategy = irrigationDecisionStrategy
+  }
+  if (irrigationDecisionStrategy === 'radiation_sum_v1' && irrigationDecisionConfig) {
+    waterForm.irrigationDecisionRawConfig = { ...irrigationDecisionConfig }
   }
 
   const irrigationDecisionLookbackSeconds = readNumber(irrigationDecisionConfig?.lookback_sec)

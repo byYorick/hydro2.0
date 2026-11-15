@@ -249,11 +249,16 @@ function sanitizeWaterForm(
       5000
     ),
     irrigationDecisionStrategy:
-      raw?.irrigationDecisionStrategy === 'task' || raw?.irrigationDecisionStrategy === 'smart_soil_v1'
+      raw?.irrigationDecisionStrategy === 'task' ||
+      raw?.irrigationDecisionStrategy === 'smart_soil_v1' ||
+      raw?.irrigationDecisionStrategy === 'radiation_sum_v1'
         ? raw.irrigationDecisionStrategy
-        : fallback.irrigationDecisionStrategy === 'task' || fallback.irrigationDecisionStrategy === 'smart_soil_v1'
+        : fallback.irrigationDecisionStrategy === 'task' ||
+            fallback.irrigationDecisionStrategy === 'smart_soil_v1' ||
+            fallback.irrigationDecisionStrategy === 'radiation_sum_v1'
           ? fallback.irrigationDecisionStrategy
           : defaults.water_irrigation_decision_strategy,
+    irrigationDecisionRawConfig: raw?.irrigationDecisionRawConfig ?? fallback.irrigationDecisionRawConfig,
     irrigationDecisionLookbackSeconds: clamp(
       toRoundedNumber(
         raw?.irrigationDecisionLookbackSeconds,

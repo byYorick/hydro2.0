@@ -8,7 +8,7 @@ export type IrrigationSystemType =
 
 export type CorrectionProfile = 'safe' | 'balanced' | 'aggressive' | 'test'
 
-export type IrrigationDecisionStrategy = 'task' | 'smart_soil_v1'
+export type IrrigationDecisionStrategy = 'task' | 'smart_soil_v1' | 'radiation_sum_v1'
 
 export interface IrrigationConfig {
   duration_sec: number

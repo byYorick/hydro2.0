@@ -279,6 +279,11 @@ Stage-terminal коды используются `WorkflowRouter._fail_task` д�
 | `ae3_water_baseline_invalid` | `solution_fill` / `prepare_recirc_*` | Нет замера чистой воды **текущего** цикла подготовки; baseline чужого цикла использовать нельзя. |
 | `recirc_dilute_blocked_solution_max` | `prepare_recirc_*` (dilute) | Бак раствора уже полный (`solution_max`) — разбавление невозможно, AE3 остановил рециркуляцию fail-closed. |
 | `irrigation_decision_strategy_unknown` | `decision_gate` | Неизвестная irrigation strategy в конфиге. |
+| `radiation_sum_config_invalid` | `decision_gate` | Конфиг `radiation_sum_v1` вне коридора или без обязательного поля. Полив по стратегии не стартует. |
+| `radiation_sum_window_missing` | `decision_gate` | Нет конечного окна полива в местном времени теплицы. |
+| `radiation_sum_ledger_unavailable` | `decision_gate` | Не прочитана история импульсов. Суточный лимит нельзя проверить, полив не стартует. |
+| `radiation_sum_daily_cap` | `decision_gate` | Исчерпан суточный лимит импульсов или литров. |
+| `radiation_sum_volume_unbounded` | `decision_gate` | Нет длительности рецепта: фактические литры импульса нечем ограничить. |
 
 ## Таблица кодов solution_change
 

@@ -122,11 +122,128 @@ class IrrigationDecisionConfig(BaseModel):
     spread_alert_threshold_pct: Annotated[float, Field(ge=0.0, le=100.0)]
 
 
+def _reject_bool(value: Any) -> Any:
+    if isinstance(value, bool):
+        raise ValueError("must be a number")
+    return value
+
+
+def _strict_int(value: Any) -> Any:
+    if isinstance(value, bool) or isinstance(value, float):
+        raise ValueError("must be an integer number of seconds")
+    return value
+
+
+class RadiationSumConfig(BaseModel):
+    """Полив по накопленному PAR внутри теплицы. Вне диапазона — отказ, без clamp.
+
+    Обязательны threshold_par_mol_m2, max_interval_sec (60–90 мин), fallback_interval_sec,
+    max_daily_volume_l, plant_count и irrigation_ml_per_sec. Без расхода длительность
+    рецепта не переводится в литры, и конфиг отклоняется.
+
+    Расписание irrigation_start должно тикать примерно раз в 5 минут: пауза 20 мин
+    проверяется только в момент тика, между тиками она не соблюдается точнее шага планировщика.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    source: Literal["par"] = "par"
+    source_channel: ChannelStr = "par"
+    threshold_par_mol_m2: float
+    crop: Literal["strawberry", "lettuce"] = "strawberry"
+    pulse_ml_per_plant: Annotated[float, Field(gt=0.0, le=200.0)] = 35.0
+    plant_count: Annotated[int, Field(ge=1, le=20000)]
+    irrigation_ml_per_sec: Annotated[float, Field(gt=0.0, le=500.0)]
+    min_interval_sec: Annotated[int, Field(ge=1200, le=7200)] = 1200
+    max_interval_sec: int
+    first_pulse_after_sunrise_sec: Annotated[int, Field(ge=3600, le=7200)] = 3600
+    last_pulse_before_sunset_sec: Annotated[int, Field(ge=3600, le=10800)] = 7200
+    max_daily_pulses: Annotated[int, Field(ge=1, le=30)] = 30
+    max_daily_volume_l: Annotated[float, Field(gt=0.0, le=500.0)]
+    stale_after_sec: Annotated[int, Field(ge=300, le=1800)] = 600
+    fallback_interval_sec: int
+    zero_daytime_as_stale: bool = True
+    lux_proxy_umol_per_lux: Annotated[float, Field(gt=0.0, le=0.05)] = 0.018
+    allow_lux_proxy: bool = True
+    max_gap_sec: Annotated[int, Field(ge=30, le=3600)] = 600
+    on_stale: Literal["fallback_timer"] = "fallback_timer"
+    timezone: str | None = None
+    drain_target_pct: Annotated[float, Field(ge=5.0, le=40.0)] | None = None
+    ec_suggest_only: bool = True
+    ec_max_step_per_day: Annotated[float, Field(gt=0.0, le=0.2)] = 0.2
+
+    @field_validator(
+        "threshold_par_mol_m2",
+        "pulse_ml_per_plant",
+        "irrigation_ml_per_sec",
+        "max_daily_volume_l",
+        "lux_proxy_umol_per_lux",
+        "ec_max_step_per_day",
+        "drain_target_pct",
+        mode="before",
+    )
+    @classmethod
+    def _numbers_are_not_bools(cls, value: Any) -> Any:
+        return _reject_bool(value)
+
+    @field_validator(
+        "min_interval_sec",
+        "max_interval_sec",
+        "fallback_interval_sec",
+        "stale_after_sec",
+        "max_gap_sec",
+        "max_daily_pulses",
+        "plant_count",
+        "first_pulse_after_sunrise_sec",
+        "last_pulse_before_sunset_sec",
+        mode="before",
+    )
+    @classmethod
+    def _seconds_are_integers(cls, value: Any) -> Any:
+        if value is None:
+            return value
+        return _strict_int(value)
+
+    @field_validator("timezone")
+    @classmethod
+    def _timezone_must_be_iana(cls, value: str | None) -> str | None:
+        return _require_optional_timezone(value)
+
+    @field_validator("fallback_interval_sec")
+    @classmethod
+    def _fallback_band(cls, value: int) -> int:
+        if value < 2700 or value > 3600:
+            raise ValueError("fallback_interval_sec must be in [2700, 3600]")
+        return value
+
+    @field_validator("max_interval_sec")
+    @classmethod
+    def _max_interval_band(cls, value: int) -> int:
+        if value < 3600 or value > 5400:
+            raise ValueError("max_interval_sec must be in [3600, 5400]")
+        return value
+
+    @model_validator(mode="after")
+    def _crop_bounds(self) -> "RadiationSumConfig":
+        if self.min_interval_sec >= self.max_interval_sec:
+            raise ValueError("min_interval_sec must be < max_interval_sec")
+        if self.crop == "strawberry" and not (1.2 <= self.threshold_par_mol_m2 <= 1.5):
+            raise ValueError("strawberry threshold_par_mol_m2 must be in [1.2, 1.5]")
+        if self.crop == "lettuce" and not (0.9 <= self.threshold_par_mol_m2 <= 1.2):
+            raise ValueError("lettuce threshold_par_mol_m2 must be in [0.9, 1.2]")
+        if self.crop == "lettuce" and not (3600 <= self.last_pulse_before_sunset_sec <= 7200):
+            raise ValueError("lettuce last_pulse_before_sunset_sec must be in [3600, 7200]")
+        if self.crop == "strawberry" and not (7200 <= self.last_pulse_before_sunset_sec <= 10800):
+            raise ValueError("strawberry last_pulse_before_sunset_sec must be in [7200, 10800]")
+        return self
+
+
 class IrrigationDecision(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     strategy: str
-    config: IrrigationDecisionConfig
+    config: IrrigationDecisionConfig | RadiationSumConfig
+    config_error: str | None = None
 
 
 class IrrigationRecovery(BaseModel):
@@ -434,6 +551,7 @@ __all__ = [
     "IrrigationExecution",
     "IrrigationDecision",
     "IrrigationDecisionConfig",
+    "RadiationSumConfig",
     "IrrigationRecovery",
     "RecircDiluteConfig",
     "IrrigationSafety",
