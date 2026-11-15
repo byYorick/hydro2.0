@@ -1,4 +1,8 @@
-"""Reject operator mutating commands while AE3 holds the zone lease."""
+"""Reject operator mutating commands while AE3 holds the zone lease.
+
+``source`` здесь — authenticated principal вызывающего, не поле body.
+Подмена ``source`` в JSON не должна попадать в этот аргумент.
+"""
 
 from __future__ import annotations
 
@@ -22,9 +26,14 @@ _TEST_NODE_TYPES = {"test", "test_node"}
 FetchFn = Callable[..., Awaitable[Any]]
 
 
-def _is_ae_source(source: str | None) -> bool:
+def is_automation_engine_principal(source: str | None) -> bool:
+    """True только для principal automation-engine, не для произвольной строки клиента."""
     value = str(source or "").strip().lower()
     return value == _AE_SOURCE_PREFIX or value.startswith(f"{_AE_SOURCE_PREFIX}:")
+
+
+def _is_ae_source(source: str | None) -> bool:
+    return is_automation_engine_principal(source)
 
 
 def _truthy_off(value: Any) -> bool:

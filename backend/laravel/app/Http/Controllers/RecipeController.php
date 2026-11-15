@@ -54,6 +54,8 @@ class RecipeController extends Controller
 
     public function store(Request $request): JsonResponse
     {
+        $this->authorize('create', Recipe::class);
+
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string'],
@@ -154,6 +156,8 @@ class RecipeController extends Controller
      */
     public function updateStageMap(Request $request, Recipe $recipe): JsonResponse
     {
+        $this->authorize('update', $recipe);
+
         $data = $request->validate([
             'stage_map' => ['required', 'array'],
             'stage_map.*.phase_index' => ['required', 'integer'],
@@ -204,6 +208,8 @@ class RecipeController extends Controller
 
     public function update(Request $request, Recipe $recipe): JsonResponse
     {
+        $this->authorize('update', $recipe);
+
         $data = $request->validate([
             'name' => ['sometimes', 'string', 'max:255'],
             'description' => ['nullable', 'string'],
@@ -216,6 +222,8 @@ class RecipeController extends Controller
 
     public function destroy(Recipe $recipe): JsonResponse
     {
+        $this->authorize('delete', $recipe);
+
         try {
             $this->recipeService->delete($recipe);
 

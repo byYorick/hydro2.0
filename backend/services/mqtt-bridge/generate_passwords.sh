@@ -61,13 +61,21 @@ if [ -f "${HOST_PASSWORDS_FILE}" ]; then
     rm -f "${HOST_PASSWORDS_FILE}"
 fi
 
-# Default passwords (CHANGE IN PRODUCTION!)
-# These are weak passwords for development only!
-PYTHON_SERVICE_PASS="${MQTT_PYTHON_SERVICE_PASS:-python_service_pass}"
-AUTOMATION_ENGINE_PASS="${MQTT_AUTOMATION_ENGINE_PASS:-automation_pass}"
-HISTORY_LOGGER_PASS="${MQTT_HISTORY_LOGGER_PASS:-logger_pass}"
-MQTT_BRIDGE_PASS="${MQTT_MQTT_BRIDGE_PASS:-bridge_pass}"
-ESP32_NODE_PASS="${MQTT_ESP32_NODE_PASS:-esp32_pass}"
+require_pass() {
+    local var_name="$1"
+    local value="${!var_name:-}"
+    if [ -z "$value" ]; then
+        error "${var_name} is required (no default password). Export it or run: make ensure-dev-secrets"
+        exit 1
+    fi
+    printf '%s' "$value"
+}
+
+PYTHON_SERVICE_PASS="$(require_pass MQTT_PYTHON_SERVICE_PASS)"
+AUTOMATION_ENGINE_PASS="$(require_pass MQTT_AUTOMATION_ENGINE_PASS)"
+HISTORY_LOGGER_PASS="$(require_pass MQTT_HISTORY_LOGGER_PASS)"
+MQTT_BRIDGE_PASS="$(require_pass MQTT_MQTT_BRIDGE_PASS)"
+ESP32_NODE_PASS="$(require_pass MQTT_ESP32_NODE_PASS)"
 
 # Create password file and add users (-b: batch mode, без интерактивного ввода)
 log "Creating password file..."
@@ -85,10 +93,4 @@ log "  - history_logger"
 log "  - mqtt_bridge"
 log "  - esp32_node"
 
-warning "IMPORTANT: Change default passwords in production!"
-warning "Set environment variables:"
-warning "  MQTT_PYTHON_SERVICE_PASS"
-warning "  MQTT_AUTOMATION_ENGINE_PASS"
-warning "  MQTT_HISTORY_LOGGER_PASS"
-warning "  MQTT_MQTT_BRIDGE_PASS"
-warning "  MQTT_ESP32_NODE_PASS"
+log "Passwords were taken from MQTT_*_PASS environment variables."

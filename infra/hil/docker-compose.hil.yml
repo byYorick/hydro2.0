@@ -131,7 +131,7 @@ services:
       - MQTT_PORT=1883
       - MQTT_TLS=0
       - MQTT_USER=${MQTT_BRIDGE_USER:-mqtt_bridge}
-      - MQTT_PASS=${MQTT_BRIDGE_PASS:-bridge_pass}
+      - MQTT_PASS=${MQTT_BRIDGE_PASS:-${MQTT_MQTT_BRIDGE_PASS:?MQTT_MQTT_BRIDGE_PASS must be set}}
       - PG_HOST=db
       - PG_DB=${DB_DATABASE:-hydro_hil}
       - PG_USER=${DB_USER:-hydro}
@@ -169,7 +169,7 @@ services:
       - MQTT_PORT=1883
       - MQTT_TLS=0
       - MQTT_USER=${MQTT_HISTORY_LOGGER_USER:-history_logger}
-      - MQTT_PASS=${MQTT_HISTORY_LOGGER_PASS:-logger_pass}
+      - MQTT_PASS=${MQTT_HISTORY_LOGGER_PASS:?MQTT_HISTORY_LOGGER_PASS must be set}
       - PG_HOST=db
       - PG_DB=${DB_DATABASE:-hydro_hil}
       - PG_USER=${DB_USER:-hydro}
@@ -178,6 +178,7 @@ services:
       - 'PY_API_TOKEN=${PY_API_TOKEN:?PY_API_TOKEN is required (run: make ensure-dev-secrets)}'
       - 'PY_INGEST_TOKEN=${PY_INGEST_TOKEN:?PY_INGEST_TOKEN is required (run: make ensure-dev-secrets)}'
       - 'HISTORY_LOGGER_API_TOKEN=${HISTORY_LOGGER_API_TOKEN:-${PY_INGEST_TOKEN:?PY_INGEST_TOKEN is required (run: make ensure-dev-secrets)}}'
+      - 'HISTORY_LOGGER_AE_TOKEN=${HISTORY_LOGGER_AE_TOKEN:?HISTORY_LOGGER_AE_TOKEN is required (run: make ensure-dev-secrets)}'
       - 'LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:?LARAVEL_API_TOKEN is required (run: make ensure-dev-secrets)}'
       - REDIS_HOST=redis
       - REDIS_PORT=6379
@@ -242,13 +243,14 @@ services:
       - MQTT_PORT=1883
       - MQTT_TLS=0
       - MQTT_USER=${MQTT_AUTOMATION_ENGINE_USER:-automation_engine}
-      - MQTT_PASS=${MQTT_AUTOMATION_ENGINE_PASS:-automation_pass}
+      - MQTT_PASS=${MQTT_AUTOMATION_ENGINE_PASS:?MQTT_AUTOMATION_ENGINE_PASS must be set}
       - PG_HOST=db
       - PG_DB=${DB_DATABASE:-hydro_hil}
       - PG_USER=${DB_USER:-hydro}
       - PG_PASS=${DB_PASSWORD:-hydro_hil}
       - LARAVEL_API_URL=http://laravel
       - 'PY_API_TOKEN=${PY_API_TOKEN:?PY_API_TOKEN is required (run: make ensure-dev-secrets)}'
+      - 'HISTORY_LOGGER_AE_TOKEN=${HISTORY_LOGGER_AE_TOKEN:?HISTORY_LOGGER_AE_TOKEN is required (run: make ensure-dev-secrets)}'
       - 'LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:?LARAVEL_API_TOKEN is required (run: make ensure-dev-secrets)}'
     depends_on:
       mqtt:

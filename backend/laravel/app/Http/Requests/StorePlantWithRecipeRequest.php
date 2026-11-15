@@ -2,6 +2,8 @@
 
 namespace App\Http\Requests;
 
+use App\Models\Plant;
+use App\Models\Recipe;
 use App\Support\Recipes\RecipePhasePayloadNormalizer;
 use App\Support\Recipes\RecipePhaseRules;
 use App\Support\Recipes\RecipePhaseTargetValidator;
@@ -12,7 +14,11 @@ class StorePlantWithRecipeRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return true;
+        $user = $this->user();
+
+        return $user !== null
+            && $user->can('create', Plant::class)
+            && $user->can('create', Recipe::class);
     }
 
     /**

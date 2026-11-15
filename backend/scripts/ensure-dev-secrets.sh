@@ -76,6 +76,43 @@ ensure_dev_secrets() {
     _dev_secret_set "$env_file" APP_KEY "$(_dev_secret_generate_app_key)"
     echo "ensure-dev-secrets: APP_KEY сгенерирован" >&2
   fi
+
+  local mqtt_key
+  for mqtt_key in MQTT_PYTHON_SERVICE_PASS MQTT_AUTOMATION_ENGINE_PASS MQTT_HISTORY_LOGGER_PASS MQTT_MQTT_BRIDGE_PASS MQTT_ESP32_NODE_PASS; do
+    current="$(_dev_secret_get "$env_file" "$mqtt_key")"
+    if _dev_secret_is_bad_mqtt_pass "$current"; then
+      _dev_secret_set "$env_file" "$mqtt_key" "$(_dev_secret_generate_token)"
+      echo "ensure-dev-secrets: ${mqtt_key} сгенерирован" >&2
+    fi
+  done
+
+  current="$(_dev_secret_get "$env_file" NODE_SECRET_WRAP_PASSPHRASE)"
+  if _dev_secret_is_bad_mqtt_pass "$current"; then
+    _dev_secret_set "$env_file" NODE_SECRET_WRAP_PASSPHRASE "$(_dev_secret_get "$env_file" MQTT_ESP32_NODE_PASS)"
+    echo "ensure-dev-secrets: NODE_SECRET_WRAP_PASSPHRASE совпадает с MQTT_ESP32_NODE_PASS" >&2
+  fi
+
+  current="$(_dev_secret_get "$env_file" GRAFANA_ADMIN_PASSWORD)"
+  if _dev_secret_is_bad_grafana_password "$current"; then
+    _dev_secret_set "$env_file" GRAFANA_ADMIN_PASSWORD "$(_dev_secret_generate_token)"
+    echo "ensure-dev-secrets: GRAFANA_ADMIN_PASSWORD сгенерирован" >&2
+  fi
+
+  current="$(_dev_secret_get "$env_file" HISTORY_LOGGER_AE_TOKEN)"
+  local general_hl
+  general_hl="$(_dev_secret_get "$env_file" HISTORY_LOGGER_API_TOKEN)"
+  if [[ -z "$general_hl" ]]; then
+    general_hl="$(_dev_secret_get "$env_file" PY_INGEST_TOKEN)"
+  fi
+  if _dev_secret_is_bad_token "$current" || [[ -n "$general_hl" && "$current" == "$general_hl" ]] || [[ -n "$shared" && "$current" == "$shared" ]]; then
+    local ae_token
+    ae_token="$(_dev_secret_generate_token)"
+    while [[ "$ae_token" == "$general_hl" || "$ae_token" == "$shared" ]]; do
+      ae_token="$(_dev_secret_generate_token)"
+    done
+    _dev_secret_set "$env_file" HISTORY_LOGGER_AE_TOKEN "$ae_token"
+    echo "ensure-dev-secrets: HISTORY_LOGGER_AE_TOKEN сгенерирован отдельно от общего Bearer" >&2
+  fi
 }
 
 load_env_defaults() {
@@ -98,6 +135,20 @@ load_env_defaults() {
 _dev_secret_is_bad_token() {
   case "${1:-}" in
     ''|dev-token-12345|test-token-12345) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+_dev_secret_is_bad_mqtt_pass() {
+  case "${1:-}" in
+    ''|esp32_pass|logger_pass|bridge_pass|automation_pass|python_service_pass) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+_dev_secret_is_bad_grafana_password() {
+  case "${1:-}" in
+    ''|admin) return 0 ;;
     *) return 1 ;;
   esac
 }

@@ -209,11 +209,7 @@ Route::middleware([
     Route::get('presets/{preset}', [PresetController::class, 'show']);
     Route::get('plant-taxonomies', [PlantController::class, 'taxonomies']);
     Route::get('plants', [PlantController::class, 'index']);
-    Route::post('plants', [PlantController::class, 'store']);
-    Route::post('plants/with-recipe', [PlantController::class, 'storeWithRecipe']);
     Route::get('plants/{plant}', [PlantController::class, 'show']);
-    Route::put('plants/{plant}', [PlantController::class, 'update']);
-    Route::delete('plants/{plant}', [PlantController::class, 'destroy']);
 
     // Mutating endpoints (operator+)
     Route::middleware(['role:operator,admin,agronomist,engineer', 'ae.legacy.sql.guard'])->group(function () {
@@ -292,7 +288,11 @@ Route::middleware([
         Route::post('nodes/{node}/swap', [NodeController::class, 'swap']);
         Route::post('nodes/{node}/lifecycle/transition', [NodeController::class, 'transitionLifecycle']);
 
-        // Recipes (revisions-based)
+        Route::post('plants', [PlantController::class, 'store']);
+        Route::post('plants/with-recipe', [PlantController::class, 'storeWithRecipe']);
+        Route::put('plants/{plant}', [PlantController::class, 'update']);
+        Route::delete('plants/{plant}', [PlantController::class, 'destroy']);
+
         Route::post('recipes', [RecipeController::class, 'store']);
         Route::put('recipes/{recipe}', [RecipeController::class, 'update']);
         Route::patch('recipes/{recipe}', [RecipeController::class, 'update']);

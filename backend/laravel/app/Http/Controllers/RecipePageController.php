@@ -42,6 +42,8 @@ class RecipePageController extends Controller
 
     public function create(\Illuminate\Http\Request $request): Response
     {
+        $this->authorize('create', Recipe::class);
+
         $plants = [];
         $plantIdParam = $request->query('plant_id');
         if ($plantIdParam !== null && ctype_digit((string) $plantIdParam)) {
@@ -90,6 +92,8 @@ class RecipePageController extends Controller
 
     public function edit(Recipe $recipe): Response
     {
+        $this->authorize('update', $recipe);
+
         $recipe->load([
             'latestDraftRevision.phases.stageTemplate',
             'latestDraftRevision.phases.npkProduct:id,manufacturer,name,component',

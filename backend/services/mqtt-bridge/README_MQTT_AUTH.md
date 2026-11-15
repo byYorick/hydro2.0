@@ -173,7 +173,7 @@ ESP32 узлы получают MQTT credentials через конфигурац
     "host": "192.168.1.10",
     "port": 1883,
     "user": "esp32_node",
-    "pass": "esp32_pass"
+    "pass": "<MQTT_ESP32_NODE_PASS>"
   }
 }
 ```
@@ -204,10 +204,10 @@ mosquitto -c mosquitto.dev.conf -v
 
 ```bash
 # Подключиться с аутентификацией
-mosquitto_sub -h localhost -p 1883 -u automation_engine -P automation_pass -t 'hydro/+/+/telemetry/#' -v
+mosquitto_sub -h localhost -p 1883 -u automation_engine -P "$MQTT_AUTOMATION_ENGINE_PASS" -t 'hydro/+/+/telemetry/#' -v
 
 # Опубликовать сообщение
-mosquitto_pub -h localhost -p 1883 -u automation_engine -P automation_pass -t 'hydro/test/zone1/telemetry/ph' -m '{"value": 6.5}'
+mosquitto_pub -h localhost -p 1883 -u automation_engine -P "$MQTT_AUTOMATION_ENGINE_PASS" -t 'hydro/test/zone1/telemetry/ph' -m '{"value": 6.5}'
 ```
 
 ## Безопасность

@@ -58,10 +58,12 @@ required_vars=(
     PY_API_TOKEN
     PY_INGEST_TOKEN
     LARAVEL_API_TOKEN
+    HISTORY_LOGGER_AE_TOKEN
     MQTT_MQTT_BRIDGE_PASS
     MQTT_AUTOMATION_ENGINE_PASS
     MQTT_HISTORY_LOGGER_PASS
     MQTT_ESP32_NODE_PASS
+    NODE_SECRET_WRAP_PASSPHRASE
     GRAFANA_ADMIN_PASSWORD
     ALERTMANAGER_WEBHOOK_SECRET
 )
@@ -78,8 +80,22 @@ for var in "${required_vars[@]}"; do
                 fail "${var} содержит placeholder — задайте реальное значение"
             fi
             ;;
+        esp32_pass|logger_pass|bridge_pass|automation_pass|python_service_pass)
+            fail "${var} использует публичный dev-пароль"
+            ;;
+        admin)
+            if [ "${var}" = "GRAFANA_ADMIN_PASSWORD" ]; then
+                fail "GRAFANA_ADMIN_PASSWORD не может быть admin"
+            fi
+            ;;
     esac
 done
+
+if [ -n "${HISTORY_LOGGER_AE_TOKEN:-}" ]; then
+    if [ "${HISTORY_LOGGER_AE_TOKEN}" = "${HISTORY_LOGGER_API_TOKEN:-}" ] || [ "${HISTORY_LOGGER_AE_TOKEN}" = "${PY_INGEST_TOKEN:-}" ]; then
+        fail "HISTORY_LOGGER_AE_TOKEN должен отличаться от HISTORY_LOGGER_API_TOKEN и PY_INGEST_TOKEN"
+    fi
+fi
 
 if [ "${errors}" -eq 0 ]; then
     ok "Обязательные переменные заданы"

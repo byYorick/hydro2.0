@@ -20,8 +20,12 @@ return Application::configure(basePath: dirname(__DIR__))
         \App\Console\Commands\CleanupNodeChannelsGpio::class,
     ])
     ->withMiddleware(function (Middleware $middleware) {
-        // Trust all proxies (for Docker/nginx setup)
-        $middleware->trustProxies(at: '*');
+        // Доверенные proxy задаются TRUSTED_PROXIES. config() здесь недоступен
+        // (bootstrap выполняется до контейнера) — то же исключение, что у API_THROTTLE.
+        // Default: частные сети Docker/RFC1918, не '*'.
+        $middleware->trustProxies(
+            at: \App\Support\TrustedProxies::resolve(env('TRUSTED_PROXIES')),
+        );
         $middleware->web(append: [
             \App\Http\Middleware\HandleInertiaRequests::class,
             \Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets::class,

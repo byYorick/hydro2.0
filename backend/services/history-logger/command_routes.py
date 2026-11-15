@@ -8,7 +8,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Body, HTTPException, Path, Query, Request
 
-from auth import _auth_ingest
+from auth import _auth_ingest, resolve_command_principal
 from command_service import (
     NodeSecretResolutionError,
     _create_command_payload,
@@ -29,7 +29,11 @@ from common.trace_context import set_trace_id
 from commands.dispatch import _try_claim_cmd_for_publish, reserve_dispatch
 from commands.lifecycle import ensure_command_for_publish
 from commands.publisher import publish_command_with_retry
-from commands.lease_gate import reject_if_zone_lease_held, is_fail_safe_off_command
+from commands.lease_gate import (
+    is_automation_engine_principal,
+    is_fail_safe_off_command,
+    reject_if_zone_lease_held,
+)
 from commands.resolution import (
     require_node_assigned_to_zone,
     resolve_effective_gh_uid,
@@ -231,6 +235,7 @@ async def _publish_command_core(
     zone_id: int,
     node_uid: str,
     channel: str,
+    principal: str,
     log_context: Optional[dict] = None,
 ) -> dict:
     """Общая часть всех трёх command-routes: validate → resolve → ensure DB → publish retry.
@@ -243,7 +248,13 @@ async def _publish_command_core(
 
         node_id = await require_node_assigned_to_zone(node_uid, zone_id)
         zone_uid = await resolve_zone_uid_for_command_publish(zone_id)
-        command_source = req.source or "api"
+        claimed_source = str(req.source or "").strip()
+        if is_automation_engine_principal(claimed_source) and not is_automation_engine_principal(principal):
+            raise HTTPException(
+                status_code=403,
+                detail={"error": "command_source_untrusted"},
+            )
+        command_source = principal
         await reject_if_zone_lease_held(
             zone_id=zone_id,
             cmd=req.cmd or "",
@@ -314,7 +325,7 @@ async def _publish_command_core(
 @router.post("/zones/{zone_id}/commands")
 async def publish_zone_command(request: Request, zone_id: int, req: CommandRequest = Body(...)):
     """Publish команду для зоны через history-logger (единственный путь команд → MQTT)."""
-    _auth_ingest(request)
+    principal = resolve_command_principal(request)
     apply_trace_id(req.trace_id)
 
     if not (req.greenhouse_uid and req.node_uid and req.channel):
@@ -325,6 +336,7 @@ async def publish_zone_command(request: Request, zone_id: int, req: CommandReque
         zone_id=zone_id,
         node_uid=req.node_uid,
         channel=req.channel,
+        principal=principal,
     )
 
 
@@ -360,7 +372,7 @@ async def live_node_status(
 @router.post("/nodes/{node_uid}/commands")
 async def publish_node_command(request: Request, node_uid: str, req: CommandRequest = Body(...)):
     """Publish команду для ноды через history-logger."""
-    _auth_ingest(request)
+    principal = resolve_command_principal(request)
     apply_trace_id(req.trace_id)
 
     if not (req.greenhouse_uid and req.zone_id and req.channel):
@@ -371,13 +383,14 @@ async def publish_node_command(request: Request, node_uid: str, req: CommandRequ
         zone_id=req.zone_id,
         node_uid=node_uid,
         channel=req.channel,
+        principal=principal,
     )
 
 
 @router.post("/commands")
 async def publish_command(request: Request, req: CommandRequest = Body(...)):
     """Универсальный endpoint: все параметры берутся из body."""
-    _auth_ingest(request)
+    principal = resolve_command_principal(request)
     apply_trace_id(req.trace_id)
 
     validate_command_request_contract(req)
@@ -394,7 +407,7 @@ async def publish_command(request: Request, req: CommandRequest = Body(...)):
         "channel": req.channel,
         "cmd_id": req.cmd_id,
         "command": req.get_command_name(),
-        "source": req.source or "api",
+        "source": principal,
     }
     if req.trace_id:
         log_context["trace_id"] = req.trace_id
@@ -408,5 +421,6 @@ async def publish_command(request: Request, req: CommandRequest = Body(...)):
         zone_id=req.zone_id,
         node_uid=req.node_uid,
         channel=req.channel,
+        principal=principal,
         log_context=log_context,
     )

@@ -69,7 +69,10 @@ make prod-down
 | `SANCTUM_STATEFUL_DOMAINS` | Домены для cookie-auth |
 | `PY_API_TOKEN` / `PY_INGEST_TOKEN` | Токены Laravel ↔ Python |
 | `LARAVEL_API_TOKEN` | Токен Python → Laravel API |
+| `HISTORY_LOGGER_AE_TOKEN` | Отдельный Bearer automation-engine для history-logger. Не совпадает с ingest-токеном. Поле `source` в теле команды lease gate не доверяет |
+| `TRUSTED_PROXIES` | CIDR доверенных proxy Laravel. Пусто — `10.0.0.0/8,172.16.0.0/12,192.168.0.0/16`. Не `*` |
 | `MQTT_*_PASS` | Пароли MQTT для сервисов и `MQTT_ESP32_NODE_PASS` для узлов |
+| `NODE_SECRET_WRAP_PASSPHRASE` | Пароль обёртки `node_secret_enc`. Должен совпадать с `MQTT_ESP32_NODE_PASS`. Production compose передаёт обе переменные в `history-logger`; без них новый узел получает `missing_node_secret` |
 | `GRAFANA_ADMIN_PASSWORD` | Пароль Grafana |
 
 Опционально: `PUBLIC_SCHEME` (`https`), `PUBLIC_WS_PORT`, `PUBLIC_WS_TLS`, `SESSION_DOMAIN`.

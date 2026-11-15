@@ -2,13 +2,17 @@
 
 namespace App\Http\Requests;
 
+use App\Models\Plant;
 use Illuminate\Foundation\Http\FormRequest;
 
 class StorePlantPriceRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return true;
+        $plant = $this->route('plant');
+
+        return $plant instanceof Plant
+            && ($this->user()?->can('update', $plant) ?? false);
     }
 
     public function rules(): array
