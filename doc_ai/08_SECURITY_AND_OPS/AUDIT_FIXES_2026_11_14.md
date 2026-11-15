@@ -698,3 +698,9 @@ CVE-2026-128083 (Concurrency Process task output injection). В composer.lock
 сохранён, остальные пакеты не менялись. Update и `composer audit --locked`
 выполнены в Docker с проверкой CA; после обновления advisories нет. Полный CI
 повторно проверяет новый lock-файл; ни одна проверка безопасности не отключена.
+
+Повторный CI прошёл PHP, Vitest/coverage, typecheck, lint и dependency audits,
+но установка браузеров остановилась до E2E: ubuntu-latest перешёл на 26.04,
+не поддерживаемую закреплённым Playwright 1.56.1. Только build-and-test runner
+закреплён на поддерживаемой ubuntu-24.04; browser dependencies и полный E2E набор
+сохранены. Остальные CI jobs не менялись.
