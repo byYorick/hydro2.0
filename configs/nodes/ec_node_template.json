@@ -24,7 +24,9 @@
       "safe_limits": {
         "max_duration_ms": 60000,
         "min_off_ms": 5000,
-        "fail_safe_mode": "NO"
+        "fail_safe_mode": "NO",
+        "max_dose_ml": 80,
+        "max_daily_ml": 500
       }
     },
     {
@@ -36,7 +38,9 @@
       "safe_limits": {
         "max_duration_ms": 60000,
         "min_off_ms": 5000,
-        "fail_safe_mode": "NO"
+        "fail_safe_mode": "NO",
+        "max_dose_ml": 80,
+        "max_daily_ml": 500
       }
     },
     {
@@ -48,7 +52,9 @@
       "safe_limits": {
         "max_duration_ms": 60000,
         "min_off_ms": 5000,
-        "fail_safe_mode": "NO"
+        "fail_safe_mode": "NO",
+        "max_dose_ml": 80,
+        "max_daily_ml": 500
       }
     },
     {
@@ -60,7 +66,9 @@
       "safe_limits": {
         "max_duration_ms": 60000,
         "min_off_ms": 5000,
-        "fail_safe_mode": "NO"
+        "fail_safe_mode": "NO",
+        "max_dose_ml": 80,
+        "max_daily_ml": 500
       }
     },
     {

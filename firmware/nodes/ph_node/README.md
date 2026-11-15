@@ -84,6 +84,8 @@ pH-нода для измерения pH и управления насосам�
 
 Нода преобразует `ml` → `duration_ms` по `ml_per_second` канала. Доступна только при активном **sensor mode** (`activate_sensor_mode` на канале `system`). Ответ: `ACK` → `DONE`/`ERROR`.
 
+Перед очередью насоса проверяются лимиты канала из `safe_limits` NodeConfig. Нет полей — **35 мл** на дозу и **200 мл** за скользящие 24 ч (`pump_acid` и `pump_base` отдельно). `ml` больше разового лимита или сумма окна плюс запрос больше суточного — terminal `ERROR` (`dose_limit_per_dose` / `dose_limit_daily`), насос не включается, доза не урезается. В `details`: `requested_ml`, `limit_ml`, `used_ml`, `remaining_ml`, `window_hours`. Нет синхронного времени — `dose_limit_time_unsynced`, окно не сбрасывается. Журнал в NVS переживает ребут. `0`, отрицательное и значение выше 500 / 2000 мл отклоняют весь конфиг.
+
 ### calibrate / calibrate_ph
 
 Калибровка pH (только канал **`ph_sensor`**):

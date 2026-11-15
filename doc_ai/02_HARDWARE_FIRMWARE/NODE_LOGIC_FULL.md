@@ -189,6 +189,7 @@ ActuatorChannel {
  - max_duration
  - min_off
  - duty restrictions
+ - для `dose` на ph/ec: `max_dose_ml` и скользящие `max_daily_ml` (отказ целиком, без пуска насоса; см. `NODE_CHANNELS_REFERENCE.md`)
 
 2. Выполнить действие:
  - включить реле

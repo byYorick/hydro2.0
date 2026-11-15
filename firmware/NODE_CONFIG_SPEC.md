@@ -27,6 +27,7 @@
 
 - **Версия формата:** `3` (поле `version`)
 - **`link_loss_timeout_sec`:** нет поля = 30 с; иначе целое 10…300. `0` и значения вне диапазона отклоняют весь конфиг, без клампа и без «0 = выключено»
+- **Доза pH/EC:** `safe_limits.max_dose_ml` и `safe_limits.max_daily_ml` на `pump_acid`/`pump_base`/`pump_a`…`pump_d`. Нет поля — дефолт pH 35/200 мл, EC 80/500 мл. `0`, отрицательное и значение выше 500 (разовая) или 2000 (сутки) отклоняют весь конфиг, без клампа
 - **Допустимые `type`:** `ph | ec | climate | irrig | light | relay | water_sensor | recirculation | unknown`
 - **Обязательные поля верхнего уровня:** `node_id`, `version`, `type`, `gh_uid`, `zone_uid`, `channels`, `wifi`, `mqtt`
 - **MQTT-публикация:** `config_report` на `hydro/{gh}/{zone}/{node}/config_report` после connect + time sync

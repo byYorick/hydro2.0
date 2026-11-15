@@ -7,6 +7,7 @@
 
 #include "config_storage.h"
 #include "link_loss_timeout.h"
+#include "dose_limit.h"
 #include "esp_log.h"
 #include "nvs.h"
 #include "cJSON.h"
@@ -1329,6 +1330,88 @@ esp_err_t config_storage_validate(const char *json_config, size_t json_len,
                 }
             }
             cJSON_Delete(config);
+            return ESP_ERR_INVALID_ARG;
+        }
+    }
+
+    {
+        dose_limit_channel_input_t dose_inputs[DOSE_LIMIT_MAX_CHANNELS];
+        size_t dose_count = 0;
+        const char *dose_channel = NULL;
+        const char *dose_reason = NULL;
+
+        for (int i = 0; i < channels_count; i++) {
+            cJSON *channel = cJSON_GetArrayItem(channels, i);
+            cJSON *name_item;
+            cJSON *safe_limits;
+            dose_limit_channel_input_t *input;
+
+            if (channel == NULL || !cJSON_IsObject(channel)) {
+                continue;
+            }
+            name_item = cJSON_GetObjectItem(channel, "name");
+            if (!cJSON_IsString(name_item) || name_item->valuestring == NULL) {
+                continue;
+            }
+            if (dose_limit_channel_kind(name_item->valuestring) == DOSE_LIMIT_CHANNEL_NONE) {
+                continue;
+            }
+            if (dose_count >= DOSE_LIMIT_MAX_CHANNELS) {
+                cJSON_Delete(config);
+                if (error_msg && error_msg_size > 0) {
+                    strncpy(error_msg, "Too many dosing channels", error_msg_size - 1);
+                }
+                return ESP_ERR_INVALID_ARG;
+            }
+
+            input = &dose_inputs[dose_count];
+            memset(input, 0, sizeof(*input));
+            input->name = name_item->valuestring;
+            input->per_dose = dose_limit_field_absent();
+            input->daily = dose_limit_field_absent();
+            safe_limits = cJSON_GetObjectItem(channel, "safe_limits");
+            if (safe_limits != NULL && !cJSON_IsObject(safe_limits)) {
+                cJSON_Delete(config);
+                if (error_msg && error_msg_size > 0) {
+                    snprintf(error_msg, error_msg_size,
+                             "Invalid dose limits for '%s': safe_limits must be an object",
+                             name_item->valuestring);
+                }
+                return ESP_ERR_INVALID_ARG;
+            }
+            if (cJSON_IsObject(safe_limits)) {
+                cJSON *per_item = cJSON_GetObjectItem(safe_limits, "max_dose_ml");
+                cJSON *daily_item = cJSON_GetObjectItem(safe_limits, "max_daily_ml");
+                if (per_item != NULL) {
+                    input->per_dose = dose_limit_field_from_number(
+                        true,
+                        cJSON_IsNumber(per_item),
+                        cJSON_IsNumber(per_item) ? cJSON_GetNumberValue(per_item) : 0.0
+                    );
+                }
+                if (daily_item != NULL) {
+                    input->daily = dose_limit_field_from_number(
+                        true,
+                        cJSON_IsNumber(daily_item),
+                        cJSON_IsNumber(daily_item) ? cJSON_GetNumberValue(daily_item) : 0.0
+                    );
+                }
+            }
+            dose_count++;
+        }
+
+        if (dose_limit_validate_channels(dose_inputs, dose_count, &dose_channel, &dose_reason) !=
+            DOSE_LIMIT_CONFIG_OK) {
+            cJSON_Delete(config);
+            if (error_msg && error_msg_size > 0) {
+                snprintf(
+                    error_msg,
+                    error_msg_size,
+                    "Invalid dose limits for '%s': %s",
+                    dose_channel != NULL ? dose_channel : "?",
+                    dose_reason != NULL ? dose_reason : "rejected"
+                );
+            }
             return ESP_ERR_INVALID_ARG;
         }
     }

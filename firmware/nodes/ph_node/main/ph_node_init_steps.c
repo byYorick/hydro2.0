@@ -20,6 +20,7 @@
 #include "ds18b20.h"
 #include "oled_ui.h"
 #include "pump_driver.h"
+#include "dose_limit_node.h"
 #include "mqtt_manager.h"
 #include "esp_log.h"
 #include "esp_err.h"
@@ -287,6 +288,11 @@ esp_err_t ph_node_init_step_pumps(ph_node_init_context_t *ctx,
         ESP_LOGI(TAG, "Pump config patched with firmware channels/limits");
     } else if (err != ESP_ERR_NOT_FOUND) {
         ESP_LOGW(TAG, "Failed to patch pump config: %s", esp_err_to_name(err));
+    }
+
+    err = dose_limit_node_boot(DOSE_LIMIT_NODE_PH);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Dose limiter boot failed: %s", esp_err_to_name(err));
     }
 
     err = pump_driver_init_from_config();

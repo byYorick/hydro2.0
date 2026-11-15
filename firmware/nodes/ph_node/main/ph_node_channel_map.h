@@ -32,6 +32,8 @@ typedef struct {
     uint32_t max_duration_ms;
     uint32_t min_off_ms;
     float ml_per_second;
+    float max_dose_ml;
+    float max_daily_ml;
 } ph_node_actuator_channel_t;
 
 extern const ph_node_sensor_channel_t PH_NODE_SENSOR_CHANNELS[];
