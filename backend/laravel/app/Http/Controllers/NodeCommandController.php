@@ -7,19 +7,24 @@ use App\Http\Controllers\Concerns\PresentsLocalizedApiErrors;
 use App\Http\Requests\StoreNodeCommandRequest;
 use App\Models\DeviceNode;
 use App\Services\Ae3ZoneLeaseGuard;
+use App\Services\ManualCommandSafetyService;
 use App\Services\PythonBridgeService;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\Client\TimeoutException;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
 class NodeCommandController extends Controller
 {
     use PresentsLocalizedApiErrors;
 
-    public function store(StoreNodeCommandRequest $request, DeviceNode $node, PythonBridgeService $bridge, Ae3ZoneLeaseGuard $leaseGuard)
-    {
+    public function store(
+        StoreNodeCommandRequest $request,
+        DeviceNode $node,
+        PythonBridgeService $bridge,
+        Ae3ZoneLeaseGuard $leaseGuard,
+        ManualCommandSafetyService $safety,
+    ) {
         $user = $request->user();
         if (! $user) {
             return $this->localizedError('unauthenticated', null, 401);
@@ -60,6 +65,17 @@ class NodeCommandController extends Controller
                 'Зона занята автоматикой AE3. Дождитесь завершения задачи или переведите зону в manual.',
                 409,
             );
+        }
+
+        $decision = $safety->inspectNode(
+            $node,
+            (string) $data['cmd'],
+            is_array($data['params'] ?? null) ? $data['params'] : [],
+            isset($data['channel']) ? (string) $data['channel'] : null,
+            $user,
+        );
+        if (! $decision->allowed) {
+            return $this->localizedError($decision->code, $decision->message, $decision->httpStatus, $decision->extra);
         }
 
         try {

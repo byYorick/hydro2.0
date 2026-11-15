@@ -13,11 +13,14 @@ use App\Models\Zone;
 use App\Models\ZoneEvent;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 class ZoneDataService
 {
     public function __construct(
         private readonly ErrorCodeCatalogService $errorCodeCatalog,
+        private readonly ZoneTankLevelService $tankLevels,
+        private readonly ZoneEstopService $estop,
     ) {}
 
     /**
@@ -28,7 +31,7 @@ class ZoneDataService
         return DB::transaction(function () use ($zone, $request) {
             $now = now();
             $serverTs = $now->timestamp * 1000; // миллисекунды
-            $snapshotId = \Illuminate\Support\Str::uuid()->toString();
+            $snapshotId = Str::uuid()->toString();
 
             // Получаем максимальный last_event_id для зоны
             $lastEventId = ZoneEvent::where('zone_id', $zone->id)->max('id') ?? 0;
@@ -144,6 +147,8 @@ class ZoneDataService
                 'recent_commands' => $commandsRecent,
                 'recent_events' => $recentEvents,
                 'nodes' => [], // Пока пустой массив, может быть заполнен позже
+                'tank_levels' => $this->tankLevels->forZone((int) $zone->id),
+                'estop' => $this->estop->status($zone),
             ];
         });
     }

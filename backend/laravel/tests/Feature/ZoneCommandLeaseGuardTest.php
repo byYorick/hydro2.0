@@ -71,7 +71,7 @@ class ZoneCommandLeaseGuardTest extends TestCase
     public function test_node_dose_is_rejected_when_ae3_lease_is_held(): void
     {
         $zone = Zone::factory()->create();
-        $node = DeviceNode::factory()->create(['zone_id' => $zone->id]);
+        $node = DeviceNode::factory()->create(['zone_id' => $zone->id, 'status' => 'online', 'type' => 'ph']);
         $user = User::factory()->create(['role' => 'operator']);
         $user->zones()->syncWithoutDetaching([$zone->id]);
 
@@ -89,7 +89,7 @@ class ZoneCommandLeaseGuardTest extends TestCase
         $response = $this->actingAs($user)->postJson("/api/nodes/{$node->id}/commands", [
             'cmd' => 'dose',
             'channel' => 'pump_acid',
-            'params' => ['duration_ms' => 1000],
+            'params' => ['ml' => 1],
         ]);
 
         $response->assertStatus(409)
@@ -100,7 +100,7 @@ class ZoneCommandLeaseGuardTest extends TestCase
     public function test_node_fail_safe_off_is_allowed_when_ae3_lease_is_held(): void
     {
         $zone = Zone::factory()->create();
-        $node = DeviceNode::factory()->create(['zone_id' => $zone->id]);
+        $node = DeviceNode::factory()->create(['zone_id' => $zone->id, 'status' => 'online', 'type' => 'ph']);
         $user = User::factory()->create(['role' => 'operator']);
         $user->zones()->syncWithoutDetaching([$zone->id]);
 
