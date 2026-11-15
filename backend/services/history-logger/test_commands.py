@@ -5,6 +5,16 @@ from unittest.mock import patch, AsyncMock, Mock
 from app import app
 
 
+@pytest.fixture(autouse=True)
+def mock_dispatch_lock():
+    from contextlib import asynccontextmanager
+    @asynccontextmanager
+    async def claim(*args, **kwargs):
+        yield True
+    with patch("command_routes.reserve_dispatch", new=AsyncMock()), patch("commands.publisher.send_status_to_laravel", new=AsyncMock()), patch("chain_webhook.emit_execution_step", new=AsyncMock()), patch("command_routes.send_infra_alert", new=AsyncMock()), patch("command_routes._try_claim_cmd_for_publish", claim):
+        yield
+
+
 @pytest.fixture
 def client():
     """Create test client."""
@@ -561,10 +571,11 @@ async def test_drain_republish_holds_claim_and_passes_zone_to_secret():
         "zone_id": 7,
         "node_id": 3,
         "channel": "pump",
-        "cmd": "run_pump",
+        "cmd": "state",
         "params": {"duration_ms": 500, "__hl_ts": 1737979200, "__hl_sig": "sig"},
         "status": "QUEUED",
         "source": "api",
+        "created_at": __import__("datetime").datetime.now(__import__("datetime").timezone.utc),
         "node_uid": "nd-irrig-1",
     }
 
@@ -572,7 +583,7 @@ async def test_drain_republish_holds_claim_and_passes_zone_to_secret():
     async def _ok_claim(_cmd_id: str):
         yield True
 
-    with patch(
+    with patch("commands.drain.reject_if_zone_lease_held", new=AsyncMock()), patch(
         "commands.drain._claim_stale_queued_command_rows",
         new_callable=AsyncMock,
         return_value=[claim_row],
@@ -597,7 +608,7 @@ async def test_drain_republish_holds_claim_and_passes_zone_to_secret():
         return_value="d" * 64,
     ) as resolve_secret, patch(
         "commands.drain._create_command_payload",
-        return_value={"cmd_id": claim_row["cmd_id"], "cmd": "run_pump"},
+        return_value={"cmd_id": claim_row["cmd_id"], "cmd": "state"},
     ), patch(
         "commands.drain.publish_command_with_retry",
         new_callable=AsyncMock,

@@ -44,6 +44,7 @@ fun ProvisioningScreen(
     val state = vm.state.collectAsState()
     var wifiSsid by remember { mutableStateOf("") }
     var wifiPassword by remember { mutableStateOf("") }
+    var mqttHost by remember { mutableStateOf("") }
     var nodeName by remember { mutableStateOf("") }
 
     Scaffold(
@@ -64,8 +65,9 @@ fun ProvisioningScreen(
         ) {
             when (val current = state.value) {
                 is ProvisioningViewModel.ProvisioningState.Idle -> {
-                    Button(onClick = { vm.scanDevices() }, modifier = Modifier.fillMaxWidth()) {
-                        Text("Сканировать устройства")
+                    Text("Подключитесь к Wi-Fi сети ESP32 в настройках телефона.")
+                    Button(onClick = { vm.configureConnectedDevice() }, modifier = Modifier.fillMaxWidth()) {
+                        Text("Настроить подключённый узел")
                     }
                 }
                 is ProvisioningViewModel.ProvisioningState.Scanning -> {
@@ -83,6 +85,8 @@ fun ProvisioningScreen(
                     OutlinedTextField(value = wifiSsid, onValueChange = { wifiSsid = it }, label = { Text("SSID Wi-Fi сети") }, modifier = Modifier.fillMaxWidth())
                     OutlinedTextField(value = wifiPassword, onValueChange = { wifiPassword = it }, label = { Text("Пароль Wi-Fi") }, modifier = Modifier.fillMaxWidth())
                     OutlinedTextField(value = nodeName, onValueChange = { nodeName = it }, label = { Text("Имя узла") }, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(value = mqttHost, onValueChange = { mqttHost = it }, label = { Text("IPv4 адрес MQTT брокера") }, modifier = Modifier.fillMaxWidth())
+                    Text("Подключите телефон к Wi-Fi сети выбранного узла перед настройкой.")
                     if (current.devices.isNotEmpty()) {
                         Button(
                             onClick = {
@@ -92,11 +96,12 @@ fun ProvisioningScreen(
                                         wifiSsid = wifiSsid,
                                         wifiPassword = wifiPassword,
                                         nodeName = nodeName,
+                                        mqttHost = mqttHost.trim(),
                                     ),
                                 )
                             },
                             modifier = Modifier.fillMaxWidth(),
-                            enabled = wifiSsid.isNotBlank() && wifiPassword.isNotBlank() && nodeName.isNotBlank(),
+                            enabled = mqttHost.isNotBlank() && wifiSsid.isNotBlank() && wifiPassword.isNotBlank() && nodeName.isNotBlank(),
                         ) { Text("Настроить узел") }
                     }
                 }
@@ -109,7 +114,8 @@ fun ProvisioningScreen(
                 }
                 is ProvisioningViewModel.ProvisioningState.Error -> {
                     Text("Ошибка: ${current.message}", color = MaterialTheme.colorScheme.error)
-                    Button(onClick = { vm.scanDevices() }, modifier = Modifier.fillMaxWidth()) { Text("Повторить") }
+                    Text("Подключитесь к Wi-Fi сети ESP32 в настройках телефона.")
+                    Button(onClick = { vm.configureConnectedDevice() }, modifier = Modifier.fillMaxWidth()) { Text("Повторить") }
                 }
             }
         }

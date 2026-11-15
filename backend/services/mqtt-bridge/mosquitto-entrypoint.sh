@@ -21,8 +21,13 @@ if [ -f "$MOUNTED_PASS" ] && [ ! -d "$MOUNTED_PASS" ] && [ -s "$MOUNTED_PASS" ];
 fi
 
 if [ "$use_mounted_pass" -eq 1 ]; then
-    PASSFILE=$MOUNTED_PASS
+    cp "$MOUNTED_PASS" "$GENERATED_PASS"
+    PASSFILE=$GENERATED_PASS
 else
+    if [ "${MQTT_REQUIRE_STRONG_PASSWORDS:-0}" = "1" ]; then
+        echo "mosquitto-entrypoint: production requires a mounted password file" >&2
+        exit 1
+    fi
     echo "mosquitto-entrypoint: passwords file missing, generating from MQTT_*_PASS env" >&2
     if [ -z "${MQTT_PYTHON_SERVICE_PASS:-}" ] \
         || [ -z "${MQTT_AUTOMATION_ENGINE_PASS:-}" ] \
@@ -38,13 +43,13 @@ else
     mosquitto_passwd -b "$GENERATED_PASS" history_logger "${MQTT_HISTORY_LOGGER_PASS}"
     mosquitto_passwd -b "$GENERATED_PASS" mqtt_bridge "${MQTT_MQTT_BRIDGE_PASS}"
     mosquitto_passwd -b "$GENERATED_PASS" esp32_node "${MQTT_ESP32_NODE_PASS}"
-    # Mosquitto drops root privileges before opening its password file.
-    if [ "$(id -u)" = "0" ]; then
-        chown mosquitto:mosquitto "$GENERATED_PASS"
-    fi
-    chmod 600 "$GENERATED_PASS"
     PASSFILE=$GENERATED_PASS
 fi
+# Keep private host files read-only; only the private runtime copy changes owner.
+if [ "$(id -u)" = "0" ]; then
+    chown mosquitto:mosquitto "$GENERATED_PASS"
+fi
+chmod 600 "$GENERATED_PASS"
 
 # password_file в базовом конфиге может указывать на ещё не созданный файл.
 sed -i "s|^password_file .*|password_file ${PASSFILE}|" "$RUNTIME_CONF"

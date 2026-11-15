@@ -452,7 +452,7 @@ Observability (UI/Grafana, 2026-07-09):
 - `close_zone` / `far_zone` — зоны PID-коэффициентов. При `far_zone <= close_zone` → `PlannerConfigurationError` на этапе build плана.
 
 **Sanity bounds decision/observation windows (`metric_window_validator`):**
-- Единый валидатор: `ae3lite/domain/services/metric_window_validator.py` (используется в `DecisionWindowReader`, `BaseStageHandler._read_target_metric_window` и observe finalize в `CorrectionHandler._read_observation_window_or_interrupt`).
+- Единый валидатор: `ae3lite/domain/services/metric_window_validator.py` (используется в `DecisionWindowReader`, `BaseStageHandler._read_target_metric_window` и post-dose `CorrectionObservationReader`).
 - pH ∈ `[0, 14]`, EC ∈ `[0, 20]` mS/cm.
 - Выход за пределы (error code типа `-1` / `999`, NaN, inf) → reason `sensor_out_of_bounds`, окно не ready, PID-state не обновляется, доза не публикуется.
 - Count/slope недостаточно: window дополнительно обязан покрывать
@@ -847,9 +847,44 @@ interface CorrectionTimings {
 - orchestration: `ae3lite/application/handlers/correction.py`;
 - parent stages: `solution_fill_check`, `prepare_recirculation_check`, `irrigation_check`;
 - dose math/deadbands: `ae3lite/domain/services/correction_planner.py`;
+- чистый выбор направления и snapshot дозы: `domain/services/correction_dose_routing.py`;
+- calibration/feedback и post-persist accounting marker: `application/services/correction_dose_accounting.py`;
+- EC sequence parse/dispatch/resume: `application/services/correction_ec_dose_executor.py`;
+- failed-index/partial classifier: `domain/services/ec_batch_failure.py`;
 - sequential nutrient FSM/component budget: `application/services/correction_pipeline.py`;
 - sensor lifecycle: `application/services/sensor_mode_controller.py`;
+- post-dose telemetry validation: `application/services/correction_observation_reader.py`;
+- post-dose effect/no-effect и подготовка PID/state update: `application/services/correction_observation_finalizer.py`;
 - publish/reconcile: `infrastructure/gateways/sequential_command_gateway.py`.
+
+Reader проверяет наличие baseline до SQL-чтения, затем freshness, устойчивость,
+sanity bounds и временной охват окна. Возвращаемый `ObservationRetry` содержит
+задержку; handler применяет прежнюю проверку stage deadline через
+`_enter_correction_after_delay_or_interrupt`. Накопление samples/временного охвата
+не создаёт повторяющиеся zone events; недопустимые и будущие значения остаются
+видимыми в диагностике. Вычисления отклика, adaptive/PID update и следующего
+correction snapshot выделены в stateless finalizer helpers. Handler сохраняет
+evaluated event → PID persistence → no-effect limit/outcome в прежнем порядке;
+helpers не выполняют I/O и не публикуют команд. No-effect использует peak effect,
+integral остаётся замороженным, feedforward bias и противоположная pending dose
+сохраняются по прежним правилам. FSM и authority matrix не изменены.
+
+`route_dose_plan` вызывается после safety/cooldown/discard/attempt gates; он не
+пишет integral и не отправляет команды. Pending pH получает прежний приоритет,
+метаданные доз сериализуются в прежнем формате. Accounting helper получает callback
+маркера явно; handler вызывает его после успешного PID persist для подтверждённой
+дозы. Выбор callback и проверка наличия PID repository остаются в handler adapter.
+Terminal repair и его правила идемпотентности не менялись; partial EC batch не
+становится успешным из-за выделения этих helpers.
+
+EC executor получает dispatch/failure/calibration/feedback callbacks явно.
+Online checks и checked single-command path остаются в handler adapter.
+Sequential resume не повторяет завершённые компоненты; logical parallel сохраняет
+один batch с ожиданием DONE по каждой команде внутри прежнего gateway. Отмена и
+необработанные ошибки не преобразуются в успешный progress. Чистый classifier не
+классифицирует poll deadline как partial degrade; запись события, метрики и failure
+outcome остаётся в handler. PID persist, hold anchoring и dose-accounted markers
+не перенесены в executor и сохраняют прежний порядок.
 
 Каждый tick выполняет не более одного chemical action. Переходы correction state,
 attempt counters, `wait_until`, pipeline phase и PID state сохраняются в PostgreSQL,

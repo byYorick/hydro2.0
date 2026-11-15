@@ -23,159 +23,46 @@ from ae3lite.application.use_cases.manual_control_contract import (
 )
 from ae3lite.domain.services.zone_node_availability import ZONE_NODES_DIAG_SQL
 
-logger = logging.getLogger(__name__)
-
-
-_WORKFLOW_PHASE_TO_STATE: dict[str, str] = {
-    "tank_filling": "TANK_FILLING",
-    "tank_recirc": "TANK_RECIRC",
-    "ready": "READY",
-    "irrigating": "IRRIGATING",
-    # Legacy DB rows only — post-irrigation chemistry phase removed from topology.
-    "irrig_recirc": "IRRIG_RECIRC",
-    "error": "IDLE",
-}
-
-_STATE_LABELS: dict[str, str] = {
-    "TANK_FILLING": "Наполнение баков",
-    "TANK_RECIRC": "Рециркуляция раствора",
-    "READY": "Раствор готов",
-    "IRRIGATING": "Полив",
-    "IRRIG_RECIRC": "Рециркуляция после полива (deprecated)",
-    "IDLE": "Ожидание",
-}
-
-_STAGE_LABELS: dict[str, str] = {
-    "startup": "Инициализация",
-    "clean_fill_start": "Запуск наполнения чистой водой",
-    "clean_fill_check": "Наполнение чистой водой",
-    "clean_fill_stop_to_solution": "Остановка наполнения чистой водой",
-    "clean_fill_source_empty_stop": "Остановка наполнения: источник чистой воды пуст",
-    "solution_fill_start": "Запуск наполнения раствором",
-    "solution_fill_check": "Наполнение раствором",
-    "solution_fill_source_empty_stop": "Остановка наполнения раствором: источник пуст",
-    "solution_fill_leak_stop": "Остановка наполнения раствором: обнаружена утечка/низкий уровень",
-    "solution_fill_stop_to_prepare": "Остановка наполнения раствором",
-    "prepare_recirculation_start": "Запуск рециркуляции",
-    "prepare_recirculation_check": "Подготовка рециркуляции",
-    "prepare_recirculation_solution_low_stop": "Остановка рециркуляции: раствор закончился → подготовка",
-    "complete_ready": "Готов к поливу",
-    "await_ready": "Ожидание готового раствора",
-    "decision_gate": "Принятие решения о поливе",
-    "irrigation_start": "Запуск полива",
-    "irrigation_check": "Полив",
-    # Deprecated recovery stages (removed from topology; kept for historical timeline labels).
-    "irrigation_recovery_start": "Запуск рециркуляции после полива (deprecated)",
-    "irrigation_recovery_check": "Рециркуляция после полива (deprecated)",
-    "completed_run": "Полив завершён",
-    "completed_skip": "Полив пропущен",
-    "apply": "Свет (scheduler tick)",
-}
 
 # Соответствие (from_stage, to_stage) → (event_code, human label)
-_TRANSITION_EVENT_MAP: dict[tuple[str, str], tuple[str, str]] = {
-    ("startup", "clean_fill_start"): ("CLEAN_FILL_STARTED", "Запуск наполнения чистой водой"),
-    ("clean_fill_start", "clean_fill_check"): ("CLEAN_FILL_IN_PROGRESS", "Наполнение чистой водой"),
-    ("clean_fill_check", "clean_fill_retry_stop"): ("CLEAN_FILL_SOURCE_EMPTY", "Источник чистой воды пуст, выполняется безопасная остановка и повтор"),
-    ("clean_fill_check", "clean_fill_source_empty_stop"): ("CLEAN_FILL_SOURCE_EMPTY", "Наполнение остановлено: источник чистой воды пуст"),
-    ("clean_fill_check", "clean_fill_stop_to_solution"): ("CLEAN_FILL_COMPLETED", "Чистая вода заполнена"),
-    ("clean_fill_stop_to_solution", "solution_fill_start"): ("SOLUTION_FILL_STARTED", "Запуск наполнения раствором"),
-    ("solution_fill_start", "solution_fill_check"): ("SOLUTION_FILL_IN_PROGRESS", "Наполнение раствором"),
-    ("solution_fill_check", "solution_fill_check"): ("SOLUTION_FILL_CORRECTION", "Коррекция раствора при наполнении"),
-    ("solution_fill_check", "solution_fill_source_empty_stop"): ("SOLUTION_FILL_SOURCE_EMPTY", "Наполнение раствором остановлено: источник чистой воды пуст"),
-    ("solution_fill_check", "solution_fill_leak_stop"): ("SOLUTION_FILL_LEAK_DETECTED", "Наполнение раствором остановлено: нижний уровень раствора пропал"),
-    ("solution_fill_check", "solution_fill_stop_to_prepare"): ("SOLUTION_FILL_COMPLETED", "Раствор заполнен"),
-    ("solution_fill_stop_to_prepare", "prepare_recirculation_start"): ("RECIRC_STARTED", "Запуск рециркуляции"),
-    ("prepare_recirculation_start", "prepare_recirculation_check"): ("RECIRC_IN_PROGRESS", "Рециркуляция"),
-    ("prepare_recirculation_check", "prepare_recirculation_solution_low_stop"): ("RECIRCULATION_SOLUTION_LOW", "Рециркуляция остановлена: раствор закончился"),
-    ("prepare_recirculation_solution_low_stop", "startup"): ("RECIRCULATION_SOLUTION_LOW_TO_SETUP", "Переход к обычной подготовке раствора"),
-    ("prepare_recirculation_check", "prepare_recirculation_stop_to_ready"): ("RECIRC_COMPLETED", "Рециркуляция завершена"),
-    ("prepare_recirculation_stop_to_ready", "complete_ready"): ("READY", "Готов к поливу"),
-    ("prepare_recirculation_check", "complete_ready"): ("READY", "Готов к поливу"),
-    ("complete_ready", "irrigation_start"): ("IRRIGATION_STARTED", "Запуск полива"),
-    ("await_ready", "decision_gate"): ("IRRIGATION_READY", "Раствор готов для полива"),
-    ("decision_gate", "completed_skip"): ("IRRIGATION_SKIPPED", "Полив пропущен по decision-controller"),
-    ("decision_gate", "irrigation_start"): ("IRRIGATION_APPROVED", "Полив разрешён"),
-    ("irrigation_start", "irrigation_check"): ("IRRIGATION_STARTED", "Полив"),
-    ("irrigation_check", "irrigation_stop_to_ready"): ("IRRIGATION_STOPPED", "Полив завершён"),
-    ("irrigation_check", "irrigation_stop_to_setup"): ("IRRIGATION_LOW_SOLUTION", "Остановка полива из-за низкого уровня раствора"),
-}
 
-_EC_CORRECTION_STEPS = frozenset({"corr_dose_ec", "corr_wait_ec"})
-_PH_CORRECTION_STEPS = frozenset({"corr_dose_ph", "corr_wait_ph"})
-_TIMELINE_NODE_EVENT_TYPES = (
-    "LEVEL_SWITCH_CHANGED",
-    "CLEAN_FILL_SOURCE_EMPTY",
-    "CLEAN_FILL_COMPLETED",
-    "SOLUTION_FILL_SOURCE_EMPTY",
-    "SOLUTION_FILL_LEAK_DETECTED",
-    "SOLUTION_FILL_COMPLETED",
-    "SOLUTION_FILL_TIMEOUT",
-    "PREPARE_RECIRCULATION_TIMEOUT",
-    "RECIRCULATION_SOLUTION_LOW",
-    "IRRIGATION_SOLUTION_LOW",
-    "EMERGENCY_STOP_ACTIVATED",
-)
-_LEVEL_CHANNEL_LABELS = {
-    "level_clean_min": "Нижний уровень чистой воды",
-    "clean_level_min": "Нижний уровень чистой воды",
-    "level_clean_max": "Верхний уровень чистой воды",
-    "clean_level_max": "Верхний уровень чистой воды",
-    "level_solution_min": "Нижний уровень раствора",
-    "solution_level_min": "Нижний уровень раствора",
-    "level_solution_max": "Верхний уровень раствора",
-    "solution_level_max": "Верхний уровень раствора",
-}
-_NODE_EVENT_LABELS = {
-    "CLEAN_FILL_SOURCE_EMPTY": "Событие ноды: источник чистой воды пуст",
-    "CLEAN_FILL_COMPLETED": "Событие ноды: чистая вода заполнена",
-    "SOLUTION_FILL_SOURCE_EMPTY": "Событие ноды: источник чистой воды пуст при наполнении раствором",
-    "SOLUTION_FILL_LEAK_DETECTED": "Событие ноды: обнаружен провал нижнего уровня раствора",
-    "SOLUTION_FILL_COMPLETED": "Событие ноды: раствор заполнен",
-    "SOLUTION_FILL_TIMEOUT": "Событие ноды: таймаут наполнения раствора",
-    "PREPARE_RECIRCULATION_TIMEOUT": "Событие ноды: таймаут подготовки рециркуляции",
-    "RECIRCULATION_SOLUTION_LOW": "Событие ноды: рециркуляция остановлена по низкому уровню раствора",
-    "IRRIGATION_SOLUTION_LOW": "Событие ноды: полив остановлен по низкому уровню раствора",
-    "EMERGENCY_STOP_ACTIVATED": "Событие ноды: активирован аварийный стоп",
-}
-_IDLE_NODE_EVENT_LOOKBACK_SEC = 15 * 60
 
 # Порядок подэтапов cycle_start / irrigation для оценки progress_percent в UI.
-_CYCLE_START_STAGE_ORDER: tuple[str, ...] = (
-    "startup",
-    "clean_fill_start",
-    "clean_fill_check",
-    "clean_fill_stop_to_solution",
-    "solution_fill_start",
-    "solution_fill_check",
-    "solution_fill_stop_to_prepare",
-    "prepare_recirculation_start",
-    "prepare_recirculation_check",
-    "complete_ready",
-    "await_ready",
-    "decision_gate",
-    "irrigation_start",
-    "irrigation_check",
-    "completed_run",
-)
 
-_WORKFLOW_PHASE_PROGRESS: dict[str, int] = {
-    "tank_filling": 20,
-    "tank_recirc": 45,
-    "ready": 65,
-    "irrigating": 85,
-    # Legacy DB rows only — not a live topology phase.
-    "irrig_recirc": 95,
-}
 
 # Подэтапы полива: progress_percent считаем по stage_deadline, а не по индексу в cycle_start.
-_IRRIGATION_STAGE_PREFIX = "irrigation_"
 
-_TERMINAL_COMPLETED_STAGES = frozenset({
-    "completed_run",
-    "completed_skip",
-    "complete_ready",
-})
+
+from ae3lite.application.services.zone_state_shared import (
+    logger,
+    _WORKFLOW_PHASE_TO_STATE,
+    _STATE_LABELS,
+    _STAGE_LABELS,
+    _TRANSITION_EVENT_MAP,
+    _EC_CORRECTION_STEPS,
+    _PH_CORRECTION_STEPS,
+    _TIMELINE_NODE_EVENT_TYPES,
+    _LEVEL_CHANNEL_LABELS,
+    _NODE_EVENT_LABELS,
+    _IDLE_NODE_EVENT_LOOKBACK_SEC,
+    _CYCLE_START_STAGE_ORDER,
+    _WORKFLOW_PHASE_PROGRESS,
+    _IRRIGATION_STAGE_PREFIX,
+    _TERMINAL_COMPLETED_STAGES,
+)
+
+from ae3lite.application.services.zone_state_coordination import ZoneStateCoordination, ZoneStateCoordinationPorts
+from ae3lite.application.services.zone_state_queries import ZoneStateQueries, ZoneStateQueriesPorts
+from ae3lite.application.services.zone_state_timeline import ZoneStateTimeline, ZoneStateTimelinePorts
+from ae3lite.application.services.zone_state_presentation import ZoneStatePresentation, ZoneStatePresentationPorts
+from ae3lite.application.services.zone_state_failure_overlay import (
+    ZoneStateFailureOverlay,
+    ZoneStateFailureOverlayPorts,
+)
+from ae3lite.application.services.zone_state_state_views import ZoneStateStateViews, ZoneStateStateViewsPorts
+from ae3lite.application.services.zone_state_doses import ZoneStateDoses, ZoneStateDosesPorts
+from ae3lite.application.services.zone_state_observability import ZoneStateObservability, ZoneStateObservabilityPorts
+from ae3lite.application.services.zone_state_time_values import ZoneStateTimeValues, ZoneStateTimeValuesPorts
 
 
 class GetZoneAutomationStateUseCase:
@@ -198,185 +85,112 @@ class GetZoneAutomationStateUseCase:
         self._fetch_fn = fetch_fn
         self._workflow_repository = workflow_repository
         self._startup_reset_guard_use_case = startup_reset_guard_use_case
+        self._zone_state_coordination = ZoneStateCoordination(
+            ZoneStateCoordinationPorts(
+                build_state=lambda *args, **kwargs: self._build_state(*args, **kwargs),
+                build_workflow_state=lambda *args, **kwargs: self._build_workflow_state(*args, **kwargs),
+                fetch_fn=lambda *args, **kwargs: self._fetch_fn(*args, **kwargs),
+                fetch_zone_nodes_diag=lambda *args, **kwargs: self._fetch_zone_nodes_diag(*args, **kwargs),
+                fetch_zone_telemetry=lambda *args, **kwargs: self._fetch_zone_telemetry(*args, **kwargs),
+                merge_last_failed_task_into_workflow_view=lambda *args, **kwargs: (
+                    self._merge_last_failed_task_into_workflow_view(*args, **kwargs)
+                ),
+                normalize_solution_tank_guard=lambda *args, **kwargs: self._normalize_solution_tank_guard(
+                    *args, **kwargs
+                ),
+                now=lambda *args, **kwargs: self._now(*args, **kwargs),
+                should_prefer_workflow_state=lambda *args, **kwargs: self._should_prefer_workflow_state(
+                    *args, **kwargs
+                ),
+                startup_reset_guard_use_case=lambda: self._startup_reset_guard_use_case,
+                task_repository=lambda: self._task_repository,
+                workflow_repository=lambda: self._workflow_repository,
+                workflow_state_is_stale=lambda *args, **kwargs: self._workflow_state_is_stale(*args, **kwargs),
+            )
+        )
+        self._zone_state_queries = ZoneStateQueries(
+            ZoneStateQueriesPorts(
+                build_node_runtime_timeline_event=lambda *args, **kwargs: self._build_node_runtime_timeline_event(
+                    *args, **kwargs
+                ),
+                fetch_fn=lambda *args, **kwargs: self._fetch_fn(*args, **kwargs),
+                task_repository=lambda: self._task_repository,
+            )
+        )
+        self._zone_state_timeline = ZoneStateTimeline(
+            ZoneStateTimelinePorts(
+                fetch_recent_node_runtime_events=lambda *args, **kwargs: self._fetch_recent_node_runtime_events(
+                    *args, **kwargs
+                ),
+                normalize_utc_naive=lambda *args, **kwargs: self._normalize_utc_naive(*args, **kwargs),
+                now=lambda *args, **kwargs: self._now(*args, **kwargs),
+            )
+        )
+        self._zone_state_presentation = ZoneStatePresentation(
+            ZoneStatePresentationPorts(
+                fetch_fn=lambda *args, **kwargs: self._fetch_fn(*args, **kwargs),
+                iso_or_none=lambda *args, **kwargs: self._iso_or_none(*args, **kwargs),
+                normalize_utc_naive=lambda *args, **kwargs: self._normalize_utc_naive(*args, **kwargs),
+                now=lambda *args, **kwargs: self._now(*args, **kwargs),
+            )
+        )
+        self._zone_state_failure_overlay = ZoneStateFailureOverlay(
+            ZoneStateFailureOverlayPorts(
+                normalize_utc_naive=lambda *args, **kwargs: self._normalize_utc_naive(*args, **kwargs),
+                primary_automation_state_label=lambda *args, **kwargs: self._primary_automation_state_label(
+                    *args, **kwargs
+                ),
+            )
+        )
+        self._zone_state_state_views = ZoneStateStateViews(
+            ZoneStateStateViewsPorts(
+                attach_observability=lambda *args, **kwargs: self._attach_observability(*args, **kwargs),
+                build_active_processes=lambda *args, **kwargs: self._build_active_processes(*args, **kwargs),
+                build_decision=lambda *args, **kwargs: self._build_decision(*args, **kwargs),
+                build_state_details=lambda *args, **kwargs: self._build_state_details(*args, **kwargs),
+                build_timeline=lambda *args, **kwargs: self._build_timeline(*args, **kwargs),
+                control_mode_context=lambda *args, **kwargs: self._control_mode_context(*args, **kwargs),
+                idle_timeline_since=lambda *args, **kwargs: self._idle_timeline_since(*args, **kwargs),
+                normalize_utc_naive=lambda *args, **kwargs: self._normalize_utc_naive(*args, **kwargs),
+                primary_automation_state_label=lambda *args, **kwargs: self._primary_automation_state_label(
+                    *args, **kwargs
+                ),
+                solution_tank_guard_from_payload=lambda *args, **kwargs: self._solution_tank_guard_from_payload(
+                    *args, **kwargs
+                ),
+                timeline_since=lambda *args, **kwargs: self._timeline_since(*args, **kwargs),
+                timeline_since_workflow=lambda *args, **kwargs: self._timeline_since_workflow(*args, **kwargs),
+                workflow_failure_rollback_applied=lambda *args, **kwargs: self._workflow_failure_rollback_applied(
+                    *args, **kwargs
+                ),
+            )
+        )
+        self._zone_state_doses = ZoneStateDoses(ZoneStateDosesPorts())
+        self._zone_state_observability = ZoneStateObservability(
+            ZoneStateObservabilityPorts(
+                latest_irrigation_task=lambda *args, **kwargs: self._latest_irrigation_task(*args, **kwargs),
+                now=lambda *args, **kwargs: self._now(*args, **kwargs),
+            )
+        )
+        self._zone_state_time_values = ZoneStateTimeValues(ZoneStateTimeValuesPorts())
 
     async def run(self, *, zone_id: int) -> dict[str, Any]:
         # Сначала пробуем активную задачу, затем последнюю terminal-задачу
-        task: Optional[Any] = await self._task_repository.get_active_for_zone(zone_id=zone_id)
-        workflow_state: Optional[Any] = None
-        last_task: Optional[Any] = None
-        solution_tank_guard = None
-        if task is None and self._startup_reset_guard_use_case is not None:
-            try:
-                guard_result = await self._startup_reset_guard_use_case.run(zone_id=zone_id, now=self._now())
-                solution_tank_guard = self._normalize_solution_tank_guard(
-                    guard_result
-                )
-            except Exception:
-                logger.warning(
-                    "AE3 automation state: startup reset guard failed for zone_id=%s",
-                    zone_id,
-                    exc_info=True,
-                )
-        if task is None and self._workflow_repository is not None:
-            try:
-                workflow_state = await self._workflow_repository.get(zone_id=zone_id)
-            except Exception:
-                logger.warning(
-                    "AE3 automation state: workflow read failed for zone_id=%s",
-                    zone_id,
-                    exc_info=True,
-                )
-                workflow_state = None
-        if task is None:
-            last_task = await self._task_repository.get_last_for_zone(zone_id=zone_id)
-
-        # Подтянуть дополнительные данные; последовательного чтения здесь достаточно
-        transitions: list[dict] = []
-        if task is not None:
-            try:
-                transitions = await self._task_repository.get_transitions_for_task(task_id=task.id)
-            except Exception:
-                logger.warning(
-                    "AE3 automation state: transition read failed for zone_id=%s task_id=%s",
-                    zone_id,
-                    getattr(task, "id", None),
-                    exc_info=True,
-                )
-
-        telemetry, telemetry_fetch_ok = await self._fetch_zone_telemetry(zone_id=zone_id)
-        node_rows = await self._fetch_zone_nodes_diag(zone_id=zone_id)
-        observability_thresholds = await load_system_observability_thresholds(self._fetch_fn)
-        if task is None and self._should_prefer_workflow_state(workflow_state) and not self._workflow_state_is_stale(
-            workflow_state=workflow_state,
-            last_task=last_task,
-        ):
-            built = await self._build_workflow_state(
-                zone_id=zone_id,
-                workflow_state=workflow_state,
-                telemetry=telemetry,
-                telemetry_fetch_ok=telemetry_fetch_ok,
-                solution_tank_guard=solution_tank_guard,
-                node_rows=node_rows,
-                observability_thresholds=observability_thresholds,
-            )
-            return self._merge_last_failed_task_into_workflow_view(built, last_task, workflow_state)
-        if task is None:
-            task = last_task
-
-        return await self._build_state(
-            zone_id=zone_id,
-            task=task,
-            transitions=transitions,
-            telemetry=telemetry,
-            telemetry_fetch_ok=telemetry_fetch_ok,
-            solution_tank_guard=solution_tank_guard,
-            workflow_state=workflow_state,
-            node_rows=node_rows,
-            observability_thresholds=observability_thresholds,
-        )
+        return await self._zone_state_coordination.run(zone_id=zone_id)
 
     async def _fetch_zone_telemetry(self, *, zone_id: int) -> tuple[dict[str, Any], bool]:
-        """Читает ``telemetry_last`` для pH, EC и датчиков уровня этой зоны.
-
-        Возвращает ``(levels_dict, ok)``, где ``ok`` равно ``False``, если SQL-чтение не удалось.
-        """
-        try:
-            level_cfg = await load_zone_level_monitor_config(zone_id=zone_id, fetch_fn=self._fetch_fn)
-            rows = await self._fetch_fn(
-                """
-                SELECT s.label, s.type, tl.last_value, tl.last_ts, tl.last_quality
-                FROM sensors s
-                JOIN telemetry_last tl ON tl.sensor_id = s.id
-                WHERE s.zone_id = $1
-                  AND s.is_active = TRUE
-                  AND s.type IN ('PH', 'EC', 'WATER_LEVEL', 'WATER_LEVEL_SWITCH')
-                ORDER BY s.type, s.label
-                """,
-                zone_id,
-            )
-        except Exception:
-            logger.warning(
-                "AE3 automation state: telemetry fetch failed for zone_id=%s",
-                zone_id,
-                exc_info=True,
-            )
-            return {}, False
-
-        return summarize_zone_telemetry_rows(rows, config=level_cfg), True
+        return await self._zone_state_queries.fetch_zone_telemetry(zone_id=zone_id)
 
     async def _fetch_zone_nodes_diag(self, *, zone_id: int) -> list[dict[str, Any]]:
-        if self._fetch_fn is None:
-            return []
-        try:
-            rows = await self._fetch_fn(ZONE_NODES_DIAG_SQL, zone_id)
-        except Exception:
-            logger.warning(
-                "AE3 automation state: node diag fetch failed for zone_id=%s",
-                zone_id,
-                exc_info=True,
-            )
-            return []
-        return [dict(row) if isinstance(row, Mapping) else row for row in rows]
+        return await self._zone_state_queries.fetch_zone_nodes_diag(zone_id=zone_id)
 
-    async def _fetch_recent_node_runtime_events(self, *, zone_id: int, since_ts: datetime | None) -> list[dict[str, Any]]:
-        if self._fetch_fn is None:
-            return []
-        try:
-            rows = await self._fetch_fn(
-                """
-                SELECT type, created_at, COALESCE(details, payload_json) AS payload
-                FROM zone_events
-                WHERE zone_id = $1
-                  AND type = ANY($2::text[])
-                  AND ($3::timestamp IS NULL OR created_at >= $3)
-                ORDER BY created_at ASC, id ASC
-                LIMIT 32
-                """,
-                zone_id,
-                list(_TIMELINE_NODE_EVENT_TYPES),
-                since_ts,
-            )
-        except Exception:
-            logger.warning(
-                "AE3 automation state: node runtime events fetch failed for zone_id=%s",
-                zone_id,
-                exc_info=True,
-            )
-            return []
-
-        events: list[dict[str, Any]] = []
-        for row in rows:
-            event = self._build_node_runtime_timeline_event(row)
-            if event is not None:
-                events.append(event)
-        return events
+    async def _fetch_recent_node_runtime_events(
+        self, *, zone_id: int, since_ts: datetime | None
+    ) -> list[dict[str, Any]]:
+        return await self._zone_state_queries.fetch_recent_node_runtime_events(zone_id=zone_id, since_ts=since_ts)
 
     def _build_node_runtime_timeline_event(self, row: Mapping[str, Any]) -> dict[str, Any] | None:
-        event_type = str(row.get("type") or "").strip().upper()
-        payload = row.get("payload")
-        payload_map = payload if isinstance(payload, Mapping) else {}
-        ts = row.get("created_at")
-
-        if event_type == "LEVEL_SWITCH_CHANGED":
-            channel = str(payload_map.get("channel") or "").strip().lower()
-            state = payload_map.get("state")
-            initial = payload_map.get("initial")
-            channel_label = _LEVEL_CHANNEL_LABELS.get(channel, channel or "датчик уровня")
-            normalized_state = state if isinstance(state, bool) else str(state).strip().lower() in {"1", "true", "yes", "on"}
-            normalized_initial = initial if isinstance(initial, bool) else str(initial).strip().lower() in {"1", "true", "yes", "on"}
-            state_label = "сработал" if normalized_state else "отпущен"
-            prefix = "Начальное состояние ноды" if normalized_initial else "Сигнал датчика"
-            label = f"{prefix}: {channel_label} {state_label}"
-        else:
-            label = _NODE_EVENT_LABELS.get(event_type, event_type)
-
-        return {
-            "event": event_type,
-            "label": label,
-            "timestamp": ts.isoformat() if hasattr(ts, "isoformat") else str(ts),
-            "active": False,
-            "source": "node_event",
-        }
+        return self._zone_state_timeline.build_node_runtime_timeline_event(row=row)
 
     async def _build_timeline(
         self,
@@ -385,26 +199,9 @@ class GetZoneAutomationStateUseCase:
         transitions: list[dict],
         since_ts: datetime | None,
     ) -> list[dict]:
-        events = []
-        for t in transitions:
-            from_s = str(t.get("from_stage") or "")
-            to_s = str(t.get("to_stage") or "")
-            key = (from_s, to_s)
-            event_code, label = _TRANSITION_EVENT_MAP.get(key, (f"{from_s}→{to_s}", f"{from_s} → {to_s}"))
-            ts = t.get("triggered_at")
-            events.append({
-                "event": event_code,
-                "label": label,
-                "timestamp": ts.isoformat() if hasattr(ts, "isoformat") else str(ts),
-                "active": False,
-                "source": "transition",
-            })
-        events.extend(await self._fetch_recent_node_runtime_events(zone_id=zone_id, since_ts=since_ts))
-        events.sort(key=lambda item: str(item.get("timestamp") or ""))
-        # Пометить последнее событие как активное
-        if events:
-            events[-1]["active"] = True
-        return events
+        return await self._zone_state_timeline.build_timeline(
+            zone_id=zone_id, transitions=transitions, since_ts=since_ts
+        )
 
     def _primary_automation_state_label(
         self,
@@ -414,32 +211,17 @@ class GetZoneAutomationStateUseCase:
         current_stage: str,
         is_terminal_failed: bool,
     ) -> str:
-        """Человекочитаемый заголовок для UI: не показывать «Раствор готов», если идёт подэтап полива."""
-        cs_key = str(current_stage or "").strip().lower()
-
-        if is_terminal_failed:
-            stage_line = _STAGE_LABELS.get(cs_key)
-            return f"{stage_line} — сбой" if stage_line else "Сбой автоматики"
-
-        if workflow_phase == "idle" and cs_key == "startup":
-            return "Инициализация"
-
-        if mapped_macro_state == "READY" and cs_key and cs_key != "complete_ready":
-            stage_line = _STAGE_LABELS.get(cs_key)
-            if stage_line:
-                return stage_line
-
-        return _STATE_LABELS.get(mapped_macro_state, "Ожидание")
+        return self._zone_state_presentation.primary_automation_state_label(
+            workflow_phase=workflow_phase,
+            mapped_macro_state=mapped_macro_state,
+            current_stage=current_stage,
+            is_terminal_failed=is_terminal_failed,
+        )
 
     def _estimate_progress_percent(self, *, current_stage: str, workflow_phase: str) -> int:
-        """Оценка прогресса для UI: подэтап в cycle_start, иначе macro workflow_phase."""
-        cs_key = str(current_stage or "").strip().lower()
-        if cs_key in _CYCLE_START_STAGE_ORDER:
-            idx = _CYCLE_START_STAGE_ORDER.index(cs_key)
-            return min(99, int(((idx + 1) / len(_CYCLE_START_STAGE_ORDER)) * 100))
-
-        phase_key = str(workflow_phase or "").strip().lower()
-        return int(_WORKFLOW_PHASE_PROGRESS.get(phase_key, 0))
+        return self._zone_state_presentation.estimate_progress_percent(
+            current_stage=current_stage, workflow_phase=workflow_phase
+        )
 
     def _timed_irrigation_metrics(
         self,
@@ -451,57 +233,20 @@ class GetZoneAutomationStateUseCase:
         task_created_at: datetime | None = None,
         task_type: str = "",
     ) -> tuple[int | None, int | None]:
-        """Прогресс полива по elapsed/deadline вместо индекса workflow (82% на irrigation_check)."""
-        cs_key = str(current_stage or "").strip().lower()
-        if not cs_key.startswith(_IRRIGATION_STAGE_PREFIX):
-            return None, None
-
-        anchor = stage_entered_at
-        if (
-            cs_key == "irrigation_check"
-            and str(task_type or "").strip().lower() == "irrigation_start"
-            and isinstance(task_created_at, datetime)
-        ):
-            anchor = task_created_at
-        if not isinstance(anchor, datetime):
-            return None, None
-
-        entered_naive = self._normalize_utc_naive(anchor)
-        now = self._normalize_utc_naive(self._now())
-        elapsed = max(0, int((now - entered_naive).total_seconds()))
-
-        total_sec: int | None = None
-        if isinstance(stage_deadline_at, datetime):
-            deadline_naive = self._normalize_utc_naive(stage_deadline_at)
-            total_sec = max(1, int((deadline_naive - entered_naive).total_seconds()))
-        else:
-            try:
-                requested = int(irrigation_requested_duration_sec)
-            except (TypeError, ValueError):
-                requested = 0
-            if requested > 0:
-                total_sec = max(1, requested)
-
-        if total_sec is None:
-            return None, None
-
-        remaining = max(0, total_sec - elapsed)
-        progress = min(99, max(0, int((elapsed / total_sec) * 100)))
-        return progress, remaining
+        return self._zone_state_presentation.timed_irrigation_metrics(
+            stage_entered_at=stage_entered_at,
+            stage_deadline_at=stage_deadline_at,
+            irrigation_requested_duration_sec=irrigation_requested_duration_sec,
+            current_stage=current_stage,
+            task_created_at=task_created_at,
+            task_type=task_type,
+        )
 
     def _elapsed_sec_since(self, entered_at: datetime | None) -> int:
-        if not isinstance(entered_at, datetime):
-            return 0
-        entered_naive = self._normalize_utc_naive(entered_at)
-        now = self._now()
-        if not isinstance(now, datetime):
-            return 0
-        return max(0, int((now - entered_naive).total_seconds()))
+        return self._zone_state_presentation.elapsed_sec_since(entered_at=entered_at)
 
     def _iso_or_none(self, value: Any) -> str | None:
-        if isinstance(value, datetime):
-            return value.isoformat()
-        return None
+        return self._zone_state_time_values.iso_or_none(value=value)
 
     def _build_state_details(
         self,
@@ -520,75 +265,21 @@ class GetZoneAutomationStateUseCase:
         task_type: str = "",
         completed_at: datetime | None = None,
     ) -> dict[str, Any]:
-        status_key = str(task_status or "").strip().lower()
-        cs_key = str(current_stage or "").strip().lower()
-
-        if not is_failed and status_key == "completed" and cs_key in _TERMINAL_COMPLETED_STAGES:
-            started = task_created_at or stage_entered_at or workflow_started_at
-            finished = completed_at if isinstance(completed_at, datetime) else None
-            elapsed = 0
-            if isinstance(started, datetime) and isinstance(finished, datetime):
-                elapsed = max(
-                    0,
-                    int(
-                        (
-                            self._normalize_utc_naive(finished)
-                            - self._normalize_utc_naive(started)
-                        ).total_seconds()
-                    ),
-                )
-            elif isinstance(started, datetime):
-                elapsed = self._elapsed_sec_since(started)
-            return {
-                "started_at": self._iso_or_none(started),
-                "stage_entered_at": self._iso_or_none(stage_entered_at),
-                "elapsed_sec": elapsed,
-                "progress_percent": 0,
-                "progress_basis": "terminal_completed",
-                "failed": False,
-                "error_code": None,
-                "error_message": None,
-            }
-
-        anchor = stage_entered_at or task_created_at or workflow_started_at
-        if (
-            cs_key == "irrigation_check"
-            and str(task_type or "").strip().lower() == "irrigation_start"
-            and isinstance(task_created_at, datetime)
-        ):
-            anchor = task_created_at
-        timed_progress, remaining_sec = self._timed_irrigation_metrics(
+        return self._zone_state_presentation.build_state_details(
+            is_failed=is_failed,
+            error_code=error_code,
+            error_message=error_message,
             stage_entered_at=stage_entered_at,
+            task_created_at=task_created_at,
+            current_stage=current_stage,
+            workflow_phase=workflow_phase,
+            workflow_started_at=workflow_started_at,
             stage_deadline_at=stage_deadline_at,
             irrigation_requested_duration_sec=irrigation_requested_duration_sec,
-            current_stage=current_stage,
-            task_created_at=task_created_at,
+            task_status=task_status,
             task_type=task_type,
+            completed_at=completed_at,
         )
-        if is_failed:
-            progress_percent = 0
-        elif timed_progress is not None:
-            progress_percent = timed_progress
-        else:
-            progress_percent = self._estimate_progress_percent(
-                current_stage=current_stage,
-                workflow_phase=workflow_phase,
-            )
-
-        details: dict[str, Any] = {
-            "started_at": self._iso_or_none(anchor),
-            "stage_entered_at": self._iso_or_none(stage_entered_at),
-            "elapsed_sec": self._elapsed_sec_since(anchor),
-            "progress_percent": progress_percent,
-            "failed": is_failed,
-            "error_code": error_code if is_failed else None,
-            "error_message": error_message if is_failed else None,
-        }
-        if timed_progress is not None:
-            details["progress_basis"] = "irrigation_deadline"
-            details["stage_deadline_at"] = self._iso_or_none(stage_deadline_at)
-            details["stage_deadline_remaining_sec"] = remaining_sec
-        return details
 
     def _should_overlay_failed_task_on_workflow(
         self,
@@ -596,27 +287,9 @@ class GetZoneAutomationStateUseCase:
         workflow_state: Optional[Any],
         last_task: Any,
     ) -> bool:
-        """Показывать terminal failed поверх workflow только если сбой не устарел относительно workflow."""
-        scheduler_task_id = (
-            str(getattr(workflow_state, "scheduler_task_id", "") or "").strip()
-            if workflow_state is not None
-            else ""
+        return self._zone_state_failure_overlay.should_overlay_failed_task_on_workflow(
+            workflow_state=workflow_state, last_task=last_task
         )
-        last_task_id = str(getattr(last_task, "id", "") or "").strip()
-        if scheduler_task_id and last_task_id and scheduler_task_id == last_task_id:
-            return True
-
-        if workflow_state is None:
-            return True
-
-        workflow_updated_at = getattr(workflow_state, "updated_at", None)
-        task_updated_at = getattr(last_task, "updated_at", None)
-        if isinstance(workflow_updated_at, datetime) and isinstance(task_updated_at, datetime):
-            wf_cmp = self._normalize_utc_naive(workflow_updated_at)
-            task_cmp = self._normalize_utc_naive(task_updated_at)
-            return task_cmp >= wf_cmp
-
-        return True
 
     def _observability_after_failure_rollback(
         self,
@@ -625,48 +298,9 @@ class GetZoneAutomationStateUseCase:
         last_task: Any,
         failed_stage: str,
     ) -> dict[str, Any]:
-        if not isinstance(observability, dict):
-            return {}
-        obs = dict(observability)
-        runtime = dict(obs.get("runtime") or {})
-        wf = getattr(last_task, "workflow", None)
-        stage_entered_at = getattr(wf, "stage_entered_at", None) if wf is not None else None
-        completed_at = getattr(last_task, "completed_at", None)
-        elapsed: int | None = None
-        if isinstance(stage_entered_at, datetime) and isinstance(completed_at, datetime):
-            elapsed = max(
-                0,
-                int(
-                    (
-                        self._normalize_utc_naive(completed_at)
-                        - self._normalize_utc_naive(stage_entered_at)
-                    ).total_seconds()
-                ),
-            )
-
-        runtime["task_id"] = getattr(last_task, "id", None)
-        runtime["task_status"] = "failed"
-        runtime["task_is_active"] = False
-        runtime["current_stage"] = None
-        runtime["failed_stage"] = failed_stage or None
-        runtime["correction_step"] = None
-        runtime["correction_wait_until"] = None
-        runtime["correction_wait_remaining_sec"] = None
-        runtime["correction_stabilization_sec"] = None
-        runtime["stage_deadline_at"] = None
-        runtime["stage_deadline_remaining_sec"] = None
-        if elapsed is not None:
-            runtime["stage_elapsed_sec"] = elapsed
-            runtime["waiting_elapsed_sec"] = elapsed
-
-        obs["runtime"] = runtime
-        obs["hang_hints"] = [
-            hint
-            for hint in (obs.get("hang_hints") or [])
-            if isinstance(hint, dict)
-            and hint.get("code") not in {"workflow_snapshot_stale", "no_active_task_during_workflow"}
-        ]
-        return obs
+        return self._zone_state_failure_overlay.observability_after_failure_rollback(
+            observability=observability, last_task=last_task, failed_stage=failed_stage
+        )
 
     def _merge_last_failed_task_into_workflow_view(
         self,
@@ -674,55 +308,9 @@ class GetZoneAutomationStateUseCase:
         last_task: Optional[Any],
         workflow_state: Optional[Any] = None,
     ) -> dict[str, Any]:
-        """Снимок workflow в БД может оставаться ready, пока последняя ae_task уже failed — не маскируем свежий сбой."""
-        if last_task is None:
-            return payload
-        status = str(getattr(last_task, "status", "") or "").strip().lower()
-        if status != "failed":
-            return payload
-        if not self._should_overlay_failed_task_on_workflow(
-            workflow_state=workflow_state,
-            last_task=last_task,
-        ):
-            return payload
-
-        details = dict(payload.get("state_details") or {})
-        details["failed"] = True
-        details["error_code"] = getattr(last_task, "error_code", None)
-        details["error_message"] = getattr(last_task, "error_message", None)
-        details["failed_task_id"] = getattr(last_task, "id", None)
-        payload["state_details"] = details
-
-        wf = getattr(last_task, "workflow", None)
-        failed_stage = str(getattr(wf, "current_stage", "") or "").strip() if wf is not None else ""
-
-        if self._workflow_failure_rollback_applied(workflow_state):
-            payload["state_label"] = self._primary_automation_state_label(
-                workflow_phase=str(payload.get("workflow_phase") or "idle"),
-                mapped_macro_state=str(payload.get("state") or "IDLE"),
-                current_stage=failed_stage,
-                is_terminal_failed=True,
-            )
-            payload["observability"] = self._observability_after_failure_rollback(
-                payload.get("observability"),
-                last_task=last_task,
-                failed_stage=failed_stage,
-            )
-            return payload
-
-        wf_phase = (
-            str(getattr(wf, "workflow_phase", "") or "").strip().lower()
-            if wf is not None
-            else str(payload.get("workflow_phase") or "").strip().lower()
+        return self._zone_state_failure_overlay.merge_last_failed_task_into_workflow_view(
+            payload=payload, last_task=last_task, workflow_state=workflow_state
         )
-
-        payload["state_label"] = self._primary_automation_state_label(
-            workflow_phase=wf_phase,
-            mapped_macro_state=str(payload.get("state") or "IDLE"),
-            current_stage=failed_stage,
-            is_terminal_failed=True,
-        )
-        return payload
 
     async def _control_mode_context(
         self,
@@ -732,46 +320,9 @@ class GetZoneAutomationStateUseCase:
         task_type: str | None = None,
         pending_manual_step: str | None = None,
     ) -> dict[str, Any]:
-        """control_mode из zones — тот же source of truth, что и GET /control-mode."""
-        control_mode = "auto"
-        if self._fetch_fn is not None:
-            try:
-                rows = await self._fetch_fn(
-                    "SELECT control_mode FROM zones WHERE id = $1",
-                    zone_id,
-                )
-                if rows:
-                    row = rows[0]
-                    raw = (
-                        row.get("control_mode")
-                        if isinstance(row, Mapping)
-                        else getattr(row, "control_mode", None)
-                    )
-                    control_mode = normalize_control_mode(raw)
-            except Exception:
-                logger.warning(
-                    "AE3 automation state: control_mode read failed for zone_id=%s",
-                    zone_id,
-                    exc_info=True,
-                )
-
-        stage_key = str(current_stage or "").strip()
-        allowed_manual_steps: list[str] = []
-        if stage_key:
-            # solution_change gate steps must be exposed even in control_mode=auto
-            # (same contract as GetZoneControlStateUseCase / allowed_manual_steps_for_task).
-            allowed_manual_steps = allowed_manual_steps_for_task(
-                task_type=task_type or "",
-                control_mode=control_mode,
-                current_stage=stage_key,
-                pending_manual_step=pending_manual_step,
-            )
-
-        return {
-            "control_mode": control_mode,
-            "control_mode_available": list(AVAILABLE_CONTROL_MODES),
-            "allowed_manual_steps": allowed_manual_steps,
-        }
+        return await self._zone_state_presentation.control_mode_context(
+            zone_id=zone_id, current_stage=current_stage, task_type=task_type, pending_manual_step=pending_manual_step
+        )
 
     async def _build_state(
         self,
@@ -786,119 +337,14 @@ class GetZoneAutomationStateUseCase:
         node_rows: list[dict[str, Any]] | None = None,
         observability_thresholds: dict[str, int] | None = None,
     ) -> dict[str, Any]:
-        if task is None:
-            return await self._idle_state(
-                zone_id=zone_id,
-                telemetry=telemetry,
-                telemetry_fetch_ok=telemetry_fetch_ok,
-                solution_tank_guard=solution_tank_guard,
-                workflow_state=workflow_state,
-                node_rows=node_rows,
-                observability_thresholds=observability_thresholds,
-            )
-
-        status = str(getattr(task, "status", "") or "").strip().lower()
-        wf = getattr(task, "workflow", None)
-        workflow_phase = str(getattr(wf, "workflow_phase", None) or "idle").strip().lower()
-        current_stage = getattr(wf, "current_stage", None)
-        error_code = getattr(task, "error_code", None)
-        error_message = getattr(task, "error_message", None)
-
-        is_failed = status == "failed"
-        is_active = status in ("pending", "claimed", "running", "waiting_command")
-
-        mapped_macro = _WORKFLOW_PHASE_TO_STATE.get(workflow_phase, "IDLE")
-        state = "IDLE" if is_failed else mapped_macro
-
-        timeline = await self._build_timeline(
-            zone_id=zone_id,
-            transitions=transitions,
-            since_ts=self._timeline_since(task=task),
-        )
-        active_processes = self._build_active_processes(
-            workflow_phase=workflow_phase,
-            is_active=is_active,
-            correction=getattr(task, "correction", None),
-        )
-        pending_manual_step = None
-        if wf is not None:
-            raw_pending = getattr(wf, "pending_manual_step", None)
-            if raw_pending is not None and str(raw_pending).strip() != "":
-                pending_manual_step = str(raw_pending).strip()
-        control_ctx = await self._control_mode_context(
-            zone_id=zone_id,
-            current_stage=str(current_stage) if current_stage is not None else None,
-            task_type=str(getattr(task, "task_type", "") or ""),
-            pending_manual_step=pending_manual_step,
-        )
-
-        state_details = self._build_state_details(
-            is_failed=is_failed,
-            error_code=error_code,
-            error_message=error_message,
-            stage_entered_at=getattr(wf, "stage_entered_at", None) if wf is not None else None,
-            task_created_at=getattr(task, "created_at", None),
-            current_stage=str(current_stage or ""),
-            workflow_phase=workflow_phase,
-            stage_deadline_at=getattr(wf, "stage_deadline_at", None) if wf is not None else None,
-            irrigation_requested_duration_sec=getattr(task, "irrigation_requested_duration_sec", None),
-            task_status=status,
-            task_type=str(getattr(task, "task_type", "") or ""),
-            completed_at=getattr(task, "completed_at", None),
-        )
-
-        return await self._attach_observability(
-            {
-            "zone_id": zone_id,
-            "state": state,
-            "state_label": self._primary_automation_state_label(
-                workflow_phase=workflow_phase,
-                mapped_macro_state=mapped_macro,
-                current_stage=str(current_stage) if current_stage is not None else "",
-                is_terminal_failed=is_failed,
-            ),
-            "state_details": state_details,
-            "workflow_phase": workflow_phase,
-            "current_stage": current_stage,
-            "current_stage_label": _STAGE_LABELS.get(str(current_stage or ""), None),
-            "system_config": {
-                "tanks_count": 2,
-                "system_type": "drip",
-                "clean_tank_capacity_l": None,
-                "nutrient_tank_capacity_l": None,
-            },
-            "current_levels": {
-                "clean_tank_level_percent": telemetry.get(
-                    "clean_tank_level_percent",
-                    coarse_clean_tank_level_percent(clean_max_triggered=False) or 0,
-                ),
-                "nutrient_tank_level_percent": telemetry.get(
-                    "nutrient_tank_level_percent",
-                    coarse_solution_tank_level_percent(
-                        solution_max_triggered=False,
-                        solution_min_triggered=False,
-                    )
-                    or 0,
-                ),
-                "buffer_tank_level_percent": None,
-                "ph": telemetry.get("ph"),
-                "ec": telemetry.get("ec"),
-            },
-            "active_processes": active_processes,
-            "timeline": timeline,
-            "next_state": None,
-            "estimated_completion_sec": state_details.get("stage_deadline_remaining_sec"),
-            "irr_node_state": None,
-            "solution_tank_guard": solution_tank_guard,
-            "decision": self._build_decision(task),
-            "telemetry_fetch_ok": telemetry_fetch_ok,
-            **control_ctx,
-            },
+        return await self._zone_state_state_views.build_state(
             zone_id=zone_id,
             task=task,
-            workflow_state=workflow_state,
+            transitions=transitions,
             telemetry=telemetry,
             telemetry_fetch_ok=telemetry_fetch_ok,
+            solution_tank_guard=solution_tank_guard,
+            workflow_state=workflow_state,
             node_rows=node_rows,
             observability_thresholds=observability_thresholds,
         )
@@ -914,108 +360,12 @@ class GetZoneAutomationStateUseCase:
         node_rows: list[dict[str, Any]] | None = None,
         observability_thresholds: dict[str, int] | None = None,
     ) -> dict[str, Any]:
-        workflow_phase = str(getattr(workflow_state, "workflow_phase", None) or "idle").strip().lower()
-        payload = getattr(workflow_state, "payload", None)
-        normalized_payload = payload if isinstance(payload, Mapping) else {}
-        raw_stage = str(normalized_payload.get("ae3_cycle_start_stage") or "").strip() or None
-        current_stage = resolve_diagnostic_stage_after_rollback(
-            workflow_phase=workflow_phase,
-            payload=normalized_payload,
-            raw_stage=raw_stage,
-        )
-        workflow_guard = self._solution_tank_guard_from_payload(normalized_payload)
-        if solution_tank_guard is None:
-            solution_tank_guard = workflow_guard
-        elif workflow_guard is not None:
-            solution_tank_guard = {
-                **workflow_guard,
-                **{k: v for k, v in solution_tank_guard.items() if v is not None},
-            }
-        state = _WORKFLOW_PHASE_TO_STATE.get(workflow_phase, "IDLE")
-        state_label = self._primary_automation_state_label(
-            workflow_phase=workflow_phase,
-            mapped_macro_state=state,
-            current_stage=str(current_stage or ""),
-            is_terminal_failed=False,
-        )
-        timeline = await self._build_timeline(
+        return await self._zone_state_state_views.build_workflow_state(
             zone_id=zone_id,
-            transitions=[],
-            since_ts=self._timeline_since_workflow(workflow_state=workflow_state),
-        )
-        pending_manual_step = None
-        raw_pending = normalized_payload.get("pending_manual_step")
-        if raw_pending is not None and str(raw_pending).strip() != "":
-            pending_manual_step = str(raw_pending).strip()
-        else:
-            wf_pending = getattr(workflow_state, "pending_manual_step", None)
-            if wf_pending is not None and str(wf_pending).strip() != "":
-                pending_manual_step = str(wf_pending).strip()
-        control_ctx = await self._control_mode_context(
-            zone_id=zone_id,
-            current_stage=current_stage,
-            pending_manual_step=pending_manual_step,
-        )
-
-        return await self._attach_observability(
-            {
-            "zone_id": zone_id,
-            "state": state,
-            "state_label": state_label,
-            "state_details": self._build_state_details(
-                is_failed=False,
-                stage_entered_at=getattr(workflow_state, "updated_at", None),
-                current_stage=str(current_stage or ""),
-                workflow_phase=workflow_phase,
-                workflow_started_at=getattr(workflow_state, "started_at", None),
-            ),
-            "workflow_phase": workflow_phase,
-            "current_stage": current_stage,
-            "current_stage_label": _STAGE_LABELS.get(str(current_stage or ""), None),
-            "system_config": {
-                "tanks_count": 2,
-                "system_type": "drip",
-                "clean_tank_capacity_l": None,
-                "nutrient_tank_capacity_l": None,
-            },
-            "current_levels": {
-                "clean_tank_level_percent": telemetry.get(
-                    "clean_tank_level_percent",
-                    coarse_clean_tank_level_percent(clean_max_triggered=False) or 0,
-                ),
-                "nutrient_tank_level_percent": telemetry.get(
-                    "nutrient_tank_level_percent",
-                    coarse_solution_tank_level_percent(
-                        solution_max_triggered=False,
-                        solution_min_triggered=False,
-                    )
-                    or 0,
-                ),
-                "buffer_tank_level_percent": None,
-                "ph": telemetry.get("ph"),
-                "ec": telemetry.get("ec"),
-            },
-            "active_processes": {
-                "pump_in": workflow_phase == "tank_filling",
-                "circulation_pump": workflow_phase == "tank_recirc",
-                "ph_correction": False,
-                "ec_correction": False,
-                "active_doses": [],
-            },
-            "timeline": timeline,
-            "next_state": None,
-            "estimated_completion_sec": None,
-            "irr_node_state": None,
-            "solution_tank_guard": solution_tank_guard,
-            "decision": None,
-            "telemetry_fetch_ok": telemetry_fetch_ok,
-            **control_ctx,
-            },
-            zone_id=zone_id,
-            task=None,
             workflow_state=workflow_state,
             telemetry=telemetry,
             telemetry_fetch_ok=telemetry_fetch_ok,
+            solution_tank_guard=solution_tank_guard,
             node_rows=node_rows,
             observability_thresholds=observability_thresholds,
         )
@@ -1031,92 +381,18 @@ class GetZoneAutomationStateUseCase:
         node_rows: list[dict[str, Any]] | None = None,
         observability_thresholds: dict[str, int] | None = None,
     ) -> dict[str, Any]:
-        telemetry = telemetry or {}
-        timeline = await self._build_timeline(
+        return await self._zone_state_state_views.idle_state(
             zone_id=zone_id,
-            transitions=[],
-            since_ts=self._idle_timeline_since(),
-        )
-        control_ctx = await self._control_mode_context(zone_id=zone_id, current_stage=None)
-        return await self._attach_observability(
-            {
-            "zone_id": zone_id,
-            "state": "IDLE",
-            "state_label": "Ожидание",
-            "state_details": {
-                "started_at": None,
-                "elapsed_sec": 0,
-                "progress_percent": 0,
-                "failed": False,
-                "error_code": None,
-                "error_message": None,
-            },
-            "workflow_phase": "idle",
-            "current_stage": None,
-            "current_stage_label": None,
-            "system_config": {
-                "tanks_count": 2,
-                "system_type": "drip",
-                "clean_tank_capacity_l": None,
-                "nutrient_tank_capacity_l": None,
-            },
-            "current_levels": {
-                "clean_tank_level_percent": telemetry.get(
-                    "clean_tank_level_percent",
-                    coarse_clean_tank_level_percent(clean_max_triggered=False) or 0,
-                ),
-                "nutrient_tank_level_percent": telemetry.get(
-                    "nutrient_tank_level_percent",
-                    coarse_solution_tank_level_percent(
-                        solution_max_triggered=False,
-                        solution_min_triggered=False,
-                    )
-                    or 0,
-                ),
-                "buffer_tank_level_percent": None,
-                "ph": telemetry.get("ph"),
-                "ec": telemetry.get("ec"),
-            },
-            "active_processes": {
-                "pump_in": False,
-                "circulation_pump": False,
-                "ph_correction": False,
-                "ec_correction": False,
-                "active_doses": [],
-            },
-            "timeline": timeline,
-            "next_state": None,
-            "estimated_completion_sec": None,
-            "irr_node_state": None,
-            "solution_tank_guard": solution_tank_guard,
-            "decision": None,
-            "telemetry_fetch_ok": telemetry_fetch_ok,
-            **control_ctx,
-            },
-            zone_id=zone_id,
-            task=None,
-            workflow_state=workflow_state,
             telemetry=telemetry,
             telemetry_fetch_ok=telemetry_fetch_ok,
+            solution_tank_guard=solution_tank_guard,
+            workflow_state=workflow_state,
             node_rows=node_rows,
             observability_thresholds=observability_thresholds,
         )
 
     async def _latest_irrigation_task(self, *, zone_id: int, task: Optional[Any]) -> Any | None:
-        if task is not None and str(getattr(task, "task_type", "") or "").strip().lower() == "irrigation_start":
-            return task
-        getter = getattr(self._task_repository, "get_last_irrigation_for_zone", None)
-        if getter is None:
-            return None
-        try:
-            return await getter(zone_id=zone_id)
-        except Exception:
-            logger.warning(
-                "AE3 automation state: last irrigation task read failed for zone_id=%s",
-                zone_id,
-                exc_info=True,
-            )
-            return None
+        return await self._zone_state_queries.latest_irrigation_task(zone_id=zone_id, task=task)
 
     async def _attach_observability(
         self,
@@ -1130,20 +406,16 @@ class GetZoneAutomationStateUseCase:
         node_rows: list[dict[str, Any]] | None,
         observability_thresholds: dict[str, int] | None = None,
     ) -> dict[str, Any]:
-        irrigation_task = await self._latest_irrigation_task(zone_id=zone_id, task=task)
-        observability = build_automation_observability(
+        return await self._zone_state_observability.attach_observability(
+            payload=payload,
             zone_id=zone_id,
             task=task,
             workflow_state=workflow_state,
             telemetry=telemetry,
             telemetry_fetch_ok=telemetry_fetch_ok,
-            now=self._now(),
-            node_rows=node_rows or [],
-            thresholds=observability_thresholds,
-            irrigation_task=irrigation_task,
+            node_rows=node_rows,
+            observability_thresholds=observability_thresholds,
         )
-        payload["observability"] = observability
-        return payload
 
     def _build_active_processes(
         self,
@@ -1152,18 +424,9 @@ class GetZoneAutomationStateUseCase:
         is_active: bool,
         correction: Any | None,
     ) -> dict[str, Any]:
-        corr_step = str(getattr(correction, "corr_step", "") or "").strip().lower()
-        return {
-            "pump_in": is_active and workflow_phase == "tank_filling",
-            "circulation_pump": is_active and workflow_phase == "tank_recirc",
-            "ph_correction": is_active and corr_step in _PH_CORRECTION_STEPS,
-            "ec_correction": is_active and corr_step in _EC_CORRECTION_STEPS,
-            "active_doses": self._build_active_doses(
-                is_active=is_active,
-                correction=correction,
-                corr_step=corr_step,
-            ),
-        }
+        return self._zone_state_doses.build_active_processes(
+            workflow_phase=workflow_phase, is_active=is_active, correction=correction
+        )
 
     def _build_active_doses(
         self,
@@ -1172,281 +435,49 @@ class GetZoneAutomationStateUseCase:
         correction: Any | None,
         corr_step: str,
     ) -> list[dict[str, Any]]:
-        """Live dosing pumps for UI — only during corr_dose_* (not wait steps)."""
-        if not is_active or correction is None:
-            return []
-        if corr_step == "corr_dose_ec":
-            return self._build_active_ec_doses(correction)
-        if corr_step == "corr_dose_ph":
-            return self._build_active_ph_doses(correction)
-        return []
+        return self._zone_state_doses.build_active_doses(
+            is_active=is_active, correction=correction, corr_step=corr_step
+        )
 
     def _build_active_ec_doses(self, correction: Any) -> list[dict[str, Any]]:
-        ec_component = str(getattr(correction, "ec_component", "") or "").strip().lower() or None
-        sequence = self._parse_ec_dose_sequence(getattr(correction, "ec_dose_sequence_json", None))
-
-        if ec_component == "multi_parallel" and sequence:
-            doses: list[dict[str, Any]] = []
-            for item in sequence:
-                channel = str(item.get("channel") or "").strip()
-                if not channel:
-                    continue
-                component = str(item.get("component") or "").strip().lower() or None
-                doses.append(
-                    self._dose_entry(
-                        kind="ec",
-                        channel=channel,
-                        component=component,
-                        node_uid=str(item.get("node_uid") or "").strip() or None,
-                        amount_ml=item.get("amount_ml"),
-                        duration_ms=item.get("duration_ms"),
-                    )
-                )
-            return doses
-
-        if sequence:
-            try:
-                idx = int(getattr(correction, "ec_current_seq_index", 0) or 0)
-            except (TypeError, ValueError):
-                idx = 0
-            if 0 <= idx < len(sequence):
-                item = sequence[idx]
-                channel = str(item.get("channel") or "").strip()
-                if channel:
-                    component = str(item.get("component") or "").strip().lower() or None
-                    return [
-                        self._dose_entry(
-                            kind="ec",
-                            channel=channel,
-                            component=component or ec_component,
-                            node_uid=str(item.get("node_uid") or "").strip() or None,
-                            amount_ml=item.get("amount_ml"),
-                            duration_ms=item.get("duration_ms"),
-                        )
-                    ]
-
-        channel = str(getattr(correction, "ec_channel", "") or "").strip()
-        if not channel:
-            return []
-        return [
-            self._dose_entry(
-                kind="ec",
-                channel=channel,
-                component=ec_component if ec_component != "multi_parallel" else None,
-                node_uid=str(getattr(correction, "ec_node_uid", "") or "").strip() or None,
-                amount_ml=getattr(correction, "ec_amount_ml", None),
-                duration_ms=getattr(correction, "ec_duration_ms", None),
-            )
-        ]
+        return self._zone_state_doses.build_active_ec_doses(correction=correction)
 
     def _build_active_ph_doses(self, correction: Any) -> list[dict[str, Any]]:
-        channel = str(getattr(correction, "ph_channel", "") or "").strip()
-        if not channel:
-            return []
-        needs_ph_up = bool(getattr(correction, "needs_ph_up", False))
-        kind = "ph_up" if needs_ph_up else "ph_down"
-        return [
-            self._dose_entry(
-                kind=kind,
-                channel=channel,
-                component=None,
-                node_uid=str(getattr(correction, "ph_node_uid", "") or "").strip() or None,
-                amount_ml=getattr(correction, "ph_amount_ml", None),
-                duration_ms=getattr(correction, "ph_duration_ms", None),
-            )
-        ]
+        return self._zone_state_doses.build_active_ph_doses(correction=correction)
 
-    @staticmethod
-    def _parse_ec_dose_sequence(raw: Any) -> list[dict[str, Any]]:
-        if raw is None:
-            return []
-        try:
-            if isinstance(raw, str):
-                parsed = json.loads(raw)
-            else:
-                parsed = raw
-        except (TypeError, ValueError, json.JSONDecodeError):
-            return []
-        if isinstance(parsed, Mapping):
-            # Some paths wrap sequence under a key; prefer list payloads.
-            for key in ("sequence", "doses", "items"):
-                candidate = parsed.get(key)
-                if isinstance(candidate, list):
-                    parsed = candidate
-                    break
-            else:
-                return []
-        if not isinstance(parsed, list):
-            return []
-        return [item for item in parsed if isinstance(item, Mapping)]
+    _parse_ec_dose_sequence = staticmethod(ZoneStateDoses.parse_ec_dose_sequence)
 
-    @staticmethod
-    def _dose_entry(
-        *,
-        kind: str,
-        channel: str,
-        component: str | None,
-        node_uid: str | None,
-        amount_ml: Any,
-        duration_ms: Any,
-    ) -> dict[str, Any]:
-        ml: float | None
-        try:
-            ml = float(amount_ml) if amount_ml is not None else None
-        except (TypeError, ValueError):
-            ml = None
-        ms: int | None
-        try:
-            ms = int(duration_ms) if duration_ms is not None else None
-        except (TypeError, ValueError):
-            ms = None
-        normalized_component: str | None
-        if isinstance(component, str):
-            normalized_component = component.strip().lower() or None
-        else:
-            normalized_component = None
-        return {
-            "kind": kind,
-            "channel": str(channel).strip().lower(),
-            "component": normalized_component,
-            "node_uid": node_uid,
-            "amount_ml": ml,
-            "duration_ms": ms,
-        }
+    _dose_entry = staticmethod(ZoneStateDoses.dose_entry)
 
     def _should_prefer_workflow_state(self, workflow_state: Optional[Any]) -> bool:
-        if workflow_state is None:
-            return False
-        workflow_phase = str(getattr(workflow_state, "workflow_phase", None) or "idle").strip().lower()
-        payload = getattr(workflow_state, "payload", None)
-        normalized_payload = payload if isinstance(payload, Mapping) else {}
-        current_stage = str(normalized_payload.get("ae3_cycle_start_stage") or "").strip().lower()
-        if self._workflow_failure_rollback_applied(workflow_state):
-            return True
-        # irrig_recirc: legacy compat only for old zone_workflow_state rows.
-        return workflow_phase in {"tank_filling", "tank_recirc", "ready", "irrigating", "irrig_recirc"} or current_stage == "startup"
+        return self._zone_state_state_views.should_prefer_workflow_state(workflow_state=workflow_state)
 
     def _workflow_failure_rollback_applied(self, workflow_state: Optional[Any]) -> bool:
-        if workflow_state is None:
-            return False
-        payload = getattr(workflow_state, "payload", None)
-        normalized_payload = payload if isinstance(payload, Mapping) else {}
-        if bool(normalized_payload.get("ae3_failure_rollback")):
-            return True
-        workflow_phase = str(getattr(workflow_state, "workflow_phase", "") or "").strip().lower()
-        rollback_stage = str(normalized_payload.get("ae3_cycle_start_stage") or "").strip().lower()
-        return workflow_phase == "idle" and rollback_stage == "failed"
+        return self._zone_state_failure_overlay.workflow_failure_rollback_applied(workflow_state=workflow_state)
 
     def _workflow_state_is_stale(self, *, workflow_state: Optional[Any], last_task: Optional[Any]) -> bool:
-        if workflow_state is None or last_task is None:
-            return False
-        if bool(getattr(last_task, "is_active", False)):
-            return False
-        if self._workflow_failure_rollback_applied(workflow_state):
-            return False
-
-        scheduler_task_id = str(getattr(workflow_state, "scheduler_task_id", "") or "").strip()
-        if scheduler_task_id and scheduler_task_id == str(getattr(last_task, "id", "") or ""):
-            return True
-
-        workflow_updated_at = getattr(workflow_state, "updated_at", None)
-        task_updated_at = getattr(last_task, "updated_at", None)
-        if workflow_updated_at is None or task_updated_at is None:
-            return False
-
-        workflow_cmp = self._normalize_utc_naive(workflow_updated_at)
-        task_cmp = self._normalize_utc_naive(task_updated_at)
-        return task_cmp >= workflow_cmp
+        return self._zone_state_state_views.workflow_state_is_stale(workflow_state=workflow_state, last_task=last_task)
 
     def _timeline_since(self, *, task: Any | None) -> datetime | None:
-        if task is None:
-            return None
-        for field_name in ("created_at", "updated_at"):
-            value = getattr(task, field_name, None)
-            if isinstance(value, datetime):
-                return self._normalize_utc_naive(value)
-        workflow = getattr(task, "workflow", None)
-        entered = getattr(workflow, "stage_entered_at", None)
-        if isinstance(entered, datetime):
-            return self._normalize_utc_naive(entered)
-        return None
+        return self._zone_state_timeline.timeline_since(task=task)
 
     def _timeline_since_workflow(self, *, workflow_state: Any | None) -> datetime | None:
-        if workflow_state is None:
-            return self._idle_timeline_since()
-        for field_name in ("updated_at", "started_at"):
-            value = getattr(workflow_state, field_name, None)
-            if isinstance(value, datetime):
-                return self._normalize_utc_naive(value)
-        return self._idle_timeline_since()
+        return self._zone_state_timeline.timeline_since_workflow(workflow_state=workflow_state)
 
     def _idle_timeline_since(self) -> datetime:
-        return self._now() - timedelta(seconds=_IDLE_NODE_EVENT_LOOKBACK_SEC)
+        return self._zone_state_timeline.idle_timeline_since()
 
     def _now(self) -> Any:
-        from common.utils.time import utcnow_naive
-
-        return utcnow_naive()
+        return self._zone_state_time_values.now()
 
     def _normalize_utc_naive(self, value: Any) -> Any:
-        if not isinstance(value, datetime):
-            return value
-        return value.astimezone(timezone.utc).replace(tzinfo=None) if value.tzinfo else value
+        return self._zone_state_time_values.normalize_utc_naive(value=value)
 
     def _normalize_solution_tank_guard(self, guard_result: Any) -> dict[str, Any] | None:
-        if not isinstance(guard_result, Mapping):
-            return None
-        level = guard_result.get("level")
-        normalized_level = level if isinstance(level, Mapping) else {}
-        sensor_label = (
-            guard_result.get("sensor_label")
-            or normalized_level.get("sensor_label")
-            or guard_result.get("guard_sensor_label")
-        )
-        sample_ts = (
-            guard_result.get("sample_ts")
-            or normalized_level.get("sample_ts")
-            or guard_result.get("guard_sample_ts")
-        )
-        normalized_sample_ts = sample_ts.isoformat() if hasattr(sample_ts, "isoformat") else sample_ts
-        return {
-            "checked": True,
-            "reset": bool(guard_result.get("reset")),
-            "reason": guard_result.get("reason"),
-            "sensor_label": sensor_label,
-            "sample_ts": normalized_sample_ts,
-        }
+        return self._zone_state_observability.normalize_solution_tank_guard(guard_result=guard_result)
 
     def _solution_tank_guard_from_payload(self, payload: Mapping[str, Any]) -> dict[str, Any] | None:
-        reason = payload.get("guard_reason")
-        sensor_label = payload.get("guard_sensor_label")
-        sample_ts = payload.get("guard_sample_ts")
-        if reason is None and sensor_label is None and sample_ts is None:
-            return None
-        return {
-            "checked": True,
-            "reset": True,
-            "reason": reason,
-            "sensor_label": sensor_label,
-            "sample_ts": sample_ts,
-        }
+        return self._zone_state_observability.solution_tank_guard_from_payload(payload=payload)
 
     def _build_decision(self, task: Any) -> dict[str, Any] | None:
-        outcome = getattr(task, "irrigation_decision_outcome", None)
-        reason_code = getattr(task, "irrigation_decision_reason_code", None)
-        strategy = getattr(task, "irrigation_decision_strategy", None)
-        config = getattr(task, "irrigation_decision_config", None)
-        bundle_revision = getattr(task, "irrigation_bundle_revision", None)
-        degraded = getattr(task, "irrigation_decision_degraded", None)
-
-        if outcome is None and reason_code is None and strategy is None and config is None and bundle_revision is None and degraded is None:
-            return None
-
-        return {
-            "outcome": str(outcome).strip().lower() if outcome is not None else None,
-            "reason_code": str(reason_code).strip() if reason_code is not None else None,
-            "strategy": str(strategy).strip().lower() if strategy is not None else None,
-            "config": dict(config) if isinstance(config, Mapping) else None,
-            "bundle_revision": str(bundle_revision).strip() if bundle_revision is not None else None,
-            "degraded": bool(degraded) if degraded is not None else None,
-        }
+        return self._zone_state_observability.build_decision(task=task)

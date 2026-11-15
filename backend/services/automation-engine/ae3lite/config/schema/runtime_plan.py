@@ -15,7 +15,9 @@ from __future__ import annotations
 
 from typing import Annotated, Any, Literal, Mapping
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from ae3lite.domain.services.greenhouse_clock import InvalidGreenhouseTimezone, optional_timezone_name
 
 from ae3lite.config.schema.zone_correction import (
     Controllers,
@@ -29,6 +31,13 @@ from ae3lite.config.schema.zone_correction import (
 
 
 # ─── Type aliases ──────────────────────────────────────────────────────────
+
+def _require_optional_timezone(value: str | None) -> str | None:
+    try:
+        return optional_timezone_name(value)
+    except InvalidGreenhouseTimezone as exc:
+        raise ValueError(str(exc)) from exc
+
 
 PhValue = Annotated[float, Field(ge=0.0, le=14.0)]
 EcValue = Annotated[float, Field(ge=0.0, le=20.0)]
@@ -170,6 +179,12 @@ class SoilMoistureTarget(BaseModel):
     night: float | None = None
     day_start_time: str | None = None
     day_hours: float | None = None
+    timezone: str | None = None
+
+    @field_validator("timezone")
+    @classmethod
+    def _timezone_must_be_iana(cls, value: str | None) -> str | None:
+        return _require_optional_timezone(value)
 
 
 class DayNightLighting(BaseModel):
@@ -178,6 +193,11 @@ class DayNightLighting(BaseModel):
     day_start_time: str | None = None
     day_hours: HoursFloat | None = None
     timezone: str | None = None
+
+    @field_validator("timezone")
+    @classmethod
+    def _timezone_must_be_iana(cls, value: str | None) -> str | None:
+        return _require_optional_timezone(value)
 
 
 class DayNightChannelTargets(BaseModel):
@@ -306,7 +326,16 @@ class SolutionHealth(BaseModel):
     required: bool = False
     min_c: float | None = None
     max_c: float | None = None
+    warn_c: float | None = None
+    stop_c: float | None = None
     breach_hold_sec: Annotated[int, Field(ge=60, le=86400)] = 600
+    max_temp_skip_pause_sec: Annotated[int, Field(ge=60, le=86400)] = 5400
+
+    @model_validator(mode="after")
+    def warn_below_stop(self) -> "SolutionHealth":
+        if self.warn_c is not None and self.stop_c is not None and float(self.warn_c) >= float(self.stop_c):
+            raise ValueError("solution_health warn_c must be lower than stop_c")
+        return self
 
 
 class IrrigationRuntimeSlice(BaseModel):

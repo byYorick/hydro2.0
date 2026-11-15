@@ -250,6 +250,7 @@ async def upsert_telemetry_last(
             last_ts = EXCLUDED.last_ts, 
             last_quality = EXCLUDED.last_quality,
             updated_at = EXCLUDED.updated_at
+        WHERE EXCLUDED.last_ts > telemetry_last.last_ts
         """,
         sensor_id,
         value,

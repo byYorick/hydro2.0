@@ -1,8 +1,8 @@
 # AE3-Lite: Minimal Canonical Spec
 
-**Версия:** 3.12-canonical
-**Дата:** 2026-10-12
-**Статус:** CANONICAL MINIMAL SPEC (sync с runtime кодом 2026-10-12: command admission и terminal-task reconciliation; отдельный terminal chemistry outcome; PID deadband parity; bounded irrigation component target; correction waits считаются от terminal `DONE`, decision windows требуют временного покрытия; ранее: `TopologyPack` и срезы `RuntimePlan`; `two_tank` и `two_tank_drip_substrate_trays` — два дескриптора одного графа; `single_tank` без `clean_fill_*`; `lighting_tick` зарегистрирован в `TopologyRegistry`; lighting day/night ON/OFF — **implemented** 2026-08-17; **solution_change** — Laravel `task_type=solution_change` → `POST /start-solution-change`; **solution_topup** — sync 2026-08-11; irrigation_start default `pump_main/run_pump {duration_ms}`; 409 `*_zone_busy` не терминалит requested intent)
+**Версия:** 3.13-canonical
+**Дата:** 2026-11-15
+**Статус:** CANONICAL MINIMAL SPEC (sync с runtime кодом 2026-11-15: компонентная декомпозиция без изменения ingress/FSM/SQL/MQTT контрактов; ранее: command admission и terminal-task reconciliation; отдельный terminal chemistry outcome; PID deadband parity; bounded irrigation component target; correction waits считаются от terminal `DONE`, decision windows требуют временного покрытия; ранее: `TopologyPack` и срезы `RuntimePlan`; `two_tank` и `two_tank_drip_substrate_trays` — два дескриптора одного графа; `single_tank` без `clean_fill_*`; `lighting_tick` зарегистрирован в `TopologyRegistry`; lighting day/night ON/OFF — **implemented** 2026-08-17; **solution_change** — Laravel `task_type=solution_change` → `POST /start-solution-change`; **solution_topup** — sync 2026-08-11; irrigation_start default `pump_main/run_pump {duration_ms}`; 409 `*_zone_busy` не терминалит requested intent)
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 
@@ -1136,6 +1136,10 @@ backend/services/automation-engine/ae3lite/
 │   ├── services/
 │   │   ├── workflow_topology.py       # StageDef, TopologyRegistry, пакеты графов
 │   │   ├── topology_pack.py           # TopologyPack: узлы, входы, command plan keys
+│   │   ├── correction_observation_reader.py # post-dose окно: baseline/freshness/bounds/timing
+│   │   ├── correction_observation_finalizer.py # effect/no-effect, PID update, следующий snapshot
+│   │   ├── correction_dose_accounting.py # calibration/feedback и post-persist marker
+│   │   ├── correction_ec_dose_executor.py # EC sequence parse/dispatch/resume через явные ports
 │   │   └── correction_transition_policy.py
 │   └── adapters/                      # intent mapping
 ├── config/
@@ -1150,6 +1154,8 @@ backend/services/automation-engine/ae3lite/
 │   ├── services/
 │   │   ├── cycle_start_planner.py
 │   │   ├── correction_planner.py
+│   │   ├── correction_dose_routing.py  # чистый выбор EC/pH и snapshot метаданных дозы
+│   │   ├── ec_batch_failure.py         # классификация failed index и partial EC batch
 │   │   └── irrigation_decision_controller.py
 │   ├── value_objects.py
 │   └── errors.py                      # ErrorCodes + domain exceptions
@@ -1173,7 +1179,10 @@ backend/services/automation-engine/ae3lite/
 │   ├── zone_event_listener.py               # LISTEN ae_zone_event
 │   └── metrics.py
 ├── runtime/
-│   ├── worker.py                      # Ae3RuntimeWorker (drain loop, lease heartbeat)
+│   ├── worker.py                      # Ae3RuntimeWorker: drain, исполнение, cleanup/reconcile
+│   ├── lease_heartbeat.py             # продление lease, retry/budget, сигнал потери владения
+│   ├── intent_sync.py                 # ограниченные retry running/terminal, alert/resolution
+│   ├── reconcile_loop.py              # порядок tick callbacks, wake/poll/backoff, error counter
 │   ├── bootstrap.py                   # build_ae3_runtime_bundle()
 │   ├── env.py                         # Ae3RuntimeConfig.from_env()
 │   └── app.py                         # create_app() / serve()
@@ -1186,8 +1195,72 @@ backend/services/automation-engine/ae3lite/
 1. один публичный use case или один публичный класс на файл
 2. без module-level mutable state
 3. DTO и domain objects не смешиваются
-4. compatibility code живёт только в adapter/facade слое (`application/adapters/`)
+4. compatibility code живёт в adapter/facade слое; существующие import paths сохранены как фасады (см. §11.2), новые adapters — в `application/adapters/`
 5. модулей `reconcile_command.py`, `runtime/recovery.py` и `topology_registry.py` в актуальном дереве **нет**: command reconcile реализован в `gateways/sequential_command_gateway.py::recover_waiting_command`, startup-recovery — в `use_cases/startup_recovery.py`, реестр пакетов — в `services/workflow_topology.py`.
+
+`runtime/lease_heartbeat.py` и `runtime/intent_sync.py` получают repositories, clock,
+logger, retry limits и alert callbacks явно. Счётчики ошибок heartbeat локальны
+одному запуску для зоны; продление передаёт исходные owner/claim_generation.
+Подтверждённый отказ владения сразу выставляет lease_lost, транспортные ошибки
+используют прежний bounded retry. `CancelledError` не повторяется как DB failure.
+Worker связывает зависимости и сохраняет порядок отмены исполнения, finalization
+и освобождения lease; эти части не перенесены в policy helpers.
+
+`runtime/reconcile_loop.py::ReconcileLoop` владеет ожиданием wake-up, счётчиком
+последовательных ошибок и backoff. Worker передаёт шесть callbacks в прежнем
+порядке: waiting commands → terminal repair → correction interrupt safety → stale
+tasks → orphan intents → active task age metrics. Ошибка прерывает оставшиеся
+проверки текущего тика, успешный полный тик сбрасывает счётчик. Wake-up прерывает
+как обычное ожидание, так и backoff; отмена не учитывается как ошибка.
+
+`application/services/correction_observation_reader.py` читает post-dose окно и
+возвращает `ObservationWindow` или `ObservationRetry`. Runtime/config authority
+разрешает handler для текущего task/plan; reader не пишет PID state, не публикует
+команд и не выбирает следующую стадию. Каждый retry handler пропускает через
+`_enter_correction_after_delay_or_interrupt`, сохраняя проверку deadline перед
+повторным probe. Post-dose вычисления effect/no-effect, подготовка PID update и
+следующего snapshot находятся в `correction_observation_finalizer.py`. Это
+stateless helpers без I/O; handler сохраняет порядок: evaluated event → PID persist
+→ проверка no-effect limit → следующий correction state. Исключение из event
+callback или PID persist прерывает последующие операции; отмена распространяется
+вызывающему коду. Обычный отказ zone-event sink по-прежнему подавляется внутри
+`CorrectionEventLogger` с warning/метрикой и не блокирует PID/state progress.
+Integral во время observe не накапливается; EC→pH feedforward bias сохраняется до
+следующей pH dose. После завершения одного контура pending dose другого остаётся.
+
+`domain/services/correction_dose_routing.py::route_dose_plan` строит immutable
+`RoutedDose` (correction snapshot, selected action, decision reason). Сохраняет
+приоритет pending pH после EC observation, EC-first для нового dual plan и прежние
+JSON shapes для single/multi EC и clamped pH. Функция не публикует команды и не
+пишет PID. Handler применяет control-mode/flow-hold, cooldown/discard и attempt-cap
+gates до выбора маршрута; PID plan updates пишет после подтверждённого маршрута.
+
+`application/services/correction_dose_accounting.py` содержит выбор calibration,
+извлечение response details нужной команды batch, согласование объёма с feedback
+через прежний domain resolver и фильтрацию post-persist markers. Callback записи
+маркера передаётся явно; helper не выбирает repository и не выполняет PID persist.
+Маркеры отправляются только для DONE dose с ae_command_id. Ошибка записи оставляет
+команду доступной terminal repair; отмена распространяется вызывающему коду.
+Handler сохраняет порядок DONE → PID persistence → accounting marker, а также
+completion clock, hold windows и обработку partial EC batch.
+
+`application/services/correction_ec_dose_executor.py` владеет разбором прежнего
+EC sequence JSON и dispatch single/multi-sequential/logical-parallel доз. Handler
+передаёт явные ports: dispatch (с online checks/checked gateway path), partial
+policy, error mapping, calibration, feedback и выбор node для ошибки. Executor
+получает контекст каждого вызова параметрами и не хранит task/plan/corr между
+вызовами. Sequential выполняет один компонент за вызов и сохраняет следующий
+index; completed sequence не отправляется повторно. Logical parallel передаёт
+один упорядоченный batch прежнему gateway, который по-прежнему ждёт DONE каждой
+команды перед следующей. Прямого MQTT и собственного retry loop нет.
+
+Чистый `domain/services/ec_batch_failure.py` определяет failed index и partial
+descriptor, сохраняя прежние правила prior success и нормализации компонентов.
+`ae3_command_poll_deadline_exceeded` не превращается в partial degrade. В handler
+остались control-mode/flow-hold, sensor mode, runtime/config authority, diagnostic
+event/metric и failure transition, а также post-dose volume aggregation, PID
+persist, accounting markers и completion-anchored hold. Executor возвращает
+`EcDoseExecution` либо ранний `StageOutcome`, сохраняя актуальный task override.
 
 ### 11.1 Пакеты topology и подсистемы
 
@@ -1212,6 +1285,56 @@ backend/services/automation-engine/ae3lite/
 Новый `task_type` и новый HTTP ingress по-прежнему требуют правки этого документа и CHECK в БД. Новая установка — новый `TopologyPack`.
 
 ---
+
+### 11.2. Компоненты AE3 после декомпозиции (2026-11-15)
+
+Публичные классы, сигнатуры и import paths сохранены. Прежние крупные модули
+служат точками сборки, координаторами и совместимыми фасадами. Реализация
+распределена по компонентам с одной обязанностью; каждый получает явный набор
+callback/value ports и текущие `task`, `plan`, `now` на вызов. Компонентам не
+передаётся целый stage handler/worker. Не используются mixin-иерархии и
+изменение globals другого модуля. Локальный dataclass `*Ports` описывает
+зависимости единственного компонента, а не второй публичный use case.
+
+| Граница сборки | Владельцы реализации |
+|---|---|
+| `runtime/worker.py` | `worker_runtime_*`: supervisor, execution, reconciliation/recovery, lease outcomes, cleanup; `WorkerRuntimeState` принадлежит экземпляру worker |
+| `runtime/app.py` | `app_runtime_*`: application, lifespan, background tasks, guards, listeners, HTTP errors, health, dispatch, zone control; request models — `app_runtime_records` |
+| `api/compat_endpoints.py` | `compat_ingress_*`: отдельный binder для cycle, irrigation, lighting, topup, change |
+| `application/handlers/base.py` | `stage_*`: checkpoint, command boundary, probe runner/backoff/observability/snapshot, readiness, deadline, flow safety, level/time/window helpers |
+| `application/handlers/correction.py` | `correction_*`: lifecycle, check/measurements, decision routing, EC/pH execution, dilution, interrupts, observation, accounting, readiness, diagnostics, limits; handler оставляет FSM dispatch |
+| `application/handlers/irrigation_check.py`, `solution_fill.py` | `irrigation_check_*`, `solution_fill_*`: coordination, safety/completion, nutrient baseline, timing, correction |
+| `application/use_cases/execute_task.py` | `task_execution_*`: pipeline, retry, preflight, snapshot, readiness, diagnostics, failure completion, shutdown |
+| `application/use_cases/startup_recovery.py` | `startup_recovery_*`: scan, terminal repair, command recovery, stage transitions, failure, reporting |
+| `application/use_cases/create_task_from_intent.py` | `intent_task_*`: creation/admission, irrigation decision, topup/change preconditions, intent payload |
+| `application/use_cases/workflow_router.py` | `workflow_routing_*`: coordination, claim guard, stage outcomes, handler boundary, deadlines, persistence, observability |
+| `application/use_cases/get_zone_automation_state.py` | `zone_state_*` + `automation_diagnostics_*`: SQL queries, timeline, presentation, failure overlays, doses, projection, timing/sensor hints |
+| `application/services/correction_interrupt_safety.py` | `interrupt_safety_*`: records, policy, pending checks, shutdown plan/execution, alerts, availability, verification |
+| `application/services/stage_runtime_config.py` | `stage_config_*`: validation, correction, observation, effective targets, day/night schedule |
+| `domain/services/correction_planner.py` | `correction_*`: immutable dose DTO, controller config, actuator selection, PID/math/calibration/process gain, EC/pH planning |
+| `domain/services/cycle_start_planner.py` | `cycle_planning_*`: dispatch, topology, validation, lighting, solution, commands, actuators |
+| `domain/services/zone_node_availability.py` | `node_availability_*`: diagnostics, admission, liveness, transport classification, error resolution |
+| `config/runtime_plan_builder.py` | `runtime_plan_*`: assembly, commands, validation, targets, irrigation/correction policies, values |
+| SQL repositories | `task_persistence_*`, `intent_persistence_*`, `command_persistence_*`: claim/authority, allocation/creation, queries, transitions, reconciliation and accounting |
+| `infrastructure/read_models` | `zone_snapshot_*`, `runtime_monitor_*`: bundle rows/targets/calibration, snapshot consistency, telemetry/windows, level events, temperature, liveness |
+| `infrastructure/gateways/sequential_command_gateway.py` | `command_gateway_*`: batch authority/execution, safety publication, command execution, recovery, polling, payload/diagnostics; публикация по-прежнему через `CommandPublishPipeline` → HL |
+| `greenhouse_climate/run_tick.py` | `climate_tick_*`: lease, configuration, state queries, sensors, targets, planning, commands/wait, completion, alerts; typed `ClimateTickPlan` / `ClimateCommandResult` |
+
+Состояние worker/recovery и probe принадлежит экземпляру. Stateless read/config
+компоненты создаются лениво через `cached_property`; кешируется адаптер,
+а не `RuntimePlan`, результаты SQL или настройки задачи. Это сохраняет hot reload
+и подклассы со своим конструктором. Clock day/night передаётся явно из фасада.
+
+Транзакции, advisory locks, claim generation/fencing, single-writer lease,
+порядок fail-safe OFF, успех только `DONE`, SQL read-model, формы HTTP/event
+payload и путь публикации команд сохраняются. `ClimateTickCompletion` фиксирует
+итог только под проверкой собственного greenhouse lease в той же транзакции.
+Новых процессов, ingress, task types, MQTT топиков и DB объектов нет.
+
+Схемы, реестр `TopologyPack`/`StageDef`, декларации метрик и schema catalog
+остаются цельными: размер таблицы/каталога не является отдельной обязанностью.
+Существующие facade paths сохраняются на месте ради совместимости; новый
+business-код размещается в компонентах, новые aliases — в adapter/facade слое.
 
 ## 12. Обязательные тесты v1
 

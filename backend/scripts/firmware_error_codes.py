@@ -19,6 +19,7 @@ FIRMWARE_ERROR_MANIFEST: list[tuple[str, str, str, str]] = [
     ("missing_node_secret", "Нет node_secret", "В NodeConfig отсутствует node_secret для проверки подписи.", "security"),
     ("time_not_synced", "Время не синхронизировано", "Узел ещё не получил время от брокера — команда с ts отклонена.", "security"),
     ("invalid_signature", "Неверная подпись", "HMAC-подпись команды не прошла проверку.", "security"),
+    ("estop_active", "Активен E-STOP", "Узел отклонил включающую команду: нажата аварийная кнопка E-STOP.", "irrigation"),
     ("timestamp_expired", "Истёк timestamp", "Метка времени команды вне допустимого окна (±10 с).", "security"),
     ("command_already_failed", "Команда уже завершена с ошибкой", "Повторный ответ по cmd_id после terminal ERROR.", "framework"),
     # --- Pump / INA209 ---

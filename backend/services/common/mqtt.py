@@ -46,6 +46,8 @@ def _make_async_done_callback(handler: Callable, topic: str):
     handler_name = getattr(handler, "__name__", "unknown")
 
     def _on_done(future) -> None:
+        if future.cancelled():
+            return
         try:
             exc = future.exception()
             if exc is not None:
@@ -82,13 +84,15 @@ class MqttClient:
     Все блокирующие операции используют threading.Event.wait() для неблокирующего
     ожидания, что позволяет прервать ожидание при установке соединения.
     """
-    def __init__(self, client_id_suffix: str = ""):
+    def __init__(self, client_id_suffix: str = "", *, manual_ack: bool = False):
         import os
         import sys
         s = get_settings()
         self._host = s.mqtt_host
         self._port = s.mqtt_port
-        self._subs: List[Tuple[str, int, Callable[[str, bytes], None]]] = []
+        self._subs: List[Tuple[str, int, Callable[[str, bytes], None], bool]] = []
+        self._manual_ack = manual_ack
+        self._connection_generation = 0
         # Логируем переменную окружения и настройки TLS для диагностики
         mqtt_tls_env = os.getenv("MQTT_TLS", "NOT_SET")
         # Используем print для гарантированного вывода, так как логирование может быть не настроено
@@ -96,10 +100,20 @@ class MqttClient:
         print(f"[MQTT] MQTT client config: host={self._host}, port={self._port}, tls={s.mqtt_tls}, user={s.mqtt_user}", file=sys.stderr, flush=True)
         logger.info(f"MQTT_TLS env var: {mqtt_tls_env}, Settings mqtt_tls: {s.mqtt_tls}")
         logger.info(f"MQTT client config: host={self._host}, port={self._port}, tls={s.mqtt_tls}, user={s.mqtt_user}")
+        callback_options = ({"callback_api_version": mqtt.CallbackAPIVersion.VERSION2}
+                            if hasattr(mqtt, "CallbackAPIVersion") else {})
         self._client = mqtt.Client(
             client_id=f"{s.mqtt_client_id}{client_id_suffix}",
             clean_session=s.mqtt_clean_session,
+            **callback_options,
         )
+        if manual_ack:
+            if s.mqtt_clean_session:
+                raise ValueError("Durable MQTT ingress requires a persistent session")
+            if not hasattr(self._client, "manual_ack_set"):
+                raise RuntimeError("Durable MQTT ingress requires paho-mqtt >= 2")
+            self._client.manual_ack_set(True)
+        self._client.reconnect_delay_set(min_delay=1, max_delay=30)
         if s.mqtt_user:
             self._client.username_pw_set(s.mqtt_user, s.mqtt_pass or None)
         if s.mqtt_tls:
@@ -112,15 +126,16 @@ class MqttClient:
         self._client.on_disconnect = self._on_disconnect
         self._event_loop = None  # Будет установлен из AsyncMqttClient
 
-    def _on_connect(self, client, userdata, flags, rc):
+    def _on_connect(self, client, userdata, flags, rc, properties=None):
         if rc == 0:
+            self._connection_generation = getattr(self, "_connection_generation", 0) + 1
             self._connected.set()
             logger.info(f"MQTT client connected to {self._host}:{self._port}, subscribing to {len(self._subs)} topics")
             print(f"[MQTT] Connected to {self._host}:{self._port}, will subscribe to {len(self._subs)} topics", flush=True)
             # resubscribe - создаем новые handlers с актуальным event_loop
-            for topic, qos, handler in self._subs:
+            for topic, qos, handler, ack_after_handler in self._subs:
                 self._client.subscribe(topic, qos=qos)
-                wrapped_handler = self._wrap(handler, self._event_loop)
+                wrapped_handler = self._wrap(handler, self._event_loop, ack_after_handler=ack_after_handler)
                 self._client.message_callback_add(topic, wrapped_handler)
                 logger.debug(
                     f"Subscribed to topic: {topic}, qos={qos}, "
@@ -130,52 +145,51 @@ class MqttClient:
             self._connected.clear()
             logger.error(f"MQTT connection failed with rc={rc}")
 
-    def _on_disconnect(self, client, userdata, rc):
+    def _on_disconnect(self, client, userdata, flags_or_rc, reason_code=None, properties=None):
+        """Return immediately so Paho can reconnect and process CONNACK.
+
+        This callback runs on Paho's network thread. Calling reconnect() and
+        waiting here prevents that same thread from handling on_connect().
+        loop_start() owns retry/backoff, including transient DNS failures.
         """
-        Обработчик отключения MQTT клиента.
-        
-        ВАЖНО: Этот метод вызывается из MQTT callback thread (paho-mqtt внутренний поток),
-        поэтому не блокирует event loop основного приложения. Однако для избежания блокировки
-        обработки других MQTT сообщений используем неблокирующее ожидание через threading.Event.
-        """
+        rc = flags_or_rc if reason_code is None else reason_code
         self._connected.clear()
-        # reconnect with backoff - только если не было явного отключения (rc != 0)
-        # rc == 0 означает нормальное отключение, не переподключаемся
         if rc != 0:
-            logger.warning(f"MQTT client disconnected unexpectedly (rc={rc}), attempting to reconnect...")
-            backoff = 0.5
-            max_backoff = 30
-            attempts = 0
-            max_attempts = 60  # Максимум 60 попыток
-            while not self._connected.is_set() and attempts < max_attempts:
-                try:
-                    # Используем reconnect() вместо создания нового подключения
-                    # Это сохраняет client_id и настройки
-                    self._client.reconnect()
-                    # Ждем немного для установки соединения (неблокирующее ожидание)
-                    # Используем Event.wait() вместо time.sleep() для возможности прервать ожидание
-                    if self._connected.wait(timeout=0.5):
-                        logger.info(f"MQTT client reconnected successfully after {attempts} attempts")
-                        break
-                except Exception as e:
-                    attempts += 1
-                    logger.warning(f"MQTT reconnection attempt {attempts} failed: {e}, retrying in {backoff}s")
-                    # Неблокирующее ожидание с возможностью прервать, если соединение установилось
-                    if self._connected.wait(timeout=backoff):
-                        logger.info(f"MQTT client reconnected during backoff wait after {attempts} attempts")
-                        break
-                    backoff = min(backoff * 2, max_backoff)
-            else:
-                if attempts >= max_attempts:
-                    logger.error(f"MQTT client failed to reconnect after {max_attempts} attempts")
+            logger.warning(
+                "MQTT client disconnected unexpectedly (rc=%s); network loop will reconnect",
+                rc,
+            )
         else:
             logger.info("MQTT client disconnected normally (rc=0)")
 
-    def _wrap(self, handler: Callable[[str, bytes], None], event_loop=None):
+    def _ack_message(self, msg, generation: int) -> None:
+        if not getattr(self, "_manual_ack", False) or msg.qos == 0:
+            return
+        if generation != self._connection_generation:
+            return  # Never ACK a reused MID on a later connection/session.
+        result = self._client.ack(msg.mid, msg.qos)
+        if result != mqtt.MQTT_ERR_SUCCESS:
+            logger.warning("MQTT ACK could not be sent for mid=%s; broker retains delivery", msg.mid)
+
+    def _wrap(self, handler: Callable[[str, bytes], None], event_loop=None, *, ack_after_handler=False):
         import asyncio
         import inspect
         
         def on_message(client, userdata, msg):
+            generation = getattr(self, "_connection_generation", 0)
+            if ack_after_handler and msg.qos == 0:
+                logger.warning("Durable telemetry requires QoS 1; rejecting QoS 0 on %s", msg.topic)
+                _notify_async_handler_error(
+                    getattr(handler, "__name__", "telemetry"), msg.topic,
+                    ValueError("QoS 0 is outside the durable telemetry contract"),
+                )
+                return
+
+            async def dispatch():
+                await handler(msg.topic, msg.payload)
+                if ack_after_handler:
+                    self._ack_message(msg, generation)
+
             try:
                 # Проверяем, является ли handler корутиной
                 if inspect.iscoroutinefunction(handler):
@@ -188,7 +202,7 @@ class MqttClient:
                         # Используем run_coroutine_threadsafe для безопасного вызова из MQTT thread
                         try:
                             future = asyncio.run_coroutine_threadsafe(
-                                handler(msg.topic, msg.payload),
+                                dispatch(),
                                 current_loop,
                             )
                             future.add_done_callback(
@@ -217,7 +231,7 @@ class MqttClient:
                         try:
                             # Пытаемся получить текущий running loop (если мы в async контексте)
                             loop = asyncio.get_running_loop()
-                            loop.create_task(handler(msg.topic, msg.payload))
+                            loop.create_task(dispatch())
                             logger.debug(f"Created task in running loop for topic {msg.topic}")
                         except RuntimeError:
                             # Нет running loop - создаем новый для выполнения handler
@@ -233,7 +247,7 @@ class MqttClient:
                                     new_loop = asyncio.new_event_loop()
                                     asyncio.set_event_loop(new_loop)
                                     try:
-                                        new_loop.run_until_complete(handler(msg.topic, msg.payload))
+                                        new_loop.run_until_complete(dispatch())
                                         logger.debug(f"Handler executed in fallback event loop for topic {msg.topic}")
                                     finally:
                                         new_loop.close()
@@ -250,6 +264,10 @@ class MqttClient:
                 else:
                     # Обычный синхронный handler
                     handler(msg.topic, msg.payload)
+                    if ack_after_handler:
+                        self._ack_message(msg, generation)
+                if not ack_after_handler:
+                    self._ack_message(msg, generation)
             except Exception as e:
                 # Логируем исключения вместо молчаливого игнорирования
                 logger.error(
@@ -375,12 +393,14 @@ class MqttClient:
             logger.error(f"Error publishing to MQTT topic {topic}: {e}", exc_info=True)
             raise
 
-    def subscribe(self, topic: str, handler: Callable[[str, bytes], None], qos: int = 1):
+    def subscribe(self, topic: str, handler: Callable[[str, bytes], None], qos: int = 1, *, ack_after_handler=False):
         """Подписаться на MQTT топик."""
-        self._subs.append((topic, qos, handler))
+        if ack_after_handler and (not self._manual_ack or qos < 1):
+            raise ValueError("Deferred MQTT acknowledgement requires manual ACK mode and QoS >= 1")
+        self._subs.append((topic, qos, handler, ack_after_handler))
         
         # Создаем wrapped_handler - event_loop будет получен из self._event_loop в момент вызова
-        wrapped_handler = self._wrap(handler, self._event_loop)
+        wrapped_handler = self._wrap(handler, self._event_loop, ack_after_handler=ack_after_handler)
         
         if self.is_connected():
             # Если уже подключены, подписываемся сразу
@@ -401,8 +421,9 @@ class MqttClient:
 class AsyncMqttClient:
     """Async обертка над синхронным MqttClient для использования в async коде."""
     
-    def __init__(self, client_id_suffix: str = ""):
-        self._client = MqttClient(client_id_suffix=client_id_suffix)
+    def __init__(self, client_id_suffix: str = "", *, manual_ack: bool = False):
+        self._manual_ack = manual_ack
+        self._client = MqttClient(client_id_suffix=client_id_suffix, manual_ack=manual_ack)
         self._started = False
         self._event_loop = None  # Сохраняем ссылку на event loop
         # Передаем event loop в базовый клиент для использования в _wrap
@@ -424,9 +445,9 @@ class AsyncMqttClient:
         await loop.run_in_executor(None, self._client.stop)
         self._started = False
     
-    async def subscribe(self, topic: str, handler: Callable[[str, bytes], None], qos: int = 1):
+    async def subscribe(self, topic: str, handler: Callable[[str, bytes], None], qos: int = 1, *, ack_after_handler=False, start=True):
         """Подписаться на топик (async обертка)."""
-        if not self._started:
+        if not self._started and start:
             await self.start()
         
         # Убеждаемся, что event_loop установлен
@@ -437,7 +458,7 @@ class AsyncMqttClient:
         
         # Вызываем subscribe базового клиента
         # Базовый клиент использует self._event_loop в _wrap
-        self._client.subscribe(topic, handler, qos)
+        self._client.subscribe(topic, handler, qos, ack_after_handler=ack_after_handler)
     
     def is_connected(self) -> bool:
         """Проверить подключение."""
@@ -448,7 +469,7 @@ class AsyncMqttClient:
 _async_mqtt_client: Optional[AsyncMqttClient] = None
 
 
-async def get_mqtt_client(client_id_suffix: str = "-history-logger") -> AsyncMqttClient:
+async def get_mqtt_client(client_id_suffix: str = "-history-logger", *, manual_ack: bool = False, start: bool = True) -> AsyncMqttClient:
     """
     Получить глобальный async MQTT клиент (singleton).
     
@@ -461,8 +482,10 @@ async def get_mqtt_client(client_id_suffix: str = "-history-logger") -> AsyncMqt
     global _async_mqtt_client
     
     if _async_mqtt_client is None:
-        _async_mqtt_client = AsyncMqttClient(client_id_suffix=client_id_suffix)
-        # Важно: сначала запускаем клиент (устанавливается event_loop), потом можно подписываться
+        _async_mqtt_client = AsyncMqttClient(client_id_suffix=client_id_suffix, manual_ack=manual_ack)
+    if manual_ack and not _async_mqtt_client._manual_ack:
+        raise RuntimeError("MQTT client was initialized without durable ingress acknowledgements")
+    if start and not _async_mqtt_client._started:
         await _async_mqtt_client.start()
         logger.info(f"MQTT client started, event_loop={_async_mqtt_client._event_loop is not None}")
     

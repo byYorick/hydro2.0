@@ -94,10 +94,7 @@ Room entities/DAOs и старые repository/use-case цепочки сущес
 
 ## 2. Режим provisioning узлов (первая настройка)
 
-**Статус на 2026-11-06: Android provisioning — scaffold, сквозная настройка
-несовместима с текущим ESP32 setup portal.** Не выдавать её за рабочую функцию.
-`ProvisioningRepository.kt` отправляет `/api/provision` с `wifi_ssid`,
-`wifi_password`, `backend_base_url`; в текущей прошивке такого маршрута нет.
+**Исправлено 2026-11-14:** Android использует отдельный qualified OkHttp client без backend interceptors и redirect, POST `http://192.168.4.1/wifi/connect` с `ssid/password/mqtt_host/mqtt_port`. Release cleartext разрешён только для IP setup portal. MQTT host вводится явно и проверяется как IPv4. Телефон нужно вручную подключить к AP устройства. HTTP setup клиент выбирает Wi-Fi Network с прямым маршрутом к 192.168.4.1 и использует её socketFactory/DNS; fallback через cellular запрещён. При отсутствии подходящей сети возвращается ошибка. Автоматическое подключение к SSID и подтверждение готовности узла после POST остаются отдельными этапами. Успех POST означает сохранение настроек, а не готовность узла к командам.
 
 ### 2.1. Текущий рабочий путь через браузер
 
@@ -125,9 +122,7 @@ Room entities/DAOs и старые repository/use-case цепочки сущес
 
 ### 2.2. Что требуется для завершения Android provisioning
 
-Клиент должен согласовать endpoint и поля с portal, передавать MQTT host/port,
-обрабатывать ошибки валидации и отдельно проверять появление/готовность ноды.
-Одна замена URL несовместимость не устраняет. `hydro/system/announce/*` — planned,
+Endpoint, поля, MQTT host/port и отдельный HTTP client согласованы в исправлениях 2026-11-14. Для завершения нужны компиляция Android, проверка привязки к AP Network, обработка lifecycle узла после POST и сквозной тест на устройстве. `hydro/system/announce/*` — planned,
 а не действующий канал регистрации. До проверки интеграции используйте путь через браузер.
 
 ### 2.3. Требуемые разрешения
@@ -274,3 +269,8 @@ Android-приложение — это прежде всего **клиент b
 ## 8. Границы реализации
 
 History Canvas, Room DAOs и OkHttp WebSocket присутствуют как отдельные компоненты, но не подтверждают подключение этих сценариев в operator UI. Текущие границы — [ANDROID_APP_ARCH.md](ANDROID_APP_ARCH.md); фактический grow-cycle coverage — [ANDROID_GROW_CYCLE_UI.md](ANDROID_GROW_CYCLE_UI.md).
+
+
+### Программная квалификация provisioning
+
+ViewModel проверяет Result из repository через getOrThrow: отказ запроса не переводит UI в Success. CancellationException не превращается в сообщение об ошибке. Unit tests покрывают успех/отказ и выбор локальной WiFi Network вместо cellular. По указанию пользователя аппаратные испытания отложены; unit tests не подтверждают поведение реального Android WiFi routing или ESP32.

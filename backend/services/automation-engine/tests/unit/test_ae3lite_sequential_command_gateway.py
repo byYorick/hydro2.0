@@ -25,6 +25,12 @@ from ae3_preflight_helpers import patch_fetch_zone_nodes_diagnostics
 
 @pytest.fixture(autouse=True)
 def _ae3_online_zone_nodes_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def _tank_ready(*_args, **_kwargs):
+        return True, None
+
+    # Эти тесты проверяют шлюз команд на фейковой зоне, без датчика бака.
+    # Контракт сухого хода живёт в test_dry_run_guard и test_pump_safety.
+    monkeypatch.setattr("common.pump_safety.check_dry_run", _tank_ready)
     patch_fetch_zone_nodes_diagnostics(monkeypatch)
     monkeypatch.setattr(
         "ae3lite.infrastructure.gateways.sequential_command_gateway._utcnow",
@@ -327,6 +333,16 @@ def _make_gw(
         command_poll_margin_sec=command_poll_margin_sec,
         command_stage_stop_reserve_sec=command_stage_stop_reserve_sec,
     )
+
+
+def test_dry_run_refusal_is_not_treated_as_transport_failure() -> None:
+    from ae3lite.infrastructure.gateways.command_gateway_command_execution import _is_dry_run_refusal
+
+    assert _is_dry_run_refusal("Source tank level is unavailable")
+    assert _is_dry_run_refusal("Source tank level is stale")
+    assert _is_dry_run_refusal("Water level too low: 0.01 < 0.15")
+    assert _is_dry_run_refusal("dry_run_check_failed")
+    assert _is_dry_run_refusal("ReadTimeout") is False
 
 
 # ── run_batch: happy path ─────────────────────────────────────────────────────

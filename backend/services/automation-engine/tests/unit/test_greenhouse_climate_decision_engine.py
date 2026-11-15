@@ -1,4 +1,4 @@
-from ae3lite.greenhouse_climate.decision_engine import compute_climate_decision
+from ae3lite.greenhouse_climate.decision_engine import compute_climate_decision, exhaust_fan_on
 from ae3lite.greenhouse_climate import run_tick
 from datetime import datetime, timedelta, timezone
 
@@ -762,3 +762,121 @@ def test_greenhouse_targets_keep_optional_vpd_pair() -> None:
     )
     assert "vpd_min_kpa" not in bare
     assert "vpd_max_kpa" not in bare
+
+
+def test_explicit_zero_day_max_is_not_replaced_by_default() -> None:
+    ex = _exec(day_max_open_pct=0, day_min_open_pct=0, day_base_open_pct=0)
+    decision = compute_climate_decision(
+        execution=ex,
+        control_mode="auto",
+        manual_override=None,
+        inside_temp_median=30.0,
+        inside_temp_max=30.0,
+        inside_rh_max=50.0,
+        outside_temp=20.0,
+        outside_humidity=40.0,
+        wind_speed=1.0,
+        wind_direction_deg=None,
+        rain_detected=False,
+        outside_light_lux=20000.0,
+        schedule_day=True,
+        weather_fresh=True,
+        inside_fresh=True,
+        current_left_pct=0,
+        current_right_pct=0,
+        now_ts=1_000_000.0,
+        last_command_ts=None,
+    )
+    assert decision.left_target_pct == 0
+    assert decision.right_target_pct == 0
+
+
+def test_explicit_zero_fallback_stays_closed_when_inside_is_stale() -> None:
+    ex = _exec(fallback_open_pct=0, day_min_open_pct=0, day_max_open_pct=100)
+    decision = compute_climate_decision(
+        execution=ex,
+        control_mode="auto",
+        manual_override=None,
+        inside_temp_median=None,
+        inside_temp_max=None,
+        inside_rh_max=None,
+        outside_temp=20.0,
+        outside_humidity=40.0,
+        wind_speed=1.0,
+        wind_direction_deg=None,
+        rain_detected=False,
+        outside_light_lux=20000.0,
+        schedule_day=True,
+        weather_fresh=True,
+        inside_fresh=False,
+        current_left_pct=0,
+        current_right_pct=0,
+        now_ts=1_000_000.0,
+        last_command_ts=None,
+    )
+    assert decision.requested_symmetric_pct == 0
+
+
+def test_explicit_zero_overheat_threshold_is_not_replaced() -> None:
+    ex = _exec(overheat_emergency_temp_c=0)
+    decision = compute_climate_decision(
+        execution=ex,
+        control_mode="auto",
+        manual_override=None,
+        inside_temp_median=1.0,
+        inside_temp_max=1.0,
+        inside_rh_max=50.0,
+        outside_temp=0.0,
+        outside_humidity=40.0,
+        wind_speed=0.0,
+        wind_direction_deg=None,
+        rain_detected=False,
+        outside_light_lux=20000.0,
+        schedule_day=True,
+        weather_fresh=True,
+        inside_fresh=True,
+        current_left_pct=0,
+        current_right_pct=0,
+        now_ts=1_000_000.0,
+        last_command_ts=None,
+    )
+    assert decision.emergency_overheat is True
+
+
+def test_solution_temperature_does_not_enter_inside_air() -> None:
+    now = datetime.now(timezone.utc)
+    temps: list[float] = []
+    common = dict(
+        freshness_sec=1200,
+        now=now,
+        inside_temps=temps,
+        inside_rhs=[],
+        inside_pressures=[],
+        outside_fresh={},
+        outdoor_state={},
+        allow_inside=True,
+        allow_outside=False,
+    )
+    run_tick._accumulate_sensor_row(
+        {"scope": "inside", "type": "TEMPERATURE", "label": "temperature", "last_value": 22.0, "last_ts": now, "last_quality": "GOOD"},
+        **common,
+    )
+    run_tick._accumulate_sensor_row(
+        {"scope": "inside", "type": "TEMPERATURE", "label": "solution_temp_c", "last_value": 48.0, "last_ts": now, "last_quality": "GOOD"},
+        **common,
+    )
+    run_tick._accumulate_sensor_row(
+        {"scope": "inside", "type": "TEMPERATURE", "label": "temp_air", "last_value": 23.0, "last_ts": now, "last_quality": "GOOD"},
+        **common,
+    )
+    assert temps == [22.0, 23.0]
+
+
+def test_exhaust_hysteresis_holds_between_thresholds_and_stops_without_sensor() -> None:
+    assert exhaust_fan_on(temp_c=22.0, sensor_fresh=True, currently_on=False) is False
+    assert exhaust_fan_on(temp_c=24.0, sensor_fresh=True, currently_on=False) is False
+    assert exhaust_fan_on(temp_c=25.0, sensor_fresh=True, currently_on=False) is True
+    assert exhaust_fan_on(temp_c=24.0, sensor_fresh=True, currently_on=True) is True
+    assert exhaust_fan_on(temp_c=23.0, sensor_fresh=True, currently_on=True) is False
+    assert exhaust_fan_on(temp_c=40.0, sensor_fresh=False, currently_on=True) is False
+    assert exhaust_fan_on(temp_c=None, sensor_fresh=True, currently_on=True) is False

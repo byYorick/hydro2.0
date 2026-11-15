@@ -10,6 +10,7 @@ from datetime import datetime
 from typing import Any, Callable, Mapping, Optional
 
 from common.utils.time import utcnow_naive
+from ae3lite.application.services.dry_run_guard import guard_pump_start
 from ae3lite.domain.entities import PlannedCommand
 from ae3lite.domain.claim_fence import claim_generation, claim_owner
 from ae3lite.domain.errors import CommandPublishError, TaskExecutionError
@@ -247,6 +248,19 @@ class CommandPublishPipeline:
                     claim_generation=claim_generation(task), payload=command.payload,
                 )
                 self._ensure_deadline_allows_publish(task=task, payload=command_payload, now=now)
+                await guard_pump_start(
+                    zone_id=int(task.zone_id),
+                    cmd=cmd_name,
+                    channel=str(command.channel or ""),
+                    params=params if isinstance(params, Mapping) else {},
+                    stage=" ".join(
+                        (
+                            str(getattr(task, "current_stage", "") or ""),
+                            str(getattr(task, "task_type", "") or ""),
+                            str(resolved_planner_step or ""),
+                        )
+                    ),
+                )
                 _dispatch_start = time.monotonic()
                 published_cmd_id = await self._history_logger_client.publish(
                     greenhouse_uid=greenhouse_uid,
@@ -378,6 +392,19 @@ class CommandPublishPipeline:
                     claim_generation=claim_generation(task), payload=command.payload,
                 )
                 self._ensure_deadline_allows_publish(task=task, payload=payload, now=now)
+                await guard_pump_start(
+                    zone_id=int(task.zone_id),
+                    cmd=cmd_name,
+                    channel=str(command.channel or ""),
+                    params=params if isinstance(params, Mapping) else {},
+                    stage=" ".join(
+                        (
+                            str(getattr(task, "current_stage", "") or ""),
+                            str(getattr(task, "task_type", "") or ""),
+                            str(ae_command.get("stage_name") or ""),
+                        )
+                    ),
+                )
                 _dispatch_start = time.monotonic()
                 published_cmd_id = await self._history_logger_client.publish(
                     greenhouse_uid=greenhouse_uid,

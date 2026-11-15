@@ -38,6 +38,12 @@ context сохраняется до публикации через HL; terminal
 
 ---
 
+Внутри AE3 этот поток проходит через HTTP binder → intent/task admission →
+worker supervisor → task execution/workflow router → stage component → command
+batch authority/execution → `CommandPublishPipeline` → HL. Recovery использует
+те же SQL fencing и command reconciliation. Границы компонентов описаны в
+[ae3lite.md, §11.2](04_BACKEND_CORE/ae3lite.md#112-компоненты-ae3-после-декомпозиции-2026-11-15).
+
 ## 3. AE3 запуск задач (ingress)
 
 `Laravel scheduler (insert intent) -> POST wake-up -> AE3RuntimeWorker (DB drain)`

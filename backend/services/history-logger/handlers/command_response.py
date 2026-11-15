@@ -1,6 +1,7 @@
 """``handle_command_response``: ACK/DONE/ERROR от узла → commands table + Laravel correlation."""
 
 from __future__ import annotations
+from .dependencies import snapshot
 
 import logging
 
@@ -32,18 +33,34 @@ from ._shared import (
 logger = logging.getLogger(__name__)
 
 
+def _dependencies():
+    return snapshot(
+        {
+            'COMMAND_RESPONSE_ERROR': COMMAND_RESPONSE_ERROR,
+            'COMMAND_RESPONSE_RECEIVED': COMMAND_RESPONSE_RECEIVED,
+            '_extract_channel_from_topic': _extract_channel_from_topic,
+            '_extract_gh_uid': _extract_gh_uid,
+            '_extract_node_uid': _extract_node_uid,
+            '_parse_json': _parse_json,
+            'create_zone_event': create_zone_event,
+            'deliver_status_to_laravel': deliver_status_to_laravel,
+            'execute': execute,
+            'fetch': fetch,
+            'normalize_status': normalize_status,
+            'record_simulation_event': record_simulation_event,
+        }
+    )
+
+
 async def handle_command_response(topic: str, payload: bytes) -> None:
     """Обновляет статус команды через Laravel API с надёжной доставкой (queue on failure)."""
+    deps = _dependencies()
     try:
-        logger.info(
-            f"[COMMAND_RESPONSE] STEP 0: Received message on topic {topic}, payload length: {len(payload)}"
-        )
-        data = _parse_json(payload)
+        logger.info(f"[COMMAND_RESPONSE] STEP 0: Received message on topic {topic}, payload length: {len(payload)}")
+        data = deps._parse_json(payload)
         if not data or not isinstance(data, dict):
-            logger.warning(
-                f"[COMMAND_RESPONSE] STEP 0.1: Invalid JSON in command_response from topic {topic}"
-            )
-            COMMAND_RESPONSE_ERROR.inc()
+            logger.warning(f"[COMMAND_RESPONSE] STEP 0.1: Invalid JSON in command_response from topic {topic}")
+            deps.COMMAND_RESPONSE_ERROR.inc()
             return
 
         apply_trace_context(data, fallback_keys=("trace_id", "cmd_id", "cmdId"))
@@ -60,15 +77,11 @@ async def handle_command_response(topic: str, payload: bytes) -> None:
             raw_ts,
             topic,
         )
-        node_uid = _extract_node_uid(topic)
-        channel = _extract_channel_from_topic(topic)
-        gh_uid = _extract_gh_uid(topic)
+        node_uid = deps._extract_node_uid(topic)
+        channel = deps._extract_channel_from_topic(topic)
+        gh_uid = deps._extract_gh_uid(topic)
 
-        if (
-            not cmd_id
-            or not raw_status
-            or response_ts_ms is None
-        ):
+        if not cmd_id or not raw_status or response_ts_ms is None:
             logger.warning(
                 "[COMMAND_RESPONSE] Missing or invalid required fields in payload: cmd_id=%s status=%s ts=%s payload=%s",
                 cmd_id,
@@ -76,10 +89,10 @@ async def handle_command_response(topic: str, payload: bytes) -> None:
                 raw_ts,
                 data,
             )
-            COMMAND_RESPONSE_ERROR.inc()
+            deps.COMMAND_RESPONSE_ERROR.inc()
             return
 
-        normalized_status = normalize_status(raw_status)
+        normalized_status = deps.normalize_status(raw_status)
         if not normalized_status:
             logger.warning(
                 "[COMMAND_RESPONSE] Unknown status '%s' for cmd_id=%s, node_uid=%s, channel=%s",
@@ -88,10 +101,10 @@ async def handle_command_response(topic: str, payload: bytes) -> None:
                 node_uid,
                 channel,
             )
-            COMMAND_RESPONSE_ERROR.inc()
+            deps.COMMAND_RESPONSE_ERROR.inc()
             return
 
-        COMMAND_RESPONSE_RECEIVED.inc()
+        deps.COMMAND_RESPONSE_RECEIVED.inc()
 
         zone_id, cmd_name, existing_status = await _ensure_command_row_for_response(
             cmd_id=cmd_id,
@@ -112,7 +125,7 @@ async def handle_command_response(topic: str, payload: bytes) -> None:
                 cmd_id,
                 type(data.get("details")).__name__,
             )
-            COMMAND_RESPONSE_ERROR.inc()
+            deps.COMMAND_RESPONSE_ERROR.inc()
             return
 
         if "error_code" in data and data.get("error_code") is not None:
@@ -137,7 +150,7 @@ async def handle_command_response(topic: str, payload: bytes) -> None:
         )
         details = {k: v for k, v in details.items() if v is not None}
 
-        delivery_result = await deliver_status_to_laravel(cmd_id, normalized_status, details)
+        delivery_result = await deps.deliver_status_to_laravel(cmd_id, normalized_status, details)
         _log_delivery_result(
             delivery_result=delivery_result,
             cmd_id=cmd_id,
@@ -201,7 +214,7 @@ async def handle_command_response(topic: str, payload: bytes) -> None:
             f"[COMMAND_RESPONSE] Unexpected error processing message: {e}",
             exc_info=True,
         )
-        COMMAND_RESPONSE_ERROR.inc()
+        deps.COMMAND_RESPONSE_ERROR.inc()
     finally:
         clear_trace_id()
 
@@ -214,19 +227,16 @@ async def _ensure_command_row_for_response(
     normalized_status,
 ):
     """Обеспечивает строку ``commands`` для cmd_id: insert stub если новая, detect terminal duplicates."""
+    deps = _dependencies()
     zone_id = None
     cmd_name = None
     existing_status = None
     try:
-        existing_cmd = await fetch(
-            "SELECT status, zone_id, cmd FROM commands WHERE cmd_id = $1", cmd_id
-        )
+        existing_cmd = await deps.fetch("SELECT status, zone_id, cmd FROM commands WHERE cmd_id = $1", cmd_id)
         if not existing_cmd:
             node_id = None
             if node_uid:
-                node_rows = await fetch(
-                    "SELECT id, zone_id FROM nodes WHERE uid = $1", node_uid
-                )
+                node_rows = await deps.fetch("SELECT id, zone_id FROM nodes WHERE uid = $1", node_uid)
                 if node_rows:
                     node_id = node_rows[0]["id"]
                     zone_id = node_rows[0]["zone_id"]
@@ -238,11 +248,14 @@ async def _ensure_command_row_for_response(
                 logger.warning(
                     "[CMD_ID_FORENSICS] command_response stub INSERT with hl- prefix "
                     "cmd_id=%s node_uid=%s channel=%s status=%s",
-                    cmd_id, node_uid, channel, status_value,
+                    cmd_id,
+                    node_uid,
+                    channel,
+                    status_value,
                     stack_info=True,
                 )
 
-            await execute(
+            await deps.execute(
                 """
                 INSERT INTO commands (zone_id, node_id, channel, cmd, params, status, source, cmd_id, created_at, updated_at)
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
@@ -268,10 +281,7 @@ async def _ensure_command_row_for_response(
             cmd_name = existing_cmd[0].get("cmd")
             existing_status = str(existing_cmd[0].get("status") or "").strip().upper()
             _terminal = ("DONE", "ERROR", "INVALID", "BUSY", "NO_EFFECT", "TIMEOUT", "SEND_FAILED")
-            if (
-                existing_status == normalized_status.value.upper()
-                and existing_status in _terminal
-            ):
+            if existing_status == normalized_status.value.upper() and existing_status in _terminal:
                 logger.debug(
                     "[COMMAND_RESPONSE] Duplicate response for cmd_id=%s (status=%s already set), skipping",
                     cmd_id,
@@ -298,6 +308,7 @@ def _log_delivery_result(
     channel,
     existing_status,
 ) -> None:
+    deps = _dependencies()
     if delivery_result.delivered:
         logger.info(
             "[COMMAND_RESPONSE] Status '%s' delivered to Laravel for cmd_id=%s, node_uid=%s, channel=%s, local_status_before=%s",
@@ -333,7 +344,7 @@ def _log_delivery_result(
         )
         if delivery_result.dropped:
             COMMAND_STATUS_DELIVERY_DROPPED.inc()
-        COMMAND_RESPONSE_ERROR.inc()
+        deps.COMMAND_RESPONSE_ERROR.inc()
 
 
 async def _maybe_persist_irr_state_snapshot(
@@ -346,6 +357,7 @@ async def _maybe_persist_irr_state_snapshot(
     response_ts,
     details,
 ) -> None:
+    deps = _dependencies()
     cmd_name_normalized = str(cmd_name or "").strip().lower()
     channel_normalized = str(channel or "").strip().lower()
     should_persist_irr_snapshot = cmd_name_normalized == "state" or channel_normalized == "storage_state"
@@ -360,7 +372,7 @@ async def _maybe_persist_irr_state_snapshot(
         return
 
     try:
-        await create_zone_event(
+        await deps.create_zone_event(
             int(zone_id),
             IRR_STATE_SNAPSHOT_EVENT_TYPE,
             {
@@ -392,11 +404,8 @@ async def _record_simulation_event_for_response(
     normalized_status,
     delivery_result,
 ) -> None:
-    status_value = (
-        normalized_status.value
-        if hasattr(normalized_status, "value")
-        else str(normalized_status)
-    )
+    deps = _dependencies()
+    status_value = normalized_status.value if hasattr(normalized_status, "value") else str(normalized_status)
     event_status = status_value.lower()
     level = "info"
     if event_status in ("error", "failed", "timeout", "send_failed"):
@@ -404,7 +413,7 @@ async def _record_simulation_event_for_response(
     elif event_status in ("invalid", "busy", "no_effect"):
         level = "warning"
 
-    await record_simulation_event(
+    await deps.record_simulation_event(
         zone_id,
         service="history-logger",
         stage="command_response",
@@ -418,9 +427,7 @@ async def _record_simulation_event_for_response(
             "node_uid": node_uid,
             "raw_status": raw_status,
             "delivery": (
-                "delivered"
-                if delivery_result.delivered
-                else ("queued" if delivery_result.queued else "dropped")
+                "delivered" if delivery_result.delivered else ("queued" if delivery_result.queued else "dropped")
             ),
             "delivery_reason": delivery_result.reason,
         },
@@ -475,4 +482,3 @@ async def _emit_chain_webhook_for_response(
         )
     except Exception as exc:  # pragma: no cover — defensive
         logger.debug("chain_webhook emit failed for cmd_id=%s: %s", cmd_id, exc)
-

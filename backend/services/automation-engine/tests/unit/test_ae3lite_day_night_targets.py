@@ -16,6 +16,7 @@ from unittest.mock import patch
 import pytest
 
 from ae3lite.application.services.stage_runtime_config import StageRuntimeConfig
+from ae3lite.domain.services.greenhouse_clock import InvalidGreenhouseTimezone
 from ae3lite.application.handlers.base import BaseStageHandler
 from ae3lite.config.runtime_plan_builder import _build_day_night_config
 from _test_support_runtime_plan import make_runtime_plan
@@ -137,12 +138,10 @@ class TestIsDayNow:
             mock_dt.now.side_effect = lambda tz=None: utc_now.astimezone(tz) if tz else utc_now
             assert StageRuntimeConfig.is_day_now(cfg) is False
 
-    def test_invalid_timezone_falls_back_to_utc(self) -> None:
+    def test_invalid_timezone_rejects_config(self) -> None:
         cfg = {"lighting": {"day_start_time": "06:00", "day_hours": 16, "timezone": "Invalid/Zone"}}
-        with patch("ae3lite.application.services.stage_runtime_config.datetime") as mock_dt:
-            utc_now = datetime(2026, 4, 13, 12, 0, tzinfo=timezone.utc)
-            mock_dt.now.side_effect = lambda tz=None: utc_now.astimezone(tz) if tz else utc_now
-            assert StageRuntimeConfig.is_day_now(cfg) is True
+        with pytest.raises(InvalidGreenhouseTimezone):
+            StageRuntimeConfig.is_day_now(cfg)
 
 
 # ── _day_night_override + effective_* ─────────────────────────────────────────

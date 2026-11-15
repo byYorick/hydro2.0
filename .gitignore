@@ -65,3 +65,13 @@ backend/.env.prod
 /output/playwright/
 /test-results/
 /tmp_nsim_*.json
+
+# Offline MQTT migration credentials (never commit generated secrets).
+node_credentials.json
+node_passwords.json
+service_credentials.json
+.mqtt-bundle-*/
+
+# Android local SDK paths and Gradle state
+mobile/app/android/local.properties
+.gradle/

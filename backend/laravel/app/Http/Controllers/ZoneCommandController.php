@@ -10,6 +10,7 @@ use App\Models\Zone;
 use App\Models\ZoneEvent;
 use App\Services\Ae3IrrigationBridgeService;
 use App\Services\Ae3ZoneLeaseGuard;
+use App\Services\ManualCommandSafetyService;
 use App\Services\PythonBridgeService;
 use App\Services\ZoneLogicProfileService;
 use App\Services\ZoneReadinessService;
@@ -19,6 +20,7 @@ use Illuminate\Http\Client\TimeoutException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 class ZoneCommandController extends Controller
 {
@@ -28,6 +30,7 @@ class ZoneCommandController extends Controller
         private readonly ZoneLogicProfileService $automationLogicProfiles,
         private readonly Ae3IrrigationBridgeService $ae3IrrigationBridge,
         private readonly Ae3ZoneLeaseGuard $ae3ZoneLeaseGuard,
+        private readonly ManualCommandSafetyService $manualCommandSafety,
     ) {}
 
     /**
@@ -143,6 +146,18 @@ class ZoneCommandController extends Controller
                     'Зона занята автоматикой AE3. Дождитесь завершения задачи или переведите зону в manual.',
                     409,
                 );
+            }
+
+            $safety = $this->manualCommandSafety->inspectZone(
+                $zone,
+                $commandType,
+                is_array($data['params'] ?? null) ? $data['params'] : [],
+                isset($data['node_uid']) ? (string) $data['node_uid'] : null,
+                isset($data['channel']) ? (string) $data['channel'] : null,
+                $user,
+            );
+            if (! $safety->allowed) {
+                return $this->localizedError($safety->code, $safety->message, $safety->httpStatus, $safety->extra);
             }
 
             if ($commandType === 'FORCE_IRRIGATION') {
@@ -273,7 +288,7 @@ class ZoneCommandController extends Controller
             'mode' => 'force',
             'source' => 'zone_commands_force_irrigation',
             'requested_duration_sec' => $durationSec,
-            'idempotency_key' => 'zone-'.$zone->id.'-force-irrigation-'.\Illuminate\Support\Str::lower((string) \Illuminate\Support\Str::uuid()),
+            'idempotency_key' => 'zone-'.$zone->id.'-force-irrigation-'.Str::lower((string) Str::uuid()),
         ]);
 
         $taskId = data_get($ae3Payload, 'data.task_id');

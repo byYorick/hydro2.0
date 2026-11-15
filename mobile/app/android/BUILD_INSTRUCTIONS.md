@@ -56,8 +56,8 @@ cp mobile/configs/*.json mobile/app/android/app/src/main/assets/configs/
 ### Требования
 
 - **Android Studio** Hedgehog (2023.1.1) или новее
-- **JDK 17+**
-- **Android SDK 34**
+- **Полный JDK 17+ с `javac`** (JRE недостаточно)
+- **Android SDK Platform 34** и **Build-Tools 35.0.0** (используется AGP 8.13.2)
 - **Min SDK:** 24 (Android 7.0)
 
 ### Настройка JDK
@@ -125,3 +125,14 @@ app/build/outputs/apk/
 
 Подробная документация: `README.md`
 
+
+
+## Проверка без оборудования
+
+С установленными JDK и SDK задайте `JAVA_HOME` и `ANDROID_HOME`; локальный `local.properties` не хранится в Git. Выполните:
+
+```bash
+./gradlew --no-daemon assembleDevDebug assembleProdRelease testDevDebugUnitTest
+```
+
+Release APK без signingConfig остаётся неподписанным. Для ограниченной среды можно передать `--max-workers=1 -Pkotlin.compiler.execution.strategy=in-process -Dorg.gradle.jvmargs="-Xmx1536m -XX:MaxMetaspaceSize=384m"`; это параметры машины проверки, а не изменение production поведения. Unit tests не заменяют аппаратную проверку Wi-Fi и ESP32.

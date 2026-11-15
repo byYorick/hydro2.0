@@ -57,6 +57,18 @@ class ErrorDeliveryLatencyMetricPayload(BaseModel):
     metrics: dict[str, float] = Field(default_factory=dict)
 
 
+@router.get("/health/live")
+async def liveness():
+    return {"status": "ok"}
+
+
+@router.get("/health/ready")
+async def readiness():
+    from fastapi.responses import JSONResponse
+    result = await health()
+    return JSONResponse(result, status_code=200 if result["status"] == "ok" else 503)
+
+
 @router.get("/health")
 async def health():
     """

@@ -2,14 +2,17 @@
 
 namespace Tests\Feature\Broadcasting;
 
+use App\Http\Middleware\VerifyCsrfToken;
 use App\Models\User;
+use App\Models\Zone;
+use PHPUnit\Framework\Attributes\Group;
 use Tests\RefreshDatabase;
 use Tests\TestCase;
 
 /**
- * @group skip-in-ci
  * Broadcasting tests require Reverb server to be running
  */
+#[Group('skip-in-ci')]
 class ChannelAuthorizationTest extends TestCase
 {
     use RefreshDatabase;
@@ -17,12 +20,12 @@ class ChannelAuthorizationTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->withoutMiddleware([\App\Http\Middleware\VerifyCsrfToken::class]);
+        $this->withoutMiddleware([VerifyCsrfToken::class]);
         config(['broadcasting.default' => 'reverb']);
         require base_path('routes/channels.php');
     }
 
-    private function grantZoneAccess(User $user, \App\Models\Zone $zone): void
+    private function grantZoneAccess(User $user, Zone $zone): void
     {
         $user->zones()->syncWithoutDetaching([$zone->id]);
     }
@@ -33,7 +36,7 @@ class ChannelAuthorizationTest extends TestCase
     public function test_authorizes_zone_channel(): void
     {
         $user = User::factory()->create(['role' => 'operator']);
-        $zone = \App\Models\Zone::factory()->create();
+        $zone = Zone::factory()->create();
         $this->grantZoneAccess($user, $zone);
 
         $response = $this->actingAs($user)->postJson('/broadcasting/auth', [
@@ -50,7 +53,7 @@ class ChannelAuthorizationTest extends TestCase
     public function test_authorizes_commands_zone_channel(): void
     {
         $user = User::factory()->create(['role' => 'operator']);
-        $zone = \App\Models\Zone::factory()->create();
+        $zone = Zone::factory()->create();
         $this->grantZoneAccess($user, $zone);
 
         $response = $this->actingAs($user)->postJson('/broadcasting/auth', [
@@ -67,7 +70,7 @@ class ChannelAuthorizationTest extends TestCase
     public function test_authorizes_legacy_commands_zone_channel_alias(): void
     {
         $user = User::factory()->create(['role' => 'operator']);
-        $zone = \App\Models\Zone::factory()->create();
+        $zone = Zone::factory()->create();
         $this->grantZoneAccess($user, $zone);
 
         $response = $this->actingAs($user)->postJson('/broadcasting/auth', [
@@ -185,7 +188,7 @@ class ChannelAuthorizationTest extends TestCase
     public function test_authorizes_multiple_zone_channels(): void
     {
         $user = User::factory()->create(['role' => 'operator']);
-        $zones = \App\Models\Zone::factory()->count(3)->create();
+        $zones = Zone::factory()->count(3)->create();
         $user->zones()->syncWithoutDetaching($zones->pluck('id')->all());
 
         foreach ($zones as $zone) {
@@ -204,7 +207,7 @@ class ChannelAuthorizationTest extends TestCase
     public function test_authorizes_multiple_command_channels(): void
     {
         $user = User::factory()->create(['role' => 'operator']);
-        $zones = \App\Models\Zone::factory()->count(3)->create();
+        $zones = Zone::factory()->count(3)->create();
         $user->zones()->syncWithoutDetaching($zones->pluck('id')->all());
 
         foreach ($zones as $zone) {
