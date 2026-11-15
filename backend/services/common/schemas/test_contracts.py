@@ -515,5 +515,33 @@ class TestContractCompatibility:
                     )
 
 
+class TestNodeConfigLinkLoss:
+    """link_loss_timeout_sec: 10…300, без клампа и без «0 = выключено»."""
+
+    def setup_method(self):
+        self.schema = load_schema(SCHEMAS_DIR / "node_config_link_loss.schema.json")
+
+    @pytest.mark.parametrize("timeout", [10, 30, 300])
+    def test_accepts_bounds(self, timeout):
+        validate_against_schema({"link_loss_timeout_sec": timeout}, self.schema)
+        validate_against_schema(
+            {"fail_safe_guards": {"link_loss_timeout_sec": timeout}},
+            self.schema,
+        )
+
+    def test_absent_field_is_valid(self):
+        validate_against_schema({"node_id": "nd-irrig-1"}, self.schema)
+
+    @pytest.mark.parametrize("timeout", [0, 9, 301, 30.5])
+    def test_rejects_out_of_range_without_clamp(self, timeout):
+        with pytest.raises(AssertionError):
+            validate_against_schema({"link_loss_timeout_sec": timeout}, self.schema)
+        with pytest.raises(AssertionError):
+            validate_against_schema(
+                {"fail_safe_guards": {"link_loss_timeout_sec": timeout}},
+                self.schema,
+            )
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

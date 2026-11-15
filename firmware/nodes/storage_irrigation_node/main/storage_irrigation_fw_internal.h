@@ -215,6 +215,9 @@ void storage_irrigation_node_process_stage_timeouts(void);
 void storage_irrigation_node_stage_guard_timer_cb(TimerHandle_t timer);
 
 void storage_irrigation_node_reload_fail_safe_config_from_storage(void);
+bool storage_irrigation_node_is_link_loss_latched(void);
+esp_err_t storage_irrigation_node_apply_link_loss_safe_stop(void);
+void storage_irrigation_node_cancel_pending_pump_commands(void);
 esp_err_t storage_irrigation_node_init_estop_input(void);
 bool storage_irrigation_node_read_estop_pressed(void);
 bool storage_irrigation_node_is_estop_active(void);

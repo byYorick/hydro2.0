@@ -57,6 +57,11 @@ esp_err_t storage_irrigation_node_publish_telemetry_callback(void *user_ctx);
  */
 esp_err_t storage_irrigation_node_sensor_cycle(bool publish_telemetry);
 
+/**
+ * MQTT снова поднят. Выходы не включаются и оборванный полив не продолжается.
+ */
+void storage_irrigation_node_on_link_restored(void);
+
 #ifdef __cplusplus
 }
 #endif

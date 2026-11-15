@@ -7,6 +7,7 @@
 #include "node_state_manager.h"
 #include "node_utils.h"
 #include "config_storage.h"
+#include "link_loss_timeout.h"
 #include "mqtt_manager.h"
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -25,58 +26,81 @@ __attribute__((weak)) void relay_driver_append_active_channels_json(cJSON *relay
 static const char *TAG = "node_link_loss";
 
 #define LINK_LOSS_SNAPSHOT_MAX_BYTES 1024
-/* Fail-closed default when NodeConfig omits link_loss_timeout_sec (0 used to disable the timer). */
-#define NODE_LINK_LOSS_TIMEOUT_SEC_DEFAULT 30u
 
 static struct {
     bool initialized;
     uint32_t timeout_sec;
     esp_timer_handle_t timer;
     bool failsafe_triggered;
+    bool actuator_stop_latched;
     bool event_pending;
     char snapshot_json[LINK_LOSS_SNAPSHOT_MAX_BYTES];
 } s_link_loss = {0};
 
-static void link_loss_reload_timeout_from_config(void) {
-    s_link_loss.timeout_sec = 0;
-
-    static char config_json[CONFIG_STORAGE_MAX_JSON_SIZE];
-    if (config_storage_get_json(config_json, sizeof(config_json)) != ESP_OK) {
-        return;
-    }
-
-    cJSON *config = cJSON_Parse(config_json);
-    if (!config) {
-        return;
-    }
-
-    cJSON *item = cJSON_GetObjectItem(config, "link_loss_timeout_sec");
-    if (cJSON_IsNumber(item)) {
-        double value = cJSON_GetNumberValue(item);
-        if (value > 0.0) {
-            s_link_loss.timeout_sec = (uint32_t)value;
-        }
-    }
-
+static void link_loss_keep_fail_closed_timeout(void) {
     if (s_link_loss.timeout_sec == 0) {
-        cJSON *guards = cJSON_GetObjectItem(config, "fail_safe_guards");
-        if (cJSON_IsObject(guards)) {
-            item = cJSON_GetObjectItem(guards, "link_loss_timeout_sec");
-            if (cJSON_IsNumber(item)) {
-                double value = cJSON_GetNumberValue(item);
-                if (value > 0.0) {
-                    s_link_loss.timeout_sec = (uint32_t)value;
-                }
-            }
-        }
+        s_link_loss.timeout_sec = LINK_LOSS_TIMEOUT_SEC_DEFAULT;
+    }
+}
+
+static link_loss_timeout_field_t link_loss_field_from_item(const cJSON *item) {
+    if (item == NULL) {
+        return link_loss_timeout_field_absent();
+    }
+    return link_loss_timeout_field_from_number(
+        true,
+        cJSON_IsNumber(item),
+        cJSON_IsNumber(item) ? cJSON_GetNumberValue(item) : 0.0
+    );
+}
+
+static void link_loss_reload_timeout_from_config(void) {
+    static char config_json[CONFIG_STORAGE_MAX_JSON_SIZE];
+    cJSON *config;
+    cJSON *guards;
+    link_loss_timeout_field_t top;
+    link_loss_timeout_field_t guards_field;
+    uint32_t resolved = 0;
+    link_loss_timeout_resolve_status_t status;
+
+    if (config_storage_get_json(config_json, sizeof(config_json)) != ESP_OK) {
+        link_loss_keep_fail_closed_timeout();
+        ESP_LOGE(TAG, "NodeConfig unreadable; link-loss timer stays %u s",
+                 (unsigned)s_link_loss.timeout_sec);
+        return;
     }
 
+    config = cJSON_Parse(config_json);
+    if (!config) {
+        link_loss_keep_fail_closed_timeout();
+        ESP_LOGE(TAG, "NodeConfig JSON invalid; link-loss timer stays %u s",
+                 (unsigned)s_link_loss.timeout_sec);
+        return;
+    }
+
+    top = link_loss_field_from_item(cJSON_GetObjectItem(config, "link_loss_timeout_sec"));
+    guards = cJSON_GetObjectItem(config, "fail_safe_guards");
+    guards_field = link_loss_timeout_field_absent();
+    if (cJSON_IsObject(guards)) {
+        guards_field = link_loss_field_from_item(cJSON_GetObjectItem(guards, "link_loss_timeout_sec"));
+    } else if (guards != NULL) {
+        guards_field = link_loss_timeout_field_from_number(true, false, 0.0);
+    }
     cJSON_Delete(config);
 
-    if (s_link_loss.timeout_sec == 0) {
-        s_link_loss.timeout_sec = NODE_LINK_LOSS_TIMEOUT_SEC_DEFAULT;
-        ESP_LOGI(TAG, "link_loss_timeout_sec missing in NodeConfig — using default %u s",
-                 (unsigned)NODE_LINK_LOSS_TIMEOUT_SEC_DEFAULT);
+    status = link_loss_timeout_resolve(top, guards_field, &resolved);
+    if (status == LINK_LOSS_TIMEOUT_RESOLVE_REJECTED) {
+        link_loss_keep_fail_closed_timeout();
+        ESP_LOGE(TAG,
+                 "link_loss_timeout_sec rejected (not applied, 0 does not disable); timer stays %u s",
+                 (unsigned)s_link_loss.timeout_sec);
+        return;
+    }
+
+    s_link_loss.timeout_sec = resolved;
+    if (status == LINK_LOSS_TIMEOUT_RESOLVE_DEFAULTED) {
+        ESP_LOGI(TAG, "link_loss_timeout_sec absent — fail-closed default %u s",
+                 (unsigned)resolved);
     }
 }
 
@@ -125,8 +149,13 @@ static void link_loss_timer_callback(void *arg) {
 
     ESP_LOGW(TAG, "Link-loss timeout (%u s) expired — invoking actuator fail-safe", (unsigned)s_link_loss.timeout_sec);
 
+    if (mqtt_manager_is_connected()) {
+        return;
+    }
+
     link_loss_build_snapshot_json(s_link_loss.snapshot_json, sizeof(s_link_loss.snapshot_json));
 
+    s_link_loss.actuator_stop_latched = true;
     esp_err_t err = node_state_manager_invoke_actuator_failsafe("link_loss_timeout");
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "Actuator fail-safe callback failed: %s", esp_err_to_name(err));
@@ -215,6 +244,7 @@ void node_link_loss_failsafe_on_mqtt_connected(bool connected) {
 
     if (connected) {
         link_loss_stop_timer();
+        s_link_loss.actuator_stop_latched = false;
         link_loss_publish_pending_event();
         return;
     }
@@ -222,4 +252,8 @@ void node_link_loss_failsafe_on_mqtt_connected(bool connected) {
     s_link_loss.failsafe_triggered = false;
     link_loss_stop_timer();
     link_loss_start_timer();
+}
+
+bool node_link_loss_failsafe_is_latched(void) {
+    return s_link_loss.actuator_stop_latched;
 }

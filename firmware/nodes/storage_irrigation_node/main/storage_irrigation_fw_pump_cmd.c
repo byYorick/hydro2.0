@@ -88,6 +88,26 @@ bool storage_irrigation_node_cmd_queue_pop(storage_irrigation_node_cmd_t *cmd) {
     return true;
 }
 
+void storage_irrigation_node_cancel_pending_pump_commands(void) {
+    if (g_cmd_retry_timer) {
+        (void)xTimerStop(g_cmd_retry_timer, 0);
+    }
+    if (g_cmd_queue_mutex && xSemaphoreTake(g_cmd_queue_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+        memset(g_cmd_queue, 0, sizeof(g_cmd_queue));
+        g_cmd_queue_head = 0;
+        g_cmd_queue_tail = 0;
+        g_cmd_queue_count = 0;
+        xSemaphoreGive(g_cmd_queue_mutex);
+    }
+    for (size_t i = 0; i < STORAGE_IRRIGATION_NODE_DONE_QUEUE_MAX; i++) {
+        if (g_done_entries[i].timer) {
+            (void)xTimerStop(g_done_entries[i].timer, 0);
+        }
+        g_done_entries[i].cmd_id[0] = '\0';
+        g_done_entries[i].auto_off = false;
+    }
+}
+
 void storage_irrigation_node_signal_cmd_process(void) {
     if (!g_cmd_work_queue) {
         return;
@@ -279,6 +299,10 @@ void storage_irrigation_node_retry_timer_cb(TimerHandle_t timer) {
 
 void storage_irrigation_node_process_cmd_queue(void) {
     storage_irrigation_node_process_stage_timeouts();
+    if (storage_irrigation_node_is_link_loss_latched()) {
+        storage_irrigation_node_cancel_pending_pump_commands();
+        return;
+    }
     if (storage_irrigation_node_any_pump_running()) {
         return;
     }
@@ -314,6 +338,10 @@ void storage_irrigation_node_process_cmd_queue(void) {
             xTimerChangePeriod(g_cmd_retry_timer, pdMS_TO_TICKS(cooldown_ms), 0);
             xTimerStart(g_cmd_retry_timer, 0);
         }
+        return;
+    }
+
+    if (storage_irrigation_node_is_link_loss_latched()) {
         return;
     }
 

@@ -6,6 +6,7 @@
  */
 
 #include "config_storage.h"
+#include "link_loss_timeout.h"
 #include "esp_log.h"
 #include "nvs.h"
 #include "cJSON.h"
@@ -1209,6 +1210,53 @@ esp_err_t config_storage_validate(const char *json_config, size_t json_len,
             }
             return ESP_ERR_INVALID_ARG;
         }
+    }
+
+    {
+        link_loss_timeout_field_t top = link_loss_timeout_field_absent();
+        link_loss_timeout_field_t guards_field = link_loss_timeout_field_absent();
+        cJSON *top_item = cJSON_GetObjectItem(config, "link_loss_timeout_sec");
+        cJSON *guards_obj = cJSON_GetObjectItem(config, "fail_safe_guards");
+        uint32_t timeout_sec = 0;
+        link_loss_timeout_resolve_status_t timeout_status;
+
+        if (top_item != NULL) {
+            top = link_loss_timeout_field_from_number(
+                true,
+                cJSON_IsNumber(top_item),
+                cJSON_IsNumber(top_item) ? cJSON_GetNumberValue(top_item) : 0.0
+            );
+        }
+        if (guards_obj != NULL && !cJSON_IsObject(guards_obj)) {
+            cJSON_Delete(config);
+            if (error_msg && error_msg_size > 0) {
+                strncpy(error_msg, "Invalid fail_safe_guards", error_msg_size - 1);
+            }
+            return ESP_ERR_INVALID_ARG;
+        }
+        if (cJSON_IsObject(guards_obj)) {
+            cJSON *guard_item = cJSON_GetObjectItem(guards_obj, "link_loss_timeout_sec");
+            if (guard_item != NULL) {
+                guards_field = link_loss_timeout_field_from_number(
+                    true,
+                    cJSON_IsNumber(guard_item),
+                    cJSON_IsNumber(guard_item) ? cJSON_GetNumberValue(guard_item) : 0.0
+                );
+            }
+        }
+        timeout_status = link_loss_timeout_resolve(top, guards_field, &timeout_sec);
+        if (timeout_status == LINK_LOSS_TIMEOUT_RESOLVE_REJECTED) {
+            cJSON_Delete(config);
+            if (error_msg && error_msg_size > 0) {
+                strncpy(
+                    error_msg,
+                    "Invalid link_loss_timeout_sec (integer 10-300; 0 does not disable)",
+                    error_msg_size - 1
+                );
+            }
+            return ESP_ERR_INVALID_ARG;
+        }
+        (void)timeout_sec;
     }
     
     // Дополнительная валидация каналов: relay_type обязателен для реле-актуаторов

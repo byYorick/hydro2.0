@@ -174,7 +174,7 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
 
 | event_code | Описание |
 |------------|----------|
-| `link_loss_failsafe` | Актуаторы переведены в safe state после таймаута потери MQTT (`link_loss_timeout_sec`) |
+| `link_loss_failsafe` | Насос и клапаны сняты после таймаута потери MQTT (`link_loss_timeout_sec`, 10…300 с, нет поля = 30). Публикуется после восстановления связи. Reconnect сам полив не включает |
 
 Пример payload:
 

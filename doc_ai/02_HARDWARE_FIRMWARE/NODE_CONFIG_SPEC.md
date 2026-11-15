@@ -71,7 +71,7 @@ NodeConfig — это JSON-конфигурация узла ESP32, котора
 | `limits` | object | Нет | Безопасные лимиты (ток, время работы и т.д.) |
 | `calibration` | object | Нет | Параметры калибровки (pH, EC) |
 | `fail_safe_guards` | object | Нет | Локальные fail-safe guard-параметры узла; для `irrig` используются как mirror от `zone.logic_profile` |
-| `link_loss_timeout_sec` | integer | Нет | Таймаут (сек) после потери MQTT, по истечении которого нода переводит актуаторы в safe state. Дублируется в `fail_safe_guards.link_loss_timeout_sec` (mirror). `0` = отключено |
+| `link_loss_timeout_sec` | integer | Нет | Таймаут (сек) после `MQTT DISCONNECTED`, по истечении которого нода снимает все актуаторы. Зеркало — `fail_safe_guards.link_loss_timeout_sec`. Поля нет — 30 с. Если поле задано, это целое 10…300; `0`, дробное и любое значение вне диапазона отклоняют конфиг целиком (без клампа и без подмены дефолтом). Ноль таймер не выключает. После reconnect нода сама выходы не включает |
 | `allow_legacy_hmac` | boolean | Нет | Разрешить команды без `ts`/`sig` (только dev). В production-сборке игнорируется, если `CONFIG_HYDRO_ALLOW_LEGACY_HMAC=n` |
 
 \* На устройстве после provisioning `wifi`/`mqtt` обязательны как полные объекты. При **server-push** из Laravel допустимы placeholders `{"configured": true}` (сохранить NVS). Пустой `nodes.config` в БД не обязан содержать `wifi`/`mqtt` до merge с шаблоном — перед publish Laravel должен обеспечить валидный `mqtt` для firmware.
@@ -456,9 +456,11 @@ Laravel `NodeConfigService` при отсутствии сохранённого
   (см. `AE3_IRR_FAILSAFE_AND_ESTOP_CONTRACT` §4.1); поле сохраняется для совместимости NodeConfig;
 - поля `recirculation_solution_min_guard_enabled` и `irrigation_solution_min_guard_enabled` являются firmware mirror
   для frontend/AE3-полей `recirculation_stop_on_solution_min` и `irrigation_stop_on_solution_min`;
-- `link_loss_timeout_sec` (top-level или в `fail_safe_guards`) — единая policy link-loss fail-safe: по истечении
-  таймаута после `MQTT DISCONNECTED` нода останавливает насосы (включая latched) и переводит реле в safe OPEN;
-  после reconnect публикуется `event_code=link_loss_failsafe` на канале `system`.
+- `link_loss_timeout_sec` (top-level или в `fail_safe_guards`) — единая policy link-loss fail-safe. Поля нет — 30 с.
+  Иначе оба заданных значения — одинаковое целое 10…300; `0` и прочие значения вне диапазона отклоняют весь NodeConfig,
+  прошивка остаётся на прежнем валидном конфиге. По истечении таймаута после `MQTT DISCONNECTED` нода снимает насос полива
+  и все клапаны, прерывает активную команду и не продолжает её после reconnect. Новая команда сервера нужна отдельно.
+  Когда связь есть, публикуется `event_code=link_loss_failsafe` на канале `system`.
 
 ### 4.3. Климатическая нода (climate)
 

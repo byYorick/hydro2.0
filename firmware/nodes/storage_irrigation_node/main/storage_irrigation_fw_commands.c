@@ -142,6 +142,17 @@ esp_err_t handle_set_relay(const char *channel, const cJSON *params, cJSON **res
         );
         return ESP_ERR_INVALID_STATE;
     }
+    if (target_state && storage_irrigation_node_is_link_loss_latched() && !mqtt_manager_is_connected()) {
+        xSemaphoreGive(g_actuator_mutex);
+        *response = node_command_handler_create_response(
+            cmd_id,
+            "ERROR",
+            "link_loss_active",
+            "Link-loss fail-safe is active; actuator ON waits for a new command after MQTT reconnect",
+            NULL
+        );
+        return ESP_ERR_INVALID_STATE;
+    }
 
     bool previous_state = false;
     bool allow_pump_main_dry_run = storage_irrigation_node_is_pump_main_dry_run_allowed(
