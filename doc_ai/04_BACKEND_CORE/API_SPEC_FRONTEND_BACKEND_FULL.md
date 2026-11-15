@@ -562,7 +562,7 @@ authority-документ `zone.logic_profile` через API `/api/automation-
 Распределение настроек для `2 бака` (сверено с `runtime_plan_builder.py`):
 
 - `subsystems.diagnostics.execution.topology = "two_tank_drip_substrate_trays"` выбирает workflow.
-- `subsystems.irrigation.decision.strategy = "task"|"smart_soil_v1"` задаёт стратегию полива.
+- `subsystems.irrigation.decision.strategy = "task"|"smart_soil_v1"|"radiation_sum_v1"` задаёт стратегию полива.
 - `subsystems.irrigation.execution.irrigation_ec_component = "none"|"calcium"|"npk"` выбирает один EC-компонент на поливе; Mg/Micro на этом этапе запрещены.
 - Таймауты fill и retry, freshness, интервалы опроса и контроллеры читаются из resolved authority `zone.correction` (`base` с `phases.solution_fill|tank_recirc|irrigation` overrides). Сохранять их только в старом `diagnostics.execution.startup.*` недостаточно: это не текущий источник этих полей в builder.
 - В fill разрешён только calcium (`pump_b`), без pH; рециркуляция выполняет `Ca → pH → Mg → pH → NPK → pH → Micro → pH`. Старые `prepare_allowed_components=["npk"]` и `irrigation_allowed_components=["calcium","magnesium","micro"]` не описывают действующий алгоритм.
@@ -732,7 +732,7 @@ authority-документ `zone.logic_profile` через API `/api/automation-
 }
 ```
 - **Семантика:**
-  - `mode=normal` проходит через decision-controller (`task|smart_soil_v1`);
+  - `mode=normal` проходит через decision-controller (`task|smart_soil_v1|radiation_sum_v1`);
   - active irrigation task фиксирует decision snapshot (`strategy/config/bundle_revision`) при создании canonical task под zone advisory lock; первый runtime pass только эмитит observability event, а последующие изменения `zone.logic_profile` применяются только к следующему irrigation task;
   - неизвестная irrigation strategy считается ошибкой конфигурации, завершает task fail-closed с `irrigation_decision_strategy_unknown` и поднимает `biz_irrigation_decision_fail`;
   - `mode=force` bypass-ит decision-controller, но не bypass-ит AE3 task/runtime path;

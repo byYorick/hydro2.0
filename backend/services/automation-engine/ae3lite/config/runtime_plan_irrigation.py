@@ -92,6 +92,10 @@ def _build_irrigation_decision(snapshot: Any) -> dict[str, Any]:
     decision = _to_mapping(subsystem.get("decision"))
     strategy = str(decision.get("strategy") or "task").strip().lower() or "task"
     config = _to_mapping(decision.get("config"))
+    if strategy == "radiation_sum_v1":
+        from ae3lite.domain.services.radiation_sum import build_radiation_decision
+
+        return build_radiation_decision(config)
     return {
         "strategy": strategy,
         "config": {

@@ -2,8 +2,10 @@
 
 namespace App\Http\Requests;
 
+use App\Services\Automation\RadiationSumDecisionValidator;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
+use InvalidArgumentException;
 
 class UpdateZoneAutomationPresetRequest extends FormRequest
 {
@@ -37,7 +39,7 @@ class UpdateZoneAutomationPresetRequest extends FormRequest
             'config.irrigation.correction_slack_sec' => ['sometimes', 'integer', 'min:0', 'max:3600'],
 
             'config.irrigation_decision' => ['sometimes', 'array'],
-            'config.irrigation_decision.strategy' => ['sometimes', 'string', Rule::in(['task', 'smart_soil_v1'])],
+            'config.irrigation_decision.strategy' => ['sometimes', 'string', Rule::in(['task', 'smart_soil_v1', 'radiation_sum_v1'])],
             'config.irrigation_decision.config' => ['nullable', 'array'],
 
             'config.startup' => ['sometimes', 'array'],
@@ -50,5 +52,20 @@ class UpdateZoneAutomationPresetRequest extends FormRequest
             'config.climate' => ['nullable', 'array'],
             'config.lighting' => ['nullable', 'array'],
         ];
+    }
+
+    public function withValidator(mixed $validator): void
+    {
+        $validator->after(function ($validator): void {
+            $decision = $this->input('config.irrigation_decision');
+            if (! is_array($decision)) {
+                return;
+            }
+            try {
+                RadiationSumDecisionValidator::validate($decision, 'config.irrigation_decision');
+            } catch (InvalidArgumentException $exception) {
+                $validator->errors()->add('config.irrigation_decision', $exception->getMessage());
+            }
+        });
     }
 }

@@ -10,6 +10,7 @@ from ae3lite.application.dto.stage_outcome import StageOutcome
 from ae3lite.application.handlers.base import BaseStageHandler
 from ae3lite.domain.errors import TaskExecutionError
 from ae3lite.domain.services.irrigation_decision_controller import IrrigationDecision
+from ae3lite.domain.services.radiation_sum import QUIET_SKIP_REASONS as RADIATION_QUIET_SKIP_REASONS
 from ae3lite.domain.services.solution_temp_irrigation_guard import (
     DEFAULT_MAX_TEMP_SKIP_PAUSE_SEC,
     DEFAULT_SOLUTION_TEMP_STALE_SEC,
@@ -46,7 +47,7 @@ _QUIET_SUCCESS_SKIP_REASONS = frozenset({
     "solution_temp_unavailable",
     "solution_temp_out_of_band",
     "solution_temp_hot_stop",
-})
+}) | RADIATION_QUIET_SKIP_REASONS
 
 
 def _task_already_blocking_skip(task: Any) -> bool:
@@ -211,6 +212,8 @@ class DecisionGateHandler(BaseStageHandler):
                 exc_info=True,
             )
 
+        await self._emit_decision_side_alerts(task=task, decision=decision)
+
         if decision.outcome == "skip":
             return StageOutcome(kind="transition", next_stage="completed_skip")
         if decision.outcome == "fail":
@@ -220,6 +223,43 @@ class DecisionGateHandler(BaseStageHandler):
                 error_message="Decision-controller полива вернул отказ",
             )
         return StageOutcome(kind="transition", next_stage="irrigation_start")
+
+    async def _emit_decision_side_alerts(self, *, task: Any, decision: Any) -> None:
+        """Алерты, которые стратегия положила в details: подъём и снятие."""
+        details = getattr(decision, "details", None)
+        if not isinstance(details, Mapping):
+            return
+        zone_id = int(getattr(task, "zone_id", 0) or 0)
+        for kind, status in (("raise_alerts", "ACTIVE"), ("resolve_alerts", "RESOLVED")):
+            items = details.get(kind)
+            if not isinstance(items, (list, tuple)):
+                continue
+            for item in items:
+                if not isinstance(item, Mapping):
+                    continue
+                code = str(item.get("code") or "").strip()
+                if not code:
+                    continue
+                try:
+                    await note_upward_report(
+                        code=code,
+                        alert_type="AE3 Irrigation Decision",
+                        message=str(item.get("message") or code),
+                        severity=str(item.get("severity") or "warning"),
+                        zone_id=zone_id,
+                        dedupe_key=str(item.get("dedupe_key") or "") or None,
+                        details={"reason_code": str(getattr(decision, "reason_code", "") or "")},
+                        status=status,
+                        scope_parts=("stage:decision_gate", "radiation_sum"),
+                    )
+                except Exception:
+                    inc_observability_write_failed(kind="biz_alert")
+                    _logger.warning(
+                        "AE3 не смог отправить side-alert полива zone_id=%s code=%s",
+                        zone_id,
+                        code,
+                        exc_info=True,
+                    )
 
     async def _apply_solution_temp_gate(
         self,

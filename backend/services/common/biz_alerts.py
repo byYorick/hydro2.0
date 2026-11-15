@@ -102,6 +102,56 @@ async def send_biz_alert(
         return False
 
 
+async def resolve_biz_alert(
+    *,
+    code: str,
+    message: str,
+    zone_id: Optional[int] = None,
+    alert_type: str = "Business Alert",
+    severity: Optional[str] = None,
+    details: Optional[Dict[str, Any]] = None,
+    dedupe_key: Optional[str] = None,
+    scope_parts: Sequence[Any] | None = None,
+    node_uid: Optional[str] = None,
+    hardware_id: Optional[str] = None,
+    ts_device: Optional[str] = None,
+) -> bool:
+    """Закрывает активный алерт с тем же dedupe_key, которым его поднимали."""
+    payload_details = dict(details) if isinstance(details, dict) else {}
+    payload_details.setdefault("message", message)
+    resolved_dedupe_key = str(dedupe_key or payload_details.get("dedupe_key") or "").strip()
+    if resolved_dedupe_key == "":
+        resolved_dedupe_key = _build_dedupe_key(
+            code=code,
+            zone_id=zone_id,
+            details=payload_details,
+            scope_parts=scope_parts,
+        )
+    payload_details["dedupe_key"] = resolved_dedupe_key
+    try:
+        return await _publisher.resolve(
+            zone_id=zone_id,
+            source="biz",
+            code=code,
+            alert_type=alert_type,
+            details=payload_details,
+            dedupe_key=resolved_dedupe_key,
+            scoped=True,
+            node_uid=node_uid or payload_details.get("node_uid"),
+            hardware_id=hardware_id or payload_details.get("hardware_id"),
+            severity=severity,
+            ts_device=ts_device,
+        )
+    except Exception as exc:
+        logger.error(
+            "[BIZ_ALERT] Failed to resolve business alert: %s",
+            exc,
+            exc_info=True,
+            extra={"code": code, "zone_id": zone_id},
+        )
+        return False
+
+
 class BizAlertPublisher:
     """Small object adapter for callers that need dependency injection."""
 
