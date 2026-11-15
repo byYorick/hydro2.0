@@ -83,6 +83,9 @@ class RecipePhasePayloadNormalizer
                 if (! array_key_exists('stop_c', $health) || $health['stop_c'] === null || $health['stop_c'] === '') {
                     $health['stop_c'] = 32;
                 }
+                if (! array_key_exists('max_temp_skip_pause_sec', $health) || $health['max_temp_skip_pause_sec'] === null || $health['max_temp_skip_pause_sec'] === '') {
+                    $health['max_temp_skip_pause_sec'] = 5400;
+                }
                 $normalized['solution_health'] = $health;
             }
         }

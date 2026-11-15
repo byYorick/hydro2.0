@@ -27,6 +27,7 @@ def test_shared_crimea_recipe_uses_compromise_chemistry_and_documented_bounds() 
     assert "'duration_sec' => 60" in block
     assert "'warn_c' => 26" in block
     assert "'stop_c' => 32" in block
+    assert "'max_temp_skip_pause_sec' => 5400" in block
     assert "'overheat_emergency_temp_c' => 32" in block
     assert "'heat_ceiling_day_c' => 25" in block
     assert "'temp_air' => ['min' => 18, 'max' => 22, 'target' => 20]" in block

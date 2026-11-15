@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import json
 import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Mapping
 
 from ae3lite.greenhouse_climate.climate_tick_records import ClimateTickPlan
-from ae3lite.greenhouse_climate.decision_engine import ClimateDecision
+from ae3lite.greenhouse_climate.decision_engine import ClimateDecision, exhaust_fan_on
 from ae3lite.infrastructure.clients import HistoryLoggerClient
 
 
@@ -27,6 +28,48 @@ class ClimateTickPlanningPorts:
     unique_alert_codes: Callable[..., Any]
     compute_climate_decision: Callable[..., Any]
     record_greenhouse_climate_crop_metrics: Callable[..., Any]
+
+
+def _execution_float(execution: Mapping[str, Any], key: str, default: float) -> float:
+    raw = execution.get(key)
+    if isinstance(raw, bool) or not isinstance(raw, (int, float)):
+        return default
+    return float(raw)
+
+
+def _previous_exhaust_on(state: Mapping[str, Any]) -> bool:
+    raw = state.get("decision_factors")
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except json.JSONDecodeError:
+            return False
+    if isinstance(raw, dict):
+        return bool(raw.get("exhaust_on"))
+    return False
+
+
+def _apply_exhaust_hysteresis(
+    *,
+    decision: ClimateDecision,
+    execution: Mapping[str, Any],
+    state: Mapping[str, Any],
+    control_mode: str,
+    inside_temp: float | None,
+    inside_fresh: bool,
+) -> None:
+    previous = _previous_exhaust_on(state)
+    if control_mode == "auto" and not decision.suppress_commands:
+        exhaust_on = exhaust_fan_on(
+            temp_c=inside_temp,
+            sensor_fresh=inside_fresh,
+            currently_on=previous,
+            on_c=_execution_float(execution, "exhaust_on_c", 25.0),
+            off_c=_execution_float(execution, "exhaust_off_c", 23.0),
+        )
+    else:
+        exhaust_on = previous
+    decision.factors["exhaust_on"] = exhaust_on
 
 
 class ClimateTickPlanning:
@@ -74,6 +117,14 @@ class ClimateTickPlanning:
             current_right_pct=int(state.get("right_position_pct") or 0),
             now_ts=now_ts,
             last_command_ts=last_cmd_ts,
+        )
+        _apply_exhaust_hysteresis(
+            decision=decision,
+            execution=execution,
+            state=state,
+            control_mode=control_mode,
+            inside_temp=snap["inside_temp_median"],
+            inside_fresh=bool(snap["inside_fresh"]),
         )
         self._ports.record_greenhouse_climate_crop_metrics(
             greenhouse_id=int(greenhouse_id),

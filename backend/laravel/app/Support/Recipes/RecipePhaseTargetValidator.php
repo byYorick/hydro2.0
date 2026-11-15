@@ -177,6 +177,16 @@ class RecipePhaseTargetValidator
                 'Порог предупреждения раствора должен быть ниже аварийного стопа.'
             );
         }
+
+        if (array_key_exists('max_temp_skip_pause_sec', $health) && ! $this->isEmptyCropDayValue($health['max_temp_skip_pause_sec'])) {
+            $pause = $health['max_temp_skip_pause_sec'];
+            if (filter_var($pause, FILTER_VALIDATE_INT) === false || (int) $pause < 60 || (int) $pause > 86400) {
+                $validator->errors()->add(
+                    $attributePrefix.'extensions.solution_health.max_temp_skip_pause_sec',
+                    'max_temp_skip_pause_sec пустое или целое 60…86400.'
+                );
+            }
+        }
     }
 
     private function isEmptyCropDayValue(mixed $value): bool

@@ -309,6 +309,7 @@ class SolutionHealth(BaseModel):
     warn_c: float | None = None
     stop_c: float | None = None
     breach_hold_sec: Annotated[int, Field(ge=60, le=86400)] = 600
+    max_temp_skip_pause_sec: Annotated[int, Field(ge=60, le=86400)] = 5400
 
     @model_validator(mode="after")
     def warn_below_stop(self) -> "SolutionHealth":

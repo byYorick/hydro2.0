@@ -107,6 +107,28 @@ class _FailMarkAcceptedRepo(PgAeCommandRepository):
         return False
 
 
+async def _insert_fresh_solution_level(greenhouse_id: int, zone_id: int, now: datetime) -> None:
+    rows = await fetch(
+        """
+        INSERT INTO sensors (
+            greenhouse_id, zone_id, scope, type, label, is_active, created_at, updated_at
+        )
+        VALUES ($1, $2, 'inside', 'WATER_LEVEL', 'level_solution', TRUE, NOW(), NOW())
+        RETURNING id
+        """,
+        greenhouse_id,
+        zone_id,
+    )
+    await execute(
+        """
+        INSERT INTO telemetry_last (sensor_id, last_value, last_ts, last_quality, updated_at)
+        VALUES ($1, 0.8, $2, 'GOOD', NOW())
+        """,
+        int(rows[0]["id"]),
+        now,
+    )
+
+
 def _mock_task(task_id: int, zone_id: int):
     from unittest.mock import MagicMock
 
@@ -139,6 +161,7 @@ async def test_retry_after_ambiguous_publish_error_reuses_same_cmd_id() -> None:
     try:
         greenhouse_id = await _insert_greenhouse(prefix)
         zone_id = await _insert_zone(prefix, greenhouse_id=greenhouse_id)
+        await _insert_fresh_solution_level(greenhouse_id, zone_id, now)
         task_id = await _insert_task(
             zone_id,
             prefix=prefix,
@@ -207,6 +230,7 @@ async def test_retry_after_definite_publish_error_keeps_pending_cmd_id() -> None
     try:
         greenhouse_id = await _insert_greenhouse(prefix)
         zone_id = await _insert_zone(prefix, greenhouse_id=greenhouse_id)
+        await _insert_fresh_solution_level(greenhouse_id, zone_id, now)
         task_id = await _insert_task(
             zone_id,
             prefix=prefix,

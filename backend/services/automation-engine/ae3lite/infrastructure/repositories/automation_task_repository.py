@@ -200,6 +200,36 @@ class PgAutomationTaskRepository:
     async def get_last_irrigation_for_zone(self, *, zone_id: int) -> AutomationTask | None:
         return await self._task_persistence_queries.get_last_irrigation_for_zone(zone_id=zone_id)
 
+    async def list_completed_irrigation_decisions(
+        self,
+        *,
+        zone_id: int,
+        exclude_task_id: int | None = None,
+        limit: int = 48,
+    ) -> list[dict[str, Any]]:
+        """Завершённые поливы зоны от новых к старым, без текущей задачи."""
+        rows = await self._fetch(
+            """
+            SELECT
+                id,
+                current_stage,
+                irrigation_decision_outcome,
+                irrigation_decision_reason_code,
+                updated_at
+            FROM ae_tasks
+            WHERE zone_id = $1
+              AND task_type = 'irrigation_start'
+              AND status = 'completed'
+              AND id <> COALESCE($2, 0)
+            ORDER BY id DESC
+            LIMIT $3
+            """,
+            int(zone_id),
+            None if exclude_task_id is None else int(exclude_task_id),
+            max(1, min(int(limit), 48)),
+        )
+        return [dict(row) for row in rows]
+
     async def get_by_id(self, *, task_id: int) -> AutomationTask | None:
         return await self._task_persistence_queries.get_by_id(task_id=task_id)
 

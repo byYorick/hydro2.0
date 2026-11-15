@@ -11,10 +11,15 @@ from ae3lite.application.handlers.base import BaseStageHandler
 from ae3lite.domain.errors import TaskExecutionError
 from ae3lite.domain.services.irrigation_decision_controller import IrrigationDecision
 from ae3lite.domain.services.solution_temp_irrigation_guard import (
+    DEFAULT_MAX_TEMP_SKIP_PAUSE_SEC,
     DEFAULT_SOLUTION_TEMP_STALE_SEC,
+    REASON_SOLUTION_TEMP_BLOCKED_TOO_LONG,
     REASON_SOLUTION_TEMP_HOT_STOP,
     REASON_SOLUTION_TEMP_HOT_WARN,
+    REASON_SOLUTION_TEMP_UNAVAILABLE,
+    assess_temp_skip_budget,
     evaluate_solution_temp_hold,
+    irrigation_block_pause_sec,
     solution_temp_gate_active,
 )
 from ae3lite.infrastructure.metrics import (
@@ -270,16 +275,98 @@ class DecisionGateHandler(BaseStageHandler):
         )
         if verdict is None:
             return decision
+        if verdict.reason_code == REASON_SOLUTION_TEMP_UNAVAILABLE:
+            await self._emit_solution_sensor_alert(task=task, verdict=verdict)
+            return decision
         if verdict.reason_code in {REASON_SOLUTION_TEMP_HOT_WARN, REASON_SOLUTION_TEMP_HOT_STOP}:
             await self._emit_solution_hot_alert(task=task, verdict=verdict)
         if not verdict.blocks_irrigation:
             return decision
+        budget = await self._load_temp_skip_budget(task=task, runtime=runtime, now=now)
+        if budget is not None and budget.exceeded:
+            await self._emit_temp_block_too_long_alert(task=task, verdict=verdict, budget=budget)
         return IrrigationDecision(
             outcome="skip",
             reason_code=verdict.reason_code,
             degraded=False,
             details=verdict.details,
         )
+
+    async def _load_temp_skip_budget(self, *, task: Any, runtime: Any, now: datetime):
+        health = getattr(runtime, "solution_health", None)
+        max_pause = int(
+            getattr(health, "max_temp_skip_pause_sec", DEFAULT_MAX_TEMP_SKIP_PAUSE_SEC)
+            or DEFAULT_MAX_TEMP_SKIP_PAUSE_SEC
+        )
+        getter = getattr(self._task_repository, "list_completed_irrigation_decisions", None)
+        if not callable(getter):
+            return assess_temp_skip_budget(pause_sec=None, max_pause_sec=max_pause)
+        try:
+            rows = await getter(
+                zone_id=int(task.zone_id),
+                exclude_task_id=int(getattr(task, "id", 0) or 0),
+            )
+        except Exception:
+            _logger.warning(
+                "AE3 не прочитал историю полива zone_id=%s task_id=%s",
+                int(getattr(task, "zone_id", 0) or 0),
+                int(getattr(task, "id", 0) or 0),
+                exc_info=True,
+            )
+            return None
+        pause_sec = irrigation_block_pause_sec(list(rows or []), now=now)
+        return assess_temp_skip_budget(pause_sec=pause_sec, max_pause_sec=max_pause)
+
+    async def _emit_solution_sensor_alert(self, *, task: Any, verdict: Any) -> None:
+        try:
+            await note_upward_report(
+                code="biz_solution_temp_unavailable",
+                alert_type="AE3 Solution Temperature",
+                message="Датчик температуры раствора недоступен или устарел. Полив идёт по обычной логике.",
+                severity="warning",
+                zone_id=int(getattr(task, "zone_id", 0) or 0),
+                dedupe_key=_irrigation_decision_alert_dedupe_key(
+                    outcome="sensor",
+                    zone_id=int(getattr(task, "zone_id", 0) or 0),
+                    reason_code=REASON_SOLUTION_TEMP_UNAVAILABLE,
+                ),
+                details=dict(getattr(verdict, "details", {}) or {}),
+                scope_parts=("stage:decision_gate", "solution_temp"),
+            )
+        except Exception:
+            inc_observability_write_failed(kind="biz_alert")
+            _logger.warning(
+                "AE3 не смог отправить alert недоступного датчика раствора zone_id=%s",
+                int(getattr(task, "zone_id", 0) or 0),
+                exc_info=True,
+            )
+
+    async def _emit_temp_block_too_long_alert(self, *, task: Any, verdict: Any, budget: Any) -> None:
+        details = dict(getattr(verdict, "details", {}) or {})
+        details["pause_sec"] = getattr(budget, "pause_sec", None)
+        details["stop_kept"] = True
+        try:
+            await note_upward_report(
+                code="biz_solution_temp_irrigation_blocked_too_long",
+                alert_type="AE3 Solution Temperature",
+                message="Полив заблокирован слишком долго. Стоп по температуре раствора не снят.",
+                severity="critical",
+                zone_id=int(getattr(task, "zone_id", 0) or 0),
+                dedupe_key=_irrigation_decision_alert_dedupe_key(
+                    outcome="blocked_too_long",
+                    zone_id=int(getattr(task, "zone_id", 0) or 0),
+                    reason_code=REASON_SOLUTION_TEMP_BLOCKED_TOO_LONG,
+                ),
+                details=details,
+                scope_parts=("stage:decision_gate", "solution_temp"),
+            )
+        except Exception:
+            inc_observability_write_failed(kind="biz_alert")
+            _logger.warning(
+                "AE3 не смог отправить alert долгой блокировки полива zone_id=%s",
+                int(getattr(task, "zone_id", 0) or 0),
+                exc_info=True,
+            )
 
     async def _emit_solution_hot_alert(self, *, task: Any, verdict: Any) -> None:
         reason = str(getattr(verdict, "reason_code", "") or "")

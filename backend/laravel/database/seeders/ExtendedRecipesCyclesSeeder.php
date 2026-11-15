@@ -1489,6 +1489,7 @@ class ExtendedRecipesCyclesSeeder extends Seeder
                             'warn_c' => 26,
                             'stop_c' => 32,
                             'breach_hold_sec' => 600,
+                            'max_temp_skip_pause_sec' => 5400,
                         ],
                         'climate' => [
                             'overheat_emergency_temp_c' => 32,

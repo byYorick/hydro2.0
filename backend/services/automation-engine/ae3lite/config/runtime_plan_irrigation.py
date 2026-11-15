@@ -198,5 +198,8 @@ def _build_solution_health(snapshot: Any) -> dict[str, Any]:
         "required": _optional_bool(health.get("required"), False),
         "min_c": _optional_float(solution.get("min")),
         "max_c": _optional_float(solution.get("max")),
+        "warn_c": _optional_float(health.get("warn_c")),
+        "stop_c": _optional_float(health.get("stop_c")),
         "breach_hold_sec": _resolve_bounded_int(health.get("breach_hold_sec"), 600, 60, 86400),
+        "max_temp_skip_pause_sec": _resolve_bounded_int(health.get("max_temp_skip_pause_sec"), 5400, 60, 86400),
     }
