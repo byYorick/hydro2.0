@@ -12,7 +12,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 ## Связанные документы
 
 - [ADR-0002](ADR-0002-solution-resource.md) — общий бак не подменяет тип системы
-- [ADR-0003](ADR-0003-failsafe-state.md) — дефолты канала зависят от `hydro_system`
+- [ADR-0003](ADR-0003-failsafe-state.md) — при потере связи все выходы гаснут, тип системы это не меняет
 - План масштаба: [PR #32](https://github.com/byYorick/hydro2.0/pull/32), файл `doc_ai/01_SYSTEM/SCALING_PLAN_400M2_MODULES.md` в ветке `feature/docs-scaling-plan-400m2` (в `main` @ `ba461dce` файла нет)
 - [ZONES_AND_PRESETS.md](../06_DOMAIN_ZONES_RECIPES/ZONES_AND_PRESETS.md), [EFFECTIVE_TARGETS_SPEC.md](../06_DOMAIN_ZONES_RECIPES/EFFECTIVE_TARGETS_SPEC.md)
 - [ae3lite.md](../04_BACKEND_CORE/ae3lite.md), [ERROR_CODE_CATALOG.md](../04_BACKEND_CORE/ERROR_CODE_CATALOG.md)
@@ -159,7 +159,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 | `greenhouse` | да | да, когда pack есть |
 | `outdoor` | да | нет (`hydro_system_environment_forbidden`), даже после появления pack |
 
-Открытый грунт в PR #32 — капля без возврата дренажа в бак. NFT/DWC/прилив там не стартуют, пока отдельный ADR не разрешит. Сезон Крыма (вентиляция летом, пауза зимой) эту матрицу не сужает: это политика канала (ADR-0003) и климат, не запрет типа.
+Открытый грунт в PR #32 — капля без возврата дренажа в бак. NFT/DWC/прилив там не стартуют, пока отдельный ADR не разрешит. Сезон Крыма эту матрицу не сужает: пока связь есть, климат ведёт сервер. При обрыве ADR-0003 гасит и вытяжку, и фрамуги вместе с поливом; это не повод запрещать тип системы и не локальный режим проветривания на ноде.
 
 ## Альтернативы
 

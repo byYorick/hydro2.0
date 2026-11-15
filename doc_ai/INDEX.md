@@ -35,7 +35,7 @@
 | [12_ANDROID_APP](12_ANDROID_APP/README.md) | Android-клиент, API и ограничения provisioning |
 | [13_TESTING](13_TESTING/README.md) | Python E2E, realhw, Playwright и диагностика тестов |
 | [14_GROWING_REFERENCE](14_GROWING_REFERENCE/README.md) | Агрономические и аппаратные справочники выращивания |
-| [adr](adr/README.md) | Архитектурные решения (`proposed`): перечень систем, общий бак, failsafe канала, MQTT prod |
+| [adr](adr/README.md) | Архитектурные решения (`proposed`): перечень систем, общий бак, fail-safe «всё off», MQTT prod |
 
 ## Защищённые контракты
 

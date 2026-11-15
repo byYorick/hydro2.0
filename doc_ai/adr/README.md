@@ -71,7 +71,7 @@ Hydro2 БД, прошивка). Критерии приёмки проверяе
 |---|---|---|
 | [ADR-0001](ADR-0001-hydro-system.md) | `proposed` | Единый перечень `hydro_system`, паритет, fail-closed |
 | [ADR-0002](ADR-0002-solution-resource.md) | `proposed` | Группа зон на общем баке и уровень площадки |
-| [ADR-0003](ADR-0003-failsafe-state.md) | `proposed` | `failsafe_state` канала в NodeConfig |
+| [ADR-0003](ADR-0003-failsafe-state.md) | `proposed` | Единый fail-safe: при потере связи всё off |
 | [ADR-0004](ADR-0004-mqtt-prod-auth.md) | `proposed` | Учётка на узел, ключ обёртки, TLS в prod |
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.

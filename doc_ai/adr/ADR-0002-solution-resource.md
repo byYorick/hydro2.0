@@ -12,7 +12,7 @@ authority document type не вводятся.
 ## Связанные документы
 
 - [ADR-0001](ADR-0001-hydro-system.md) — у ресурса один `hydro_system`
-- [ADR-0003](ADR-0003-failsafe-state.md) — аэрация и циркуляция живут на узле раствора
+- [ADR-0003](ADR-0003-failsafe-state.md) — при потере связи аэрация и циркуляция на узле раствора тоже гаснут
 - [ADR-0004](ADR-0004-mqtt-prod-auth.md) — учётные данные этого узла такие же, как у остальных
 - План масштаба: [PR #32](https://github.com/byYorick/hydro2.0/pull/32), §4.1 и §6.2 файла `doc_ai/01_SYSTEM/SCALING_PLAN_400M2_MODULES.md` (ветка `feature/docs-scaling-plan-400m2`)
 - [EFFECTIVE_TARGETS_SPEC.md](../06_DOMAIN_ZONES_RECIPES/EFFECTIVE_TARGETS_SPEC.md), [ae3lite.md](../04_BACKEND_CORE/ae3lite.md)
