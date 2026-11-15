@@ -8,6 +8,11 @@ from statistics import mean
 from typing import Any, Mapping, Protocol, Sequence
 
 from ae3lite.config.schema import RuntimePlan
+from ae3lite.domain.services.greenhouse_clock import (
+    DEFAULT_GREENHOUSE_TIMEZONE,
+    InvalidGreenhouseTimezone,
+    local_minutes,
+)
 
 
 @dataclass(frozen=True)
@@ -51,7 +56,13 @@ class TaskDecisionStrategy:
 
 class SmartSoilDecisionStrategy:
     @staticmethod
-    def _resolve_day_profile(*, now: datetime, day_start_time: str | None, day_hours: float | None) -> tuple[bool, bool]:
+    def _resolve_day_profile(
+        *,
+        now: datetime,
+        day_start_time: str | None,
+        day_hours: float | None,
+        timezone_name: str | None,
+    ) -> tuple[bool, bool]:
         if not day_start_time or day_hours is None:
             return True, False
 
@@ -84,7 +95,7 @@ class SmartSoilDecisionStrategy:
 
         start_min = start_h * 60 + start_m
         end_min = (start_min + int(round(hours * 60))) % (24 * 60)
-        now_min = now.hour * 60 + now.minute
+        now_min = local_minutes(now, timezone_name)
 
         if start_min == end_min:
             return False, True
@@ -97,6 +108,7 @@ class SmartSoilDecisionStrategy:
         *,
         soil_target: Any,
         now: datetime,
+        timezone_name: str | None,
     ) -> tuple[float | None, float | None, dict[str, Any]]:
         target_min = _to_float(getattr(soil_target, "min", None))
         target_max = _to_float(getattr(soil_target, "max", None))
@@ -114,6 +126,7 @@ class SmartSoilDecisionStrategy:
             now=now,
             day_start_time=day_start_time,
             day_hours=day_hours,
+            timezone_name=timezone_name,
         )
         active_profile = "day" if is_day else "night"
         active_target = day if active_profile == "day" else night
@@ -128,6 +141,7 @@ class SmartSoilDecisionStrategy:
                 "active_profile": active_profile,
                 "day_start_time": day_start_time,
                 "day_hours": day_hours,
+                "timezone": timezone_name or DEFAULT_GREENHOUSE_TIMEZONE,
                 "schedule_invalid": invalid_schedule,
             },
         )
@@ -148,7 +162,19 @@ class SmartSoilDecisionStrategy:
         hysteresis_pct = float(config.hysteresis_pct)
         spread_threshold_pct = float(config.spread_alert_threshold_pct)
         soil_target = runtime.soil_moisture_target
-        target_min, target_max, target_meta = self._resolve_target_band(soil_target=soil_target, now=now)
+        timezone_name = _window_timezone_name(runtime=runtime, soil_target=soil_target)
+        try:
+            target_min, target_max, target_meta = self._resolve_target_band(
+                soil_target=soil_target,
+                now=now,
+                timezone_name=timezone_name,
+            )
+        except InvalidGreenhouseTimezone as exc:
+            return IrrigationDecision(
+                outcome="fail",
+                reason_code="irrigation_timezone_invalid",
+                details={"timezone": exc.name},
+            )
 
         if target_min is None or target_max is None:
             return IrrigationDecision(
@@ -198,6 +224,7 @@ class SmartSoilDecisionStrategy:
             "requested_duration_sec": requested_duration_sec,
             "target_mode": target_meta.get("mode"),
             "target_profile": target_meta.get("active_profile"),
+            "timezone": target_meta.get("timezone"),
             "min_samples_required": min_samples,
             "insufficient_samples": degraded,
             "schedule_invalid": bool(target_meta.get("schedule_invalid")),
@@ -270,6 +297,17 @@ class IrrigationDecisionController:
             requested_duration_sec=requested_duration_sec,
             now=now,
         )
+
+
+def _window_timezone_name(*, runtime: RuntimePlan, soil_target: Any) -> str | None:
+    soil_tz = getattr(soil_target, "timezone", None)
+    if isinstance(soil_tz, str) and soil_tz.strip():
+        return soil_tz.strip()
+    lighting = getattr(getattr(runtime, "day_night_config", None), "lighting", None)
+    lighting_tz = getattr(lighting, "timezone", None)
+    if isinstance(lighting_tz, str) and lighting_tz.strip():
+        return lighting_tz.strip()
+    return None
 
 
 def _to_float(raw_value: Any) -> float | None:

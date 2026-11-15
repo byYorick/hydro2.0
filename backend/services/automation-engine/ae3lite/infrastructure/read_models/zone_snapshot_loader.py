@@ -7,6 +7,7 @@ from typing import Any, Awaitable, Callable, List, Mapping
 
 from ae3lite.application.dto import ZoneActuatorRef, ZoneSnapshot
 from ae3lite.domain.errors import ErrorCodes, SnapshotBuildError
+from ae3lite.domain.services.greenhouse_clock import InvalidGreenhouseTimezone, canonical_timezone_name
 from ae3lite.infrastructure.read_models.zone_snapshot_shared import _node_freshness_fallback_sec
 
 from .active_grow_cycle_order_sql import SQL_ACTIVE_GROW_CYCLE_ORDER_BY
@@ -114,6 +115,7 @@ class ZoneSnapshotLoader:
                         f"У зоны {zone_id} отсутствует current_phase_id для активного grow_cycle",
                         code=ErrorCodes.AE3_SNAPSHOT_MISSING_CURRENT_PHASE,
                     )
+                _reject_invalid_greenhouse_timezone(zone_id=zone_id, raw=zone_row.get("greenhouse_timezone"))
 
                 await self._ports.after_zone_row_loaded(
                     conn=conn,
@@ -385,16 +387,22 @@ class ZoneSnapshotLoader:
 
                 from .dli_light_series import load_dli_light_series
 
-                dli_light_series = await load_dli_light_series(
-                    conn,
-                    zone_id=zone_id,
-                    targets=targets,
-                    greenhouse_timezone=(
-                        str(zone_row.get("greenhouse_timezone")).strip()
-                        if isinstance(zone_row.get("greenhouse_timezone"), str)
-                        else None
-                    ),
-                )
+                try:
+                    dli_light_series = await load_dli_light_series(
+                        conn,
+                        zone_id=zone_id,
+                        targets=targets,
+                        greenhouse_timezone=(
+                            str(zone_row.get("greenhouse_timezone")).strip()
+                            if isinstance(zone_row.get("greenhouse_timezone"), str)
+                            else None
+                        ),
+                    )
+                except InvalidGreenhouseTimezone as exc:
+                    raise SnapshotBuildError(
+                        f"У зоны {zone_id} некорректный timezone теплицы: {exc.name!r}",
+                        code=ErrorCodes.AE3_SNAPSHOT_BUILD_FAILED,
+                    ) from exc
 
         return ZoneSnapshot(
             zone_id=int(zone_row["zone_id"]),
@@ -421,3 +429,13 @@ class ZoneSnapshotLoader:
             ),
             dli_light_series=dli_light_series,
         )
+
+
+def _reject_invalid_greenhouse_timezone(*, zone_id: int, raw: object) -> None:
+    try:
+        canonical_timezone_name(raw if isinstance(raw, str) else None)
+    except InvalidGreenhouseTimezone as exc:
+        raise SnapshotBuildError(
+            f"У зоны {zone_id} некорректный timezone теплицы: {raw!r}",
+            code=ErrorCodes.AE3_SNAPSHOT_BUILD_FAILED,
+        ) from exc
