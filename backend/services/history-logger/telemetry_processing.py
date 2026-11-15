@@ -1,23 +1,27 @@
+from telemetry.dependencies import (
+    bind_dependencies as bind_telemetry_dependencies,
+    snapshot as telemetry_dependency_snapshot,
+)
 import asyncio
 import logging
 import os
-import time
+import time as time
 from collections import OrderedDict
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Set
+from dataclasses import dataclass as dataclass, field as field
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict as Dict, List, Optional, Set
 
-import asyncpg
-import httpx
+import asyncpg as asyncpg
+import httpx as httpx
 
-import state
+import state as state
 from common.db import create_zone_event, execute, fetch
 from common.env import get_settings
 from common.infra_alerts import send_infra_alert, send_infra_resolved_alert
 from common.simulation_events import record_simulation_event_throttled
-from common.redis_queue import PopBatchResult, QueueEntry, TelemetryQueueItem
+from common.redis_queue import PopBatchResult, QueueEntry, TelemetryQueueItem as TelemetryQueueItem
 from common.utils.time import utcnow
-from common.trace_context import clear_trace_id, set_trace_id_from_payload
+from common.trace_context import clear_trace_id as clear_trace_id, set_trace_id_from_payload as set_trace_id_from_payload
 from metrics import (
     DATABASE_ERRORS,
     LARAVEL_API_DURATION,
@@ -39,142 +43,499 @@ from metrics import (
     TELEMETRY_REQUEUE_DUPLICATE_RISK,
     TELEMETRY_SAMPLES_JOIN_MISMATCH,
 )
-from models import TelemetryPayloadModel, TelemetrySampleModel
+from models import TelemetryPayloadModel as TelemetryPayloadModel, TelemetrySampleModel
 from telemetry.anomaly_alerts import (
     emit_telemetry_anomaly_alert as _emit_telemetry_anomaly_alert,
     emit_telemetry_anomaly_resolved_alert as _emit_telemetry_anomaly_resolved_alert,
 )
 from telemetry import anomaly_alerts as telemetry_anomaly_module
 from telemetry.ingress import (
-    REDIS_PUSH_MAX_RETRIES,
-    REDIS_PUSH_RETRY_BACKOFF_BASE,
+    REDIS_PUSH_MAX_RETRIES as REDIS_PUSH_MAX_RETRIES,
+    REDIS_PUSH_RETRY_BACKOFF_BASE as REDIS_PUSH_RETRY_BACKOFF_BASE,
     handle_telemetry as _handle_telemetry_impl,
     push_with_retry as _push_with_retry,
 )
 from telemetry.helpers import (
-    build_anomaly_throttle_key as _build_anomaly_throttle_key,
+    build_anomaly_throttle_key as _build_anomaly_throttle_key,  # noqa: F401 - legacy facade re-export
     build_realtime_key as _build_realtime_key,
     build_realtime_key_from_update as _build_realtime_key_from_update,
     build_sensor_label as _build_sensor_label,
-    effective_anomaly_throttle_sec as _effective_anomaly_throttle_sec,
+    effective_anomaly_throttle_sec as _effective_anomaly_throttle_sec,  # noqa: F401 - legacy facade re-export
     filter_existing_sensor_ids as _filter_existing_sensor_ids,
     infer_sensor_scope as _infer_sensor_scope,
     infer_sensor_type as _infer_sensor_type,
     is_sensor_fk_error as _is_sensor_fk_error,
     is_temp_namespace as _is_temp_namespace,
-    normalize_metric_type as _normalize_metric_type,
+    normalize_metric_type as _normalize_metric_type,  # noqa: F401 - legacy facade re-export
     normalize_ts_for_db as _normalize_ts_for_db,
     parse_node_info as _parse_node_info,
     to_timestamp_ms as _to_timestamp_ms,
 )
-from telemetry import helpers as telemetry_helpers_module
+from telemetry import helpers as telemetry_helpers_module  # noqa: F401 - legacy facade re-export
 from utils import (
-    MAX_PAYLOAD_SIZE,
+    MAX_PAYLOAD_SIZE as MAX_PAYLOAD_SIZE,
     _calculate_broadcast_backoff,
-    _extract_channel_from_topic,
-    _extract_gh_uid,
-    _extract_node_uid,
-    _extract_zone_uid,
-    _filter_raw_data,
-    _parse_json,
+    _extract_channel_from_topic as _extract_channel_from_topic,
+    _extract_gh_uid as _extract_gh_uid,
+    _extract_node_uid as _extract_node_uid,
+    _extract_zone_uid as _extract_zone_uid,
+    _filter_raw_data as _filter_raw_data,
+    _parse_json as _parse_json,
 )
 
 logger = logging.getLogger(__name__)
 
 
-class PgTransportError(Exception):
-    """Транспортная ошибка PostgreSQL — батч можно безопасно requeue."""
+from telemetry.runtime_records import PgTransportError as PgTransportError, TelemetryBatchResult
+from telemetry.runtime_batch import RuntimeBatch, RuntimeBatchPorts
 
 
-@dataclass
-class TelemetryBatchResult:
-    """Результат обработки батча телеметрии для selective ack/requeue/dead-list."""
+def _runtime_batch() -> RuntimeBatch:
+    dependencies = telemetry_dependency_snapshot(
+        {
+            'TELEMETRY_PROCESSING_DURATION': TELEMETRY_PROCESSING_DURATION,
+            'TELEM_BATCH_SIZE': TELEM_BATCH_SIZE,
+            'TELEM_PROCESSED': TELEM_PROCESSED,
+            'get_settings': get_settings,
+        }
+    )
+    return RuntimeBatch(
+        RuntimeBatchPorts(
+            telemetry_processing_duration=lambda: dependencies.TELEMETRY_PROCESSING_DURATION,
+            telem_batch_size=lambda: dependencies.TELEM_BATCH_SIZE,
+            telem_processed=lambda: dependencies.TELEM_PROCESSED,
+            cache_last_update=lambda: _cache_last_update,
+            cache_ttl=lambda: _cache_ttl,
+            enqueue_committed_realtime=lambda *args, **kwargs: _enqueue_committed_realtime(*args, **kwargs),
+            evaluate_solution_temp_thresholds=lambda *args, **kwargs: _evaluate_solution_temp_thresholds(
+                *args, **kwargs
+            ),
+            normalize_batch_samples=lambda *args, **kwargs: _normalize_batch_samples(*args, **kwargs),
+            persist_batch_samples=lambda *args, **kwargs: _persist_batch_samples(*args, **kwargs),
+            recover_batch_assignments=lambda *args, **kwargs: _recover_batch_assignments(*args, **kwargs),
+            resolve_batch_nodes=lambda *args, **kwargs: _resolve_batch_nodes(*args, **kwargs),
+            resolve_batch_sensors=lambda *args, **kwargs: _resolve_batch_sensors(*args, **kwargs),
+            resolve_batch_zones=lambda *args, **kwargs: _resolve_batch_zones(*args, **kwargs),
+            get_settings=dependencies.get_settings,
+            refresh_caches=lambda *args, **kwargs: refresh_caches(*args, **kwargs),
+        )
+    )
 
-    entries_to_requeue: List[QueueEntry] = field(default_factory=list)
-    entries_to_dead: List[QueueEntry] = field(default_factory=list)
-    processed_count: int = 0
 
-    def entries_to_ack(self, all_entries: List[QueueEntry]) -> List[QueueEntry]:
-        dead_ids = {id(entry) for entry in self.entries_to_dead}
-        requeue_ids = {id(entry) for entry in self.entries_to_requeue}
-        return [
-            entry
-            for entry in all_entries
-            if id(entry) not in dead_ids and id(entry) not in requeue_ids
-        ]
+from telemetry.runtime_zone_resolution import RuntimeZoneResolution, RuntimeZoneResolutionPorts
+
+
+def _runtime_zone_resolution() -> RuntimeZoneResolution:
+    dependencies = telemetry_dependency_snapshot(
+        {
+            '_emit_telemetry_anomaly_alert': _emit_telemetry_anomaly_alert,
+            '_is_temp_namespace': _is_temp_namespace,
+            'fetch': fetch,
+            'logger': logger,
+        }
+    )
+    return RuntimeZoneResolution(
+        RuntimeZoneResolutionPorts(
+            emit_telemetry_anomaly_alert=dependencies._emit_telemetry_anomaly_alert,
+            is_temp_namespace=dependencies._is_temp_namespace,
+            log_warning_throttled=lambda *args, **kwargs: _log_warning_throttled(*args, **kwargs),
+            zone_cache=lambda: _zone_cache,
+            fetch=dependencies.fetch,
+            logger=lambda: dependencies.logger,
+        )
+    )
+
+
+from telemetry.runtime_node_resolution import RuntimeNodeResolution, RuntimeNodeResolutionPorts
+
+
+def _runtime_node_resolution() -> RuntimeNodeResolution:
+    dependencies = telemetry_dependency_snapshot(
+        {
+            '_emit_telemetry_anomaly_alert': _emit_telemetry_anomaly_alert,
+            '_emit_telemetry_anomaly_resolved_alert': _emit_telemetry_anomaly_resolved_alert,
+            '_is_temp_namespace': _is_temp_namespace,
+            'fetch': fetch,
+            'logger': logger,
+        }
+    )
+    return RuntimeNodeResolution(
+        RuntimeNodeResolutionPorts(
+            emit_telemetry_anomaly_alert=dependencies._emit_telemetry_anomaly_alert,
+            emit_telemetry_anomaly_resolved_alert=dependencies._emit_telemetry_anomaly_resolved_alert,
+            is_temp_namespace=dependencies._is_temp_namespace,
+            log_warning_throttled=lambda *args, **kwargs: _log_warning_throttled(*args, **kwargs),
+            node_cache=lambda: _node_cache,
+            node_unassigned_last_seen=lambda: _node_unassigned_last_seen,
+            node_unassigned_recovery_grace_sec=lambda: _node_unassigned_recovery_grace_sec,
+            prewarm_stale_node_assignments=lambda *args, **kwargs: _prewarm_stale_node_assignments(*args, **kwargs),
+            zone_greenhouse_cache=lambda: _zone_greenhouse_cache,
+            fetch=dependencies.fetch,
+            logger=lambda: dependencies.logger,
+        )
+    )
+
+
+from telemetry.runtime_normalization import RuntimeNormalization, RuntimeNormalizationPorts
+
+
+def _runtime_normalization() -> RuntimeNormalization:
+    dependencies = telemetry_dependency_snapshot(
+        {
+            'TELEMETRY_DROPPED': TELEMETRY_DROPPED,
+            '_emit_telemetry_anomaly_alert': _emit_telemetry_anomaly_alert,
+            '_is_temp_namespace': _is_temp_namespace,
+            '_parse_node_info': _parse_node_info,
+            'create_zone_event': create_zone_event,
+            'fetch': fetch,
+            'logger': logger,
+            'timezone': timezone,
+            'utcnow': utcnow,
+        }
+    )
+    return RuntimeNormalization(
+        RuntimeNormalizationPorts(
+            telemetry_dropped=lambda: dependencies.TELEMETRY_DROPPED,
+            emit_telemetry_anomaly_alert=dependencies._emit_telemetry_anomaly_alert,
+            is_temp_namespace=dependencies._is_temp_namespace,
+            log_warning_throttled=lambda *args, **kwargs: _log_warning_throttled(*args, **kwargs),
+            node_cache=lambda: _node_cache,
+            node_unassigned_last_seen=lambda: _node_unassigned_last_seen,
+            parse_node_info=dependencies._parse_node_info,
+            create_zone_event=dependencies.create_zone_event,
+            fetch=dependencies.fetch,
+            logger=lambda: dependencies.logger,
+            timezone=dependencies.timezone,
+            utcnow=dependencies.utcnow,
+        )
+    )
+
+
+from telemetry.runtime_sensor_resolution import RuntimeSensorResolution, RuntimeSensorResolutionPorts
+
+
+def _runtime_sensor_resolution() -> RuntimeSensorResolution:
+    dependencies = telemetry_dependency_snapshot(
+        {
+            'TELEMETRY_DROPPED': TELEMETRY_DROPPED,
+            'TELEMETRY_PG_WRITE_FAILED': TELEMETRY_PG_WRITE_FAILED,
+            '_build_sensor_label': _build_sensor_label,
+            '_filter_existing_sensor_ids': _filter_existing_sensor_ids,
+            '_infer_sensor_scope': _infer_sensor_scope,
+            '_infer_sensor_type': _infer_sensor_type,
+            '_is_sensor_fk_error': _is_sensor_fk_error,
+            'fetch': fetch,
+            'logger': logger,
+        }
+    )
+    return RuntimeSensorResolution(
+        RuntimeSensorResolutionPorts(
+            telemetry_dropped=lambda: dependencies.TELEMETRY_DROPPED,
+            telemetry_pg_write_failed=lambda: dependencies.TELEMETRY_PG_WRITE_FAILED,
+            append_dead_entry=lambda *args, **kwargs: _append_dead_entry(*args, **kwargs),
+            build_sensor_label=dependencies._build_sensor_label,
+            create_sensors_per_item=lambda *args, **kwargs: _create_sensors_per_item(*args, **kwargs),
+            filter_existing_sensor_ids=dependencies._filter_existing_sensor_ids,
+            infer_sensor_scope=dependencies._infer_sensor_scope,
+            infer_sensor_type=dependencies._infer_sensor_type,
+            is_pg_transport_error=lambda *args, **kwargs: _is_pg_transport_error(*args, **kwargs),
+            is_sensor_fk_error=dependencies._is_sensor_fk_error,
+            node_cache=lambda: _node_cache,
+            sensor_cache=lambda: _sensor_cache,
+            sensor_cache_get=lambda *args, **kwargs: _sensor_cache_get(*args, **kwargs),
+            sensor_cache_set=lambda *args, **kwargs: _sensor_cache_set(*args, **kwargs),
+            set_cache_last_update=lambda *args, **kwargs: _set_cache_last_update(*args, **kwargs),
+            zone_cache=lambda: _zone_cache,
+            zone_greenhouse_cache=lambda: _zone_greenhouse_cache,
+            fetch=dependencies.fetch,
+            logger=lambda: dependencies.logger,
+        )
+    )
+
+
+from telemetry.runtime_cache import RuntimeCache, RuntimeCachePorts
+
+
+def _runtime_cache() -> RuntimeCache:
+    dependencies = telemetry_dependency_snapshot(
+        {'_parse_node_info': _parse_node_info, 'fetch': fetch, 'logger': logger}
+    )
+    return RuntimeCache(
+        RuntimeCachePorts(
+            node_cache=lambda: _node_cache,
+            parse_node_info=dependencies._parse_node_info,
+            sensor_cache=lambda: _sensor_cache,
+            sensor_cache_max_size=lambda: _sensor_cache_max_size,
+            sensor_cache_pop_oldest=lambda *args, **kwargs: _sensor_cache_pop_oldest(*args, **kwargs),
+            sensor_cache_touch=lambda *args, **kwargs: _sensor_cache_touch(*args, **kwargs),
+            set_cache_last_update=lambda *args, **kwargs: _set_cache_last_update(*args, **kwargs),
+            store_node_cache_entry=lambda *args, **kwargs: _store_node_cache_entry(*args, **kwargs),
+            zone_cache=lambda: _zone_cache,
+            zone_greenhouse_cache=lambda: _zone_greenhouse_cache,
+            fetch=dependencies.fetch,
+            logger=lambda: dependencies.logger,
+            refresh_node_cache_for_uid=lambda *args, **kwargs: refresh_node_cache_for_uid(*args, **kwargs),
+        )
+    )
+
+
+from telemetry.runtime_persistence import RuntimePersistence, RuntimePersistencePorts
+
+
+def _runtime_persistence() -> RuntimePersistence:
+    dependencies = telemetry_dependency_snapshot(
+        {
+            'DATABASE_ERRORS': DATABASE_ERRORS,
+            'TELEMETRY_PG_WRITE_FAILED': TELEMETRY_PG_WRITE_FAILED,
+            'TELEMETRY_SAMPLES_JOIN_MISMATCH': TELEMETRY_SAMPLES_JOIN_MISMATCH,
+            '_is_sensor_fk_error': _is_sensor_fk_error,
+            '_normalize_ts_for_db': _normalize_ts_for_db,
+            'datetime': datetime,
+            'execute': execute,
+            'fetch': fetch,
+            'logger': logger,
+            'record_simulation_event_throttled': record_simulation_event_throttled,
+            'timedelta': timedelta,
+        }
+    )
+    return RuntimePersistence(
+        RuntimePersistencePorts(
+            database_errors=lambda: dependencies.DATABASE_ERRORS,
+            simulation_telemetry_events_enabled=lambda: SIMULATION_TELEMETRY_EVENTS_ENABLED,
+            simulation_telemetry_event_interval_sec=lambda: SIMULATION_TELEMETRY_EVENT_INTERVAL_SEC,
+            telemetry_pg_write_failed=lambda: dependencies.TELEMETRY_PG_WRITE_FAILED,
+            telemetry_samples_join_mismatch=lambda: dependencies.TELEMETRY_SAMPLES_JOIN_MISMATCH,
+            append_dead_entry=lambda *args, **kwargs: _append_dead_entry(*args, **kwargs),
+            append_requeue_entry=lambda *args, **kwargs: _append_requeue_entry(*args, **kwargs),
+            build_telemetry_last_updates=lambda *args, **kwargs: _build_telemetry_last_updates(*args, **kwargs),
+            handle_samples_join_mismatch=lambda *args, **kwargs: _handle_samples_join_mismatch(*args, **kwargs),
+            insert_telemetry_sample_item=lambda *args, **kwargs: _insert_telemetry_sample_item(*args, **kwargs),
+            is_pg_transport_error=lambda *args, **kwargs: _is_pg_transport_error(*args, **kwargs),
+            is_sensor_fk_error=dependencies._is_sensor_fk_error,
+            item_is_writable=lambda *args, **kwargs: _item_is_writable(*args, **kwargs),
+            items_for_sensor=lambda *args, **kwargs: _items_for_sensor(*args, **kwargs),
+            normalize_ts_for_db=dependencies._normalize_ts_for_db,
+            persist_quality_for_sample=lambda *args, **kwargs: _persist_quality_for_sample(*args, **kwargs),
+            sensor_cache=lambda: _sensor_cache,
+            tracked_entry_ids=lambda *args, **kwargs: _tracked_entry_ids(*args, **kwargs),
+            ts_key=lambda *args, **kwargs: _ts_key(*args, **kwargs),
+            upsert_telemetry_last_batch=lambda *args, **kwargs: _upsert_telemetry_last_batch(*args, **kwargs),
+            upsert_telemetry_last_for_sensor=lambda *args, **kwargs: _upsert_telemetry_last_for_sensor(*args, **kwargs),
+            datetime=dependencies.datetime,
+            execute=dependencies.execute,
+            fetch=dependencies.fetch,
+            logger=lambda: dependencies.logger,
+            record_simulation_event_throttled=dependencies.record_simulation_event_throttled,
+            timedelta=dependencies.timedelta,
+        )
+    )
+
+
+from telemetry.runtime_realtime import RuntimeRealtime, RuntimeRealtimePorts
+
+
+def _runtime_realtime() -> RuntimeRealtime:
+    dependencies = telemetry_dependency_snapshot(
+        {
+            'LARAVEL_API_DURATION': LARAVEL_API_DURATION,
+            'REALTIME_DROPPED_UPDATES': REALTIME_DROPPED_UPDATES,
+            'REALTIME_FLUSH_LATENCY_MS': REALTIME_FLUSH_LATENCY_MS,
+            'REALTIME_QUEUE_LEN': REALTIME_QUEUE_LEN,
+            '_build_realtime_key': _build_realtime_key,
+            '_build_realtime_key_from_update': _build_realtime_key_from_update,
+            '_calculate_broadcast_backoff': _calculate_broadcast_backoff,
+            '_to_timestamp_ms': _to_timestamp_ms,
+            'datetime': datetime,
+            'get_settings': get_settings,
+            'logger': logger,
+        }
+    )
+    return RuntimeRealtime(
+        RuntimeRealtimePorts(
+            laravel_api_duration=lambda: dependencies.LARAVEL_API_DURATION,
+            realtime_dropped_updates=lambda: dependencies.REALTIME_DROPPED_UPDATES,
+            realtime_flush_latency_ms=lambda: dependencies.REALTIME_FLUSH_LATENCY_MS,
+            realtime_queue_len=lambda: dependencies.REALTIME_QUEUE_LEN,
+            broadcast_backoff_until=lambda: _broadcast_backoff_until,
+            broadcast_error_count=lambda: _broadcast_error_count,
+            broadcast_in_backoff=lambda *args, **kwargs: _broadcast_in_backoff(*args, **kwargs),
+            broadcast_telemetry_batch_to_laravel=lambda *args, **kwargs: _broadcast_telemetry_batch_to_laravel(
+                *args, **kwargs
+            ),
+            build_realtime_key=dependencies._build_realtime_key,
+            build_realtime_key_from_update=dependencies._build_realtime_key_from_update,
+            calculate_broadcast_backoff=dependencies._calculate_broadcast_backoff,
+            enqueue_realtime_update=lambda *args, **kwargs: _enqueue_realtime_update(*args, **kwargs),
+            flush_realtime_updates=lambda *args, **kwargs: _flush_realtime_updates(*args, **kwargs),
+            item_is_writable=lambda *args, **kwargs: _item_is_writable(*args, **kwargs),
+            pop_realtime_updates=lambda *args, **kwargs: _pop_realtime_updates(*args, **kwargs),
+            realtime_lock=lambda: _realtime_lock,
+            realtime_updates=lambda: _realtime_updates,
+            requeue_realtime_updates=lambda *args, **kwargs: _requeue_realtime_updates(*args, **kwargs),
+            set_broadcast_backoff_until=lambda *args, **kwargs: _set_broadcast_backoff_until(*args, **kwargs),
+            set_broadcast_error_count=lambda *args, **kwargs: _set_broadcast_error_count(*args, **kwargs),
+            set_broadcast_last_error_time=lambda *args, **kwargs: _set_broadcast_last_error_time(*args, **kwargs),
+            shutdown_event=lambda *args, **kwargs: _shutdown_event(*args, **kwargs),
+            to_timestamp_ms=dependencies._to_timestamp_ms,
+            tracked_entry_ids=lambda *args, **kwargs: _tracked_entry_ids(*args, **kwargs),
+            datetime=dependencies.datetime,
+            get_settings=dependencies.get_settings,
+            logger=lambda: dependencies.logger,
+        )
+    )
+
+
+from telemetry.runtime_queue_consumer import RuntimeQueueConsumer, RuntimeQueueConsumerPorts
+
+
+def _runtime_queue_consumer() -> RuntimeQueueConsumer:
+    dependencies = telemetry_dependency_snapshot(
+        {
+            'REDIS_OPERATION_DURATION': REDIS_OPERATION_DURATION,
+            'TELEMETRY_DEAD_LIST_SIZE': TELEMETRY_DEAD_LIST_SIZE,
+            'TELEMETRY_PROCESSING_RECLAIMED': TELEMETRY_PROCESSING_RECLAIMED,
+            'TELEMETRY_PROCESSING_SIZE': TELEMETRY_PROCESSING_SIZE,
+            'TELEMETRY_PROCESSING_STUCK': TELEMETRY_PROCESSING_STUCK,
+            'TELEMETRY_QUEUE_AGE': TELEMETRY_QUEUE_AGE,
+            'TELEMETRY_REQUEUE_DUPLICATE_RISK': TELEMETRY_REQUEUE_DUPLICATE_RISK,
+            'get_settings': get_settings,
+            'logger': logger,
+            'utcnow': utcnow,
+        }
+    )
+    return RuntimeQueueConsumer(
+        RuntimeQueueConsumerPorts(
+            process_telemetry_batch=lambda *args, **kwargs: process_telemetry_batch(*args, **kwargs),
+            redis_operation_duration=lambda: dependencies.REDIS_OPERATION_DURATION,
+            telemetry_dead_list_size=lambda: dependencies.TELEMETRY_DEAD_LIST_SIZE,
+            telemetry_processing_reclaimed=lambda: dependencies.TELEMETRY_PROCESSING_RECLAIMED,
+            telemetry_processing_size=lambda: dependencies.TELEMETRY_PROCESSING_SIZE,
+            telemetry_processing_stuck=lambda: dependencies.TELEMETRY_PROCESSING_STUCK,
+            telemetry_queue_age=lambda: dependencies.TELEMETRY_QUEUE_AGE,
+            telemetry_requeue_duplicate_risk=lambda: dependencies.TELEMETRY_REQUEUE_DUPLICATE_RISK,
+            drain_telemetry_queue_on_shutdown=lambda *args, **kwargs: _drain_telemetry_queue_on_shutdown(
+                *args, **kwargs
+            ),
+            finalize_queue_batch=lambda *args, **kwargs: _finalize_queue_batch(*args, **kwargs),
+            get_telemetry_queue=lambda *args, **kwargs: _get_telemetry_queue(*args, **kwargs),
+            handle_pop_batch=lambda *args, **kwargs: _handle_pop_batch(*args, **kwargs),
+            queue_entries_to_samples=lambda *args, **kwargs: _queue_entries_to_samples(*args, **kwargs),
+            shutdown_event=lambda *args, **kwargs: _shutdown_event(*args, **kwargs),
+            get_settings=dependencies.get_settings,
+            logger=lambda: dependencies.logger,
+            utcnow=dependencies.utcnow,
+        )
+    )
+
+
+from telemetry.runtime_outcomes import RuntimeOutcomes, RuntimeOutcomesPorts
+
+
+def _runtime_outcomes() -> RuntimeOutcomes:
+    dependencies = telemetry_dependency_snapshot({'logger': logger})
+    return RuntimeOutcomes(
+        RuntimeOutcomesPorts(
+            should_emit_warning=lambda *args, **kwargs: _should_emit_warning(*args, **kwargs),
+            tracked_entry_ids=lambda *args, **kwargs: _tracked_entry_ids(*args, **kwargs),
+            warning_throttle_last_sent=lambda: _warning_throttle_last_sent,
+            warning_throttle_sec=lambda: _warning_throttle_sec,
+            logger=lambda: dependencies.logger,
+        )
+    )
+
+
+from telemetry.runtime_thresholds import RuntimeThresholds, RuntimeThresholdsPorts
+
+
+def _runtime_thresholds() -> RuntimeThresholds:
+    dependencies = telemetry_dependency_snapshot({'_normalize_ts_for_db': _normalize_ts_for_db, 'logger': logger})
+    return RuntimeThresholds(
+        RuntimeThresholdsPorts(
+            normalize_ts_for_db=dependencies._normalize_ts_for_db,
+            logger=lambda: dependencies.logger,
+        )
+    )
+
+
+def _set_broadcast_backoff_until(value: Any) -> None:
+    global _broadcast_backoff_until
+    _broadcast_backoff_until = value
+
+
+def _set_broadcast_error_count(value: Any) -> None:
+    global _broadcast_error_count
+    _broadcast_error_count = value
+
+
+def _set_broadcast_last_error_time(value: Any) -> None:
+    global _broadcast_last_error_time
+    _broadcast_last_error_time = value
+
+
+def _set_cache_last_update(value: Any) -> None:
+    global _cache_last_update
+    _cache_last_update = value
 
 
 def _tracked_entry_ids(result: TelemetryBatchResult) -> Set[int]:
-    return {id(entry) for entry in result.entries_to_dead + result.entries_to_requeue}
+    return _runtime_outcomes().tracked_entry_ids(result=result)
 
 
 def _append_dead_entry(result: TelemetryBatchResult, entry: Optional[QueueEntry]) -> None:
-    if entry is None or id(entry) in _tracked_entry_ids(result):
-        return
-    result.entries_to_dead.append(entry)
+    return _runtime_outcomes().append_dead_entry(result=result, entry=entry)
 
 
 def _append_requeue_entry(result: TelemetryBatchResult, entry: Optional[QueueEntry]) -> None:
-    if entry is None:
-        return
-    tracked = _tracked_entry_ids(result)
-    if id(entry) in tracked:
-        return
-    result.entries_to_requeue.append(entry)
+    return _runtime_outcomes().append_requeue_entry(result=result, entry=entry)
 
 
 def _item_is_writable(item: dict, tracked_ids: Set[int]) -> bool:
-    entry = item.get("entry")
-    if entry is None:
-        return True
-    return id(entry) not in tracked_ids
+    return _runtime_outcomes().item_is_writable(item=item, tracked_ids=tracked_ids)
 
 
 def _items_for_sensor(items: list[dict], sensor_id: int) -> list[dict]:
-    return [item for item in items if int(item["sensor_id"]) == int(sensor_id)]
+    return _runtime_outcomes().items_for_sensor(items=items, sensor_id=sensor_id)
 
 
 def _is_pg_transport_error(exc: Exception) -> bool:
-    if isinstance(exc, (asyncpg.PostgresConnectionError, ConnectionError, OSError)):
-        return True
-    sqlstate = getattr(exc, "sqlstate", None)
-    return sqlstate in {"08000", "08003", "08006", "08001", "08004", "57P01", "57P02", "57P03"}
+    return _runtime_outcomes().is_pg_transport_error(exc=exc)
 
 
 def _persist_quality_for_sample(sample: Any) -> str:
-    """Map in-memory STUB marker to DB-allowed quality; stub stays in metadata."""
-    if bool(getattr(sample, "stub", False)):
-        return "UNCERTAIN"
-    return "GOOD"
+    return _runtime_outcomes().persist_quality_for_sample(sample=sample)
 
 
 _anomaly_alert_last_sent = telemetry_anomaly_module._anomaly_alert_last_sent
 _anomaly_resolved_last_sent = telemetry_anomaly_module._anomaly_resolved_last_sent
 
 
-def _sync_telemetry_ingress_overrides() -> None:
-    """Сохраняет patch-совместимость тестов через ``telemetry_processing.*``."""
-    from telemetry import ingress as telemetry_ingress_module
-
-    telemetry_ingress_module.TELEM_RECEIVED = TELEM_RECEIVED
-    telemetry_ingress_module.TELEMETRY_DROPPED = TELEMETRY_DROPPED
-    telemetry_ingress_module.REDIS_OPERATION_DURATION = REDIS_OPERATION_DURATION
-    telemetry_ingress_module.logger = logger
-    telemetry_ingress_module.push_with_retry = _push_with_retry
-
-
-def _sync_telemetry_runtime_overrides() -> None:
-    telemetry_helpers_module.fetch = fetch
-    telemetry_anomaly_module.send_infra_alert = send_infra_alert
-    telemetry_anomaly_module.send_infra_resolved_alert = send_infra_resolved_alert
+def _telemetry_dependencies():
+    return telemetry_dependency_snapshot(
+        {
+            'fetch': fetch,
+            'send_infra_alert': send_infra_alert,
+            'send_infra_resolved_alert': send_infra_resolved_alert,
+            'TELEM_RECEIVED': TELEM_RECEIVED,
+            'TELEMETRY_DROPPED': TELEMETRY_DROPPED,
+            'REDIS_OPERATION_DURATION': REDIS_OPERATION_DURATION,
+            'logger': logger,
+            'push_with_retry': _push_with_retry,
+        }
+    )
 
 
-async def handle_telemetry(topic: str, payload: bytes) -> None:
-    _sync_telemetry_ingress_overrides()
-    _sync_telemetry_runtime_overrides()
-    await _handle_telemetry_impl(topic, payload)
+async def handle_telemetry(topic: str, payload: bytes, *, durable: bool = False) -> None:
+    with bind_telemetry_dependencies(**_telemetry_dependencies().values):
+        await _handle_telemetry_impl(topic, payload, durable=durable)
 
-SIMULATION_TELEMETRY_EVENTS_ENABLED = os.getenv("SIMULATION_TELEMETRY_EVENTS", "0") in ("1", "true", "True", "yes", "Yes")
+
+SIMULATION_TELEMETRY_EVENTS_ENABLED = os.getenv("SIMULATION_TELEMETRY_EVENTS", "0") in (
+    "1",
+    "true",
+    "True",
+    "yes",
+    "Yes",
+)
 SIMULATION_TELEMETRY_EVENT_INTERVAL_SEC = float(os.getenv("SIMULATION_TELEMETRY_EVENT_INTERVAL_SEC", "10"))
 
 # Глобальный кеш для резолва zone_id и node_id (с TTL refresh)
@@ -190,13 +551,9 @@ _cache_last_update = 0.0
 _cache_ttl = 60.0
 
 _node_unassigned_last_seen: dict[tuple[int, str], float] = {}
-_node_unassigned_recovery_grace_sec = float(
-    os.getenv("TELEMETRY_NODE_UNASSIGNED_RECOVERY_GRACE_SEC", "5")
-)
+_node_unassigned_recovery_grace_sec = float(os.getenv("TELEMETRY_NODE_UNASSIGNED_RECOVERY_GRACE_SEC", "5"))
 _warning_throttle_last_sent: dict[tuple[str, str, str, str], float] = {}
-_warning_throttle_sec = float(
-    os.getenv("TELEMETRY_WARNING_THROTTLE_SEC", "30")
-)
+_warning_throttle_sec = float(os.getenv("TELEMETRY_WARNING_THROTTLE_SEC", "30"))
 
 # Backoff состояние для telemetry broadcast
 _broadcast_error_count = 0
@@ -208,57 +565,34 @@ _realtime_lock = asyncio.Lock()
 
 
 def _sensor_cache_touch(key: tuple[int, Optional[int], str, str]) -> None:
-    if hasattr(_sensor_cache, "move_to_end"):
-        _sensor_cache.move_to_end(key)
+    return _runtime_cache().sensor_cache_touch(key=key)
 
 
 def _sensor_cache_pop_oldest() -> None:
-    try:
-        _sensor_cache.popitem(last=False)
-        return
-    except TypeError:
-        pass
-    try:
-        oldest_key = next(iter(_sensor_cache))
-    except StopIteration:
-        return
-    del _sensor_cache[oldest_key]
+    return _runtime_cache().sensor_cache_pop_oldest()
 
 
 def _sensor_cache_get(key: tuple[int, Optional[int], str, str]) -> Optional[int]:
-    sensor_id = _sensor_cache.get(key)
-    if sensor_id is not None:
-        _sensor_cache_touch(key)
-    return sensor_id
+    return _runtime_cache().sensor_cache_get(key=key)
 
 
 def _sensor_cache_set(key: tuple[int, Optional[int], str, str], sensor_id: int) -> None:
-    _sensor_cache[key] = sensor_id
-    _sensor_cache_touch(key)
-    if _sensor_cache_max_size <= 0:
-        return
-    while len(_sensor_cache) > _sensor_cache_max_size:
-        _sensor_cache_pop_oldest()
+    return _runtime_cache().sensor_cache_set(key=key, sensor_id=sensor_id)
 
 
 def _get_telemetry_queue():
-    return state.telemetry_queue
+    return _runtime_queue_consumer().get_telemetry_queue()
 
 
 def _shutdown_event():
-    return state.shutdown_event
+    return _runtime_queue_consumer().shutdown_event()
 
 
 def _should_emit_warning(
     key: tuple[str, str, str, str],
     now_ts: Optional[float] = None,
 ) -> bool:
-    now = now_ts if now_ts is not None else time.time()
-    last = _warning_throttle_last_sent.get(key)
-    if last is None or (now - last) >= _warning_throttle_sec:
-        _warning_throttle_last_sent[key] = now
-        return True
-    return False
+    return _runtime_outcomes().should_emit_warning(key=key, now_ts=now_ts)
 
 
 def _log_warning_throttled(
@@ -267,227 +601,35 @@ def _log_warning_throttled(
     message: str,
     extra: Optional[dict] = None,
 ) -> None:
-    if _should_emit_warning(key):
-        logger.warning(message, extra=extra)
-    else:
-        logger.debug(message, extra=extra)
+    return _runtime_outcomes().log_warning_throttled(key=key, message=message, extra=extra)
 
 
 async def _enqueue_realtime_update(key: tuple, update: dict) -> None:
-    s = get_settings()
-    async with _realtime_lock:
-        _realtime_updates[key] = update
-        _realtime_updates.move_to_end(key)
-
-        max_size = getattr(s, "realtime_queue_max_size", 0)
-        if max_size > 0 and len(_realtime_updates) > max_size:
-            _realtime_updates.popitem(last=False)
-            REALTIME_DROPPED_UPDATES.labels(reason="queue_full").inc()
-
-        REALTIME_QUEUE_LEN.set(len(_realtime_updates))
+    return await _runtime_realtime().enqueue_realtime_update(key=key, update=update)
 
 
 async def _pop_realtime_updates(limit: int) -> list[dict]:
-    async with _realtime_lock:
-        if not _realtime_updates:
-            return []
-
-        count = min(limit, len(_realtime_updates))
-        updates = []
-        for _ in range(count):
-            _, update = _realtime_updates.popitem(last=False)
-            updates.append(update)
-
-        REALTIME_QUEUE_LEN.set(len(_realtime_updates))
-        return updates
+    return await _runtime_realtime().pop_realtime_updates(limit=limit)
 
 
 async def _requeue_realtime_updates(updates: list[dict]) -> None:
-    s = get_settings()
-    async with _realtime_lock:
-        for update in updates:
-            key = _build_realtime_key_from_update(update)
-            _realtime_updates[key] = update
-            _realtime_updates.move_to_end(key)
-
-            max_size = getattr(s, "realtime_queue_max_size", 0)
-            if max_size > 0 and len(_realtime_updates) > max_size:
-                _realtime_updates.popitem(last=False)
-                REALTIME_DROPPED_UPDATES.labels(reason="queue_full").inc()
-
-        REALTIME_QUEUE_LEN.set(len(_realtime_updates))
+    return await _runtime_realtime().requeue_realtime_updates(updates=updates)
 
 
 def _broadcast_in_backoff(current_time: float) -> bool:
-    return _broadcast_backoff_until is not None and current_time < _broadcast_backoff_until
+    return _runtime_realtime().broadcast_in_backoff(current_time=current_time)
 
 
 async def _broadcast_telemetry_batch_to_laravel(updates: list[dict]) -> bool:
-    """
-    Отправляет batched realtime updates в Laravel.
-    """
-    global _broadcast_error_count, _broadcast_last_error_time, _broadcast_backoff_until
-
-    if _shutdown_event().is_set():
-        logger.debug("[BROADCAST] Shutdown in progress, skipping telemetry batch broadcast")
-        return False
-
-    current_time = time.time()
-    if _broadcast_in_backoff(current_time):
-        logger.debug(
-            "[BROADCAST] In backoff mode, skipping batch broadcast. "
-            f"Backoff until: {_broadcast_backoff_until:.2f}, current: {current_time:.2f}, "
-            f"error_count: {_broadcast_error_count}"
-        )
-        return False
-
-    s = get_settings()
-    laravel_url = s.laravel_api_url if hasattr(s, "laravel_api_url") else None
-    ingest_token = (
-        s.history_logger_api_token
-        if hasattr(s, "history_logger_api_token") and s.history_logger_api_token
-        else (s.ingest_token if hasattr(s, "ingest_token") and s.ingest_token else None)
-    )
-
-    if not laravel_url:
-        logger.warning(
-            "[BROADCAST] Laravel API URL not configured, skipping telemetry batch broadcast."
-        )
-        return True
-
-    if not ingest_token:
-        logger.warning(
-            "[BROADCAST] Ingest token not configured, skipping telemetry batch broadcast."
-        )
-        return True
-
-    logger.info(
-        "[BROADCAST] Sending telemetry batch: updates=%s, url=%s",
-        len(updates),
-        laravel_url,
-    )
-
-    try:
-        from common.http_client_pool import make_request
-
-        api_start = time.time()
-        response = await make_request(
-            "post",
-            f"{laravel_url}/api/internal/realtime/telemetry-batch",
-            endpoint="telemetry_broadcast_batch",
-            json={"updates": updates},
-            headers={
-                "Authorization": f"Bearer {ingest_token}",
-                "Content-Type": "application/json",
-            },
-        )
-        api_duration = time.time() - api_start
-        LARAVEL_API_DURATION.observe(api_duration)
-
-        if response.status_code == 200:
-            if _broadcast_error_count > 0:
-                logger.info(
-                    "[BROADCAST] Success after %s errors, resetting error count and backoff",
-                    _broadcast_error_count,
-                )
-            _broadcast_error_count = 0
-            _broadcast_backoff_until = None
-            return True
-
-        _broadcast_error_count += 1
-        _broadcast_last_error_time = current_time
-        backoff_delay = _calculate_broadcast_backoff(_broadcast_error_count)
-        _broadcast_backoff_until = current_time + backoff_delay
-
-        logger.warning(
-            "[BROADCAST] Failed to broadcast telemetry batch: status=%s, error_count=%s, backoff=%.2fs",
-            response.status_code,
-            _broadcast_error_count,
-            backoff_delay,
-            extra={
-                "status_code": response.status_code,
-                "response": response.text[:200],
-                "error_count": _broadcast_error_count,
-                "backoff_seconds": backoff_delay,
-            },
-        )
-        return False
-    except (httpx.TimeoutException, httpx.RequestError, httpx.NetworkError) as e:
-        _broadcast_error_count += 1
-        _broadcast_last_error_time = current_time
-        backoff_delay = _calculate_broadcast_backoff(_broadcast_error_count)
-        _broadcast_backoff_until = current_time + backoff_delay
-
-        logger.warning(
-            "[BROADCAST] Network error broadcasting telemetry batch: %s, error_count=%s, backoff=%.2fs",
-            e,
-            _broadcast_error_count,
-            backoff_delay,
-            extra={
-                "error_count": _broadcast_error_count,
-                "backoff_seconds": backoff_delay,
-            },
-        )
-        return False
-    except Exception as e:
-        _broadcast_error_count += 1
-        _broadcast_last_error_time = current_time
-        backoff_delay = _calculate_broadcast_backoff(_broadcast_error_count)
-        _broadcast_backoff_until = current_time + backoff_delay
-
-        logger.warning(
-            "[BROADCAST] Error broadcasting telemetry batch: %s, error_count=%s, backoff=%.2fs",
-            e,
-            _broadcast_error_count,
-            backoff_delay,
-            extra={
-                "error_count": _broadcast_error_count,
-                "backoff_seconds": backoff_delay,
-            },
-            exc_info=True,
-        )
-        return False
+    return await _runtime_realtime().broadcast_telemetry_batch_to_laravel(updates=updates)
 
 
 async def _flush_realtime_updates(force: bool = False) -> None:
-    s = get_settings()
-
-    if not force and _broadcast_in_backoff(time.time()):
-        return
-
-    updates = await _pop_realtime_updates(
-        getattr(s, "realtime_batch_max_updates", 200)
-    )
-    if not updates:
-        return
-
-    flush_start = time.time()
-    success = await _broadcast_telemetry_batch_to_laravel(updates)
-    REALTIME_FLUSH_LATENCY_MS.observe((time.time() - flush_start) * 1000)
-
-    if not success and not force:
-        await _requeue_realtime_updates(updates)
+    return await _runtime_realtime().flush_realtime_updates(force=force)
 
 
 async def process_realtime_queue() -> None:
-    """
-    Фоновая задача для batched realtime telemetry.
-    """
-    s = get_settings()
-    logger.info("Starting realtime telemetry broadcaster")
-
-    while not _shutdown_event().is_set():
-        try:
-            await _flush_realtime_updates()
-            await asyncio.sleep(getattr(s, "realtime_flush_ms", 500) / 1000)
-        except Exception as e:
-            logger.error("Error in realtime telemetry broadcaster: %s", e, exc_info=True)
-            await asyncio.sleep(s.queue_error_retry_delay_sec)
-
-    logger.info("Realtime telemetry broadcaster shutting down, flushing remaining updates...")
-    await _flush_realtime_updates(force=True)
-    logger.info("Realtime telemetry broadcaster stopped")
-
+    return await _runtime_realtime().process_realtime_queue()
 
 
 def _store_node_cache_entry(
@@ -498,53 +640,13 @@ def _store_node_cache_entry(
     zone_id: Optional[int],
     pending_zone_id: Optional[int],
 ) -> None:
-    info: tuple[int, Optional[int], Optional[int]] = (
-        node_id,
-        zone_id,
-        pending_zone_id,
+    return _runtime_cache().store_node_cache_entry(
+        node_uid=node_uid, gh_uid=gh_uid, node_id=node_id, zone_id=zone_id, pending_zone_id=pending_zone_id
     )
-    if gh_uid:
-        _node_cache[(node_uid, gh_uid)] = info
-    if (node_uid, None) not in _node_cache:
-        _node_cache[(node_uid, None)] = info
 
 
 async def refresh_node_cache_for_uid(node_uid: str) -> bool:
-    """Перечитать assignment узла из БД и обновить telemetry node cache."""
-    normalized_uid = str(node_uid or "").strip()
-    if not normalized_uid:
-        return False
-
-    rows = await fetch(
-        """
-        SELECT n.id, n.zone_id, n.pending_zone_id, g.uid as gh_uid
-        FROM nodes n
-        LEFT JOIN zones z ON z.id = n.zone_id
-        LEFT JOIN greenhouses g ON g.id = z.greenhouse_id
-        WHERE n.uid = $1
-        LIMIT 1
-        """,
-        normalized_uid,
-    )
-    if not rows:
-        return False
-
-    row = rows[0]
-    node_id = row.get("id")
-    if node_id is None:
-        return False
-
-    zone_id = row.get("zone_id")
-    pending_zone_id = row.get("pending_zone_id")
-    gh_uid = row.get("gh_uid")
-    _store_node_cache_entry(
-        node_uid=normalized_uid,
-        gh_uid=gh_uid,
-        node_id=int(node_id),
-        zone_id=int(zone_id) if zone_id is not None else None,
-        pending_zone_id=int(pending_zone_id) if pending_zone_id is not None else None,
-    )
-    return True
+    return await _runtime_cache().refresh_node_cache_for_uid(node_uid=node_uid)
 
 
 async def _prewarm_stale_node_assignments(
@@ -554,228 +656,26 @@ async def _prewarm_stale_node_assignments(
     ],
     node_gh_pairs: list[tuple[str, Optional[str]]],
 ) -> None:
-    """Обновить из БД узлы с устаревшим zone_id=None до обработки сэмплов батча."""
-    stale_node_uids: set[str] = set()
-    for node_uid, gh_uid in node_gh_pairs:
-        if not node_uid:
-            continue
-        info = node_uid_to_info.get((node_uid, gh_uid))
-        if info is None:
-            info = node_uid_to_info.get((node_uid, None))
-        if info is None:
-            continue
-        _, node_zone_id, node_pending_zone_id = _parse_node_info(info)
-        if node_zone_id is None and node_pending_zone_id is None:
-            stale_node_uids.add(node_uid)
-
-    for node_uid in stale_node_uids:
-        if not await refresh_node_cache_for_uid(node_uid):
-            continue
-        for cache_key, cache_info in list(_node_cache.items()):
-            if cache_key[0] == node_uid:
-                node_uid_to_info[cache_key] = cache_info
+    return await _runtime_cache().prewarm_stale_node_assignments(
+        node_uid_to_info=node_uid_to_info, node_gh_pairs=node_gh_pairs
+    )
 
 
 async def refresh_caches() -> None:
-    """Обновить кеши zone_id и node_id."""
-    global _zone_cache, _node_cache, _cache_last_update
-
-    try:
-        zones = await fetch(
-            """
-            SELECT z.id, z.uid, g.uid as gh_uid, g.id as greenhouse_id
-            FROM zones z
-            JOIN greenhouses g ON g.id = z.greenhouse_id
-            """
-        )
-        if zones:
-            _zone_cache.clear()
-            _zone_greenhouse_cache.clear()
-            for zone in zones:
-                zone_uid = zone.get("uid")
-                zone_id = zone.get("id")
-                if not zone_uid or zone_id is None:
-                    continue
-                gh_uid = zone.get("gh_uid")
-                key = (zone_uid, gh_uid)
-                _zone_cache[key] = zone_id
-                if (zone_uid, None) not in _zone_cache:
-                    _zone_cache[(zone_uid, None)] = zone_id
-                greenhouse_id = zone.get("greenhouse_id")
-                if greenhouse_id is not None:
-                    _zone_greenhouse_cache[zone_id] = greenhouse_id
-        else:
-            logger.info("refresh_caches: zones query returned 0 rows, keeping existing cache to avoid data loss")
-
-        nodes = await fetch(
-            """
-            SELECT n.id, n.uid, n.zone_id, n.pending_zone_id, g.uid as gh_uid
-            FROM nodes n
-            LEFT JOIN zones z ON z.id = n.zone_id
-            LEFT JOIN greenhouses g ON g.id = z.greenhouse_id
-            """
-        )
-        if not nodes:
-            logger.info("refresh_caches: nodes query returned 0 rows, keeping existing cache to avoid data loss")
-            _cache_last_update = time.time()
-            logger.info(
-                f"Cache refreshed: {len(_zone_cache)} zone entries, {len(_node_cache)} node entries"
-            )
-            return
-        _node_cache.clear()
-        for node in nodes:
-            node_uid = node.get("uid")
-            node_id = node.get("id")
-            if not node_uid or node_id is None:
-                continue
-            gh_uid = node.get("gh_uid")
-            zone_id = node.get("zone_id")
-            pending_zone_id = node.get("pending_zone_id")
-            _store_node_cache_entry(
-                node_uid=str(node_uid),
-                gh_uid=gh_uid,
-                node_id=int(node_id),
-                zone_id=int(zone_id) if zone_id is not None else None,
-                pending_zone_id=int(pending_zone_id) if pending_zone_id is not None else None,
-            )
-
-        _cache_last_update = time.time()
-        logger.info(
-            f"Cache refreshed: {len(_zone_cache)} zone entries, {len(_node_cache)} node entries"
-        )
-    except Exception as e:
-        logger.error(f"Failed to refresh caches: {e}", exc_info=True)
+    return await _runtime_cache().refresh_caches()
 
 
 async def _create_sensors_per_item(
     to_create: list[tuple[int, Optional[int], str, str]],
 ) -> None:
-    for zone_id, node_id, sensor_type, sensor_label in to_create:
-        greenhouse_id = _zone_greenhouse_cache.get(zone_id)
-        if greenhouse_id is None:
-            logger.warning(
-                "Greenhouse not found for zone_id=%s, skipping sensor creation",
-                zone_id,
-            )
-            continue
-        try:
-            created_rows = await fetch(
-                """
-                INSERT INTO sensors (
-                    greenhouse_id, zone_id, node_id, scope, type, label, is_active,
-                    created_at, updated_at
-                )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
-                ON CONFLICT (zone_id, node_id, scope, type, label)
-                DO UPDATE SET updated_at = EXCLUDED.updated_at
-                RETURNING id, zone_id, node_id, type, label
-                """,
-                greenhouse_id,
-                zone_id,
-                node_id,
-                _infer_sensor_scope(sensor_type, sensor_label),
-                sensor_type,
-                sensor_label,
-                True,
-            )
-        except Exception as e:
-            if _is_pg_transport_error(e):
-                raise PgTransportError(str(e)) from e
-            logger.warning(
-                "Per-item sensor upsert failed",
-                extra={
-                    "zone_id": zone_id,
-                    "node_id": node_id,
-                    "sensor_type": sensor_type,
-                    "sensor_label": sensor_label,
-                    "error": str(e),
-                },
-            )
-            continue
-        for row in created_rows:
-            row_zone_id = row.get("zone_id")
-            row_sensor_type = row.get("type")
-            row_sensor_label = row.get("label")
-            sensor_id = row.get("id")
-            if (
-                row_zone_id is not None
-                and row_sensor_type
-                and row_sensor_label
-                and sensor_id is not None
-            ):
-                sensor_key = (
-                    row_zone_id,
-                    row.get("node_id"),
-                    row_sensor_type,
-                    row_sensor_label,
-                )
-                _sensor_cache_set(sensor_key, sensor_id)
+    return await _runtime_sensor_resolution().create_sensors_per_item(to_create=to_create)
 
 
 async def _insert_telemetry_sample_item(
     item: dict,
     result: TelemetryBatchResult,
 ) -> bool:
-    sample = item["sample"]
-    metadata = {
-        "metric_type": sample.metric_type,
-        "channel": sample.channel,
-        "node_uid": sample.node_uid,
-    }
-    if sample.raw is not None:
-        metadata["raw"] = sample.raw
-    if metadata and not metadata.get("channel"):
-        metadata.pop("channel", None)
-    if metadata and not metadata.get("node_uid"):
-        metadata.pop("node_uid", None)
-
-    entry = item.get("entry")
-    try:
-        await execute(
-            """
-            INSERT INTO telemetry_samples (
-                sensor_id, ts, zone_id, value, quality, metadata
-            )
-            SELECT $1, $2, $3, $4, $5, $6
-            FROM sensors s
-            WHERE s.id = $1
-              AND s.zone_id = $3
-            """,
-            int(item["sensor_id"]),
-            _normalize_ts_for_db(sample.ts),
-            int(item["zone_id"]) if item["zone_id"] is not None else None,
-            sample.value,
-            "GOOD",
-            metadata or None,
-        )
-        return True
-    except Exception as e:
-        TELEMETRY_PG_WRITE_FAILED.labels(stage="samples").inc()
-        if _is_pg_transport_error(e):
-            raise PgTransportError(str(e)) from e
-        if _is_sensor_fk_error(e):
-            _sensor_cache.pop(item.get("sensor_key"), None)
-            _append_dead_entry(result, entry)
-            logger.warning(
-                "Per-item telemetry_samples FK violation, moving queue entry to dead-list",
-                extra={
-                    "sensor_id": item.get("sensor_id"),
-                    "zone_id": item.get("zone_id"),
-                    "error": str(e),
-                },
-            )
-            return False
-        _append_requeue_entry(result, entry)
-        logger.error(
-            "Per-item telemetry_samples insert failed, scheduling requeue",
-            extra={
-                "sensor_id": item.get("sensor_id"),
-                "zone_id": item.get("zone_id"),
-                "error": str(e),
-            },
-            exc_info=True,
-        )
-        return False
+    return await _runtime_persistence().insert_telemetry_sample_item(item=item, result=result)
 
 
 async def _upsert_telemetry_last_for_sensor(
@@ -786,76 +686,13 @@ async def _upsert_telemetry_last_for_sensor(
     *,
     samples_committed: bool = False,
 ) -> bool:
-    try:
-        await execute(
-            """
-            INSERT INTO telemetry_last (
-                sensor_id, last_value, last_ts, last_quality, updated_at
-            )
-            VALUES ($1, $2, $3, $4, $5)
-            ON CONFLICT (sensor_id)
-            DO UPDATE SET
-                last_value = EXCLUDED.last_value,
-                last_ts = EXCLUDED.last_ts,
-                last_quality = EXCLUDED.last_quality,
-                updated_at = EXCLUDED.updated_at
-            """,
-            sensor_id,
-            update_data["value"],
-            update_data["ts"],
-            update_data["quality"],
-            update_data["updated_at"],
-        )
-        return True
-    except Exception as e:
-        TELEMETRY_PG_WRITE_FAILED.labels(stage="last").inc()
-        if _is_pg_transport_error(e):
-            if samples_committed:
-                logger.error(
-                    "telemetry_last upsert failed after samples commit; not requeueing",
-                    extra={"sensor_id": sensor_id, "error": str(e)},
-                    exc_info=True,
-                )
-                return False
-            raise PgTransportError(str(e)) from e
-        affected_items = _items_for_sensor(items, sensor_id)
-        if _is_sensor_fk_error(e):
-            _sensor_cache.clear()
-            if not samples_committed:
-                for affected in affected_items:
-                    _append_dead_entry(result, affected.get("entry"))
-            logger.warning(
-                "Per-item telemetry_last FK violation",
-                extra={"sensor_id": sensor_id, "error": str(e)},
-            )
-            return False
-        if not samples_committed:
-            for affected in affected_items:
-                _append_requeue_entry(result, affected.get("entry"))
-        logger.error(
-            "Per-item telemetry_last upsert failed",
-            extra={"sensor_id": sensor_id, "error": str(e), "samples_committed": samples_committed},
-            exc_info=True,
-        )
-        return False
+    return await _runtime_persistence().upsert_telemetry_last_for_sensor(
+        sensor_id=sensor_id, update_data=update_data, items=items, result=result, samples_committed=samples_committed
+    )
 
 
 def _build_telemetry_last_updates(items: list[dict]) -> dict[int, dict]:
-    telemetry_last_updates: dict[int, dict] = {}
-    for item in items:
-        sample = item["sample"]
-        sensor_id = int(item["sensor_id"])
-        sample_ts = _normalize_ts_for_db(sample.ts)
-        existing_ts = telemetry_last_updates.get(sensor_id, {}).get("ts")
-        if existing_ts is None or sample_ts > existing_ts:
-            sample_quality = _persist_quality_for_sample(sample)
-            telemetry_last_updates[sensor_id] = {
-                "value": sample.value,
-                "ts": sample_ts,
-                "quality": sample_quality,
-                "updated_at": sample_ts,
-            }
-    return telemetry_last_updates
+    return _runtime_persistence().build_telemetry_last_updates(items=items)
 
 
 async def _upsert_telemetry_last_batch(
@@ -865,86 +702,16 @@ async def _upsert_telemetry_last_batch(
     *,
     samples_committed: bool,
 ) -> None:
-    if not telemetry_last_updates:
-        return
-
-    sensor_ids: list[int] = []
-    last_values: list[float] = []
-    last_ts_values: list[datetime] = []
-    last_quality_values: list[str] = []
-    updated_at_values: list[datetime] = []
-    for sensor_id, update_data in telemetry_last_updates.items():
-        sensor_ids.append(sensor_id)
-        last_values.append(update_data["value"])
-        last_ts_values.append(update_data["ts"])
-        last_quality_values.append(update_data["quality"])
-        updated_at_values.append(update_data["updated_at"])
-
-    if not sensor_ids:
-        return
-
-    query = """
-        WITH incoming AS (
-            SELECT *
-            FROM UNNEST(
-                $1::bigint[],
-                $2::double precision[],
-                $3::timestamp[],
-                $4::text[],
-                $5::timestamp[]
-            ) AS t(sensor_id, last_value, last_ts, last_quality, updated_at)
-        ),
-        existing AS (
-            SELECT i.sensor_id, i.last_value, i.last_ts, i.last_quality, i.updated_at
-            FROM incoming i
-            JOIN sensors s ON s.id = i.sensor_id
-        )
-        INSERT INTO telemetry_last (
-            sensor_id, last_value, last_ts, last_quality, updated_at
-        )
-        SELECT sensor_id, last_value, last_ts, last_quality, updated_at
-        FROM existing
-        ON CONFLICT (sensor_id)
-        DO UPDATE SET
-            last_value = EXCLUDED.last_value,
-            last_ts = EXCLUDED.last_ts,
-            last_quality = EXCLUDED.last_quality,
-            updated_at = EXCLUDED.updated_at
-    """
-    try:
-        await execute(
-            query,
-            sensor_ids,
-            last_values,
-            last_ts_values,
-            last_quality_values,
-            updated_at_values,
-        )
-        logger.debug(
-            "Batch upserted %s telemetry_last records",
-            len(telemetry_last_updates),
-        )
-    except Exception as e:
-        if _is_pg_transport_error(e) and not samples_committed:
-            raise PgTransportError(str(e)) from e
-        TELEMETRY_PG_WRITE_FAILED.labels(stage="last").inc()
-        logger.error(
-            "Failed to batch upsert telemetry_last",
-            extra={"error": str(e), "samples_committed": samples_committed},
-            exc_info=True,
-        )
-        for sensor_id, update_data in telemetry_last_updates.items():
-            await _upsert_telemetry_last_for_sensor(
-                sensor_id,
-                update_data,
-                items,
-                result,
-                samples_committed=samples_committed,
-            )
+    return await _runtime_persistence().upsert_telemetry_last_batch(
+        telemetry_last_updates=telemetry_last_updates, items=items, result=result, samples_committed=samples_committed
+    )
 
 
 def _ts_key(ts_value: datetime) -> datetime:
-    return _normalize_ts_for_db(ts_value)
+    # Laravel's timestamp columns use precision 0. PostgreSQL rounds fractions
+    # when storing them, so RETURNING ts can differ from the input after a
+    # successful INSERT. Comparing full precision falsely retries committed rows.
+    return _runtime_persistence().ts_key(ts_value=ts_value)
 
 
 def _handle_samples_join_mismatch(
@@ -954,1094 +721,91 @@ def _handle_samples_join_mismatch(
     returned_rows: list[dict],
     result: TelemetryBatchResult,
 ) -> list[dict]:
-    returned_keys = {
-        (int(row["sensor_id"]), _ts_key(row["ts"]))
-        for row in returned_rows
-        if row.get("sensor_id") is not None and row.get("ts") is not None
-    }
-    written_items: list[dict] = []
-    for idx, item in enumerate(writable_items):
-        expected_key = (int(sensor_ids[idx]), _ts_key(sample_ts_values[idx]))
-        if expected_key in returned_keys:
-            written_items.append(item)
-            continue
-        TELEMETRY_SAMPLES_JOIN_MISMATCH.inc()
-        _append_requeue_entry(result, item.get("entry"))
-        logger.warning(
-            "telemetry_samples JOIN mismatch, scheduling requeue",
-            extra={
-                "sensor_id": sensor_ids[idx],
-                "zone_id": item.get("zone_id"),
-                "metric_type": getattr(item.get("sample"), "metric_type", None),
-            },
-        )
-    return written_items
+    return _runtime_persistence().handle_samples_join_mismatch(
+        writable_items=writable_items,
+        sensor_ids=sensor_ids,
+        sample_ts_values=sample_ts_values,
+        returned_rows=returned_rows,
+        result=result,
+    )
 
 
 async def process_telemetry_batch(
     samples: List[TelemetrySampleModel],
     entries: Optional[List[QueueEntry]] = None,
 ) -> TelemetryBatchResult:
-    """Обработать батч телеметрии и записать в БД."""
-    _sync_telemetry_runtime_overrides()
-    result = TelemetryBatchResult()
-    if not samples:
-        return result
-    if entries is not None and len(entries) != len(samples):
-        raise ValueError("entries length must match samples length")
+    with bind_telemetry_dependencies(**_telemetry_dependencies().values):
+        return await _process_telemetry_batch_impl(samples, entries=entries)
 
-    start_time = time.time()
-    s = get_settings()
-    max_age_minutes = float(os.getenv("TELEMETRY_MAX_AGE_MINUTES", "30"))
-    max_age_seconds = max_age_minutes * 60
 
-    global _cache_last_update, _cache_ttl
-    current_time = time.time()
-    if current_time - _cache_last_update > _cache_ttl:
-        await refresh_caches()
+async def _resolve_batch_zones(*, samples: List[TelemetrySampleModel]) -> Any:
+    return await _runtime_zone_resolution().resolve_batch_zones(samples=samples)
 
-    zone_uid_to_id: dict[tuple[str, Optional[str]], int] = {}
 
-    zone_gh_pairs = list(
-        set(
-            (sample.zone_uid, sample.gh_uid)
-            for sample in samples
-            if sample.zone_uid
-        )
+async def _resolve_batch_nodes(*, samples: List[TelemetrySampleModel]) -> Any:
+    return await _runtime_node_resolution().resolve_batch_nodes(samples=samples)
+
+
+async def _normalize_batch_samples(
+    *,
+    entries: Optional[List[QueueEntry]],
+    max_age_minutes: float,
+    max_age_seconds: float,
+    node_info_source: Any,
+    node_uid_to_info: Any,
+    samples: List[TelemetrySampleModel],
+    zone_uid_to_id: Any,
+) -> Any:
+    return await _runtime_normalization().normalize_batch_samples(
+        entries=entries,
+        max_age_minutes=max_age_minutes,
+        max_age_seconds=max_age_seconds,
+        node_info_source=node_info_source,
+        node_uid_to_info=node_uid_to_info,
+        samples=samples,
+        zone_uid_to_id=zone_uid_to_id,
     )
 
-    if zone_gh_pairs:
-        missing_zones = []
-        for zone_uid, gh_uid in zone_gh_pairs:
-            key = (zone_uid, gh_uid)
-            if key in _zone_cache:
-                zone_uid_to_id[key] = _zone_cache[key]
-            else:
-                fallback_key = (zone_uid, None)
-                if fallback_key in _zone_cache:
-                    zone_uid_to_id[key] = _zone_cache[fallback_key]
-                else:
-                    missing_zones.append((zone_uid, gh_uid))
 
-        if missing_zones:
-            zones_with_gh = [(z, g) for z, g in missing_zones if g]
-            zones_without_gh = [(z, g) for z, g in missing_zones if not g]
-
-            if zones_with_gh:
-                zone_uids = [z for z, _ in zones_with_gh]
-                gh_uids = [g for _, g in zones_with_gh]
-                zone_rows = await fetch(
-                    """
-                    SELECT z.id, z.uid, g.uid as gh_uid
-                    FROM zones z
-                    JOIN greenhouses g ON g.id = z.greenhouse_id
-                    WHERE (z.uid, g.uid) IN (SELECT unnest($1::text[]), unnest($2::text[]))
-                    """,
-                    zone_uids,
-                    gh_uids,
-                )
-
-                for zone in zone_rows:
-                    zone_uid = zone.get("uid")
-                    zone_id = zone.get("id")
-                    if not zone_uid or zone_id is None:
-                        continue
-                    gh_uid = zone.get("gh_uid")
-                    key = (zone_uid, gh_uid)
-                    zone_uid_to_id[key] = zone_id
-                    _zone_cache[key] = zone_id
-
-            if zones_without_gh:
-                zone_uids = [z for z, _ in zones_without_gh]
-                zone_rows = await fetch(
-                    """
-                    SELECT id, uid
-                    FROM zones
-                    WHERE uid = ANY($1)
-                    """,
-                    zone_uids,
-                )
-
-                for zone in zone_rows:
-                    zone_uid = zone.get("uid")
-                    zone_id = zone.get("id")
-                    if not zone_uid or zone_id is None:
-                        continue
-                    key = (zone_uid, None)
-                    zone_uid_to_id[key] = zone_id
-                    _zone_cache[key] = zone_id
-
-        for zone_uid, gh_uid in zone_gh_pairs:
-            if (zone_uid, gh_uid) not in zone_uid_to_id:
-                if (zone_uid, None) not in zone_uid_to_id:
-                    extra = {"zone_uid": zone_uid, "gh_uid": gh_uid}
-                    if _is_temp_namespace(gh_uid, zone_uid):
-                        logger.debug(
-                            "Zone not found during temp namespace telemetry bootstrap: zone_uid=%s, gh_uid=%s",
-                            zone_uid,
-                            gh_uid,
-                            extra=extra,
-                        )
-                        continue
-                    _log_warning_throttled(
-                        key=("zone_not_found", gh_uid or "-", zone_uid, "-"),
-                        message=f"Zone not found: zone_uid={zone_uid}, gh_uid={gh_uid}",
-                        extra=extra,
-                    )
-                    await _emit_telemetry_anomaly_alert(
-                        code="infra_telemetry_zone_not_found",
-                        message="Telemetry received for unknown zone_uid",
-                        gh_uid=gh_uid,
-                        zone_uid=zone_uid,
-                        details={"missing_entity": "zone"},
-                    )
-
-    node_uid_to_info: dict[
-        tuple[str, Optional[str]],
-        tuple[int, Optional[int], Optional[int]] | tuple[int, Optional[int]],
-    ] = {}
-    node_info_source: dict[tuple[str, Optional[str]], str] = {}
-
-    node_gh_pairs = list(
-        set((s.node_uid, s.gh_uid) for s in samples if s.node_uid)
+async def _recover_batch_assignments(
+    *, node_unassigned_detected_in_batch: Any, node_unassigned_recovery_candidates: Any, zone_ids_for_greenhouse: Any
+) -> None:
+    return await _runtime_node_resolution().recover_batch_assignments(
+        node_unassigned_detected_in_batch=node_unassigned_detected_in_batch,
+        node_unassigned_recovery_candidates=node_unassigned_recovery_candidates,
+        zone_ids_for_greenhouse=zone_ids_for_greenhouse,
     )
 
-    if node_gh_pairs:
-        missing_nodes = []
-        for node_uid, gh_uid in node_gh_pairs:
-            key = (node_uid, gh_uid)
-            if key in _node_cache:
-                node_uid_to_info[key] = _node_cache[key]
-                node_info_source[key] = "cache"
-            else:
-                fallback_key = (node_uid, None)
-                if fallback_key in _node_cache:
-                    node_uid_to_info[key] = _node_cache[fallback_key]
-                    node_info_source[key] = "cache"
-                else:
-                    missing_nodes.append((node_uid, gh_uid))
 
-        if missing_nodes:
-            nodes_with_gh = [(n, g) for n, g in missing_nodes if g]
-            nodes_without_gh = [(n, g) for n, g in missing_nodes if not g]
+async def _resolve_batch_sensors(*, resolved_samples: Any, result: TelemetryBatchResult) -> list[dict]:
+    return await _runtime_sensor_resolution().resolve_batch_sensors(resolved_samples=resolved_samples, result=result)
 
-            if nodes_with_gh:
-                node_uids = [n for n, _ in nodes_with_gh]
-                gh_uids = [g for _, g in nodes_with_gh]
-                node_rows = await fetch(
-                    """
-                    SELECT n.id, n.uid, n.zone_id, n.pending_zone_id, g.uid as gh_uid
-                    FROM nodes n
-                    LEFT JOIN zones z ON z.id = n.zone_id
-                    LEFT JOIN greenhouses g ON g.id = z.greenhouse_id
-                    WHERE (n.uid, COALESCE(g.uid, '')) IN (
-                        SELECT unnest($1::text[]), unnest($2::text[])
-                    )
-                    """,
-                    node_uids,
-                    gh_uids,
-                )
 
-                for node in node_rows:
-                    node_uid = node.get("uid")
-                    node_id = node.get("id")
-                    if not node_uid or node_id is None:
-                        continue
-                    gh_uid = node.get("gh_uid")
-                    zone_id = node.get("zone_id")
-                    pending_zone_id = node.get("pending_zone_id")
-                    key = (node_uid, gh_uid)
-                    node_uid_to_info[key] = (node_id, zone_id, pending_zone_id)
-                    _node_cache[key] = (node_id, zone_id, pending_zone_id)
-                    node_info_source[key] = "db"
+async def _persist_batch_samples(*, resolved_with_sensor: Any, result: TelemetryBatchResult) -> Any:
+    return await _runtime_persistence().persist_batch_samples(resolved_with_sensor=resolved_with_sensor, result=result)
 
-                unresolved_nodes_with_gh = [
-                    (node_uid, gh_uid)
-                    for node_uid, gh_uid in nodes_with_gh
-                    if (node_uid, gh_uid) not in node_uid_to_info
-                ]
-                if unresolved_nodes_with_gh:
-                    fallback_node_uids = sorted(
-                        {node_uid for node_uid, _ in unresolved_nodes_with_gh}
-                    )
-                    fallback_rows = await fetch(
-                        """
-                        SELECT id, uid, zone_id, pending_zone_id
-                        FROM nodes
-                        WHERE uid = ANY($1)
-                        """,
-                        fallback_node_uids,
-                    )
 
-                    for node in fallback_rows:
-                        node_uid = node.get("uid")
-                        node_id = node.get("id")
-                        if not node_uid or node_id is None:
-                            continue
-                        zone_id = node.get("zone_id")
-                        pending_zone_id = node.get("pending_zone_id")
-                        key = (node_uid, None)
-                        node_uid_to_info[key] = (node_id, zone_id, pending_zone_id)
-                        _node_cache[key] = (node_id, zone_id, pending_zone_id)
-                        node_info_source[key] = "db"
+async def _enqueue_committed_realtime(
+    *, broadcast_groups: Any, result: TelemetryBatchResult, written_items: Any
+) -> None:
+    return await _runtime_realtime().enqueue_committed_realtime(
+        broadcast_groups=broadcast_groups, result=result, written_items=written_items
+    )
 
-                    for node_uid, gh_uid in unresolved_nodes_with_gh:
-                        fallback_key = (node_uid, None)
-                        fallback_info = node_uid_to_info.get(fallback_key)
-                        if fallback_info is not None:
-                            node_uid_to_info[(node_uid, gh_uid)] = fallback_info
-                            _node_cache[(node_uid, gh_uid)] = fallback_info
-                            node_info_source[(node_uid, gh_uid)] = node_info_source.get(
-                                fallback_key,
-                                "db",
-                            )
 
-            if nodes_without_gh:
-                node_uids = [n for n, _ in nodes_without_gh]
-                node_rows = await fetch(
-                    """
-                    SELECT id, uid, zone_id, pending_zone_id
-                    FROM nodes
-                    WHERE uid = ANY($1)
-                    """,
-                    node_uids,
-                )
+async def _evaluate_solution_temp_thresholds(*, written_items: Any) -> None:
+    return await _runtime_thresholds().evaluate_solution_temp_thresholds(written_items=written_items)
 
-                for node in node_rows:
-                    node_uid = node.get("uid")
-                    node_id = node.get("id")
-                    if not node_uid or node_id is None:
-                        continue
-                    zone_id = node.get("zone_id")
-                    pending_zone_id = node.get("pending_zone_id")
-                    key = (node_uid, None)
-                    node_uid_to_info[key] = (node_id, zone_id, pending_zone_id)
-                    _node_cache[key] = (node_id, zone_id, pending_zone_id)
-                    node_info_source[key] = "db"
 
-        for node_uid, gh_uid in node_gh_pairs:
-            if (node_uid, gh_uid) not in node_uid_to_info:
-                if (node_uid, None) not in node_uid_to_info:
-                    if not gh_uid:
-                        logger.warning(
-                            "gh_uid not provided for node_uid=%s, using simple node_id resolution "
-                            "(may cause conflicts in multi-greenhouse setup)",
-                            node_uid,
-                            extra={"node_uid": node_uid},
-                        )
-                    extra = {"node_uid": node_uid, "gh_uid": gh_uid}
-                    if _is_temp_namespace(gh_uid, None):
-                        logger.debug(
-                            "Node not found during temp namespace telemetry bootstrap: node_uid=%s, gh_uid=%s",
-                            node_uid,
-                            gh_uid,
-                            extra=extra,
-                        )
-                        continue
-                    _log_warning_throttled(
-                        key=("node_not_found", gh_uid or "-", node_uid, "-"),
-                        message=f"Node not found: node_uid={node_uid}, gh_uid={gh_uid}",
-                        extra=extra,
-                    )
-                    await _emit_telemetry_anomaly_alert(
-                        code="infra_telemetry_node_not_found",
-                        message="Telemetry received for unknown node_uid",
-                        gh_uid=gh_uid,
-                        node_uid=node_uid,
-                        details={"missing_entity": "node"},
-                    )
-
-    await _prewarm_stale_node_assignments(node_uid_to_info, node_gh_pairs)
-
-    resolved_samples: list[dict] = []
-    node_unassigned_recovery_candidates: dict[
-        tuple[int, str], TelemetrySampleModel
-    ] = {}
-    node_unassigned_detected_in_batch: set[tuple[int, str]] = set()
-    node_assignment_refresh_attempted: set[tuple[str, Optional[str]]] = set()
-    zone_ids_for_greenhouse: set[int] = set()
-
-    for idx, sample in enumerate(samples):
-        entry = entries[idx] if entries is not None else None
-        zone_id = sample.zone_id if sample.zone_id is not None else None
-        if zone_id is None and sample.zone_uid:
-            zone_id = zone_uid_to_id.get((sample.zone_uid, sample.gh_uid))
-            if zone_id is None and sample.gh_uid:
-                zone_id = zone_uid_to_id.get((sample.zone_uid, None))
-
-        node_id = None
-        node_zone_id = None
-        node_pending_zone_id = None
-        node_info_key: Optional[tuple[str, Optional[str]]] = None
-        node_info_origin: Optional[str] = None
-        if sample.node_uid:
-            primary_key = (sample.node_uid, sample.gh_uid)
-            node_info = node_uid_to_info.get(primary_key)
-            if node_info is not None:
-                node_info_key = primary_key
-            if node_info is None and sample.gh_uid:
-                fallback_key = (sample.node_uid, None)
-                node_info = node_uid_to_info.get(fallback_key)
-                if node_info is not None:
-                    node_info_key = fallback_key
-
-            if node_info:
-                node_id, node_zone_id, node_pending_zone_id = _parse_node_info(node_info)
-                if node_info_key is not None:
-                    node_info_origin = node_info_source.get(node_info_key)
-
-        if zone_id is None:
-            if not sample.zone_uid:
-                logger.warning(
-                    "Skipping sample: zone_uid missing",
-                    extra={
-                        "zone_uid": sample.zone_uid,
-                        "node_uid": sample.node_uid,
-                        "metric_type": sample.metric_type,
-                    },
-                )
-            else:
-                extra = {
-                    "zone_uid": sample.zone_uid,
-                    "node_uid": sample.node_uid,
-                    "metric_type": sample.metric_type,
-                    "zone_uid_format_valid": sample.zone_uid.startswith("zn-")
-                    if sample.zone_uid
-                    else False,
-                }
-                if _is_temp_namespace(sample.gh_uid, sample.zone_uid):
-                    logger.debug(
-                        "Skipping sample: zone_id not found for temp namespace zone_uid",
-                        extra=extra,
-                    )
-                else:
-                    _log_warning_throttled(
-                        key=(
-                            "zone_id_not_found",
-                            sample.gh_uid or "-",
-                            sample.zone_uid or "-",
-                            sample.metric_type or "-",
-                        ),
-                        message="Skipping sample: zone_id not found for zone_uid",
-                        extra=extra,
-                    )
-            TELEMETRY_DROPPED.labels(reason="zone_id_not_found").inc()
-            continue
-
-        if node_id is None:
-            extra = {
-                "node_uid": sample.node_uid,
-                "zone_uid": sample.zone_uid,
-                "gh_uid": sample.gh_uid,
-                "metric_type": sample.metric_type,
-            }
-            if _is_temp_namespace(sample.gh_uid, sample.zone_uid):
-                logger.debug(
-                    "Skipping sample: node_id not found during temp namespace bootstrap",
-                    extra=extra,
-                )
-            else:
-                _log_warning_throttled(
-                    key=(
-                        "node_id_not_found",
-                        sample.gh_uid or "-",
-                        sample.node_uid or "-",
-                        sample.metric_type or "-",
-                    ),
-                    message="Skipping sample: node_id not found for node_uid",
-                    extra=extra,
-                )
-            TELEMETRY_DROPPED.labels(reason="node_id_not_found").inc()
-            await _emit_telemetry_anomaly_alert(
-                code="infra_telemetry_sample_dropped_node_not_found",
-                message="Telemetry sample dropped: node_id not found for node_uid",
-                zone_id=zone_id,
-                gh_uid=sample.gh_uid,
-                zone_uid=sample.zone_uid,
-                node_uid=sample.node_uid,
-                channel=sample.channel,
-                metric_type=sample.metric_type,
-            )
-            continue
-
-        if (
-            sample.node_uid
-            and zone_id is not None
-            and node_zone_id is None
-            and node_pending_zone_id is None
-        ):
-            refresh_key = (sample.node_uid, sample.gh_uid)
-            if refresh_key not in node_assignment_refresh_attempted:
-                node_assignment_refresh_attempted.add(refresh_key)
-                try:
-                    refreshed_rows = await fetch(
-                        """
-                        SELECT id, zone_id, pending_zone_id
-                        FROM nodes
-                        WHERE uid = $1
-                        LIMIT 1
-                        """,
-                        sample.node_uid,
-                    )
-                except Exception:
-                    refreshed_rows = []
-                    logger.warning(
-                        "Failed to refresh node assignment from DB, using cached node info",
-                        extra={
-                            "node_uid": sample.node_uid,
-                            "gh_uid": sample.gh_uid,
-                            "zone_id": zone_id,
-                        },
-                        exc_info=True,
-                    )
-
-                if refreshed_rows:
-                    refreshed_node = refreshed_rows[0]
-                    refreshed_info = (
-                        refreshed_node.get("id"),
-                        refreshed_node.get("zone_id"),
-                        refreshed_node.get("pending_zone_id"),
-                    )
-                    for cache_key in ((sample.node_uid, sample.gh_uid), (sample.node_uid, None)):
-                        node_uid_to_info[cache_key] = refreshed_info
-                        _node_cache[cache_key] = refreshed_info
-                        node_info_source[cache_key] = "db_refresh"
-
-                    node_id, node_zone_id, node_pending_zone_id = _parse_node_info(refreshed_info)
-
-        if node_zone_id is None:
-            if node_pending_zone_id is not None and node_pending_zone_id == zone_id:
-                logger.info(
-                    "Skipping sample: node assignment pending, telemetry ignored until zone binding is confirmed",
-                    extra={
-                        "node_uid": sample.node_uid,
-                        "node_id": node_id,
-                        "pending_zone_id": node_pending_zone_id,
-                        "requested_zone_id": zone_id,
-                        "zone_uid": sample.zone_uid,
-                        "gh_uid": sample.gh_uid,
-                        "metric_type": sample.metric_type,
-                    },
-                )
-                TELEMETRY_DROPPED.labels(reason="node_assignment_pending").inc()
-                continue
-            if sample.node_uid:
-                key = (zone_id, sample.node_uid)
-                node_unassigned_detected_in_batch.add(key)
-                _node_unassigned_last_seen[key] = time.time()
-            _log_warning_throttled(
-                key=(
-                    "node_unassigned",
-                    sample.gh_uid or "-",
-                    sample.node_uid or "-",
-                    str(zone_id),
-                ),
-                message="Skipping sample: node is not assigned to any zone",
-                extra={
-                    "node_uid": sample.node_uid,
-                    "node_id": node_id,
-                    "zone_uid": sample.zone_uid,
-                    "gh_uid": sample.gh_uid,
-                    "metric_type": sample.metric_type,
-                    "pending_zone_id": node_pending_zone_id,
-                },
-            )
-            TELEMETRY_DROPPED.labels(reason="node_unassigned").inc()
-            await _emit_telemetry_anomaly_alert(
-                code="infra_telemetry_node_unassigned",
-                message="Telemetry sample dropped: node is not assigned to any zone",
-                zone_id=zone_id,
-                gh_uid=sample.gh_uid,
-                zone_uid=sample.zone_uid,
-                node_uid=sample.node_uid,
-                channel=None,
-                metric_type=None,
-                details={
-                    "node_id": node_id,
-                    "pending_zone_id": node_pending_zone_id,
-                    "sample_channel": sample.channel,
-                    "sample_metric_type": sample.metric_type,
-                },
-            )
-            continue
-
-        if (
-            node_zone_id is not None
-            and node_zone_id != zone_id
-            and node_pending_zone_id is not None
-            and node_pending_zone_id == zone_id
-        ):
-            logger.info(
-                "Skipping sample: node rebind pending, telemetry ignored until old zone assignment is finalized",
-                extra={
-                    "node_uid": sample.node_uid,
-                    "node_id": node_id,
-                    "node_zone_id": node_zone_id,
-                    "pending_zone_id": node_pending_zone_id,
-                    "requested_zone_id": zone_id,
-                    "zone_uid": sample.zone_uid,
-                    "gh_uid": sample.gh_uid,
-                    "metric_type": sample.metric_type,
-                },
-            )
-            TELEMETRY_DROPPED.labels(reason="node_rebind_pending").inc()
-            continue
-
-        if node_zone_id != zone_id:
-            logger.warning(
-                "Security: node_uid does not belong to zone_id, dropping sample",
-                extra={
-                    "node_uid": sample.node_uid,
-                    "node_id": node_id,
-                    "node_zone_id": node_zone_id,
-                    "requested_zone_id": zone_id,
-                    "zone_uid": sample.zone_uid,
-                    "gh_uid": sample.gh_uid,
-                    "metric_type": sample.metric_type,
-                },
-            )
-            TELEMETRY_DROPPED.labels(reason="node_zone_mismatch").inc()
-            await _emit_telemetry_anomaly_alert(
-                code="infra_telemetry_node_zone_mismatch",
-                message="Telemetry sample dropped: node-zone mismatch detected",
-                zone_id=zone_id,
-                gh_uid=sample.gh_uid,
-                zone_uid=sample.zone_uid,
-                node_uid=sample.node_uid,
-                channel=sample.channel,
-                metric_type=sample.metric_type,
-                details={
-                    "node_id": node_id,
-                    "node_zone_id": node_zone_id,
-                    "requested_zone_id": zone_id,
-                },
-            )
-            continue
-
-        sample_ts = sample.ts
-        if sample_ts:
-            if getattr(sample_ts, "tzinfo", None):
-                sample_ts = sample_ts.astimezone(timezone.utc)
-            else:
-                sample_ts = sample_ts.replace(tzinfo=timezone.utc)
-            age_seconds = (utcnow() - sample_ts).total_seconds()
-            if age_seconds > max_age_seconds:
-                try:
-                    await create_zone_event(
-                        zone_id,
-                        "TELEMETRY_STALE",
-                        {
-                            "metric_type": sample.metric_type,
-                            "age_minutes": age_seconds / 60,
-                            "max_age_minutes": max_age_minutes,
-                            "node_uid": sample.node_uid,
-                            "channel": sample.channel,
-                        },
-                    )
-                except Exception as e:
-                    logger.warning(
-                        f"Failed to create TELEMETRY_STALE event: {e}",
-                        exc_info=True,
-                    )
-
-        resolved_samples.append(
-            {
-                "sample": sample,
-                "zone_id": zone_id,
-                "node_id": node_id,
-                "entry": entry,
-            }
-        )
-        if sample.node_uid:
-            node_unassigned_recovery_candidates[(zone_id, sample.node_uid)] = sample
-        zone_ids_for_greenhouse.add(zone_id)
-
-    if not resolved_samples:
-        return result
-
-    for (
-        zone_id,
-        node_uid,
-    ), recovery_sample in node_unassigned_recovery_candidates.items():
-        recovery_key = (zone_id, node_uid)
-        if recovery_key in node_unassigned_detected_in_batch:
-            continue
-
-        if _node_unassigned_recovery_grace_sec > 0:
-            last_unassigned_seen_at = _node_unassigned_last_seen.get(recovery_key)
-            if last_unassigned_seen_at and (
-                time.time() - last_unassigned_seen_at
-            ) < _node_unassigned_recovery_grace_sec:
-                continue
-
-        await _emit_telemetry_anomaly_resolved_alert(
-            code="infra_telemetry_node_unassigned",
-            message="Telemetry processing recovered: node is assigned to zone",
-            zone_id=zone_id,
-            gh_uid=recovery_sample.gh_uid,
-            zone_uid=recovery_sample.zone_uid,
-            node_uid=recovery_sample.node_uid,
-            channel=recovery_sample.channel,
-            metric_type=recovery_sample.metric_type,
-        )
-        _node_unassigned_last_seen.pop(recovery_key, None)
-
-    missing_zone_ids = [
-        zone_id
-        for zone_id in zone_ids_for_greenhouse
-        if zone_id not in _zone_greenhouse_cache
-    ]
-    if missing_zone_ids:
-        zone_rows = await fetch(
-            """
-            SELECT id, greenhouse_id
-            FROM zones
-            WHERE id = ANY($1)
-            """,
-            missing_zone_ids,
-        )
-        for zone in zone_rows:
-            zone_id = zone.get("id")
-            greenhouse_id = zone.get("greenhouse_id")
-            if zone_id is not None and greenhouse_id is not None:
-                _zone_greenhouse_cache[zone_id] = greenhouse_id
-
-    missing_sensor_keys: set[tuple[int, Optional[int], str, str]] = set()
-    for item in resolved_samples:
-        sample = item["sample"]
-        sensor_type = _infer_sensor_type(sample.metric_type)
-        sensor_label = _build_sensor_label(sample.metric_type, sample.channel, sensor_type)
-        sensor_key = (item["zone_id"], item["node_id"], sensor_type, sensor_label)
-        item["sensor_key"] = sensor_key
-        item["sensor_type"] = sensor_type
-        item["sensor_label"] = sensor_label
-        if _sensor_cache_get(sensor_key) is None:
-            missing_sensor_keys.add(sensor_key)
-
-    if missing_sensor_keys:
-        zone_ids = list({key[0] for key in missing_sensor_keys})
-        node_ids = list({key[1] for key in missing_sensor_keys if key[1] is not None})
-        existing_rows = []
-        if zone_ids:
-            if node_ids:
-                existing_rows = await fetch(
-                    """
-                    SELECT id, zone_id, node_id, type, label
-                    FROM sensors
-                    WHERE zone_id = ANY($1)
-                      AND (node_id = ANY($2) OR node_id IS NULL)
-                    """,
-                    zone_ids,
-                    node_ids,
-                )
-            else:
-                existing_rows = await fetch(
-                    """
-                    SELECT id, zone_id, node_id, type, label
-                    FROM sensors
-                    WHERE zone_id = ANY($1)
-                      AND node_id IS NULL
-                    """,
-                    zone_ids,
-                )
-
-        for row in existing_rows:
-            zone_id = row.get("zone_id")
-            sensor_type = row.get("type")
-            sensor_label = row.get("label")
-            sensor_id = row.get("id")
-            if zone_id is not None and sensor_type and sensor_label and sensor_id is not None:
-                sensor_key = (zone_id, row.get("node_id"), sensor_type, sensor_label)
-                _sensor_cache_set(sensor_key, sensor_id)
-
-        to_create = [
-            key for key in missing_sensor_keys if _sensor_cache_get(key) is None
-        ]
-        if to_create:
-            values_list = []
-            params_list = []
-            param_index = 1
-            for zone_id, node_id, sensor_type, sensor_label in to_create:
-                greenhouse_id = _zone_greenhouse_cache.get(zone_id)
-                if greenhouse_id is None:
-                    logger.warning(
-                        "Greenhouse not found for zone_id=%s, skipping sensor creation",
-                        zone_id,
-                    )
-                    continue
-                values_list.append(
-                    f"(${param_index}, ${param_index + 1}, ${param_index + 2}, ${param_index + 3}, "
-                    f"${param_index + 4}, ${param_index + 5}, ${param_index + 6}, NOW(), NOW())"
-                )
-                params_list.extend(
-                    [
-                        greenhouse_id,
-                        zone_id,
-                        node_id,
-                        _infer_sensor_scope(sensor_type, sensor_label),
-                        sensor_type,
-                        sensor_label,
-                        True,
-                    ]
-                )
-                param_index += 7
-
-            if values_list:
-                query = f"""
-                    INSERT INTO sensors (
-                        greenhouse_id, zone_id, node_id, scope, type, label, is_active,
-                        created_at, updated_at
-                    )
-                    VALUES {', '.join(values_list)}
-                    ON CONFLICT (zone_id, node_id, scope, type, label)
-                    DO UPDATE SET
-                        updated_at = EXCLUDED.updated_at
-                    RETURNING id, zone_id, node_id, type, label
-                """
-                created_rows: list = []
-                try:
-                    created_rows = await fetch(query, *params_list)
-                except Exception as e:
-                    if _is_sensor_fk_error(e):
-                        logger.warning(
-                            "Sensor FK violation detected during sensor upsert, clearing caches",
-                            extra={"error": str(e)},
-                        )
-                        _sensor_cache.clear()
-                        _zone_cache.clear()
-                        _node_cache.clear()
-                        _zone_greenhouse_cache.clear()
-                        _cache_last_update = 0.0
-                        await _create_sensors_per_item(to_create)
-                    elif _is_pg_transport_error(e):
-                        raise PgTransportError(str(e)) from e
-                    else:
-                        TELEMETRY_PG_WRITE_FAILED.labels(stage="sensors").inc()
-                        logger.error(
-                            "Batch sensor upsert failed, retrying per-item",
-                            extra={"error": str(e)},
-                            exc_info=True,
-                        )
-                        await _create_sensors_per_item(to_create)
-                for row in created_rows:
-                    zone_id = row.get("zone_id")
-                    sensor_type = row.get("type")
-                    sensor_label = row.get("label")
-                    sensor_id = row.get("id")
-                    if (
-                        zone_id is not None
-                        and sensor_type
-                        and sensor_label
-                        and sensor_id is not None
-                    ):
-                        sensor_key = (
-                            zone_id,
-                            row.get("node_id"),
-                            sensor_type,
-                            sensor_label,
-                        )
-                        _sensor_cache_set(sensor_key, sensor_id)
-
-    resolved_with_sensor: list[dict] = []
-    for item in resolved_samples:
-        sensor_id = _sensor_cache_get(item["sensor_key"])
-        if sensor_id is None:
-            logger.warning(
-                "Sensor not resolved for telemetry sample",
-                extra={
-                    "zone_id": item["zone_id"],
-                    "node_id": item["node_id"],
-                    "metric_type": item["sample"].metric_type,
-                    "channel": item["sample"].channel,
-                },
-            )
-            TELEMETRY_DROPPED.labels(reason="sensor_not_resolved").inc()
-            _append_dead_entry(result, item.get("entry"))
-            continue
-        item["sensor_id"] = sensor_id
-        resolved_with_sensor.append(item)
-
-    if not resolved_with_sensor:
-        return result
-
-    unique_sensor_ids = sorted({
-        int(item["sensor_id"])
-        for item in resolved_with_sensor
-        if item.get("sensor_id") is not None
-    })
-    existing_sensor_ids = await _filter_existing_sensor_ids(unique_sensor_ids)
-    if len(existing_sensor_ids) != len(unique_sensor_ids):
-        stale_sensor_ids = sorted(set(unique_sensor_ids) - existing_sensor_ids)
-        logger.warning(
-            "Dropping telemetry samples for stale sensor cache entries",
-            extra={"stale_sensor_ids": stale_sensor_ids},
-        )
-        fresh_items: list[dict] = []
-        for item in resolved_with_sensor:
-            sensor_id = int(item["sensor_id"])
-            if sensor_id in existing_sensor_ids:
-                fresh_items.append(item)
-                continue
-            _sensor_cache.pop(item["sensor_key"], None)
-            TELEMETRY_DROPPED.labels(reason="stale_sensor_cache").inc()
-            _append_dead_entry(result, item.get("entry"))
-        resolved_with_sensor = fresh_items
-
-    if not resolved_with_sensor:
-        return result
-
-    broadcast_groups: dict[
-        tuple[int, str, Optional[int], Optional[str]], list[dict]
-    ] = {}
-    for item in resolved_with_sensor:
-        sample = item["sample"]
-        key = (item["zone_id"], sample.metric_type, item["node_id"], sample.channel)
-        broadcast_groups.setdefault(key, []).append(item)
-
-    telemetry_last_updates = _build_telemetry_last_updates(resolved_with_sensor)
-
-    tracked_ids = _tracked_entry_ids(result)
-    writable_items = [
-        item for item in resolved_with_sensor if _item_is_writable(item, tracked_ids)
-    ]
-
-    processed_count = 0
-    written_items: list[dict] = []
-    sensor_ids: list[int] = []
-    sample_ts_values: list[datetime] = []
-    zone_ids: list[int | None] = []
-    sample_values: list[float] = []
-    qualities: list[str] = []
-    metadata_values: list[dict | None] = []
-    for item in writable_items:
-        sample = item["sample"]
-        metadata = {
-            "metric_type": sample.metric_type,
-            "channel": sample.channel,
-            "node_uid": sample.node_uid,
-        }
-        if bool(getattr(sample, "stub", False)):
-            metadata["stub"] = True
-        if sample.raw is not None:
-            metadata["raw"] = sample.raw
-        if metadata and not metadata.get("channel"):
-            metadata.pop("channel", None)
-        if metadata and not metadata.get("node_uid"):
-            metadata.pop("node_uid", None)
-        sensor_ids.append(int(item["sensor_id"]))
-        sample_ts_values.append(_normalize_ts_for_db(sample.ts))
-        zone_ids.append(int(item["zone_id"]) if item["zone_id"] is not None else None)
-        sample_values.append(sample.value)
-        qualities.append(_persist_quality_for_sample(sample))
-        metadata_values.append(metadata or None)
-
-    if sensor_ids:
-        query = """
-            WITH incoming (sensor_id, ts, zone_id, value, quality, metadata) AS (
-                SELECT *
-                FROM UNNEST(
-                    $1::bigint[],
-                    $2::timestamp[],
-                    $3::bigint[],
-                    $4::double precision[],
-                    $5::text[],
-                    $6::jsonb[]
-                ) AS t(sensor_id, ts, zone_id, value, quality, metadata)
-            )
-            INSERT INTO telemetry_samples (
-                sensor_id, ts, zone_id, value, quality, metadata
-            )
-            SELECT
-                incoming.sensor_id,
-                incoming.ts,
-                incoming.zone_id,
-                incoming.value,
-                incoming.quality,
-                incoming.metadata
-            FROM incoming
-            JOIN sensors s
-              ON s.id = incoming.sensor_id
-             AND s.zone_id = incoming.zone_id
-            RETURNING sensor_id, ts
-        """
-        try:
-            returned_rows = await fetch(
-                query,
-                sensor_ids,
-                sample_ts_values,
-                zone_ids,
-                sample_values,
-                qualities,
-                metadata_values,
-            )
-            written_items = _handle_samples_join_mismatch(
-                writable_items,
-                sensor_ids,
-                sample_ts_values,
-                returned_rows,
-                result,
-            )
-            processed_count = len(written_items)
-            logger.info(
-                "[TELEMETRY] Written: count=%s, unique_sensors=%s",
-                processed_count,
-                len({int(item["sensor_id"]) for item in written_items}),
-            )
-            if processed_count > 0 and SIMULATION_TELEMETRY_EVENTS_ENABLED:
-                zone_stats: Dict[int, Dict[str, object]] = {}
-                for item in written_items:
-                    zone_id = item.get("zone_id")
-                    if zone_id is None:
-                        continue
-                    sample = item.get("sample")
-                    metric_type = getattr(sample, "metric_type", None)
-                    channel = getattr(sample, "channel", None)
-                    stats = zone_stats.setdefault(zone_id, {"count": 0, "metrics": set(), "channels": set()})
-                    stats["count"] = int(stats["count"]) + 1
-                    if metric_type:
-                        stats["metrics"].add(metric_type)
-                    if channel:
-                        stats["channels"].add(channel)
-
-                for zone_id, stats in zone_stats.items():
-                    await record_simulation_event_throttled(
-                        zone_id,
-                        service="history-logger",
-                        stage="telemetry",
-                        status="received",
-                        message="Телеметрия принята",
-                        payload={
-                            "samples": stats["count"],
-                            "metrics": sorted(stats["metrics"]),
-                            "channels": sorted(stats["channels"]),
-                        },
-                        min_interval_seconds=SIMULATION_TELEMETRY_EVENT_INTERVAL_SEC,
-                        throttle_key=f"telemetry:{zone_id}",
-                    )
-        except Exception as e:
-            error_type = type(e).__name__
-            DATABASE_ERRORS.labels(error_type=error_type).inc()
-            if _is_pg_transport_error(e):
-                raise PgTransportError(str(e)) from e
-            logger.error(
-                "Failed to insert telemetry batch, retrying per-item",
-                extra={
-                    "error_type": error_type,
-                    "error": str(e),
-                    "samples_count": len(writable_items),
-                },
-                exc_info=True,
-            )
-            if _is_sensor_fk_error(e):
-                _sensor_cache.clear()
-            for item in writable_items:
-                if await _insert_telemetry_sample_item(item, result):
-                    written_items.append(item)
-                    processed_count += 1
-
-    if written_items:
-        written_sensor_ids = {int(item["sensor_id"]) for item in written_items}
-        last_updates_for_written = {
-            sensor_id: update_data
-            for sensor_id, update_data in telemetry_last_updates.items()
-            if sensor_id in written_sensor_ids
-        }
-        await _upsert_telemetry_last_batch(
-            last_updates_for_written,
-            resolved_with_sensor,
-            result,
-            samples_committed=True,
-        )
-
-    tracked_ids = _tracked_entry_ids(result)
-    written_item_ids = {id(item) for item in written_items}
-    for (zone_id, metric_type, node_id, channel), group_items in broadcast_groups.items():
-        writable_group_items = [
-            item
-            for item in group_items
-            if id(item) in written_item_ids and _item_is_writable(item, tracked_ids)
-        ]
-        if not writable_group_items:
-            continue
-
-        latest_item = max(
-            writable_group_items,
-            key=lambda item: item["sample"].ts
-            if item["sample"].ts
-            else datetime.min.replace(tzinfo=None),
-        )
-        latest_sample = latest_item["sample"]
-
-        if not zone_id or not node_id or _shutdown_event().is_set():
-            REALTIME_DROPPED_UPDATES.labels(reason="missing_zone_or_node").inc()
-            continue
-
-        update = {
-            "zone_id": zone_id,
-            "node_id": node_id,
-            "channel": channel or None,
-            "metric_type": metric_type,
-            "value": latest_sample.value,
-            "timestamp": _to_timestamp_ms(latest_sample.ts),
-        }
-        realtime_key = _build_realtime_key(
-            latest_item.get("sensor_id"),
-            zone_id,
-            node_id,
-            metric_type,
-            channel,
-        )
-        await _enqueue_realtime_update(realtime_key, update)
-
-    processing_duration = time.time() - start_time
-    TELEMETRY_PROCESSING_DURATION.observe(processing_duration)
-    result.processed_count = processed_count
-    TELEM_PROCESSED.inc(processed_count)
-    TELEM_BATCH_SIZE.observe(processed_count)
-    try:
-        from handlers.solution_temp_threshold_alerts import (
-            is_solution_temp_channel,
-            process_solution_temp_telemetry_batch,
-        )
-
-        solution_temp_items = [
-            {
-                "zone_id": item.get("zone_id"),
-                "channel": getattr(item.get("sample"), "channel", None),
-                "value": getattr(item.get("sample"), "value", None),
-                "ts": _normalize_ts_for_db(item["sample"].ts),
-            }
-            for item in written_items
-            if item.get("zone_id") is not None
-            and item.get("sample") is not None
-            and is_solution_temp_channel(getattr(item["sample"], "channel", None))
-        ]
-        if solution_temp_items:
-            await process_solution_temp_telemetry_batch(solution_temp_items)
-    except Exception:
-        logger.error("solution_temp threshold evaluation failed", exc_info=True)
-    return result
+async def _process_telemetry_batch_impl(
+    samples: List[TelemetrySampleModel],
+    entries: Optional[List[QueueEntry]] = None,
+) -> TelemetryBatchResult:
+    return await _runtime_batch().process_telemetry_batch_impl(samples=samples, entries=entries)
 
 
 def _queue_entries_to_samples(entries: List[QueueEntry]) -> List[TelemetrySampleModel]:
-    samples: List[TelemetrySampleModel] = []
-    for entry in entries:
-        item = entry.item
-        samples.append(
-            TelemetrySampleModel(
-                node_uid=item.node_uid,
-                zone_uid=item.zone_uid,
-                zone_id=None,
-                gh_uid=getattr(item, "gh_uid", None),
-                metric_type=item.metric_type,
-                value=item.value,
-                ts=item.ts,
-                raw=item.raw,
-                channel=item.channel,
-                stub=bool(getattr(item, "stub", False)),
-            )
-        )
-    return samples
+    return _runtime_queue_consumer().queue_entries_to_samples(entries=entries)
 
 
 async def _finalize_queue_batch(
@@ -2049,173 +813,16 @@ async def _finalize_queue_batch(
     pop: PopBatchResult,
     batch_result: TelemetryBatchResult,
 ) -> None:
-    if batch_result.processed_count > 0 and batch_result.entries_to_requeue:
-        TELEMETRY_REQUEUE_DUPLICATE_RISK.inc(
-            len(batch_result.entries_to_requeue)
-        )
-
-    if batch_result.entries_to_dead:
-        moved = await queue.move_entries_to_dead(
-            batch_result.entries_to_dead,
-            reason="fk_violation",
-        )
-        if moved != len(batch_result.entries_to_dead):
-            logger.warning(
-                "Incomplete dead-list move for telemetry batch",
-                extra={"expected": len(batch_result.entries_to_dead), "moved": moved},
-            )
-            TELEMETRY_PROCESSING_STUCK.inc()
-
-    if batch_result.entries_to_requeue:
-        requeued = await queue.requeue_batch(batch_result.entries_to_requeue)
-        if requeued != len(batch_result.entries_to_requeue):
-            logger.warning(
-                "Incomplete telemetry requeue; retrying once",
-                extra={
-                    "expected": len(batch_result.entries_to_requeue),
-                    "requeued": requeued,
-                },
-            )
-            requeued = await queue.requeue_batch(batch_result.entries_to_requeue)
-            if requeued != len(batch_result.entries_to_requeue):
-                TELEMETRY_PROCESSING_STUCK.inc()
-                logger.error(
-                    "Telemetry requeue still incomplete after retry",
-                    extra={
-                        "expected": len(batch_result.entries_to_requeue),
-                        "requeued": requeued,
-                    },
-                )
-
-    entries_to_ack = batch_result.entries_to_ack(pop.entries)
-    if entries_to_ack:
-        raw_items = [entry.raw for entry in entries_to_ack]
-        removed = await queue.ack_batch(raw_items)
-        if removed != len(entries_to_ack):
-            logger.warning(
-                "Incomplete telemetry ack; retrying once",
-                extra={"expected": len(entries_to_ack), "removed": removed},
-            )
-            removed = await queue.ack_batch(raw_items)
-            if removed != len(entries_to_ack):
-                TELEMETRY_PROCESSING_STUCK.inc()
-                logger.error(
-                    "Telemetry ack still incomplete after retry",
-                    extra={"expected": len(entries_to_ack), "removed": removed},
-                )
+    return await _runtime_queue_consumer().finalize_queue_batch(queue=queue, pop=pop, batch_result=batch_result)
 
 
 async def _handle_pop_batch(pop: PopBatchResult) -> None:
-    if not pop.entries:
-        return
-
-    queue = _get_telemetry_queue()
-    if queue is None:
-        return
-
-    samples = _queue_entries_to_samples(pop.entries)
-    try:
-        batch_result = await process_telemetry_batch(samples, entries=pop.entries)
-    except PgTransportError:
-        if await queue.requeue_batch(pop.entries) != len(pop.entries):
-            TELEMETRY_PROCESSING_STUCK.inc()
-        return
-
-    await _finalize_queue_batch(queue, pop, batch_result)
+    return await _runtime_queue_consumer().handle_pop_batch(pop=pop)
 
 
 async def _drain_telemetry_queue_on_shutdown() -> None:
-    queue = _get_telemetry_queue()
-    if queue is None:
-        return
-
-    settings = get_settings()
-    deadline = time.monotonic() + settings.telemetry_shutdown_drain_timeout_sec
-    batch_size = max(1, int(settings.telemetry_batch_size))
-
-    while time.monotonic() < deadline:
-        pending = await queue.total_pending_size()
-        if pending <= 0:
-            break
-
-        pop = await queue.pop_batch(batch_size)
-        if not pop.entries:
-            break
-
-        await _handle_pop_batch(pop)
+    return await _runtime_queue_consumer().drain_telemetry_queue_on_shutdown()
 
 
 async def process_telemetry_queue() -> None:
-    """
-    Фоновая задача для обработки очереди телеметрии из Redis.
-    """
-    s = get_settings()
-    last_flush = utcnow()
-    last_reclaim_at = time.monotonic()
-    reclaim_interval_sec = float(
-        os.getenv("TELEMETRY_PROCESSING_RECLAIM_INTERVAL_SEC", "60")
-    )
-
-    logger.info("Starting telemetry queue processor")
-
-    while not _shutdown_event().is_set():
-        try:
-            queue = _get_telemetry_queue()
-            queue_start_time = time.time()
-            queue_size = await queue.size()
-            processing_size = await queue.processing_size()
-            TELEMETRY_PROCESSING_SIZE.set(processing_size)
-            queue_duration = time.time() - queue_start_time
-            REDIS_OPERATION_DURATION.observe(queue_duration)
-
-            if (
-                processing_size > 0
-                and (time.monotonic() - last_reclaim_at) >= reclaim_interval_sec
-            ):
-                reclaimed = await queue.reclaim_processing()
-                last_reclaim_at = time.monotonic()
-                if reclaimed:
-                    TELEMETRY_PROCESSING_RECLAIMED.inc(reclaimed)
-                    logger.warning(
-                        "Reclaimed %s stale telemetry item(s) from processing list",
-                        reclaimed,
-                    )
-
-            queue_age_start_time = time.time()
-            queue_age = await queue.get_oldest_age_seconds()
-            queue_age_duration = time.time() - queue_age_start_time
-            REDIS_OPERATION_DURATION.observe(queue_age_duration)
-
-            if queue_age is not None:
-                TELEMETRY_QUEUE_AGE.set(queue_age)
-            else:
-                TELEMETRY_QUEUE_AGE.set(0.0)
-
-            dead_list_size = await queue.dead_list_size()
-            TELEMETRY_DEAD_LIST_SIZE.set(dead_list_size)
-
-            time_since_flush = (utcnow() - last_flush).total_seconds() * 1000
-
-            should_flush = queue_size >= s.telemetry_batch_size or (
-                time_since_flush >= s.telemetry_flush_ms and queue_size > 0
-            )
-
-            if should_flush:
-                batch_size = min(s.telemetry_batch_size, queue_size)
-                pop = await queue.pop_batch(batch_size)
-
-                if pop.entries:
-                    await _handle_pop_batch(pop)
-                    last_flush = utcnow()
-
-            await asyncio.sleep(s.queue_check_interval_sec)
-
-        except Exception as e:
-            logger.error(f"Error in telemetry queue processor: {e}", exc_info=True)
-            await asyncio.sleep(s.queue_error_retry_delay_sec)
-
-    logger.info(
-        "Shutting down telemetry queue processor, processing remaining items..."
-    )
-    await _drain_telemetry_queue_on_shutdown()
-    logger.info("Telemetry queue processor stopped")
+    return await _runtime_queue_consumer().process_telemetry_queue()

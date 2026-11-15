@@ -4,6 +4,7 @@
 """
 
 from __future__ import annotations
+from .dependencies import snapshot
 
 import os
 import time
@@ -22,6 +23,14 @@ INFRA_TELEMETRY_LONG_THROTTLE_CODES = frozenset(
         "infra_telemetry_invalid_timestamp",
     }
 )
+
+
+def _dependencies():
+    return snapshot(
+        {
+            'fetch': fetch,
+        }
+    )
 
 
 def effective_anomaly_throttle_sec(code: str) -> float:
@@ -51,9 +60,10 @@ def is_sensor_fk_error(error: Exception) -> bool:
 
 
 async def filter_existing_sensor_ids(sensor_ids: list[int]) -> set[int]:
+    deps = _dependencies()
     if not sensor_ids:
         return set()
-    rows = await fetch(
+    rows = await deps.fetch(
         """
         SELECT id
         FROM sensors
@@ -224,7 +234,5 @@ def parse_node_info(
     pending_zone_id_raw = node_info[2] if len(node_info) >= 3 else None
     node_id = int(node_id_raw) if isinstance(node_id_raw, int) else None
     node_zone_id = int(node_zone_id_raw) if isinstance(node_zone_id_raw, int) else None
-    pending_zone_id = (
-        int(pending_zone_id_raw) if isinstance(pending_zone_id_raw, int) else None
-    )
+    pending_zone_id = int(pending_zone_id_raw) if isinstance(pending_zone_id_raw, int) else None
     return node_id, node_zone_id, pending_zone_id

@@ -91,7 +91,7 @@ trait RefreshDatabase
                     SELECT 1 FROM pg_extension WHERE extname = 'timescaledb'
                 ) as exists
             ");
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             return;
         }
 
@@ -105,7 +105,7 @@ trait RefreshDatabase
                     SELECT 1 FROM pg_proc WHERE proname = 'drop_hypertable'
                 ) as exists
             ");
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             return;
         }
 
@@ -126,7 +126,7 @@ trait RefreshDatabase
                 END
                 LIMIT 1
             ");
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             return;
         }
 
@@ -142,7 +142,7 @@ trait RefreshDatabase
                 FROM timescaledb_information.hypertables
                 WHERE {$column} = 'public'
             ");
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             return;
         }
 
@@ -155,10 +155,10 @@ trait RefreshDatabase
 
             try {
                 DB::statement("SELECT drop_hypertable('{$name}'::regclass, if_exists => TRUE, cascade_to_materializations => TRUE);");
-            } catch (\Throwable $e) {
+            } catch (Throwable $e) {
                 try {
                     DB::statement("SELECT drop_hypertable('{$name}'::regclass, if_exists => TRUE);");
-                } catch (\Throwable $e) {
+                } catch (Throwable $e) {
                 }
             }
         }
@@ -169,7 +169,8 @@ trait RefreshDatabase
         DB::statement('DROP SCHEMA IF EXISTS public CASCADE');
         DB::statement('CREATE SCHEMA public');
         DB::statement('GRANT ALL ON SCHEMA public TO CURRENT_USER');
-        DB::statement('GRANT ALL ON SCHEMA public TO PUBLIC');
+        // Match PostgreSQL 16 defaults: runtime roles must not inherit schema CREATE.
+        DB::statement('GRANT USAGE ON SCHEMA public TO PUBLIC');
         DB::disconnect();
         DB::reconnect();
     }

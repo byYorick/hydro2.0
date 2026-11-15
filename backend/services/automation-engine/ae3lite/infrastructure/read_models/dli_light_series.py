@@ -12,7 +12,10 @@ from ae3lite.domain.services.dli_integral import (
     explicit_light_channel,
     positive_dli_target,
     select_light_channel_row,
-    zone_timezone,
+)
+from ae3lite.domain.services.greenhouse_clock import (
+    canonical_timezone_name,
+    greenhouse_local_midnight_utc,
 )
 
 
@@ -30,10 +33,9 @@ async def load_dli_light_series(
     tz_name = greenhouse_timezone if isinstance(greenhouse_timezone, str) and greenhouse_timezone.strip() else None
     if tz_name is None and isinstance(targets.get("greenhouse_timezone"), str):
         tz_name = str(targets.get("greenhouse_timezone")).strip() or None
-    tz = zone_timezone(tz_name)
+    resolved_tz = canonical_timezone_name(tz_name)
     now = datetime.now(timezone.utc)
-    local = now.astimezone(tz)
-    window_start = local.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
+    window_start = greenhouse_local_midnight_utc(now, resolved_tz)
     rows = await conn.fetch(
         """
         SELECT
@@ -95,7 +97,7 @@ async def load_dli_light_series(
     return {
         "unit": unit,
         "samples": samples,
-        "timezone": tz_name or "UTC",
+        "timezone": resolved_tz,
         "window_start": window_start.isoformat(),
         "as_of": now.isoformat(),
     }

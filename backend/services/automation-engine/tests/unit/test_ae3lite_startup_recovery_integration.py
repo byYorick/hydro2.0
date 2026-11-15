@@ -271,6 +271,19 @@ async def _count_waiting_command_tasks() -> int:
 
 
 async def _cleanup(prefix: str) -> None:
+    # commands.zone_id uses SET NULL on cascade: delete test-owned commands
+    # before their zone disappears, so fixed cmd_id fixtures can run again.
+    await execute(
+        """
+        DELETE FROM commands
+        WHERE zone_id IN (
+            SELECT z.id FROM zones z
+            JOIN greenhouses g ON g.id = z.greenhouse_id
+            WHERE g.name LIKE $1
+        )
+        """,
+        f"{prefix}%",
+    )
     await execute("DELETE FROM greenhouses WHERE name LIKE $1", f"{prefix}%")
 
 

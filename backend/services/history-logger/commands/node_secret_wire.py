@@ -68,7 +68,19 @@ def unwrap_node_secret(token: str, passphrase: str, node_uid: str) -> str:
     return plain.decode("utf-8")
 
 
-def _wrap_passphrase() -> str:
+def _wrap_passphrase(node_uid: str) -> str:
+    # File is a read-only secret mount: node_uid -> that node's MQTT password.
+    import json
+    from pathlib import Path
+    credentials_file = os.getenv("MQTT_NODE_PASSWORDS_FILE")
+    if credentials_file:
+        credentials = json.loads(Path(credentials_file).read_text())
+        value = credentials.get(node_uid)
+        if not isinstance(value, str) or not value.strip():
+            from fastapi import HTTPException
+            raise HTTPException(status_code=503, detail="Node wrapping credential unavailable")
+        return value
+
     return (
         os.getenv("NODE_SECRET_WRAP_PASSPHRASE")
         or os.getenv("MQTT_ESP32_NODE_PASS")
@@ -91,12 +103,10 @@ def prepare_node_config_for_mqtt(
     config.pop("node_secret", None)
     config.pop("node_secret_enc", None)
 
-    passphrase = _wrap_passphrase()
+    passphrase = _wrap_passphrase(node_uid)
     if secret and passphrase and node_uid:
         config["node_secret_enc"] = wrap_node_secret(secret, passphrase, node_uid)
     elif secret:
-        logger.warning(
-            "NodeConfig node_secret withheld from MQTT (wrap passphrase unset): node_uid=%s",
-            node_uid,
-        )
+        from fastapi import HTTPException
+        raise HTTPException(status_code=503, detail="Node secret wrapping is not configured")
     return config

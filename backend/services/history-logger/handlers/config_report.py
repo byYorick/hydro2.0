@@ -30,10 +30,32 @@ from ._shared import (
     store_pending_config_report,
     to_optional_bool,
 )
+from .dependencies import snapshot
 from .node_channels_sync import sync_node_channels_from_payload
 from telemetry_processing import refresh_node_cache_for_uid
 
 logger = logging.getLogger(__name__)
+
+
+def _dependencies():
+    return snapshot({
+        'fetch': fetch,
+        'execute': execute,
+        'get_settings': get_settings,
+        '_parse_json': _parse_json,
+        '_extract_node_uid': _extract_node_uid,
+        '_extract_gh_uid': _extract_gh_uid,
+        '_extract_zone_uid': _extract_zone_uid,
+        'httpx': httpx,
+        'logger': logger,
+        'CONFIG_REPORT_RECEIVED': CONFIG_REPORT_RECEIVED,
+        'CONFIG_REPORT_PROCESSED': CONFIG_REPORT_PROCESSED,
+        'CONFIG_REPORT_ERROR': CONFIG_REPORT_ERROR,
+        'store_pending_config_report': store_pending_config_report,
+        'sync_node_channels_from_payload': sync_node_channels_from_payload,
+        '_complete_binding_after_config_report': _complete_binding_after_config_report,
+        '_complete_sensor_calibrations_after_config_report': _complete_sensor_calibrations_after_config_report,
+    })
 
 
 def _preserve_existing_node_secret(
@@ -89,26 +111,27 @@ def _extract_fw_version(data: Dict[str, Any]) -> Optional[str]:
 
 async def handle_config_report(topic: str, payload: bytes) -> None:
     """Сохраняет NodeConfig в БД + синхронизирует ``node_channels`` + завершает binding."""
+    deps = _dependencies()
     try:
-        logger.info("[CONFIG_REPORT] ===== START processing config_report =====")
-        logger.info(f"[CONFIG_REPORT] Topic: {topic}, payload length: {len(payload)}")
+        deps.logger.info("[CONFIG_REPORT] ===== START processing config_report =====")
+        deps.logger.info(f"[CONFIG_REPORT] Topic: {topic}, payload length: {len(payload)}")
 
-        data = _parse_json(payload)
+        data = deps._parse_json(payload)
         if not data or not isinstance(data, dict):
-            logger.warning(f"[CONFIG_REPORT] Invalid JSON in config_report from topic {topic}")
-            CONFIG_REPORT_ERROR.labels(node_uid="unknown").inc()
+            deps.logger.warning(f"[CONFIG_REPORT] Invalid JSON in config_report from topic {topic}")
+            deps.CONFIG_REPORT_ERROR.labels(node_uid="unknown").inc()
             return
 
         apply_trace_context(data)
 
-        node_uid = _extract_node_uid(topic)
+        node_uid = deps._extract_node_uid(topic)
         if not node_uid:
-            logger.warning(f"[CONFIG_REPORT] Could not extract node_uid from topic {topic}")
-            CONFIG_REPORT_ERROR.labels(node_uid="unknown").inc()
+            deps.logger.warning(f"[CONFIG_REPORT] Could not extract node_uid from topic {topic}")
+            deps.CONFIG_REPORT_ERROR.labels(node_uid="unknown").inc()
             return
 
-        gh_uid = _extract_gh_uid(topic)
-        zone_uid = _extract_zone_uid(topic)
+        gh_uid = deps._extract_gh_uid(topic)
+        zone_uid = deps._extract_zone_uid(topic)
         is_temp_topic = gh_uid == "gh-temp" and zone_uid == "zn-temp"
 
         node, node_uid, node_id = await _load_node_row_or_buffer(
@@ -121,13 +144,13 @@ async def handle_config_report(topic: str, payload: bytes) -> None:
         if node is None:
             return
 
-        CONFIG_REPORT_RECEIVED.inc()
+        deps.CONFIG_REPORT_RECEIVED.inc()
         data = _normalize_config_report_channels_for_storage(data)
         data = _preserve_existing_node_secret(node.get("config"), data)
         fw_version = _extract_fw_version(data)
 
         if fw_version:
-            await execute(
+            await deps.execute(
                 """
                 UPDATE nodes
                 SET config = $1,
@@ -140,7 +163,7 @@ async def handle_config_report(topic: str, payload: bytes) -> None:
                 node_id,
             )
         else:
-            await execute(
+            await deps.execute(
                 """
                 UPDATE nodes
                 SET config = $1,
@@ -152,9 +175,9 @@ async def handle_config_report(topic: str, payload: bytes) -> None:
             )
 
         try:
-            await _complete_sensor_calibrations_after_config_report(int(node_id), data)
+            await deps._complete_sensor_calibrations_after_config_report(int(node_id), data)
         except Exception as sync_sensor_err:
-            logger.warning(
+            deps.logger.warning(
                 "[CONFIG_REPORT] Failed to finalize sensor calibrations for node %s: %s",
                 node_uid,
                 sync_sensor_err,
@@ -171,20 +194,20 @@ async def handle_config_report(topic: str, payload: bytes) -> None:
                     if parsed is not None:
                         allow_prune = parsed
                         break
-                await sync_node_channels_from_payload(
+                await deps.sync_node_channels_from_payload(
                     node_id, node_uid, channels_payload, allow_prune=allow_prune
                 )
             except Exception as sync_err:
                 channel_sync_ok = False
                 CONFIG_REPORT_CHANNEL_SYNC_FAILED.labels(node_uid=node_uid).inc()
-                logger.warning(
+                deps.logger.warning(
                     "[CONFIG_REPORT] Failed to sync channels for node %s: %s",
                     node_uid,
                     sync_err,
                     exc_info=True,
                 )
 
-        binding_ok = await _complete_binding_after_config_report(
+        binding_ok = await deps._complete_binding_after_config_report(
             node,
             node_uid,
             is_temp_topic=is_temp_topic,
@@ -199,17 +222,17 @@ async def handle_config_report(topic: str, payload: bytes) -> None:
             try:
                 await refresh_node_cache_for_uid(node_uid)
             except Exception as cache_err:
-                logger.warning(
+                deps.logger.warning(
                     "Failed to refresh telemetry node cache after config_report: node_uid=%s error=%s",
                     node_uid,
                     cache_err,
                     exc_info=True,
                 )
 
-            CONFIG_REPORT_PROCESSED.inc()
-            logger.info(f"[CONFIG_REPORT] Config stored for node {node_uid}")
+            deps.CONFIG_REPORT_PROCESSED.inc()
+            deps.logger.info(f"[CONFIG_REPORT] Config stored for node {node_uid}")
         else:
-            logger.warning(
+            deps.logger.warning(
                 "[CONFIG_REPORT] Config stored for node %s but not marked processed "
                 "(channel_sync_ok=%s binding_ok=%s)",
                 node_uid,
@@ -217,11 +240,11 @@ async def handle_config_report(topic: str, payload: bytes) -> None:
                 binding_ok,
             )
     except Exception as e:
-        logger.error(
+        deps.logger.error(
             f"[CONFIG_REPORT] Unexpected error processing config_report: {e}",
             exc_info=True,
         )
-        CONFIG_REPORT_ERROR.labels(node_uid="unknown").inc()
+        deps.CONFIG_REPORT_ERROR.labels(node_uid="unknown").inc()
         MQTT_HANDLER_ERROR.labels(handler="config_report").inc()
     finally:
         clear_trace_id()
@@ -236,9 +259,10 @@ async def _load_node_row_or_buffer(
     is_temp_topic: bool,
 ) -> tuple[Optional[Dict[str, Any]], Optional[str], Optional[int]]:
     """Возвращает (node, resolved_node_uid, node_id). ``None`` если config буферизован."""
+    deps = _dependencies()
     if is_temp_topic:
         hardware_id = node_uid
-        node_rows = await fetch(
+        node_rows = await deps.fetch(
             """
             SELECT id,
                    uid,
@@ -252,13 +276,13 @@ async def _load_node_row_or_buffer(
             hardware_id,
         )
         if not node_rows:
-            logger.debug(
+            deps.logger.debug(
                 "[CONFIG_REPORT] Temp config_report buffered by registration flow: hardware_id=%s",
                 hardware_id,
             )
-            CONFIG_REPORT_ERROR.labels(node_uid="unknown").inc()
-            await store_pending_config_report(hardware_id, topic, payload)
-            logger.debug(
+            deps.CONFIG_REPORT_ERROR.labels(node_uid="unknown").inc()
+            await deps.store_pending_config_report(hardware_id, topic, payload)
+            deps.logger.debug(
                 "[CONFIG_REPORT] Buffered config_report until node registration: hardware_id=%s",
                 hardware_id,
             )
@@ -268,14 +292,14 @@ async def _load_node_row_or_buffer(
         node_id = node.get("id")
         if resolved_uid and isinstance(data, dict):
             data["node_id"] = resolved_uid
-        logger.info(
+        deps.logger.info(
             "[CONFIG_REPORT] Mapped temp config_report: hardware_id=%s -> node_uid=%s",
             hardware_id,
             resolved_uid,
         )
         return node, resolved_uid, node_id
 
-    node_rows = await fetch(
+    node_rows = await deps.fetch(
         """
         SELECT id,
                uid,
@@ -294,7 +318,7 @@ async def _load_node_row_or_buffer(
             node_uid,
             f"[CONFIG_REPORT] Node {node_uid} not found in database, skipping config_report",
         )
-        CONFIG_REPORT_ERROR.labels(node_uid=node_uid).inc()
+        deps.CONFIG_REPORT_ERROR.labels(node_uid=node_uid).inc()
         return None, None, None
     node = node_rows[0]
     return node, node_uid, node.get("id")
@@ -323,9 +347,10 @@ def _extract_persisted_sensor_calibration_types(config: Dict[str, Any]) -> set[s
 async def _complete_sensor_calibrations_after_config_report(
     node_id: int, config: Dict[str, Any]
 ) -> None:
+    deps = _dependencies()
     persisted_sensor_types = _extract_persisted_sensor_calibration_types(config)
 
-    rows = await fetch(
+    rows = await deps.fetch(
         """
         SELECT sc.id, sc.sensor_type, sc.meta
         FROM sensor_calibrations sc
@@ -344,7 +369,7 @@ async def _complete_sensor_calibrations_after_config_report(
         cal_keys = (
             list(calibration_block.keys()) if isinstance(calibration_block, dict) else []
         )
-        logger.warning(
+        deps.logger.warning(
             "[CONFIG_REPORT] sensor_calibration finalize skipped: no non-empty calibration.ph/ec in payload "
             "(node_id=%s calibration_keys=%s). Sessions waiting for config_report will stay pending.",
             node_id,
@@ -366,7 +391,7 @@ async def _complete_sensor_calibrations_after_config_report(
         meta["persisted_via_config_report"] = True
         meta["persisted_at"] = persisted_at
 
-        await execute(
+        await deps.execute(
             """
             UPDATE sensor_calibrations
             SET status = 'completed',
@@ -383,7 +408,7 @@ async def _complete_sensor_calibrations_after_config_report(
         completed_ids.append(int(row["id"]))
 
     if completed_ids:
-        logger.info(
+        deps.logger.info(
             "[CONFIG_REPORT] Finalized sensor calibration(s) after persisted config report: node_id=%s ids=%s sensors=%s",
             node_id,
             completed_ids,
@@ -434,6 +459,7 @@ async def _complete_binding_after_config_report(
     topic_zone_uid: Optional[str] = None,
 ) -> bool:
     """Notify Laravel about observed config_report. Returns True on success/skip."""
+    deps = _dependencies()
     node_id = node.get("id")
     if not node_id:
         return True
@@ -443,7 +469,7 @@ async def _complete_binding_after_config_report(
         if is_temp_topic:
             return True
 
-        s = get_settings()
+        s = deps.get_settings()
         laravel_url = s.laravel_api_url if hasattr(s, "laravel_api_url") else None
         ingest_token = (
             s.history_logger_api_token
@@ -456,7 +482,7 @@ async def _complete_binding_after_config_report(
         )
 
         if not laravel_url:
-            logger.error(
+            deps.logger.error(
                 "[CONFIG_REPORT] Laravel API URL not configured, cannot update node lifecycle"
             )
             return False
@@ -474,7 +500,7 @@ async def _complete_binding_after_config_report(
             # S2.4 (AUDIT_2026_05_28_BUGFIX_PLAN): перевод на shared
             # http_client_pool отложен в backlog (см. B11) — требуется
             # параллельное обновление тестов в test_format_sync_integration.py.
-            async with httpx.AsyncClient(timeout=10.0) as client:
+            async with deps.httpx.AsyncClient(timeout=10.0) as client:
                 observe_response = await client.post(
                     f"{laravel_url}/api/python/nodes/config-report-observed",
                     headers=headers,
@@ -488,7 +514,7 @@ async def _complete_binding_after_config_report(
                 )
 
                 if observe_response.status_code != 200:
-                    logger.warning(
+                    deps.logger.warning(
                         "[CONFIG_REPORT] Failed to notify Laravel about observed config_report for node %s (id=%s): %s %s",
                         node_uid,
                         node_id,
@@ -498,7 +524,7 @@ async def _complete_binding_after_config_report(
                     return False
                 return True
         except Exception as e:
-            logger.error(
+            deps.logger.error(
                 "[CONFIG_REPORT] Error while notifying Laravel about config_report for node %s: %s",
                 node_uid,
                 e,

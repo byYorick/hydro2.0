@@ -68,6 +68,8 @@ def normalize_params_for_idempotency(params: Any) -> str:
     # коллизии это эквивалент.
     if isinstance(candidate, list) and len(candidate) == 0:
         candidate = {}
+    if isinstance(candidate, dict):
+        candidate = {k: v for k, v in candidate.items() if not k.startswith("__hl_")}
     try:
         return json.dumps(candidate, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
     except Exception:

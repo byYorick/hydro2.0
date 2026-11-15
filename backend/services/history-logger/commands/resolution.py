@@ -13,6 +13,13 @@ from common.env import get_settings
 
 from .alerts import emit_command_node_zone_mismatch_observability
 
+from .dependencies import async_dependency, sync_dependency
+
+fetch = async_dependency("fetch", fetch)
+_get_gh_uid_from_zone_id = async_dependency("_get_gh_uid_from_zone_id", _get_gh_uid_from_zone_id)
+_get_zone_uid_from_id = async_dependency("_get_zone_uid_from_id", _get_zone_uid_from_id)
+get_settings = sync_dependency("get_settings", get_settings)
+
 logger = logging.getLogger(__name__)
 
 

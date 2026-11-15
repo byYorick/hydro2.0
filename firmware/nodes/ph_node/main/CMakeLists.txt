@@ -18,6 +18,7 @@ idf_component_register(
         node_utils
         init_steps_utils
         trema_ph
+        ds18b20
         i2c_bus
         ina209
         oled_ui

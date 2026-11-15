@@ -17,13 +17,15 @@ logger = logging.getLogger(__name__)
 
 
 async def sync_node_channels_from_payload(
-    node_id: int, node_uid: str, channels_payload: Any, *, allow_prune: bool = False
+    node_id: int, node_uid: str, channels_payload: Any, *, allow_prune: bool = False,
+    execute_fn=None,
 ) -> None:
     """Идемпотентный sync. Protected-ключи от ноды игнорируются (backend-owned).
 
     ``allow_prune=true`` делает soft-deactivate каналов, не присутствующих в snapshot
     (только при полном channels snapshot).
     """
+    execute_fn = execute if execute_fn is None else execute_fn
     if not node_id:
         logger.warning("[CONFIG_REPORT] Cannot sync channels: node_id missing")
         return
@@ -53,7 +55,7 @@ async def sync_node_channels_from_payload(
             continue
         stripped_protected_keys += stripped
 
-        await execute(
+        await execute_fn(
             """
             INSERT INTO node_channels (node_id, channel, type, metric, unit, config, last_seen_at, is_active, created_at, updated_at)
             VALUES ($1, $2, $3, $4, $5, $6, NOW(), TRUE, NOW(), NOW())
@@ -87,6 +89,7 @@ async def sync_node_channels_from_payload(
         node_uid=node_uid,
         channel_names=channel_names,
         allow_prune=allow_prune,
+        execute_fn=execute_fn,
     )
 
     logger.info(
@@ -167,9 +170,11 @@ async def _maybe_prune_stale_channels(
     node_uid: str,
     channel_names: list[str],
     allow_prune: bool,
+    execute_fn=None,
 ) -> None:
+    execute_fn = execute if execute_fn is None else execute_fn
     if allow_prune and channel_names:
-        await execute(
+        await execute_fn(
             """
             UPDATE node_channels
             SET is_active = FALSE,

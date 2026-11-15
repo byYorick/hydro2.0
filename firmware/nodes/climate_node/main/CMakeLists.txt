@@ -5,6 +5,7 @@ idf_component_register(
         "climate_node_tasks.c"
         "pwm_driver.c"
         "climate_node_framework_integration.c"
+        "climate_node_control.c"
         "climate_node_init.c"
         "climate_node_init_steps.c"
     INCLUDE_DIRS
@@ -18,6 +19,8 @@ idf_component_register(
         node_utils
         init_steps_utils
         relay_driver
+        climate_control
+        actuator_failsafe
         i2c_bus
         sht3x
         ccs811

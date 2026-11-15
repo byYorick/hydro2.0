@@ -12,6 +12,12 @@ from datetime import datetime, timezone
 from typing import Any, Mapping, Sequence
 from zoneinfo import ZoneInfo
 
+from ae3lite.domain.services.greenhouse_clock import (
+    as_aware_utc,
+    greenhouse_local_date,
+    zoneinfo_for,
+)
+
 DLI_STALE_GAP_SEC = 600
 DLI_CHECK_INTERVAL_SEC = 900
 PPFD_UNITS = frozenset({"ppfd", "umol_m2_s"})
@@ -131,9 +137,7 @@ def select_light_channel_row(
 
 
 def _as_utc(value: datetime) -> datetime:
-    if value.tzinfo is None:
-        return value.replace(tzinfo=timezone.utc)
-    return value.astimezone(timezone.utc)
+    return as_aware_utc(value)
 
 
 def _parse_ts(raw: Any) -> datetime | None:
@@ -148,17 +152,12 @@ def _parse_ts(raw: Any) -> datetime | None:
         return None
 
 
-def zone_timezone(name: Any) -> ZoneInfo | timezone:
-    if isinstance(name, str) and name.strip():
-        try:
-            return ZoneInfo(name.strip())
-        except Exception:
-            return timezone.utc
-    return timezone.utc
+def zone_timezone(name: Any) -> ZoneInfo:
+    return zoneinfo_for(name)
 
 
 def local_date_of(moment: datetime, timezone_name: Any) -> str:
-    return _as_utc(moment).astimezone(zone_timezone(timezone_name)).date().isoformat()
+    return greenhouse_local_date(moment, timezone_name)
 
 
 def integrate_ppfd(
@@ -210,7 +209,7 @@ def decide_on_tick_duty(
     gap_sec: int = DLI_STALE_GAP_SEC,
     window_start: datetime | None = None,
     window_end: datetime | None = None,
-    timezone_name: Any = "UTC",
+    timezone_name: Any = None,
 ) -> DliTickDecision:
     moment = window_end or datetime.now(timezone.utc)
     local_date = local_date_of(moment, timezone_name)

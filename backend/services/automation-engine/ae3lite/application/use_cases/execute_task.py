@@ -19,7 +19,11 @@ from ae3lite.config.schema import RuntimePlan
 from ae3lite.application.services.task_failed_alert import emit_task_failed_alert
 from ae3lite.application.use_cases.finalize_task import FinalizeTaskUseCase
 from ae3lite.application.runtime_event_contract import with_runtime_event_contract
-from ae3lite.infrastructure.metrics import FLOW_STOP_FAILED, TASK_RUNNING_TRANSITION_MISSED, inc_observability_write_failed
+from ae3lite.infrastructure.metrics import (
+    FLOW_STOP_FAILED,
+    TASK_RUNNING_TRANSITION_MISSED,
+    inc_observability_write_failed,
+)
 from ae3lite.hydraulics.failure_report import publish_upward_reports
 from common.db import create_zone_event, fetch
 from common.infra_alerts import send_infra_alert
@@ -36,28 +40,44 @@ from ae3lite.domain.errors import (
 )
 from ae3lite.domain.task_deadline import ensure_overall_deadline_active
 
-logger = logging.getLogger(__name__)
 
-
-TASK_EXECUTION_TIMEOUT_CANCEL_MSG = "ae3_task_execution_timeout"
-TASK_EXECUTION_LEASE_LOST_CANCEL_MSG = "ae3_zone_lease_lost"
-TASK_EXECUTION_OVERALL_DEADLINE_CANCEL_MSG = ErrorCodes.AE3_TASK_OVERALL_DEADLINE_EXCEEDED
-NODE_STALE_ONLINE_THRESHOLD_SEC = max(1, int(os.getenv("NODE_OFFLINE_TIMEOUT_SEC", "120")))
-SNAPSHOT_TRANSIENT_RETRY_SEC = max(1, int(os.getenv("AE3_SNAPSHOT_TRANSIENT_RETRY_SEC", "10")))
-SNAPSHOT_TRANSIENT_MAX_STAGE_AGE_SEC = max(
+from ae3lite.application.services.task_execution_shared import (
+    logger,
+    TASK_EXECUTION_TIMEOUT_CANCEL_MSG,
+    TASK_EXECUTION_LEASE_LOST_CANCEL_MSG,
+    TASK_EXECUTION_OVERALL_DEADLINE_CANCEL_MSG,
+    NODE_STALE_ONLINE_THRESHOLD_SEC,
     SNAPSHOT_TRANSIENT_RETRY_SEC,
-    int(os.getenv("AE3_SNAPSHOT_TRANSIENT_MAX_STAGE_AGE_SEC", "600")),
-)
-NODE_PERSISTENT_DEAD_SEC = max(60, int(os.getenv("AE3_NODE_PERSISTENT_DEAD_SEC", "600")))
-SNAPSHOT_RETRY_SCHEDULED_CODE = "infra_ae3_snapshot_retry_scheduled"
-SNAPSHOT_RETRY_EXHAUSTED_CODE = "ae3_snapshot_retry_exhausted"
-COMMAND_SEND_RETRY_SEC = max(1, int(os.getenv("AE3_COMMAND_SEND_RETRY_SEC", "8")))
-COMMAND_SEND_MAX_STAGE_AGE_SEC = max(
+    SNAPSHOT_TRANSIENT_MAX_STAGE_AGE_SEC,
+    NODE_PERSISTENT_DEAD_SEC,
+    SNAPSHOT_RETRY_SCHEDULED_CODE,
+    SNAPSHOT_RETRY_EXHAUSTED_CODE,
     COMMAND_SEND_RETRY_SEC,
-    int(os.getenv("AE3_COMMAND_SEND_MAX_STAGE_AGE_SEC", "120")),
+    COMMAND_SEND_MAX_STAGE_AGE_SEC,
+    COMMAND_SEND_RETRY_SCHEDULED_CODE,
+    COMMAND_SEND_RETRY_EXHAUSTED_CODE,
 )
-COMMAND_SEND_RETRY_SCHEDULED_CODE = "infra_ae3_command_send_retry_scheduled"
-COMMAND_SEND_RETRY_EXHAUSTED_CODE = "ae3_command_send_retry_exhausted"
+
+from ae3lite.application.services.task_execution_pipeline import TaskExecutionPipeline, TaskExecutionPipelinePorts
+from ae3lite.application.services.task_execution_snapshot_retry import (
+    TaskExecutionSnapshotRetry,
+    TaskExecutionSnapshotRetryPorts,
+)
+from ae3lite.application.services.task_execution_preflight import TaskExecutionPreflight, TaskExecutionPreflightPorts
+from ae3lite.application.services.task_execution_decision_snapshot import (
+    TaskExecutionDecisionSnapshot,
+    TaskExecutionDecisionSnapshotPorts,
+)
+from ae3lite.application.services.task_execution_readiness import TaskExecutionReadiness, TaskExecutionReadinessPorts
+from ae3lite.application.services.task_execution_failure_diagnostics import (
+    TaskExecutionFailureDiagnostics,
+    TaskExecutionFailureDiagnosticsPorts,
+)
+from ae3lite.application.services.task_execution_failure_completion import (
+    TaskExecutionFailureCompletion,
+    TaskExecutionFailureCompletionPorts,
+)
+from ae3lite.application.services.task_execution_shutdown import TaskExecutionShutdown, TaskExecutionShutdownPorts
 
 
 class ExecuteTaskUseCase:
@@ -91,435 +111,129 @@ class ExecuteTaskUseCase:
         self._command_repository = command_repository
         self._finalize_task_use_case = finalize_task_use_case or FinalizeTaskUseCase(task_repository=task_repository)
         self._failure_states: OrderedDict[tuple[int, str, int], dict[str, Any]] = OrderedDict()
+        self._task_execution_pipeline = TaskExecutionPipeline(
+            TaskExecutionPipelinePorts(
+                apply_terminal_task_side_effects=lambda *args, **kwargs: self._apply_terminal_task_side_effects(
+                    *args, **kwargs
+                ),
+                clear_failure_guards=lambda *args, **kwargs: self._clear_failure_guards(*args, **kwargs),
+                command_gateway=lambda: self._command_gateway,
+                emit_start_readiness_confirmed=lambda *args, **kwargs: self._emit_start_readiness_confirmed(
+                    *args, **kwargs
+                ),
+                emit_start_readiness_failed=lambda *args, **kwargs: self._emit_start_readiness_failed(*args, **kwargs),
+                emit_task_completed_event=lambda *args, **kwargs: self._emit_task_completed_event(*args, **kwargs),
+                extract_irrig_node_uid=lambda *args, **kwargs: self._extract_irrig_node_uid(*args, **kwargs),
+                fail_closed=lambda *args, **kwargs: self._fail_closed(*args, **kwargs),
+                finalize_task_use_case=lambda: self._finalize_task_use_case,
+                is_lease_lost_cancellation=lambda *args, **kwargs: self._is_lease_lost_cancellation(*args, **kwargs),
+                is_overall_deadline_cancellation=lambda *args, **kwargs: self._is_overall_deadline_cancellation(
+                    *args, **kwargs
+                ),
+                is_timeout_cancellation=lambda *args, **kwargs: self._is_timeout_cancellation(*args, **kwargs),
+                load_terminal_task_or_none=lambda *args, **kwargs: self._load_terminal_task_or_none(*args, **kwargs),
+                lock_irrigation_decision_snapshot_if_needed=lambda *args, **kwargs: (
+                    self._lock_irrigation_decision_snapshot_if_needed(*args, **kwargs)
+                ),
+                mark_correction_config_applied_if_needed=lambda *args, **kwargs: (
+                    self._mark_correction_config_applied_if_needed(*args, **kwargs)
+                ),
+                planner=lambda: self._planner,
+                preflight_required_nodes_online=lambda *args, **kwargs: self._preflight_required_nodes_online(
+                    *args, **kwargs
+                ),
+                resolve_offline_failure_instead_of_guard=lambda *args, **kwargs: (
+                    self._resolve_offline_failure_instead_of_guard(*args, **kwargs)
+                ),
+                retry_transient_command_send_failure=lambda *args, **kwargs: self._retry_transient_command_send_failure(
+                    *args, **kwargs
+                ),
+                retry_transient_snapshot_gap=lambda *args, **kwargs: self._retry_transient_snapshot_gap(
+                    *args, **kwargs
+                ),
+                shutdown_terminal_flow_if_needed=lambda *args, **kwargs: self._shutdown_terminal_flow_if_needed(
+                    *args, **kwargs
+                ),
+                task_repository=lambda: self._task_repository,
+                verify_topology_required_node_types=lambda *args, **kwargs: self._verify_topology_required_node_types(
+                    *args, **kwargs
+                ),
+                workflow_router=lambda: self._workflow_router,
+                zone_snapshot_read_model=lambda: self._zone_snapshot_read_model,
+                complete_execution_failure=lambda *args, **kwargs: self.complete_execution_failure(*args, **kwargs),
+                global_publish_upward_reports=lambda *args, **kwargs: publish_upward_reports(*args, **kwargs),
+            )
+        )
+        self._task_execution_snapshot_retry = TaskExecutionSnapshotRetry(
+            TaskExecutionSnapshotRetryPorts(
+                task_repository=lambda: self._task_repository,
+                complete_execution_failure=lambda *args, **kwargs: self.complete_execution_failure(*args, **kwargs),
+                global_create_zone_event=lambda *args, **kwargs: create_zone_event(*args, **kwargs),
+                global_send_infra_alert=lambda *args, **kwargs: send_infra_alert(*args, **kwargs),
+            )
+        )
+        self._task_execution_preflight = TaskExecutionPreflight(
+            TaskExecutionPreflightPorts(
+                workflow_router=lambda: self._workflow_router,
+            )
+        )
+        self._task_execution_decision_snapshot = TaskExecutionDecisionSnapshot(
+            TaskExecutionDecisionSnapshotPorts(
+                correction_authority_repository=lambda: self._correction_authority_repository,
+                task_repository=lambda: self._task_repository,
+                global_create_zone_event=lambda *args, **kwargs: create_zone_event(*args, **kwargs),
+                global_send_service_log=lambda *args, **kwargs: send_service_log(*args, **kwargs),
+            )
+        )
+        self._task_execution_readiness = TaskExecutionReadiness(
+            TaskExecutionReadinessPorts(
+                latest_chemistry_diagnostics=lambda *args, **kwargs: self._latest_chemistry_diagnostics(
+                    *args, **kwargs
+                ),
+                global_create_zone_event=lambda *args, **kwargs: create_zone_event(*args, **kwargs),
+                global_send_service_log=lambda *args, **kwargs: send_service_log(*args, **kwargs),
+            )
+        )
+        self._task_execution_failure_diagnostics = TaskExecutionFailureDiagnostics(
+            TaskExecutionFailureDiagnosticsPorts(
+                command_repository=lambda: self._command_repository,
+                global_fetch=lambda *args, **kwargs: fetch(*args, **kwargs),
+            )
+        )
+        self._task_execution_failure_completion = TaskExecutionFailureCompletion(
+            TaskExecutionFailureCompletionPorts(
+                alert_repository=lambda: self._alert_repository,
+                build_failure_observability_details=lambda *args, **kwargs: self._build_failure_observability_details(
+                    *args, **kwargs
+                ),
+                failure_states=lambda: self._failure_states,
+                finalize_task_use_case=lambda: self._finalize_task_use_case,
+                shutdown_once=lambda *args, **kwargs: self._shutdown_once(*args, **kwargs),
+                sync_workflow_failure_state=lambda *args, **kwargs: self._sync_workflow_failure_state(*args, **kwargs),
+                task_repository=lambda: self._task_repository,
+                workflow_repository=lambda: self._workflow_repository,
+                global_create_zone_event=lambda *args, **kwargs: create_zone_event(*args, **kwargs),
+                global_publish_upward_reports=lambda *args, **kwargs: publish_upward_reports(*args, **kwargs),
+            )
+        )
+        self._task_execution_shutdown = TaskExecutionShutdown(
+            TaskExecutionShutdownPorts(
+                attempt_fail_safe_shutdown=lambda *args, **kwargs: self._attempt_fail_safe_shutdown(*args, **kwargs),
+                command_gateway=lambda: self._command_gateway,
+                failure_state=lambda *args, **kwargs: self._failure_state(*args, **kwargs),
+                task_repository=lambda: self._task_repository,
+                global_send_biz_alert=lambda *args, **kwargs: send_biz_alert(*args, **kwargs),
+            )
+        )
 
     async def run(self, *, task: Any, now: datetime) -> Any:
-        owner = str(task.claimed_by or "").strip()
-        if owner == "":
-            raise TaskExecutionError("ae3_task_missing_owner", f"У задачи {task.id} отсутствует claimed_by owner")
-
-        first_run = str(getattr(task, "status", "")).strip().lower() == "claimed"
-        # AE_TASK_STARTED должен эмититься ровно один раз за жизнь задачи.
-        # После реквея (running→pending→claimed) статус снова "claimed",
-        # поэтому используем персистентный флаг start_event_emitted.
-        emit_start_event = first_run and not bool(getattr(task, "start_event_emitted", False))
-
-        running_task = await self._task_repository.mark_running(
-            task_id=task.id,
-            owner=owner,
-            now=now,
-            claim_generation=int(getattr(task, "claim_generation", 0) or 0),
-        )
-        if running_task is None:
-            logger.warning(
-                "AE3 mark_running CAS miss: fail-closed zone_id=%s task_id=%s owner=%s",
-                task.zone_id,
-                task.id,
-                owner,
-            )
-            TASK_RUNNING_TRANSITION_MISSED.inc()
-            return await self._fail_closed(
-                task=task,
-                owner=owner,
-                error_code="ae3_running_transition_cas_miss",
-                error_message=(
-                    f"mark_running CAS miss для задачи {task.id} (owner={owner}); "
-                    "статус задачи изменился до перехода в running"
-                ),
-                now=now,
-            )
-
-        snapshot = None
-        plan = None
-        start_observability_emitted = False
-        self._clear_failure_guards(running_task)
-        try:
-            ensure_overall_deadline_active(task=running_task, now=now)
-            await self._preflight_required_nodes_online(task=running_task)
-            snapshot = await self._zone_snapshot_read_model.load(zone_id=running_task.zone_id)
-            self._verify_topology_required_node_types(task=running_task, snapshot=snapshot)
-            plan = self._planner.build(task=running_task, snapshot=snapshot)
-            running_task = await self._lock_irrigation_decision_snapshot_if_needed(
-                task=running_task,
-                snapshot=snapshot,
-                plan=plan,
-                owner=owner,
-                now=now,
-                emit_observability=emit_start_event,
-            )
-            if emit_start_event:
-                await self._emit_start_readiness_confirmed(
-                    task=running_task,
-                    snapshot=snapshot,
-                    plan=plan,
-                )
-                try:
-                    await self._task_repository.mark_start_event_emitted(task_id=running_task.id)
-                except Exception:
-                    logger.warning(
-                        "AE3 не смог выставить start_event_emitted для task_id=%s",
-                        running_task.id,
-                        exc_info=True,
-                    )
-                start_observability_emitted = True
-
-            # Workflow-пакеты идут через WorkflowRouter. Tick и diagnostics — command batch.
-            topology = running_task.topology
-            pack = TopologyRegistry().try_pack(str(topology or ""))
-            if pack is not None and pack.execution_mode == "workflow":
-                final_task = await self._workflow_router.run(task=running_task, plan=plan, now=now)
-                await self._mark_correction_config_applied_if_needed(
-                    task=final_task,
-                    snapshot=snapshot,
-                    plan=plan,
-                    now=now,
-                )
-                if final_task is not None and not bool(getattr(final_task, "is_active", False)):
-                    await self._apply_terminal_task_side_effects(task=final_task, now=now)
-                    if str(getattr(final_task, "status", "")).strip().lower() == "completed":
-                        await self._emit_task_completed_event(task=final_task)
-                    return final_task
-                if str(getattr(final_task, "status", "")).strip().lower() == "completed":
-                    await self._emit_task_completed_event(task=final_task)
-                return final_task
-
-            # Fallback для не-two_tank topology: generic single-batch
-            if len(plan.steps) < 1:
-                raise TaskExecutionError(
-                    "unsupported_command_plan_steps",
-                    f"AE3-Lite требует хотя бы один command step, получено {len(plan.steps)} для task_id={running_task.id}",
-                )
-            result = await self._command_gateway.run_batch(task=running_task, commands=plan.steps, now=now)
-            if not result["success"]:
-                raise TaskExecutionError(str(result["error_code"]), str(result["error_message"]))
-            completed_task = await self._finalize_task_use_case.complete(
-                task=result["task"],
-                owner=owner,
-                now=now,
-            )
-            return completed_task
-        except TaskTerminalStateReached as exc:
-            terminal_task = await self._load_terminal_task_or_none(
-                task_id=int(getattr(exc.task, "id", 0) or getattr(running_task, "id", 0) or 0),
-                fallback_task=exc.task,
-            )
-            if terminal_task is not None:
-                await self._shutdown_terminal_flow_if_needed(
-                    terminal_task=terminal_task,
-                    snapshot=snapshot,
-                    plan=plan,
-                    now=now,
-                )
-                await self._apply_terminal_task_side_effects(task=terminal_task, now=now)
-                logger.info(
-                    "AE3 execution задачи остановлено после внешнего terminal transition: zone_id=%s task_id=%s status=%s",
-                    getattr(terminal_task, "zone_id", None),
-                    getattr(terminal_task, "id", None),
-                    getattr(terminal_task, "status", None),
-                )
-                return terminal_task
-            raise
-        except asyncio.CancelledError as exc:
-            timeout_cancelled = self._is_timeout_cancellation(exc)
-            lease_lost_cancelled = self._is_lease_lost_cancellation(exc)
-            overall_deadline_cancelled = self._is_overall_deadline_cancellation(exc)
-            if not timeout_cancelled and not lease_lost_cancelled and not overall_deadline_cancelled:
-                raise
-
-            timeout_now = datetime.now(timezone.utc)
-            if overall_deadline_cancelled:
-                error_code = TASK_EXECUTION_OVERALL_DEADLINE_CANCEL_MSG
-                error_message = "Общий deadline задачи истёк во время выполнения"
-            elif timeout_cancelled:
-                error_code = TASK_EXECUTION_TIMEOUT_CANCEL_MSG
-                error_message = "Выполнение задачи превысило runtime timeout"
-            else:
-                error_code = TASK_EXECUTION_LEASE_LOST_CANCEL_MSG
-                error_message = "Во время выполнения задачи был потерян zone lease"
-            guard_extra_details: dict[str, object] | None = None
-            offline_failure = await self._resolve_offline_failure_instead_of_guard(
-                task=running_task,
-                original_error_code=error_code,
-                original_error_message=error_message,
-            )
-            if offline_failure is not None:
-                error_code = offline_failure.code
-                error_message = offline_failure.message
-                guard_extra_details = offline_failure.details
-            logger.error(
-                "AE3 execution задачи отменено runtime guard: zone_id=%s task_id=%s stage=%s error_code=%s",
-                running_task.zone_id,
-                running_task.id,
-                getattr(running_task, "current_stage", None),
-                error_code,
-            )
-            return await self.complete_execution_failure(
-                task=running_task,
-                snapshot=snapshot,
-                plan=plan,
-                now=timeout_now,
-                owner=owner,
-                error_code=error_code,
-                error_message=error_message,
-                extra_details=guard_extra_details,
-            )
-        except SnapshotBuildError as exc:
-            snapshot_error_code = str(
-                getattr(exc, "code", ErrorCodes.AE3_SNAPSHOT_BUILD_FAILED) or ErrorCodes.AE3_SNAPSHOT_BUILD_FAILED
-            )
-            snapshot_details = exc.details if isinstance(getattr(exc, "details", None), Mapping) else {}
-            if first_run and not start_observability_emitted:
-                self._emit_start_readiness_failed(
-                    task=running_task,
-                    snapshot=snapshot,
-                    error_code=snapshot_error_code,
-                    error=exc,
-                )
-            terminal_task = await self._load_terminal_task_or_none(
-                task_id=int(getattr(running_task, "id", 0) or 0),
-                fallback_task=running_task,
-            )
-            if terminal_task is not None:
-                await self._shutdown_terminal_flow_if_needed(
-                    terminal_task=terminal_task,
-                    snapshot=snapshot,
-                    plan=plan,
-                    now=now,
-                )
-                logger.info(
-                    "AE3 execution задачи остановлено после внешнего terminal transition: zone_id=%s task_id=%s status=%s reason=%s",
-                    getattr(terminal_task, "zone_id", None),
-                    getattr(terminal_task, "id", None),
-                    getattr(terminal_task, "status", None),
-                    type(exc).__name__,
-                )
-                return terminal_task
-
-            persistent_uids = list(snapshot_details.get("persistently_offline_uids") or [])
-            if (
-                snapshot_error_code == ErrorCodes.AE3_SNAPSHOT_NO_ONLINE_ACTUATOR_CHANNELS
-                and persistent_uids
-            ):
-                logger.error(
-                    "AE3 snapshot persistent dead nodes (no retry): zone_id=%s task_id=%s persistently_offline_uids=%s",
-                    running_task.zone_id,
-                    running_task.id,
-                    persistent_uids,
-                )
-                return await self.complete_execution_failure(
-                    task=running_task,
-                    snapshot=snapshot,
-                    plan=plan,
-                    now=now,
-                    owner=owner,
-                    error_code=ErrorCodes.AE3_SNAPSHOT_REQUIRED_NODE_PERSISTENTLY_OFFLINE,
-                    error_message=str(exc),
-                    extra_details=dict(snapshot_details),
-                )
-
-            retried_task = await self._retry_transient_snapshot_gap(
-                task=running_task,
-                owner=owner,
-                error=exc,
-                now=now,
-            )
-            if retried_task is not None:
-                return retried_task
-
-            logger.error(
-                "AE3 domain error при выполнении задачи: zone_id=%s task_id=%s stage=%s error_type=%s error_code=%s error=%s",
-                running_task.zone_id,
-                running_task.id,
-                getattr(running_task, "current_stage", None),
-                type(exc).__name__,
-                snapshot_error_code,
-                exc,
-            )
-            return await self.complete_execution_failure(
-                task=running_task,
-                snapshot=snapshot,
-                plan=plan,
-                now=now,
-                owner=owner,
-                error_code=snapshot_error_code,
-                error_message=str(exc),
-                extra_details=dict(snapshot_details) if snapshot_details else None,
-            )
-        except (PlannerConfigurationError, TaskExecutionError, TaskFinalizeError) as exc:
-            reports = tuple(getattr(exc, "upward_reports", ()) or ())
-            if first_run and not start_observability_emitted and isinstance(exc, PlannerConfigurationError):
-                self._emit_start_readiness_failed(
-                    task=running_task,
-                    snapshot=snapshot,
-                    error_code=str(getattr(exc, "code", "ae3_task_execution_failed") or "ae3_task_execution_failed"),
-                    error=exc,
-                )
-            terminal_task = await self._load_terminal_task_or_none(
-                task_id=int(getattr(running_task, "id", 0) or 0),
-                fallback_task=running_task,
-            )
-            if terminal_task is not None:
-                await self._shutdown_terminal_flow_if_needed(
-                    terminal_task=terminal_task,
-                    snapshot=snapshot,
-                    plan=plan,
-                    now=now,
-                )
-                await publish_upward_reports(reports)
-                logger.info(
-                    "AE3 execution задачи остановлено после внешнего terminal transition: zone_id=%s task_id=%s status=%s reason=%s",
-                    getattr(terminal_task, "zone_id", None),
-                    getattr(terminal_task, "id", None),
-                    getattr(terminal_task, "status", None),
-                    getattr(exc, "code", type(exc).__name__),
-                )
-                return terminal_task
-            error_code = getattr(exc, "code", "ae3_task_execution_failed")
-            error_message = str(exc)
-            execution_extra_details: dict[str, object] | None = None
-            if str(error_code or "").strip().lower() == "command_send_failed":
-                retried_task = await self._retry_transient_command_send_failure(
-                    task=running_task,
-                    owner=owner,
-                    error=exc,
-                    now=now,
-                    snapshot=snapshot,
-                    plan=plan,
-                )
-                if retried_task is not None:
-                    return retried_task
-            offline_failure = await self._resolve_offline_failure_instead_of_guard(
-                task=running_task,
-                original_error_code=str(error_code or ""),
-                original_error_message=error_message,
-                node_uid=self._extract_irrig_node_uid(snapshot),
-            )
-            if offline_failure is not None:
-                error_code = offline_failure.code
-                error_message = offline_failure.message
-                execution_extra_details = offline_failure.details
-            logger.error(
-                "AE3 domain error при выполнении задачи: zone_id=%s task_id=%s stage=%s error_type=%s error_code=%s error=%s",
-                running_task.zone_id,
-                running_task.id,
-                getattr(running_task, "current_stage", None),
-                type(exc).__name__,
-                error_code,
-                exc,
-            )
-            return await self.complete_execution_failure(
-                task=running_task,
-                snapshot=snapshot,
-                plan=plan,
-                now=now,
-                owner=owner,
-                error_code=error_code,
-                error_message=error_message,
-                extra_details=execution_extra_details,
-                upward_reports=reports,
-            )
-        except Exception as exc:
-            message = str(exc).strip() or exc.__class__.__name__
-            logger.error(
-                "Необработанное исключение при выполнении задачи AE3: zone_id=%s task_id=%s stage=%s error_type=%s error=%s",
-                running_task.zone_id,
-                running_task.id,
-                getattr(running_task, "current_stage", None),
-                type(exc).__name__,
-                exc,
-                exc_info=True,
-            )
-            return await self.complete_execution_failure(
-                task=running_task,
-                snapshot=snapshot,
-                plan=plan,
-                now=now,
-                owner=owner,
-                error_code="ae3_task_execution_unhandled_exception",
-                error_message=message,
-            )
+        return await self._task_execution_pipeline.run(task=task, now=now)
 
     async def _emit_task_completed_event(self, *, task: Any) -> None:
-        chemistry = await self._latest_chemistry_diagnostics(task=task)
-        payload = {
-            "task_id": task.id,
-            "topology": str(getattr(task, "topology", "") or ""),
-            "stage": str(getattr(task, "current_stage", "") or ""),
-        }
-        if isinstance(chemistry, Mapping):
-            payload.update({
-                "chemistry_outcome": str(chemistry.get("chemistry_outcome") or "unknown"),
-                "chemistry_diagnostics": chemistry,
-            })
-        try:
-            await create_zone_event(task.zone_id, "AE_TASK_COMPLETED", payload)
-        except Exception:
-            logger.warning(
-                "AE3 не смог записать событие AE_TASK_COMPLETED zone_id=%s task_id=%s",
-                task.zone_id,
-                task.id,
-                exc_info=True,
-            )
+        return await self._task_execution_readiness.emit_task_completed_event(task=task)
 
     async def _latest_chemistry_diagnostics(self, *, task: Any) -> Mapping[str, Any] | None:
-        """Load the last persisted target outcome for terminal diagnostics."""
-        event_types = (
-            "CORRECTION_COMPLETE",
-            "CORRECTION_TARGETS_NOT_ACHIEVED",
-            "CORRECTION_TARGET_OUTCOME_UNKNOWN",
-        )
-        try:
-            rows = await fetch(
-                """
-                SELECT type, COALESCE(details, payload_json) AS payload
-                FROM zone_events
-                WHERE zone_id = $1
-                  AND type = ANY($2::text[])
-                ORDER BY created_at DESC, id DESC
-                LIMIT 64
-                """,
-                int(task.zone_id),
-                list(event_types),
-            )
-            for row in rows:
-                payload = row.get("payload") if isinstance(row, Mapping) else None
-                if not isinstance(payload, Mapping):
-                    continue
-                try:
-                    event_task_id = int(payload.get("task_id") or 0)
-                except (TypeError, ValueError):
-                    continue
-                if event_task_id != int(task.id):
-                    continue
-                event_type = str(row.get("type") or "")
-                fallback_outcome = {
-                    "CORRECTION_COMPLETE": "targets_achieved",
-                    "CORRECTION_TARGETS_NOT_ACHIEVED": "targets_not_achieved",
-                    "CORRECTION_TARGET_OUTCOME_UNKNOWN": "unknown",
-                }.get(event_type, "unknown")
-                return {
-                    **dict(payload),
-                    "chemistry_outcome": str(
-                        payload.get("chemistry_outcome") or fallback_outcome
-                    ),
-                }
-        except Exception:
-            logger.warning(
-                "AE3 could not load terminal chemistry diagnostics zone_id=%s task_id=%s",
-                int(getattr(task, "zone_id", 0) or 0),
-                int(getattr(task, "id", 0) or 0),
-                exc_info=True,
-            )
-        task_type = str(getattr(task, "task_type", "") or "").strip().lower()
-        decision_outcome = str(
-            getattr(task, "irrigation_decision_outcome", "") or ""
-        ).strip().lower()
-        if task_type == "irrigation_start" and decision_outcome != "skip":
-            return {
-                "chemistry_outcome": "unknown",
-                "reason": "terminal_chemistry_diagnostics_missing",
-                "task_id": int(getattr(task, "id", 0) or 0),
-            }
-        return None
+        return await self._task_execution_failure_diagnostics.latest_chemistry_diagnostics(task=task)
 
     async def _retry_transient_command_send_failure(
         self,
@@ -531,100 +245,9 @@ class ExecuteTaskUseCase:
         snapshot: Any = None,
         plan: Any = None,
     ) -> Any | None:
-        stage_entered_at = getattr(getattr(task, "workflow", None), "stage_entered_at", None)
-        stage_age_sec = self._stage_age_sec(stage_entered_at=stage_entered_at, now=now)
-        error_message = str(error).strip() or type(error).__name__
-        details = {
-            "task_id": int(getattr(task, "id", 0) or 0),
-            "stage": str(getattr(task, "current_stage", "") or ""),
-            "workflow_phase": str(getattr(task, "workflow_phase", "") or ""),
-            "topology": str(getattr(task, "topology", "") or ""),
-            "error_code": COMMAND_SEND_RETRY_EXHAUSTED_CODE,
-            "source_error_code": "command_send_failed",
-            "source_error": error_message,
-            "retry_reason": "history_logger_transport_transient",
-            "stage_age_sec": stage_age_sec,
-            "max_stage_age_sec": COMMAND_SEND_MAX_STAGE_AGE_SEC,
-        }
-        if stage_age_sec >= COMMAND_SEND_MAX_STAGE_AGE_SEC:
-            final_message = (
-                f"{error_message} (command-send retry budget exhausted after {stage_age_sec}s "
-                f"in stage {getattr(task, 'current_stage', '')})"
-            )
-            logger.error(
-                "AE3 transient command_send_failed исчерпал бюджет повторов: zone_id=%s task_id=%s stage=%s stage_age_sec=%s error=%s",
-                getattr(task, "zone_id", None),
-                getattr(task, "id", None),
-                getattr(task, "current_stage", None),
-                stage_age_sec,
-                error_message,
-            )
-            await self._emit_snapshot_retry_observability(
-                task=task,
-                now=now,
-                event_type="AE_COMMAND_SEND_RETRY_EXHAUSTED",
-                alert_code="infra_ae3_command_send_retry_exhausted",
-                alert_message=final_message,
-                severity="error",
-                details=details,
-            )
-            return await self.complete_execution_failure(
-                task=task,
-                snapshot=snapshot,
-                plan=plan,
-                now=now,
-                owner=owner,
-                error_code=COMMAND_SEND_RETRY_EXHAUSTED_CODE,
-                error_message=final_message,
-            )
-
-        update_stage = getattr(self._task_repository, "update_stage", None)
-        if not callable(update_stage):
-            raise TaskExecutionError(
-                "ae3_command_send_retry_persist_failed",
-                f"Task repository не поддерживает update_stage для command_send retry task_id={task.id}",
-            )
-
-        due_at = now + timedelta(seconds=COMMAND_SEND_RETRY_SEC)
-        updated_task = await update_stage(
-            task_id=int(getattr(task, "id", 0) or 0),
-            owner=owner,
-            workflow=getattr(task, "workflow"),
-            correction=getattr(task, "correction", None),
-            due_at=due_at,
-            now=now,
-            claim_generation=claim_generation(task),
+        return await self._task_execution_snapshot_retry.retry_transient_command_send_failure(
+            task=task, owner=owner, error=error, now=now, snapshot=snapshot, plan=plan
         )
-        if updated_task is None:
-            raise TaskExecutionError(
-                "ae3_command_send_retry_persist_failed",
-                f"Не удалось сохранить command_send retry для задачи {task.id}",
-            )
-        logger.warning(
-            "AE3 transient command_send_failed: zone_id=%s task_id=%s stage=%s retry_in=%ss stage_age_sec=%s error=%s",
-            getattr(task, "zone_id", None),
-            getattr(task, "id", None),
-            getattr(task, "current_stage", None),
-            COMMAND_SEND_RETRY_SEC,
-            stage_age_sec,
-            error_message,
-        )
-        await self._emit_snapshot_retry_observability(
-            task=task,
-            now=now,
-            event_type="AE_COMMAND_SEND_RETRY_SCHEDULED",
-            alert_code=COMMAND_SEND_RETRY_SCHEDULED_CODE,
-            alert_message=error_message,
-            severity="warning",
-            details={
-                **details,
-                "retry_after_sec": COMMAND_SEND_RETRY_SEC,
-                "next_due_at": due_at.astimezone(timezone.utc).isoformat()
-                if due_at.tzinfo is not None
-                else due_at.replace(tzinfo=timezone.utc).isoformat(),
-            },
-        )
-        return updated_task
 
     async def _retry_transient_snapshot_gap(
         self,
@@ -634,151 +257,18 @@ class ExecuteTaskUseCase:
         error: SnapshotBuildError,
         now: datetime,
     ) -> Any | None:
-        snapshot_error_code = getattr(error, "code", ErrorCodes.AE3_SNAPSHOT_BUILD_FAILED)
-        error_message = str(error).strip()
-        if not self._is_transient_snapshot_gap(task=task, error_code=snapshot_error_code):
-            return None
-
-        snapshot_details = error.details if isinstance(getattr(error, "details", None), Mapping) else {}
-        stage_entered_at = getattr(getattr(task, "workflow", None), "stage_entered_at", None)
-        stage_age_sec = self._stage_age_sec(stage_entered_at=stage_entered_at, now=now)
-        details = {
-            "task_id": int(getattr(task, "id", 0) or 0),
-            "stage": str(getattr(task, "current_stage", "") or ""),
-            "workflow_phase": str(getattr(task, "workflow_phase", "") or ""),
-            "topology": str(getattr(task, "topology", "") or ""),
-            "error_code": SNAPSHOT_RETRY_EXHAUSTED_CODE,
-            "snapshot_error_code": snapshot_error_code,
-            "snapshot_error": error_message,
-            "snapshot_reason": "no_online_actuator_channels",
-            "stage_age_sec": stage_age_sec,
-            "max_stage_age_sec": SNAPSHOT_TRANSIENT_MAX_STAGE_AGE_SEC,
-        }
-        for key in (
-            "zone_nodes",
-            "persistently_offline_uids",
-            "transiently_offline_uids",
-            "persistent_dead_threshold_sec",
-        ):
-            if key in snapshot_details:
-                details[key] = snapshot_details[key]
-
-        if stage_age_sec >= SNAPSHOT_TRANSIENT_MAX_STAGE_AGE_SEC:
-            final_message = (
-                f"{error_message} (transient snapshot retry budget exhausted after {stage_age_sec}s "
-                f"in stage {getattr(task, 'current_stage', '')})"
-            )
-            logger.error(
-                "AE3 transient snapshot gap исчерпал бюджет повторов: zone_id=%s task_id=%s stage=%s stage_age_sec=%s error=%s",
-                getattr(task, "zone_id", None),
-                getattr(task, "id", None),
-                getattr(task, "current_stage", None),
-                stage_age_sec,
-                error_message,
-            )
-            await self._emit_snapshot_retry_observability(
-                task=task,
-                now=now,
-                event_type="AE_SNAPSHOT_RETRY_EXHAUSTED",
-                alert_code="infra_ae3_snapshot_retry_exhausted",
-                alert_message=final_message,
-                severity="error",
-                details=details,
-            )
-            return await self.complete_execution_failure(
-                task=task,
-                snapshot=None,
-                plan=None,
-                now=now,
-                owner=owner,
-                error_code=SNAPSHOT_RETRY_EXHAUSTED_CODE,
-                error_message=final_message,
-            )
-
-        update_stage = getattr(self._task_repository, "update_stage", None)
-        if not callable(update_stage):
-            raise TaskExecutionError(
-                "ae3_snapshot_retry_persist_failed",
-                f"Task repository не поддерживает update_stage для transient snapshot retry task_id={task.id}",
-            )
-
-        due_at = now + timedelta(seconds=SNAPSHOT_TRANSIENT_RETRY_SEC)
-        updated_task = await update_stage(
-            task_id=int(getattr(task, "id", 0) or 0),
-            owner=owner,
-            workflow=getattr(task, "workflow"),
-            correction=getattr(task, "correction", None),
-            due_at=due_at,
-            now=now,
-            claim_generation=claim_generation(task),
+        return await self._task_execution_snapshot_retry.retry_transient_snapshot_gap(
+            task=task, owner=owner, error=error, now=now
         )
-        if updated_task is None:
-            raise TaskExecutionError(
-                "ae3_snapshot_retry_persist_failed",
-                f"Не удалось сохранить transient snapshot retry для задачи {task.id}",
-            )
-
-        logger.warning(
-            "Обнаружен AE3 transient snapshot gap: zone_id=%s task_id=%s stage=%s retry_in=%ss stage_age_sec=%s error=%s",
-            getattr(task, "zone_id", None),
-            getattr(task, "id", None),
-            getattr(task, "current_stage", None),
-            SNAPSHOT_TRANSIENT_RETRY_SEC,
-            stage_age_sec,
-            error_message,
-        )
-        await self._emit_snapshot_retry_observability(
-            task=task,
-            now=now,
-            event_type="AE_SNAPSHOT_RETRY_SCHEDULED",
-            alert_code=SNAPSHOT_RETRY_SCHEDULED_CODE,
-            alert_message=error_message,
-            severity="warning",
-            details={
-                **details,
-                "retry_after_sec": SNAPSHOT_TRANSIENT_RETRY_SEC,
-                "next_due_at": due_at.astimezone(timezone.utc).isoformat()
-                if due_at.tzinfo is not None
-                else due_at.replace(tzinfo=timezone.utc).isoformat(),
-            },
-        )
-        return updated_task
 
     def _is_transient_snapshot_gap(self, *, task: Any, error_code: str) -> bool:
-        topology = str(getattr(task, "topology", "") or "").strip().lower()
-        pack = TopologyRegistry().try_pack(topology)
-        return (
-            pack is not None
-            and pack.retries_missing_actuators
-            and str(error_code or "").strip() == ErrorCodes.AE3_SNAPSHOT_NO_ONLINE_ACTUATOR_CHANNELS
-        )
+        return self._task_execution_snapshot_retry.is_transient_snapshot_gap(task=task, error_code=error_code)
 
     async def _preflight_required_nodes_online(self, *, task: Any) -> None:
-        from ae3lite.domain.services.zone_node_availability import (
-            assert_required_nodes_available,
-            fetch_zone_nodes_diagnostics,
-        )
-
-        zone_id = int(getattr(task, "zone_id", 0) or 0)
-        if zone_id <= 0:
-            return
-        topology = str(getattr(task, "topology", "") or "")
-        diagnostics = await fetch_zone_nodes_diagnostics(zone_id=zone_id)
-        assert_required_nodes_available(
-            zone_id=zone_id,
-            topology=topology,
-            diagnostics=diagnostics,
-            persistent_only=False,
-            task_type=str(getattr(task, "task_type", "") or "") or None,
-            current_stage=str(getattr(task, "current_stage", "") or "") or None,
-        )
+        return await self._task_execution_preflight.preflight_required_nodes_online(task=task)
 
     def _extract_irrig_node_uid(self, snapshot: Any) -> str | None:
-        from ae3lite.domain.services.zone_node_availability import extract_irrig_node_uid_from_actuators
-
-        if snapshot is None:
-            return None
-        return extract_irrig_node_uid_from_actuators(getattr(snapshot, "actuators", ()) or ())
+        return self._task_execution_preflight.extract_irrig_node_uid(snapshot=snapshot)
 
     async def _resolve_offline_failure_instead_of_guard(
         self,
@@ -788,79 +278,18 @@ class ExecuteTaskUseCase:
         original_error_message: str = "",
         node_uid: str | None = None,
     ) -> Any | None:
-        """Если transport-ошибка вызвана offline-нодой — вернуть понятный код вместо lease/timeout/send."""
-        from ae3lite.domain.services.zone_node_availability import (
-            resolve_task_error_with_node_offline,
+        return await self._task_execution_preflight.resolve_offline_failure_instead_of_guard(
+            task=task,
+            original_error_code=original_error_code,
+            original_error_message=original_error_message,
+            node_uid=node_uid,
         )
-
-        zone_id = int(getattr(task, "zone_id", 0) or 0)
-        if zone_id <= 0:
-            return None
-        try:
-            return await resolve_task_error_with_node_offline(
-                zone_id=zone_id,
-                topology=str(getattr(task, "topology", "") or ""),
-                error_code=original_error_code,
-                error_message=original_error_message,
-                node_uid=node_uid,
-                runtime_monitor=getattr(self._workflow_router, "_runtime_monitor", None),
-                task_type=str(getattr(task, "task_type", "") or "") or None,
-                current_stage=str(getattr(task, "current_stage", "") or "") or None,
-            )
-        except Exception:
-            logger.warning(
-                "AE3 не смог проверить доступность нод при remap zone_id=%s task_id=%s",
-                zone_id,
-                int(getattr(task, "id", 0) or 0),
-                exc_info=True,
-            )
-            return None
 
     def _verify_topology_required_node_types(self, *, task: Any, snapshot: Any) -> None:
-        """Проверяет наличие actuator-нод обязательных типов для текущей топологии.
-
-        Для two-tank-топологий обязательны ``irrig`` (клапаны/насос полива),
-        ``ph`` и ``ec`` (дозирующие насосы коррекции). Если хотя бы один
-        ``node_type`` не представлен ни одним actuator'ом — fail-closed
-        с конкретным кодом ``ae3_snapshot_required_node_type_missing``,
-        чтобы оператор не получал общую ошибку «no online actuator channels».
-        """
-        topology = str(getattr(task, "topology", "") or "").strip().lower()
-        pack = TopologyRegistry().try_pack(topology)
-        if pack is None or pack.execution_mode != "workflow" or not pack.required_node_types:
-            return
-        actuators = getattr(snapshot, "actuators", ()) or ()
-        present_types = {
-            str(getattr(actuator, "node_type", "") or "").strip().lower()
-            for actuator in actuators
-        }
-        present_types.discard("")
-        missing = sorted(pack.required_node_types - present_types)
-        if not missing:
-            return
-        zone_id = int(getattr(snapshot, "zone_id", 0) or 0) or int(getattr(task, "zone_id", 0) or 0)
-        raise SnapshotBuildError(
-            f"У зоны {zone_id} нет actuator-нод требуемых типов: {missing}",
-            code=ErrorCodes.AE3_SNAPSHOT_REQUIRED_NODE_TYPE_MISSING,
-            details={
-                "zone_id": zone_id,
-                "topology": topology,
-                "missing_node_types": missing,
-                "present_node_types": sorted(present_types),
-                "required_node_types": sorted(pack.required_node_types),
-            },
-        )
+        return self._task_execution_preflight.verify_topology_required_node_types(task=task, snapshot=snapshot)
 
     def _stage_age_sec(self, *, stage_entered_at: datetime | None, now: datetime) -> int:
-        if not isinstance(stage_entered_at, datetime):
-            return 0
-        normalized_now = now.astimezone(timezone.utc) if now.tzinfo is not None else now.replace(tzinfo=timezone.utc)
-        normalized_stage_entered_at = (
-            stage_entered_at.astimezone(timezone.utc)
-            if stage_entered_at.tzinfo is not None
-            else stage_entered_at.replace(tzinfo=timezone.utc)
-        )
-        return max(0, int((normalized_now - normalized_stage_entered_at).total_seconds()))
+        return self._task_execution_snapshot_retry.stage_age_sec(stage_entered_at=stage_entered_at, now=now)
 
     async def _emit_snapshot_retry_observability(
         self,
@@ -873,37 +302,15 @@ class ExecuteTaskUseCase:
         severity: str,
         details: Mapping[str, Any],
     ) -> None:
-        zone_id = int(getattr(task, "zone_id", 0) or 0)
-        try:
-            await create_zone_event(zone_id, event_type, with_runtime_event_contract(details))
-        except Exception:
-            logger.warning(
-                "AE3 не смог записать observability event retry snapshot zone_id=%s task_id=%s event_type=%s",
-                zone_id,
-                int(getattr(task, "id", 0) or 0),
-                event_type,
-                exc_info=True,
-            )
-
-        try:
-            await send_infra_alert(
-                code=alert_code,
-                message=alert_message,
-                zone_id=zone_id,
-                severity=severity,
-                service="automation-engine",
-                component="execute_task",
-                error_type="SnapshotBuildError",
-                details=dict(details),
-            )
-        except Exception:
-            logger.warning(
-                "AE3 не смог отправить infra alert retry snapshot zone_id=%s task_id=%s code=%s",
-                zone_id,
-                int(getattr(task, "id", 0) or 0),
-                alert_code,
-                exc_info=True,
-            )
+        return await self._task_execution_snapshot_retry.emit_snapshot_retry_observability(
+            task=task,
+            now=now,
+            event_type=event_type,
+            alert_code=alert_code,
+            alert_message=alert_message,
+            severity=severity,
+            details=details,
+        )
 
     async def _emit_start_readiness_confirmed(
         self,
@@ -912,25 +319,8 @@ class ExecuteTaskUseCase:
         snapshot: Any,
         plan: Any,
     ) -> None:
-        details = self._build_start_readiness_details(task=task, snapshot=snapshot, plan=plan)
-        try:
-            await create_zone_event(
-                int(getattr(task, "zone_id", 0) or 0),
-                "AE_TASK_STARTED",
-                with_runtime_event_contract(details),
-            )
-        except Exception:
-            logger.warning(
-                "AE3 не смог записать readiness event AE_TASK_STARTED zone_id=%s task_id=%s",
-                int(getattr(task, "zone_id", 0) or 0),
-                int(getattr(task, "id", 0) or 0),
-                exc_info=True,
-            )
-        send_service_log(
-            service="automation-engine",
-            level="info",
-            message="AE3 подтвердил готовность к старту задачи",
-            context=details,
+        return await self._task_execution_readiness.emit_start_readiness_confirmed(
+            task=task, snapshot=snapshot, plan=plan
         )
 
     async def _lock_irrigation_decision_snapshot_if_needed(
@@ -943,67 +333,9 @@ class ExecuteTaskUseCase:
         now: datetime,
         emit_observability: bool = False,
     ) -> Any:
-        if str(getattr(task, "task_type", "") or "").strip().lower() != "irrigation_start":
-            return task
-
-        has_persisted_snapshot = (
-            str(getattr(task, "irrigation_decision_strategy", "") or "").strip() != ""
-            and isinstance(getattr(task, "irrigation_decision_config", None), Mapping)
+        return await self._task_execution_decision_snapshot.lock_irrigation_decision_snapshot_if_needed(
+            task=task, snapshot=snapshot, plan=plan, owner=owner, now=now, emit_observability=emit_observability
         )
-        if has_persisted_snapshot:
-            # Emit only when the task is still in its initial irrigation_start stage —
-            # i.e., snapshot was set at task-creation time and this is the very first
-            # claim, before any transition to irrigation_check or subsequent poll
-            # re-enqueues.  After each poll, update_stage() resets status to 'pending'
-            # and then the task is re-claimed (status='claimed'), making first_run=True
-            # on every cycle.  Guarding by current_stage prevents duplicate events on
-            # every subsequent re-claim in irrigation_check.
-            is_initial_stage = (
-                str(getattr(task, "current_stage", "") or "").strip().lower() == "irrigation_start"
-            )
-            if emit_observability and is_initial_stage:
-                await self._emit_irrigation_decision_snapshot_locked(
-                    task=task,
-                    snapshot=snapshot,
-                    strategy=str(getattr(task, "irrigation_decision_strategy", "") or "").strip().lower() or None,
-                    bundle_revision=str(getattr(task, "irrigation_bundle_revision", "") or "").strip() or None,
-                    config_mapping=dict(getattr(task, "irrigation_decision_config", {}) or {}),
-                )
-            return task
-
-        runtime = plan.runtime if isinstance(getattr(plan, "runtime", None), RuntimePlan) else None
-        decision = runtime.irrigation_decision if runtime is not None else None
-        strategy = str(getattr(decision, "strategy", "") or "").strip().lower()
-        config = getattr(decision, "config", None)
-        config_mapping = config.model_dump(mode="python") if config is not None else {}
-        bundle_revision = str(getattr(snapshot, "bundle_revision", "") or "").strip() or None
-
-        if strategy == "" and config_mapping == {} and bundle_revision is None:
-            return task
-
-        updated = await self._task_repository.update_irrigation_runtime(
-            task_id=int(getattr(task, "id", 0) or 0),
-            owner=owner,
-            now=now,
-            irrigation_decision_strategy=strategy or None,
-            irrigation_decision_config=config_mapping or None,
-            irrigation_bundle_revision=bundle_revision,
-            claim_generation=int(getattr(task, "claim_generation", 0) or 0),
-        )
-        if updated is None:
-            raise TaskExecutionError(
-                "irrigation_decision_snapshot_persist_failed",
-                f"Не удалось сохранить snapshot решения по поливу для задачи {getattr(task, 'id', None)}",
-            )
-
-        await self._emit_irrigation_decision_snapshot_locked(
-            task=updated,
-            snapshot=snapshot,
-            strategy=strategy or None,
-            bundle_revision=bundle_revision,
-            config_mapping=config_mapping,
-        )
-        return updated
 
     async def _emit_irrigation_decision_snapshot_locked(
         self,
@@ -1014,39 +346,12 @@ class ExecuteTaskUseCase:
         bundle_revision: str | None,
         config_mapping: Mapping[str, Any] | None,
     ) -> None:
-        details = {
-            "task_id": int(getattr(task, "id", 0) or 0),
-            "zone_id": int(getattr(task, "zone_id", 0) or 0),
-            "stage": str(getattr(task, "current_stage", "") or ""),
-            "current_stage": str(getattr(task, "current_stage", "") or ""),
-            "workflow_phase": str(getattr(task, "workflow_phase", "") or ""),
-            "strategy": strategy,
-            "bundle_revision": bundle_revision,
-            "config": dict(config_mapping) if isinstance(config_mapping, Mapping) and dict(config_mapping) else None,
-            "grow_cycle_id": int(getattr(snapshot, "grow_cycle_id", 0) or 0) or None,
-            "phase_name": str(getattr(snapshot, "phase_name", "") or "") or None,
-        }
-        details = {key: value for key, value in details.items() if value is not None}
-
-        try:
-            await create_zone_event(
-                int(getattr(task, "zone_id", 0) or 0),
-                "IRRIGATION_DECISION_SNAPSHOT_LOCKED",
-                with_runtime_event_contract(details),
-            )
-        except Exception:
-            logger.warning(
-                "AE3 не смог записать IRRIGATION_DECISION_SNAPSHOT_LOCKED zone_id=%s task_id=%s",
-                int(getattr(task, "zone_id", 0) or 0),
-                int(getattr(task, "id", 0) or 0),
-                exc_info=True,
-            )
-
-        send_service_log(
-            service="automation-engine",
-            level="info",
-            message="AE3 зафиксировал snapshot decision-controller полива",
-            context=details,
+        return await self._task_execution_decision_snapshot.emit_irrigation_decision_snapshot_locked(
+            task=task,
+            snapshot=snapshot,
+            strategy=strategy,
+            bundle_revision=bundle_revision,
+            config_mapping=config_mapping,
         )
 
     def _emit_start_readiness_failed(
@@ -1057,17 +362,8 @@ class ExecuteTaskUseCase:
         error_code: str,
         error: Exception,
     ) -> None:
-        details = self._build_start_failure_details(
-            task=task,
-            snapshot=snapshot,
-            error_code=error_code,
-            error=error,
-        )
-        send_service_log(
-            service="automation-engine",
-            level="error",
-            message="AE3 не подтвердил готовность к старту задачи",
-            context=details,
+        return self._task_execution_readiness.emit_start_readiness_failed(
+            task=task, snapshot=snapshot, error_code=error_code, error=error
         )
 
     def _build_start_readiness_details(
@@ -1077,42 +373,7 @@ class ExecuteTaskUseCase:
         snapshot: Any,
         plan: Any,
     ) -> dict[str, Any]:
-        correction_config = getattr(snapshot, "correction_config", None)
-        correction_meta = correction_config.get("meta") if isinstance(correction_config, Mapping) else None
-        command_plans = getattr(snapshot, "command_plans", None)
-        phase_targets = getattr(snapshot, "phase_targets", None)
-        details: dict[str, Any] = {
-            "task_id": int(getattr(task, "id", 0) or 0),
-            "zone_id": int(getattr(task, "zone_id", 0) or 0),
-            "topology": str(getattr(plan, "topology", "") or getattr(task, "topology", "") or ""),
-            "stage": str(getattr(task, "current_stage", "") or ""),
-            "workflow_phase": str(getattr(task, "workflow_phase", "") or ""),
-            "intent_trigger": str(getattr(task, "intent_trigger", "") or "") or None,
-            "automation_runtime": str(getattr(snapshot, "automation_runtime", "") or ""),
-            "bundle_revision": str(getattr(snapshot, "bundle_revision", "") or "") or None,
-            "grow_cycle_id": int(getattr(snapshot, "grow_cycle_id", 0) or 0) or None,
-            "current_phase_id": int(getattr(snapshot, "current_phase_id", 0) or 0) or None,
-            "phase_name": str(getattr(snapshot, "phase_name", "") or "") or None,
-            "actuator_count": len(getattr(snapshot, "actuators", ()) or ()),
-            "pid_config_count": len(getattr(snapshot, "pid_configs", {}) or {}),
-            "process_calibration_count": len(getattr(snapshot, "process_calibrations", {}) or {}),
-            "command_plan_schema_version": (
-                str(command_plans.get("schema_version") or "").strip()
-                if isinstance(command_plans, Mapping)
-                else None
-            ),
-            "plan_steps_count": len(getattr(plan, "steps", ()) or ()),
-            "target_ph": self._extract_phase_target(phase_targets=phase_targets, key="ph"),
-            "target_ec": self._extract_phase_target(phase_targets=phase_targets, key="ec"),
-            "correction_config_version": (
-                int(correction_meta.get("version", 0) or 0) or None
-                if isinstance(correction_meta, Mapping)
-                else None
-            ),
-            "irrigation_decision_strategy": str(getattr(task, "irrigation_decision_strategy", "") or "") or None,
-            "irrigation_bundle_revision": str(getattr(task, "irrigation_bundle_revision", "") or "") or None,
-        }
-        return {key: value for key, value in details.items() if value is not None}
+        return self._task_execution_readiness.build_start_readiness_details(task=task, snapshot=snapshot, plan=plan)
 
     def _build_start_failure_details(
         self,
@@ -1122,39 +383,12 @@ class ExecuteTaskUseCase:
         error_code: str,
         error: Exception,
     ) -> dict[str, Any]:
-        details: dict[str, Any] = {
-            "task_id": int(getattr(task, "id", 0) or 0),
-            "zone_id": int(getattr(task, "zone_id", 0) or 0),
-            "topology": str(getattr(task, "topology", "") or ""),
-            "stage": str(getattr(task, "current_stage", "") or ""),
-            "workflow_phase": str(getattr(task, "workflow_phase", "") or ""),
-            "intent_trigger": str(getattr(task, "intent_trigger", "") or "") or None,
-            "error_code": str(error_code or "ae3_task_execution_failed"),
-            "error_type": type(error).__name__,
-            "error_message": str(error),
-            "snapshot_loaded": snapshot is not None,
-        }
-        if snapshot is not None:
-            details.update({
-                "automation_runtime": str(getattr(snapshot, "automation_runtime", "") or "") or None,
-                "grow_cycle_id": int(getattr(snapshot, "grow_cycle_id", 0) or 0) or None,
-                "current_phase_id": int(getattr(snapshot, "current_phase_id", 0) or 0) or None,
-                "phase_name": str(getattr(snapshot, "phase_name", "") or "") or None,
-            })
-        return {key: value for key, value in details.items() if value is not None}
+        return self._task_execution_readiness.build_start_failure_details(
+            task=task, snapshot=snapshot, error_code=error_code, error=error
+        )
 
     def _extract_phase_target(self, *, phase_targets: Any, key: str) -> float | None:
-        if not isinstance(phase_targets, Mapping):
-            return None
-        candidate = phase_targets.get(key)
-        if isinstance(candidate, Mapping):
-            candidate = candidate.get("target")
-        if candidate is None:
-            candidate = phase_targets.get(f"{key}_target")
-        try:
-            return float(candidate)
-        except (TypeError, ValueError):
-            return None
+        return self._task_execution_readiness.extract_phase_target(phase_targets=phase_targets, key=key)
 
     async def _fail_closed(
         self,
@@ -1167,96 +401,18 @@ class ExecuteTaskUseCase:
         extra_details: Mapping[str, Any] | None = None,
         upward_reports: tuple[Any, ...] = (),
     ) -> Any:
-        get_task = getattr(self._task_repository, "get_by_id", None)
-        if callable(get_task):
-            current = await get_task(task_id=task.id)
-            if current is not None and str(current.status) in {"pending", "claimed", "running", "waiting_command"} and not same_claim_token(task, current):
-                return current
-        extra_details = dict(extra_details) if isinstance(extra_details, Mapping) else {}
-        if upward_reports:
-            await publish_upward_reports(upward_reports)
-        timeout_observability = await self._build_failure_observability_details(
-            task=task,
-            error_code=error_code,
-            now=now,
-        )
-        if isinstance(timeout_observability, Mapping):
-            for key, value in timeout_observability.items():
-                if key not in extra_details:
-                    extra_details[key] = value
-        zone_id = int(getattr(task, "zone_id", 0) or 0)
-        task_still_exists = await self._task_still_exists(task=task)
-        if task_still_exists:
-            await self._sync_workflow_failure_state(task=task, now=now, fail_closed=True)
-            await self._emit_task_failed_alert(
-                task=task,
-                error_code=error_code,
-                error_message=error_message,
-                now=now,
-                extra_details=extra_details,
-            )
-        else:
-            logger.info(
-                "AE3 fail-closed skipping zone-bound side-effects because task was already cleaned up: zone_id=%s task_id=%s",
-                zone_id,
-                int(getattr(task, "id", 0) or 0),
-            )
-        try:
-            startup_probe_timeout = extra_details.get("startup_probe_timeout")
-            if task_still_exists and isinstance(startup_probe_timeout, Mapping):
-                await create_zone_event(
-                    zone_id,
-                    "AE_STARTUP_PROBE_TIMEOUT",
-                    {
-                        "task_id": int(getattr(task, "id", 0) or 0),
-                        "stage": str(getattr(task, "current_stage", "") or ""),
-                        "topology": str(getattr(task, "topology", "") or ""),
-                        **dict(startup_probe_timeout),
-                    },
-                )
-            if task_still_exists:
-                await create_zone_event(
-                    zone_id,
-                    "AE_TASK_FAILED",
-                    {
-                        "task_id": int(getattr(task, "id", 0) or 0),
-                        "error_code": str(error_code),
-                        "error_message": str(error_message),
-                        "stage": str(getattr(task, "current_stage", "") or ""),
-                        "topology": str(getattr(task, "topology", "") or ""),
-                        **extra_details,
-                    },
-                )
-        except Exception:
-            logger.warning(
-                "AE3 не смог записать событие AE_TASK_FAILED zone_id=%s task_id=%s error_code=%s",
-                int(getattr(task, "zone_id", 0) or 0),
-                int(getattr(task, "id", 0) or 0),
-                error_code,
-                exc_info=True,
-            )
-        return await self._finalize_task_use_case.fail_closed(
+        return await self._task_execution_failure_completion.fail_closed(
             task=task,
             owner=owner,
             error_code=error_code,
             error_message=error_message,
             now=now,
-            )
+            extra_details=extra_details,
+            upward_reports=upward_reports,
+        )
 
     async def _apply_terminal_task_side_effects(self, *, task: Any, now: datetime) -> None:
-        """Side-effects для terminal task, помеченного вне fail_closed (gateway/router)."""
-        status = str(getattr(task, "status", "") or "").strip().lower()
-        if status != "failed":
-            return
-        await self._sync_workflow_failure_state(task=task, now=now)
-        error_code = str(getattr(task, "error_code", "") or "ae3_task_execution_failed").strip() or "ae3_task_execution_failed"
-        error_message = str(getattr(task, "error_message", "") or "Задача завершилась с ошибкой")
-        await self._emit_task_failed_alert(
-            task=task,
-            error_code=error_code,
-            error_message=error_message,
-            now=now,
-        )
+        return await self._task_execution_failure_completion.apply_terminal_task_side_effects(task=task, now=now)
 
     async def _sync_workflow_failure_state(
         self,
@@ -1265,75 +421,12 @@ class ExecuteTaskUseCase:
         now: datetime,
         fail_closed: bool = False,
     ) -> None:
-        if self._workflow_repository is None:
-            return
-        from ae3lite.domain.errors import ErrorCodes
-        from ae3lite.domain.services.workflow_failure_rollback import (
-            resolve_workflow_phase_after_task_failure,
+        return await self._task_execution_failure_completion.sync_workflow_failure_state(
+            task=task, now=now, fail_closed=fail_closed
         )
-        from ae3lite.domain.services.workflow_state_sync import (
-            WorkflowStateSyncError,
-            upsert_workflow_phase_strict,
-        )
-
-        rollback_phase = resolve_workflow_phase_after_task_failure(task)
-        # irrig_recirc: legacy compat only for old tasks.
-        scheduler_task_id = (
-            None
-            if rollback_phase in {"ready", "irrig_recirc"}
-            else str(getattr(task, "id", "") or "") or None
-        )
-        payload = {
-            "ae3_cycle_start_stage": str(getattr(task, "current_stage", "") or ""),
-            "ae3_failure_rollback": True,
-            "ae3_failed_task_id": int(getattr(task, "id", 0) or 0) or None,
-        }
-        zone_id = int(getattr(task, "zone_id", 0) or 0)
-        task_id = int(getattr(task, "id", 0) or 0)
-        try:
-            await upsert_workflow_phase_strict(
-                self._workflow_repository,
-                zone_id=zone_id,
-                workflow_phase=rollback_phase,
-                payload=payload,
-                scheduler_task_id=scheduler_task_id,
-                now=now,
-            )
-        except WorkflowStateSyncError:
-            logger.error(
-                "AE3 не смог синхронизировать zone_workflow_state в fail-closed path zone_id=%s task_id=%s phase=%s",
-                zone_id,
-                task_id,
-                rollback_phase,
-                exc_info=True,
-            )
-            try:
-                await create_zone_event(
-                    zone_id,
-                    "AE_WORKFLOW_STATE_SYNC_FAILED",
-                    {
-                        "task_id": task_id,
-                        "workflow_phase": rollback_phase,
-                        "ae3_failure_rollback": True,
-                        "error_code": ErrorCodes.AE3_WORKFLOW_STATE_SYNC_FAILED,
-                    },
-                )
-            except Exception:
-                logger.warning(
-                    "AE3 не смог записать AE_WORKFLOW_STATE_SYNC_FAILED zone_id=%s task_id=%s",
-                    zone_id,
-                    task_id,
-                    exc_info=True,
-                )
-            if not fail_closed:
-                raise
 
     async def _task_still_exists(self, *, task: Any) -> bool:
-        get_by_id = getattr(self._task_repository, "get_by_id", None)
-        if not callable(get_by_id):
-            return True
-        current = await get_by_id(task_id=int(getattr(task, "id", 0) or 0))
-        return current is not None
+        return await self._task_execution_failure_completion.task_still_exists(task=task)
 
     async def _emit_task_failed_alert(
         self,
@@ -1344,13 +437,8 @@ class ExecuteTaskUseCase:
         now: datetime,
         extra_details: Mapping[str, Any] | None = None,
     ) -> None:
-        await emit_task_failed_alert(
-            alert_repository=self._alert_repository,
-            task=task,
-            error_code=error_code,
-            error_message=error_message,
-            now=now,
-            extra_details=extra_details,
+        return await self._task_execution_failure_completion.emit_task_failed_alert(
+            task=task, error_code=error_code, error_message=error_message, now=now, extra_details=extra_details
         )
 
     async def _build_failure_observability_details(
@@ -1360,76 +448,9 @@ class ExecuteTaskUseCase:
         error_code: str,
         now: datetime,
     ) -> dict[str, Any]:
-        if str(error_code).strip().lower() != "command_timeout":
-            return {}
-
-        repository = self._command_repository
-        if repository is None:
-            return {}
-
-        try:
-            ae_command = await repository.get_latest_for_task(task_id=int(getattr(task, "id", 0) or 0))
-            if not isinstance(ae_command, Mapping):
-                return {}
-
-            payload = ae_command.get("payload")
-            payload = payload if isinstance(payload, Mapping) else {}
-            external_id = str(ae_command.get("external_id") or "").strip() or None
-            cmd_id = str(payload.get("cmd_id") or "").strip() or None
-
-            legacy_command = None
-            if external_id:
-                legacy_command = await repository.get_legacy_command_by_id(external_id=external_id)
-            elif cmd_id:
-                legacy_command = await repository.get_legacy_command_by_cmd_id(
-                    zone_id=int(getattr(task, "zone_id", 0) or 0),
-                    cmd_id=cmd_id,
-                )
-
-            node_uid = str(ae_command.get("node_uid") or "").strip() or None
-            if node_uid is None and isinstance(legacy_command, Mapping):
-                node_uid = str(legacy_command.get("node_uid") or "").strip() or None
-
-            node_context = None
-            if node_uid:
-                node_context = await repository.get_node_runtime_context(node_uid=node_uid)
-
-            timeout_details = self._compose_timeout_details(
-                task=task,
-                ae_command=ae_command,
-                payload=payload,
-                legacy_command=legacy_command,
-                node_context=node_context,
-                now=now,
-            )
-            if timeout_details is None:
-                return {}
-
-            result: dict[str, Any] = {"timed_out_command": timeout_details}
-            if self._is_startup_probe_timeout(task=task, timeout_details=timeout_details):
-                result["startup_probe_timeout"] = {
-                    "probe_name": timeout_details.get("probe_name"),
-                    "cmd_id": timeout_details.get("cmd_id"),
-                    "node_uid": timeout_details.get("node_uid"),
-                    "channel": timeout_details.get("channel"),
-                    "command": timeout_details.get("command"),
-                    "publish_status": timeout_details.get("publish_status"),
-                    "legacy_status": timeout_details.get("legacy_status"),
-                    "node_status": timeout_details.get("node_status"),
-                    "node_last_seen_at": timeout_details.get("node_last_seen_at"),
-                    "node_last_seen_age_sec": timeout_details.get("node_last_seen_age_sec"),
-                    "node_stale_online_candidate": timeout_details.get("node_stale_online_candidate"),
-                    "timeout_at": timeout_details.get("timeout_at"),
-                }
-            return result
-        except Exception:
-            logger.warning(
-                "AE3 не смог обогатить observability details для command_timeout: zone_id=%s task_id=%s",
-                getattr(task, "zone_id", None),
-                getattr(task, "id", None),
-                exc_info=True,
-            )
-            return {}
+        return await self._task_execution_failure_diagnostics.build_failure_observability_details(
+            task=task, error_code=error_code, now=now
+        )
 
     def _compose_timeout_details(
         self,
@@ -1441,98 +462,31 @@ class ExecuteTaskUseCase:
         node_context: Mapping[str, Any] | None,
         now: datetime,
     ) -> dict[str, Any] | None:
-        node_uid = str(ae_command.get("node_uid") or "").strip() or None
-        channel = str(ae_command.get("channel") or "").strip() or None
-        cmd_id = str(payload.get("cmd_id") or "").strip() or None
-        command_name = str(payload.get("cmd") or "").strip() or None
-        probe_name = str(payload.get("name") or "").strip() or None
-        if not any((node_uid, channel, cmd_id, command_name, probe_name, legacy_command, node_context)):
-            return None
-
-        sent_at = legacy_command.get("sent_at") if isinstance(legacy_command, Mapping) else None
-        ack_at = legacy_command.get("ack_at") if isinstance(legacy_command, Mapping) else None
-        failed_at = legacy_command.get("failed_at") if isinstance(legacy_command, Mapping) else None
-        node_last_seen_at = node_context.get("last_seen_at") if isinstance(node_context, Mapping) else None
-
-        node_last_seen_age_sec: int | None = None
-        if isinstance(node_last_seen_at, datetime):
-            normalized_now = now.astimezone(timezone.utc) if now.tzinfo is not None else now.replace(tzinfo=timezone.utc)
-            normalized_last_seen = (
-                node_last_seen_at.astimezone(timezone.utc)
-                if node_last_seen_at.tzinfo is not None
-                else node_last_seen_at.replace(tzinfo=timezone.utc)
-            )
-            node_last_seen_age_sec = max(
-                0,
-                int((normalized_now - normalized_last_seen).total_seconds()),
-            )
-
-        node_status = str(node_context.get("node_status") or "").strip().lower() or None if isinstance(node_context, Mapping) else None
-        node_stale_online_candidate = (
-            node_status == "online"
-            and node_last_seen_age_sec is not None
-            and node_last_seen_age_sec >= NODE_STALE_ONLINE_THRESHOLD_SEC
+        return self._task_execution_failure_diagnostics.compose_timeout_details(
+            task=task,
+            ae_command=ae_command,
+            payload=payload,
+            legacy_command=legacy_command,
+            node_context=node_context,
+            now=now,
         )
 
-        details: dict[str, Any] = {
-            "task_id": int(getattr(task, "id", 0) or 0),
-            "stage": str(getattr(task, "current_stage", "") or ""),
-            "workflow_phase": str(getattr(task, "workflow_phase", "") or ""),
-            "cmd_id": cmd_id,
-            "command": command_name,
-            "probe_name": probe_name,
-            "node_uid": node_uid,
-            "channel": channel,
-            "publish_status": str(ae_command.get("publish_status") or "").strip().lower() or None,
-            "terminal_status": str(ae_command.get("terminal_status") or "").strip().upper() or None,
-            "legacy_command_id": int(legacy_command["id"]) if isinstance(legacy_command, Mapping) and legacy_command.get("id") is not None else None,
-            "legacy_status": str(legacy_command.get("status") or "").strip().upper() or None if isinstance(legacy_command, Mapping) else None,
-            "sent_at": sent_at.isoformat() if isinstance(sent_at, datetime) else None,
-            "ack_at": ack_at.isoformat() if isinstance(ack_at, datetime) else None,
-            "failed_at": failed_at.isoformat() if isinstance(failed_at, datetime) else None,
-            "timeout_at": now.astimezone(timezone.utc).isoformat() if now.tzinfo is not None else now.replace(tzinfo=timezone.utc).isoformat(),
-            "node_status": node_status,
-            "node_type": str(node_context.get("node_type") or "").strip().lower() or None if isinstance(node_context, Mapping) else None,
-            "node_last_seen_at": node_last_seen_at.isoformat() if isinstance(node_last_seen_at, datetime) else None,
-            "node_last_seen_age_sec": node_last_seen_age_sec,
-            "node_stale_online_candidate": node_stale_online_candidate,
-        }
-        return {key: value for key, value in details.items() if value is not None}
-
     def _is_startup_probe_timeout(self, *, task: Any, timeout_details: Mapping[str, Any]) -> bool:
-        return (
-            str(getattr(task, "current_stage", "") or "").strip().lower() == "startup"
-            and str(timeout_details.get("channel") or "").strip().lower() == "storage_state"
-            and str(timeout_details.get("command") or "").strip().lower() == "state"
+        return self._task_execution_failure_diagnostics.is_startup_probe_timeout(
+            task=task, timeout_details=timeout_details
         )
 
     def _failure_key(self, task: Any) -> tuple[int, str, int]:
-        return int(task.id), claim_owner(task), claim_generation(task)
+        return self._task_execution_failure_completion.failure_key(task=task)
 
     def _failure_state(self, task: Any) -> dict[str, Any]:
-        key = self._failure_key(task)
-        if key not in self._failure_states:
-            # Bound completed-claim bookkeeping; never evict an in-flight failure.
-            for old_key, state in list(self._failure_states.items()):
-                if len(self._failure_states) < 1024:
-                    break
-                if state.get("inflight") is None:
-                    del self._failure_states[old_key]
-            self._failure_states[key] = {}
-        return self._failure_states[key]
+        return self._task_execution_failure_completion.failure_state(task=task)
 
     def _clear_failure_guards(self, task: Any) -> None:
-        self._failure_states.pop(self._failure_key(task), None)
+        return self._task_execution_failure_completion.clear_failure_guards(task=task)
 
     def is_guarded_task_cancellation(self, exc: BaseException) -> bool:
-        """Timeout и lease-lost — помеченные отмены safety-path. Голый CancelledError — нет."""
-        if not isinstance(exc, asyncio.CancelledError):
-            return False
-        return (
-            self._is_timeout_cancellation(exc)
-            or self._is_lease_lost_cancellation(exc)
-            or self._is_overall_deadline_cancellation(exc)
-        )
+        return self._task_execution_failure_completion.is_guarded_task_cancellation(exc=exc)
 
     async def complete_execution_failure(
         self,
@@ -1547,38 +501,17 @@ class ExecuteTaskUseCase:
         extra_details: Mapping[str, Any] | None = None,
         upward_reports: tuple[Any, ...] = (),
     ) -> Any:
-        """Общий safety-path: stop доступных актуаторов, затем terminal fail.
-
-        Повторный вход не шлёт новый ordinary batch и не зацикливает stop/fail.
-        Запись failed сама по себе остановкой не считается.
-        """
-        state = self._failure_state(task)
-        if "result" in state:
-            return state["result"]
-        inflight = state.get("inflight")
-        if inflight is not None:
-            if state.get("caller") is asyncio.current_task():
-                return task
-            return await asyncio.shield(inflight)
-        completion = asyncio.get_running_loop().create_future()
-        state["inflight"] = completion
-        state["caller"] = asyncio.current_task()
-        try:
-            await self._shutdown_once(task=task, snapshot=snapshot, plan=plan, now=now)
-            result = await self._fail_closed(
-                task=task, owner=owner, error_code=error_code,
-                error_message=error_message, now=now,
-                extra_details=extra_details, upward_reports=upward_reports,
-            )
-            state["result"] = result
-            completion.set_result(result)
-            return result
-        except BaseException:
-            completion.cancel()
-            raise
-        finally:
-            state["inflight"] = None
-            state.pop("caller", None)
+        return await self._task_execution_failure_completion.complete_execution_failure(
+            task=task,
+            snapshot=snapshot,
+            plan=plan,
+            now=now,
+            owner=owner,
+            error_code=error_code,
+            error_message=error_message,
+            extra_details=extra_details,
+            upward_reports=upward_reports,
+        )
 
     async def _shutdown_once(
         self,
@@ -1588,16 +521,7 @@ class ExecuteTaskUseCase:
         plan: Any,
         now: datetime,
     ) -> None:
-        state = self._failure_state(task)
-        if state.get("shutdown_attempted"):
-            return
-        state["shutdown_attempted"] = True
-        await self._attempt_fail_safe_shutdown(
-            task=task,
-            snapshot=snapshot,
-            plan=plan,
-            now=now,
-        )
+        return await self._task_execution_shutdown.shutdown_once(task=task, snapshot=snapshot, plan=plan, now=now)
 
     async def _shutdown_terminal_flow_if_needed(
         self,
@@ -1607,20 +531,8 @@ class ExecuteTaskUseCase:
         plan: Any,
         now: datetime,
     ) -> None:
-        status = str(getattr(terminal_task, "status", "") or "").strip().lower()
-        if status not in {"failed", "cancelled"}:
-            return
-        from ae3lite.application.handlers.flow_path_guard import (
-            should_fail_safe_shutdown_on_task_fail,
-        )
-
-        if not should_fail_safe_shutdown_on_task_fail(terminal_task):
-            return
-        await self._shutdown_once(
-            task=terminal_task,
-            snapshot=snapshot,
-            plan=plan,
-            now=now,
+        return await self._task_execution_shutdown.shutdown_terminal_flow_if_needed(
+            terminal_task=terminal_task, snapshot=snapshot, plan=plan, now=now
         )
 
     async def _attempt_fail_safe_shutdown(
@@ -1631,99 +543,8 @@ class ExecuteTaskUseCase:
         plan: Any,
         now: datetime,
     ) -> None:
-        topology = str(getattr(plan, "topology", "") or getattr(task, "topology", "")).strip().lower()
-        pack = TopologyRegistry().try_pack(topology)
-        if pack is None or not pack.fail_safe_on_flow:
-            return
-        get_task_by_id = getattr(self._task_repository, "get_by_id", None)
-        if callable(get_task_by_id):
-            try:
-                current_task = await get_task_by_id(task_id=int(getattr(task, "id", 0) or 0))
-            except Exception:
-                logger.warning(
-                    "AE3 fail-safe shutdown preflight не смог загрузить состояние задачи: task_id=%s zone_id=%s",
-                    getattr(task, "id", None),
-                    getattr(task, "zone_id", None),
-                    exc_info=True,
-                )
-                current_task = None
-            # Inactive/missing task still needs hardware stop; keep original task as FK.
-            if current_task is not None:
-                if not same_claim_token(task, current_task) and str(current_task.status) in {"pending", "claimed", "running", "waiting_command"}:
-                    logger.warning("AE3 stale failure cannot stop new claim: task_id=%s", task.id)
-                    return
-                # Never borrow a newer claim's authority for a shutdown.
-        from ae3lite.application.services.correction_interrupt_safety import (
-            attempt_task_fail_safe_shutdown,
-        )
-
-        # Empty snapshot actuators must not skip: pass None so DB fallback loads irrig channels.
-        snapshot_actuators = getattr(snapshot, "actuators", None) if snapshot is not None else None
-        if not snapshot_actuators:
-            snapshot_actuators = None
-
-        try:
-            result = await attempt_task_fail_safe_shutdown(
-                task=task,
-                now=now,
-                command_gateway=self._command_gateway,
-                snapshot_actuators=snapshot_actuators,
-                planner_step_prefix="execute_task_fail_safe",
-            )
-        except asyncio.CancelledError:
-            raise
-        except Exception as exc:
-            logger.exception(
-                "AE3 fail-safe shutdown batch завершился ошибкой: task_id=%s zone_id=%s",
-                getattr(task, "id", None),
-                getattr(task, "zone_id", None),
-            )
-            await self._emit_fail_safe_shutdown_alert(
-                task=task,
-                reason="fail_safe_shutdown_exception",
-                error_code=str(getattr(exc, "code", "") or type(exc).__name__),
-            )
-            return
-
-        if not result.attempted:
-            reason = str(result.reason or "not_attempted")
-            if reason == "actuators_load_failed":
-                await self._emit_fail_safe_shutdown_alert(
-                    task=task,
-                    reason="actuators_load_failed",
-                    error_code="actuators_load_failed",
-                )
-                return
-            self._log_skip_fail_safe_shutdown(task=task, reason=reason)
-            return
-        if bool(getattr(result, "confirmed", False)):
-            logger.error(
-                "AE3 fail-safe shutdown вернул confirmed без probe: task_id=%s zone_id=%s reason=%s",
-                getattr(task, "id", None),
-                getattr(task, "zone_id", None),
-                result.reason,
-            )
-        if result.success or str(result.reason or "") == "publish_accepted_unconfirmed":
-            return
-        reason = str(result.reason or "unknown")
-        if reason.startswith("publish_exception:"):
-            await self._emit_fail_safe_shutdown_alert(
-                task=task,
-                reason="fail_safe_shutdown_exception",
-                error_code=reason.split(":", 1)[1] or "unknown",
-            )
-            return
-        logger.error(
-            "AE3 fail-safe shutdown batch вернул non-success: task_id=%s zone_id=%s stage=%s error_code=%s",
-            getattr(task, "id", None),
-            getattr(task, "zone_id", None),
-            str(getattr(task, "current_stage", "") or "unknown"),
-            reason,
-        )
-        await self._emit_fail_safe_shutdown_alert(
-            task=task,
-            reason="fail_safe_shutdown_non_success",
-            error_code=reason,
+        return await self._task_execution_shutdown.attempt_fail_safe_shutdown(
+            task=task, snapshot=snapshot, plan=plan, now=now
         )
 
     async def _emit_fail_safe_shutdown_alert(
@@ -1733,38 +554,12 @@ class ExecuteTaskUseCase:
         reason: str,
         error_code: str,
     ) -> None:
-        stage = str(getattr(task, "current_stage", "") or "unknown")
-        FLOW_STOP_FAILED.labels(stage=stage or "unknown").inc()
-        try:
-            await send_biz_alert(
-                zone_id=int(task.zone_id),
-                code="biz_flow_stop_failed_hardware_may_be_active",
-                severity="critical",
-                message="Не удалось подтвердить остановку flow-path; оборудование может оставаться активным",
-                details={
-                    "task_id": int(getattr(task, "id", 0) or 0),
-                    "stage": stage,
-                    "reason": reason,
-                    "error_code": error_code,
-                },
-                scope_parts=(f"stage:{stage}",),
-            )
-        except Exception:
-            inc_observability_write_failed(kind="biz_alert")
-            logger.warning(
-                "AE3 fail-safe shutdown: не удалось создать biz-alert zone_id=%s task_id=%s",
-                getattr(task, "zone_id", None),
-                getattr(task, "id", None),
-                exc_info=True,
-            )
+        return await self._task_execution_shutdown.emit_fail_safe_shutdown_alert(
+            task=task, reason=reason, error_code=error_code
+        )
 
     def _log_skip_fail_safe_shutdown(self, *, task: Any, reason: str) -> None:
-        logger.info(
-            "AE3 пропускает fail-safe shutdown: task_id=%s zone_id=%s reason=%s",
-            getattr(task, "id", None),
-            getattr(task, "zone_id", None),
-            reason,
-        )
+        return self._task_execution_shutdown.log_skip_fail_safe_shutdown(task=task, reason=reason)
 
     async def _mark_correction_config_applied_if_needed(
         self,
@@ -1774,58 +569,20 @@ class ExecuteTaskUseCase:
         plan: Any,
         now: datetime,
     ) -> None:
-        repository = self._correction_authority_repository
-        if repository is None:
-            return
-
-        topology = str(getattr(plan, "topology", "") or getattr(task, "topology", "")).strip().lower()
-        pack = TopologyRegistry().try_pack(topology)
-        if pack is None or not pack.tracks_correction_authority:
-            return
-
-        correction_config = getattr(snapshot, "correction_config", None)
-        if not isinstance(correction_config, dict):
-            return
-        meta = correction_config.get("meta")
-        if not isinstance(meta, dict):
-            return
-        version = meta.get("version")
-        try:
-            version_int = int(version)
-        except (TypeError, ValueError):
-            return
-        if version_int <= 0:
-            return
-        await repository.mark_applied(zone_id=int(snapshot.zone_id), version=version_int, now=now)
+        return await self._task_execution_decision_snapshot.mark_correction_config_applied_if_needed(
+            task=task, snapshot=snapshot, plan=plan, now=now
+        )
 
     def _is_timeout_cancellation(self, exc: asyncio.CancelledError) -> bool:
-        return any(str(arg) == TASK_EXECUTION_TIMEOUT_CANCEL_MSG for arg in getattr(exc, "args", ()))
+        return self._task_execution_failure_completion.is_timeout_cancellation(exc=exc)
 
     def _is_lease_lost_cancellation(self, exc: asyncio.CancelledError) -> bool:
-        return any(str(arg) == TASK_EXECUTION_LEASE_LOST_CANCEL_MSG for arg in getattr(exc, "args", ()))
+        return self._task_execution_failure_completion.is_lease_lost_cancellation(exc=exc)
 
     def _is_overall_deadline_cancellation(self, exc: asyncio.CancelledError) -> bool:
-        return any(str(arg) == TASK_EXECUTION_OVERALL_DEADLINE_CANCEL_MSG for arg in getattr(exc, "args", ()))
+        return self._task_execution_failure_completion.is_overall_deadline_cancellation(exc=exc)
 
     async def _load_terminal_task_or_none(self, *, task_id: int, fallback_task: Any) -> Any | None:
-        if task_id <= 0:
-            task = fallback_task
-        else:
-            get_task_by_id = getattr(self._task_repository, "get_by_id", None)
-            if callable(get_task_by_id):
-                try:
-                    task = await get_task_by_id(task_id=task_id)
-                except Exception:
-                    logger.warning(
-                        "AE3 не смог загрузить текущее состояние задачи для terminal short-circuit: task_id=%s",
-                        task_id,
-                        exc_info=True,
-                    )
-                    task = fallback_task
-            else:
-                task = fallback_task
-        if task is None or bool(getattr(task, "is_active", False)):
-            if fallback_task is None or bool(getattr(fallback_task, "is_active", False)):
-                return None
-            return fallback_task
-        return task
+        return await self._task_execution_failure_completion.load_terminal_task_or_none(
+            task_id=task_id, fallback_task=fallback_task
+        )

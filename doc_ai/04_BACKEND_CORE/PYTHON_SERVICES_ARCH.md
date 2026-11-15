@@ -41,6 +41,30 @@ Breaking-change: HTTP-транспорт задач планировщика у�
 - `9300` REST API;
 - `9300/metrics` Prometheus metrics.
 
+#### Внутренние границы HL после F15 (2026-11-15)
+
+`mqtt_handlers.py` сохраняет публичные handlers/import paths, но не меняет globals
+модулей `handlers/*`. Неизменяемая привязка зависимостей живёт в context текущего
+сообщения; вложенные callbacks наследуют её, `finally` восстанавливает предыдущий
+context. Это применяется к command responses, heartbeat/status/offline monitor,
+node events, node hello и существующему config-report adapter.
+`commands.dependencies` также использует ограниченную область действия: после
+возврата/исключения command/config ingress зависимости запроса сбрасываются.
+
+`telemetry_processing.py` сохраняет entry points и владение cache/backoff state.
+Реализация разделена на `telemetry/runtime_*`: batch coordinator, zone/node/sensor
+resolution, normalization, cache, persistence, realtime, queue consumer, outcomes,
+solution-temp thresholds и records. Компоненты получают frozen `*Ports`; runtime
+cache передаётся через getters/setters владельца, message-specific callbacks и
+метрики фиксируются в immutable snapshot. `telemetry.dependencies` независим от
+контекста MQTT handlers; нет межмодульного присваивания `module.fetch = ...`.
+
+Порядок parse → durable Redis admission → SQL samples/projection → selective
+ack/requeue/dead → realtime сохранён. CTE записи `telemetry_samples` и монотонной
+`telemetry_last`, FK invalidation, timestamp(0) matching и flush/shutdown semantics
+не изменены. Snapshot scope сохраняется при конкурентной обработке и исключениях.
+Новых сервисов, MQTT топиков и schema objects нет.
+
 ### 2.2 `automation-engine` (AE3)
 
 Назначение:
