@@ -15,6 +15,7 @@ async def test_queue_size_metric():
     
     with patch('common.redis_queue.get_redis_client') as mock_get_client:
         mock_client = AsyncMock()
+        mock_client.register_script = MagicMock(return_value=AsyncMock())
         mock_get_client.return_value = mock_client
         mock_client.llen.return_value = 100
         
@@ -38,6 +39,7 @@ async def test_queue_overflow_dropped():
     
     with patch('common.redis_queue.get_redis_client') as mock_get_client:
         mock_client = AsyncMock()
+        mock_client.register_script = MagicMock(return_value=AsyncMock())
         mock_get_client.return_value = mock_client
         mock_client.llen.return_value = TelemetryQueue.MAX_QUEUE_SIZE
         
@@ -62,6 +64,7 @@ async def test_queue_overflow_alert():
     
     with patch('common.redis_queue.get_redis_client') as mock_get_client:
         mock_client = AsyncMock()
+        mock_client.register_script = MagicMock(return_value=AsyncMock())
         mock_get_client.return_value = mock_client
         mock_client.llen.return_value = int(TelemetryQueue.MAX_QUEUE_SIZE * 0.96)
         mock_client.exists.return_value = False  # Throttle не активен
@@ -86,6 +89,7 @@ async def test_backpressure_sampling():
     
     with patch('common.redis_queue.get_redis_client') as mock_get_client:
         mock_client = AsyncMock()
+        mock_client.register_script = MagicMock(return_value=AsyncMock())
         mock_get_client.return_value = mock_client
         # 96% заполнения - должно применяться sampling
         mock_client.llen.return_value = int(TelemetryQueue.MAX_QUEUE_SIZE * 0.96)

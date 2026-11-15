@@ -1,6 +1,7 @@
 """Heartbeat / status / LWT handlers + offline node monitor."""
 
 from __future__ import annotations
+from .dependencies import snapshot
 
 import asyncio
 import logging
@@ -27,6 +28,21 @@ from telemetry_processing import refresh_node_cache_for_uid
 logger = logging.getLogger(__name__)
 
 
+def _dependencies():
+    return snapshot(
+        {
+            'HEARTBEAT_RECEIVED': HEARTBEAT_RECEIVED,
+            '_extract_gh_uid': _extract_gh_uid,
+            '_extract_node_uid': _extract_node_uid,
+            '_extract_zone_uid': _extract_zone_uid,
+            '_parse_json': _parse_json,
+            'execute': execute,
+            'fetch': fetch,
+            'logger': logger,
+        }
+    )
+
+
 def _rows_affected(result: str) -> int:
     parts = str(result or "").strip().split()
     if not parts:
@@ -45,17 +61,18 @@ async def _update_node_status(
     handler: str,
     success_log: str,
 ) -> bool:
-    result = await execute(query, *params)
+    deps = _dependencies()
+    result = await deps.execute(query, *params)
     affected = _rows_affected(result)
     if affected == 0:
-        logger.warning(
+        deps.logger.warning(
             "[%s] UPDATE affected 0 rows for unknown node_uid=%s",
             handler.upper(),
             node_uid,
         )
         NODE_UPDATE_ZERO_ROWS.labels(handler=handler).inc()
         return False
-    logger.info(success_log)
+    deps.logger.info(success_log)
     return True
 
 
@@ -72,50 +89,51 @@ def _extract_fw_version(data: dict) -> str | None:
 
 async def handle_heartbeat(topic: str, payload: bytes) -> None:
     """Обновляет ``nodes`` на heartbeat: uptime / free_heap / rssi / last_seen."""
+    deps = _dependencies()
     try:
-        logger.info("[HEARTBEAT] ===== START processing heartbeat =====")
-        logger.info(f"[HEARTBEAT] Topic: {topic}, payload length: {len(payload)}")
+        deps.logger.info("[HEARTBEAT] ===== START processing heartbeat =====")
+        deps.logger.info(f"[HEARTBEAT] Topic: {topic}, payload length: {len(payload)}")
 
-        data = _parse_json(payload)
+        data = deps._parse_json(payload)
         if not data or not isinstance(data, dict):
-            logger.warning(f"[HEARTBEAT] Invalid JSON in heartbeat from topic {topic}")
+            deps.logger.warning(f"[HEARTBEAT] Invalid JSON in heartbeat from topic {topic}")
             return
 
         apply_trace_context(data)
 
-        node_uid = _extract_node_uid(topic)
+        node_uid = deps._extract_node_uid(topic)
         if not node_uid:
-            logger.warning(f"[HEARTBEAT] Could not extract node_uid from topic {topic}")
+            deps.logger.warning(f"[HEARTBEAT] Could not extract node_uid from topic {topic}")
             return
 
-        gh_uid = _extract_gh_uid(topic)
-        zone_uid = _extract_zone_uid(topic)
+        gh_uid = deps._extract_gh_uid(topic)
+        zone_uid = deps._extract_zone_uid(topic)
         is_temp_topic = gh_uid == "gh-temp" and zone_uid == "zn-temp"
 
-        logger.info(
+        deps.logger.info(
             f"[HEARTBEAT] Extracted gh_uid='{gh_uid}', zone_uid='{zone_uid}', is_temp_topic={is_temp_topic}, topic='{topic}'"
         )
 
         if is_temp_topic:
             # Для temp топиков ``node_uid`` на самом деле hardware_id
             hardware_id = node_uid
-            logger.info(
+            deps.logger.info(
                 f"[HEARTBEAT] Processing heartbeat for temp topic, hardware_id: {hardware_id}, data: {data}"
             )
-            node_rows = await fetch(
+            node_rows = await deps.fetch(
                 "SELECT uid FROM nodes WHERE hardware_id = $1",
                 hardware_id,
             )
             if not node_rows:
-                logger.debug(
+                deps.logger.debug(
                     "[HEARTBEAT] Temp heartbeat buffered by registration flow: hardware_id=%s",
                     hardware_id,
                 )
                 return
             node_uid = node_rows[0]["uid"]
-            logger.info(f"[HEARTBEAT] Found node_uid: {node_uid} for hardware_id: {hardware_id}")
+            deps.logger.info(f"[HEARTBEAT] Found node_uid: {node_uid} for hardware_id: {hardware_id}")
         else:
-            logger.info(f"[HEARTBEAT] Processing heartbeat for node_uid: {node_uid}, data: {data}")
+            deps.logger.info(f"[HEARTBEAT] Processing heartbeat for node_uid: {node_uid}, data: {data}")
 
         uptime = data.get("uptime")
         free_heap = data.get("free_heap") or data.get("free_heap_bytes")
@@ -133,7 +151,7 @@ async def handle_heartbeat(topic: str, payload: bytes) -> None:
                 params.append(uptime_seconds)
                 param_index += 1
             except (ValueError, TypeError) as e:
-                logger.warning(
+                deps.logger.warning(
                     "Invalid uptime value: %s",
                     uptime,
                     extra={"error": str(e), "node_uid": node_uid},
@@ -146,7 +164,7 @@ async def handle_heartbeat(topic: str, payload: bytes) -> None:
                 params.append(free_heap_int)
                 param_index += 1
             except (ValueError, TypeError):
-                logger.warning(f"Invalid free_heap value: {free_heap}")
+                deps.logger.warning(f"Invalid free_heap value: {free_heap}")
 
         if rssi is not None:
             try:
@@ -155,7 +173,7 @@ async def handle_heartbeat(topic: str, payload: bytes) -> None:
                 params.append(rssi_int)
                 param_index += 1
             except (ValueError, TypeError):
-                logger.warning(f"Invalid rssi value: {rssi}")
+                deps.logger.warning(f"Invalid rssi value: {rssi}")
 
         if fw_version is not None:
             updates.append(f"fw_version=${param_index + 1}")
@@ -191,7 +209,7 @@ async def handle_heartbeat(topic: str, payload: bytes) -> None:
         if not updated:
             return
 
-        HEARTBEAT_RECEIVED.labels(node_uid=node_uid).inc()
+        deps.HEARTBEAT_RECEIVED.labels(node_uid=node_uid).inc()
 
         logged_uptime = None
         if uptime is not None:
@@ -200,7 +218,7 @@ async def handle_heartbeat(topic: str, payload: bytes) -> None:
             except (ValueError, TypeError):
                 logged_uptime = uptime
 
-        logger.info(
+        deps.logger.info(
             "[HEARTBEAT] Node heartbeat details: node_uid=%s, uptime_seconds=%s, free_heap=%s, rssi=%s",
             node_uid,
             logged_uptime,
@@ -210,7 +228,7 @@ async def handle_heartbeat(topic: str, payload: bytes) -> None:
         try:
             await refresh_node_cache_for_uid(node_uid)
         except Exception as cache_err:
-            logger.warning(
+            deps.logger.warning(
                 "Failed to refresh telemetry node cache after heartbeat: node_uid=%s error=%s",
                 node_uid,
                 cache_err,
@@ -218,7 +236,7 @@ async def handle_heartbeat(topic: str, payload: bytes) -> None:
             )
         await resolve_node_online_alert(node_uid=node_uid, reason="heartbeat")
     except Exception as exc:
-        logger.error(
+        deps.logger.error(
             "[HEARTBEAT] Unexpected error processing heartbeat for topic %s: %s",
             topic,
             exc,
@@ -231,26 +249,27 @@ async def handle_heartbeat(topic: str, payload: bytes) -> None:
 
 async def handle_status(topic: str, payload: bytes) -> None:
     """Помечает ноду ONLINE/OFFLINE на основании ``status`` в payload."""
+    deps = _dependencies()
     try:
-        logger.info("[STATUS] ===== START processing status =====")
-        logger.info(f"[STATUS] Topic: {topic}, payload length: {len(payload)}")
+        deps.logger.info("[STATUS] ===== START processing status =====")
+        deps.logger.info(f"[STATUS] Topic: {topic}, payload length: {len(payload)}")
 
-        data = _parse_json(payload)
+        data = deps._parse_json(payload)
         if not data or not isinstance(data, dict):
-            logger.warning(f"[STATUS] Invalid JSON in status from topic {topic}")
+            deps.logger.warning(f"[STATUS] Invalid JSON in status from topic {topic}")
             return
 
         apply_trace_context(data)
 
-        node_uid = _extract_node_uid(topic)
+        node_uid = deps._extract_node_uid(topic)
         if not node_uid:
-            logger.warning(f"[STATUS] Could not extract node_uid from topic {topic}")
+            deps.logger.warning(f"[STATUS] Could not extract node_uid from topic {topic}")
             return
 
         status = data.get("status", "").upper()
         fw_version = _extract_fw_version(data)
 
-        logger.info("[STATUS] Processing status for node_uid: %s, status: %s", node_uid, status)
+        deps.logger.info("[STATUS] Processing status for node_uid: %s, status: %s", node_uid, status)
 
         if status == "ONLINE":
             if fw_version is not None:
@@ -267,10 +286,7 @@ async def handle_status(topic: str, payload: bytes) -> None:
             else:
                 updated = await _update_node_status(
                     node_uid=node_uid,
-                    query=(
-                        "UPDATE nodes SET status='online', last_seen_at=NOW(), "
-                        "updated_at=NOW() WHERE uid=$1"
-                    ),
+                    query=("UPDATE nodes SET status='online', last_seen_at=NOW(), updated_at=NOW() WHERE uid=$1"),
                     params=(node_uid,),
                     handler="status",
                     success_log=f"[STATUS] Node {node_uid} marked as ONLINE",
@@ -280,7 +296,7 @@ async def handle_status(topic: str, payload: bytes) -> None:
             try:
                 await refresh_node_cache_for_uid(node_uid)
             except Exception as cache_err:
-                logger.warning(
+                deps.logger.warning(
                     "Failed to refresh telemetry node cache after status ONLINE: node_uid=%s error=%s",
                     node_uid,
                     cache_err,
@@ -298,11 +314,11 @@ async def handle_status(topic: str, payload: bytes) -> None:
             if updated:
                 await raise_node_offline_alert(node_uid=node_uid, reason="mqtt_status_offline")
         else:
-            logger.warning(f"[STATUS] Unknown status value: {status} for node {node_uid}")
+            deps.logger.warning(f"[STATUS] Unknown status value: {status} for node {node_uid}")
 
         STATUS_RECEIVED.labels(node_uid=node_uid, status=status.lower()).inc()
     except Exception as exc:
-        logger.error(
+        deps.logger.error(
             "[STATUS] Unexpected error processing status for topic %s: %s",
             topic,
             exc,
@@ -315,19 +331,20 @@ async def handle_status(topic: str, payload: bytes) -> None:
 
 async def handle_lwt(topic: str, payload: bytes) -> None:
     """LWT от узла: строка ``offline`` при потере связи (MQTT broker-driven)."""
+    deps = _dependencies()
     try:
-        logger.info("[LWT] ===== START processing LWT =====")
-        logger.info(f"[LWT] Topic: {topic}, payload length: {len(payload)}")
+        deps.logger.info("[LWT] ===== START processing LWT =====")
+        deps.logger.info(f"[LWT] Topic: {topic}, payload length: {len(payload)}")
 
-        node_uid = _extract_node_uid(topic)
+        node_uid = deps._extract_node_uid(topic)
         if not node_uid:
-            logger.warning(f"[LWT] Could not extract node_uid from topic {topic}")
+            deps.logger.warning(f"[LWT] Could not extract node_uid from topic {topic}")
             return
 
         raw_payload = payload.decode("utf-8", errors="ignore").strip()
         status = raw_payload.upper()
         if not status:
-            data = _parse_json(payload)
+            data = deps._parse_json(payload)
             if isinstance(data, dict):
                 apply_trace_context(data)
                 status = str(data.get("status", "")).upper()
@@ -338,9 +355,7 @@ async def handle_lwt(topic: str, payload: bytes) -> None:
         if status == "ONLINE":
             updated = await _update_node_status(
                 node_uid=node_uid,
-                query=(
-                    "UPDATE nodes SET status='online', last_seen_at=NOW(), updated_at=NOW() WHERE uid=$1"
-                ),
+                query=("UPDATE nodes SET status='online', last_seen_at=NOW(), updated_at=NOW() WHERE uid=$1"),
                 params=(node_uid,),
                 handler="lwt",
                 success_log=f"[LWT] Node {node_uid} marked as ONLINE (unexpected LWT payload)",
@@ -360,7 +375,7 @@ async def handle_lwt(topic: str, payload: bytes) -> None:
 
         STATUS_RECEIVED.labels(node_uid=node_uid, status=status.lower()).inc()
     except Exception as exc:
-        logger.error(
+        deps.logger.error(
             "[LWT] Unexpected error processing LWT for topic %s: %s",
             topic,
             exc,
@@ -373,15 +388,16 @@ async def handle_lwt(topic: str, payload: bytes) -> None:
 
 async def monitor_offline_nodes() -> None:
     """Periodically помечает узлы ``offline`` при stale ``last_seen_at``."""
+    deps = _dependencies()
     s = get_settings()
     timeout_sec = max(1, s.node_offline_timeout_sec)
     interval_sec = max(1, s.node_offline_check_interval_sec)
 
-    logger.info(f"[OFFLINE_MONITOR] Started (timeout={timeout_sec}s, interval={interval_sec}s)")
+    deps.logger.info(f"[OFFLINE_MONITOR] Started (timeout={timeout_sec}s, interval={interval_sec}s)")
 
     while not state.shutdown_event.is_set():
         try:
-            rows = await fetch(
+            rows = await deps.fetch(
                 """
                 UPDATE nodes
                 SET status='offline', updated_at=NOW()
@@ -393,13 +409,13 @@ async def monitor_offline_nodes() -> None:
                 timeout_sec,
             )
             if rows:
-                logger.warning("[OFFLINE_MONITOR] Marked offline: %s", len(rows))
+                deps.logger.warning("[OFFLINE_MONITOR] Marked offline: %s", len(rows))
                 for row in rows:
                     uid = str(row.get("uid") or "").strip()
                     if uid:
                         await raise_node_offline_alert(node_uid=uid, reason="heartbeat_timeout")
         except Exception as exc:
-            logger.error(f"[OFFLINE_MONITOR] Failed to update offline nodes: {exc}")
+            deps.logger.error(f"[OFFLINE_MONITOR] Failed to update offline nodes: {exc}")
 
         try:
             await asyncio.wait_for(state.shutdown_event.wait(), timeout=interval_sec)
@@ -409,14 +425,15 @@ async def monitor_offline_nodes() -> None:
         try:
             await refresh_connectivity_age_metrics()
         except Exception as exc:
-            logger.warning("[OFFLINE_MONITOR] Failed to refresh connectivity age metrics: %s", exc)
+            deps.logger.warning("[OFFLINE_MONITOR] Failed to refresh connectivity age metrics: %s", exc)
 
 
 async def refresh_connectivity_age_metrics() -> None:
     """Обновляет Prometheus gauges node_last_seen_age_seconds и telemetry_last_age_seconds."""
+    deps = _dependencies()
     from metrics import NODE_LAST_SEEN_AGE_SECONDS, TELEMETRY_LAST_AGE_SECONDS
 
-    node_rows = await fetch(
+    node_rows = await deps.fetch(
         """
         SELECT
             n.uid AS node_uid,
@@ -440,7 +457,7 @@ async def refresh_connectivity_age_metrics() -> None:
         age = float(row.get("age_seconds") or 0.0)
         NODE_LAST_SEEN_AGE_SECONDS.labels(node_uid=node_uid, zone_id=zone_id).set(max(0.0, age))
 
-    zone_rows = await fetch(
+    zone_rows = await deps.fetch(
         """
         SELECT
             s.zone_id::text AS zone_id,

@@ -17,10 +17,10 @@ class VerifyPythonServiceToken
      *
      * Проверяет токен Python сервисов из заголовка Authorization.
      * Токен должен совпадать с PY_API_TOKEN из конфигурации.
-     * Также разрешает доступ авторизованным пользователям через Sanctum.
+     * Sanctum допускается только при явном параметре middleware :true.
      * При успешной валидации сервисного токена устанавливает сервисного пользователя.
      */
-    public function handle(Request $request, Closure $next): Response
+    public function handle(Request $request, Closure $next, string $allowUser = 'false'): Response
     {
         // Проверяем сервисный токен ДО Sanctum.
         // Иначе каждый service-to-service запрос с Bearer token сначала ударяет в
@@ -62,8 +62,8 @@ class VerifyPythonServiceToken
             }
         }
 
-        // Если сервисный токен не подошёл, разрешаем доступ авторизованным пользователям через Sanctum.
-        if (Auth::guard('sanctum')->check()) {
+        // Только маршруты с явным :true допускают пользовательскую авторизацию Sanctum.
+        if ($allowUser === 'true' && Auth::guard('sanctum')->check()) {
             return $next($request);
         }
 
@@ -110,9 +110,9 @@ class VerifyPythonServiceToken
     /**
      * Получить или создать сервисного пользователя для Python сервисов.
      *
-     * ВАЖНО: Сервисный токен дает доступ только к /api/system/config/full (чтение конфигурации).
-     * Для безопасности используем пользователя с минимальными правами (viewer), а не админа.
-     * Это ограничивает потенциальный ущерб при компрометации токена.
+     * Совместимый actor для сервисных контроллеров. Service token также разрешает
+     * внутренние mutation endpoints; пользовательские роли не заменяют этот токен.
+     * Выделенный service principal вместо fallback actor остаётся отдельной миграцией.
      */
     private function getServiceUser(): ?User
     {

@@ -42,9 +42,21 @@ from common.service_logs import send_service_log
 _logger = logging.getLogger(__name__)
 
 
-def _utc_naive_dt(dt: datetime) -> datetime:
-    """Нормализует datetime к UTC-naive перед сравнениями."""
-    return dt.astimezone(timezone.utc).replace(tzinfo=None) if dt.tzinfo is not None else dt
+from ae3lite.application.services.stage_timing import _utc_naive_dt
+
+
+from ae3lite.application.services.stage_checkpoint import StageCheckpoint, StageCheckpointPorts
+from ae3lite.application.services.stage_command_boundary import StageCommandBoundary, StageCommandBoundaryPorts
+from ae3lite.application.services.stage_flow_safety import StageFlowSafety, StageFlowSafetyPorts
+from ae3lite.application.services.stage_probe_snapshot import StageProbeSnapshot, StageProbeSnapshotPorts
+from ae3lite.application.services.stage_level_reader import StageLevelReader, StageLevelReaderPorts
+from ae3lite.application.services.stage_timing import StageTiming, StageTimingPorts
+from ae3lite.application.services.stage_readiness import StageReadiness, StageReadinessPorts
+from ae3lite.application.services.stage_metric_window import StageMetricWindow, StageMetricWindowPorts
+from ae3lite.application.services.stage_probe_runner import StageProbeRunner, StageProbeRunnerPorts
+from ae3lite.application.services.stage_probe_backoff import StageProbeBackoff, StageProbeBackoffPorts
+from ae3lite.application.services.stage_probe_observability import StageProbeObservability, StageProbeObservabilityPorts
+from ae3lite.application.services.stage_deadline_outcome import StageDeadlineOutcome, StageDeadlineOutcomePorts
 
 
 class BaseStageHandler:
@@ -70,22 +82,119 @@ class BaseStageHandler:
         self._runtime_monitor = runtime_monitor
         self._command_gateway = command_gateway
         self._task_repository = task_repository
-        self._last_probe_state: dict[str, Any] | None = None
         self._reconciled_estop_event_ids: set[int] = set()
         # Phase 5: live-mode checkpoint toggle. Default False → handler tests
         # that don't wire a real DB pool see no live-reload noise. Production
         # `WorkflowRouter` enables it when constructing handlers.
         self._live_reload_enabled = live_reload_enabled
+        self._stage_checkpoint = StageCheckpoint(
+            StageCheckpointPorts(
+                live_reload_enabled=lambda: self._live_reload_enabled,
+                create_zone_event=lambda *args, **kwargs: create_zone_event(*args, **kwargs),
+            )
+        )
+        self._stage_command_boundary = StageCommandBoundary(
+            StageCommandBoundaryPorts(
+                remap_execution_error=lambda *args, **kwargs: self._remap_execution_error(*args, **kwargs),
+                command_gateway=lambda: self._command_gateway,
+                extract_irr_probe_node_uid=lambda *args, **kwargs: self._extract_irr_probe_node_uid(*args, **kwargs),
+                runtime_monitor=lambda: self._runtime_monitor,
+            )
+        )
+        self._stage_flow_safety = StageFlowSafety(
+            StageFlowSafetyPorts(
+                require_runtime_plan=lambda *args, **kwargs: self._require_runtime_plan(*args, **kwargs),
+                run_command_batch_checked=lambda *args, **kwargs: self._run_command_batch_checked(*args, **kwargs),
+                probe_irr_state=lambda *args, **kwargs: self._probe_irr_state(*args, **kwargs),
+                read_level=lambda *args, **kwargs: self._read_level(*args, **kwargs),
+                runtime_config=lambda: self._runtime_config,
+                runtime_monitor=lambda: self._runtime_monitor,
+                stage_entered_at=lambda *args, **kwargs: self._stage_entered_at(*args, **kwargs),
+                create_zone_event=lambda *args, **kwargs: create_zone_event(*args, **kwargs),
+            )
+        )
+        self._stage_probe_snapshot = StageProbeSnapshot(
+            StageProbeSnapshotPorts(
+                runtime_config=lambda: self._runtime_config,
+            )
+        )
+        self._stage_level_reader = StageLevelReader(
+            StageLevelReaderPorts(
+                raise_execution_error=lambda *args, **kwargs: self._raise_execution_error(*args, **kwargs),
+                read_probe_level_snapshot=lambda *args, **kwargs: self._read_probe_level_snapshot(*args, **kwargs),
+                runtime_monitor=lambda: self._runtime_monitor,
+            )
+        )
+        self._stage_timing = StageTiming(
+            StageTimingPorts(
+                irr_state_probe_retry_count=lambda: self._IRR_STATE_PROBE_RETRY_COUNT,
+                irr_state_probe_retry_delay_sec=lambda: self._IRR_STATE_PROBE_RETRY_DELAY_SEC,
+                runtime_config=lambda: self._runtime_config,
+            )
+        )
+        self._stage_readiness = StageReadiness(
+            StageReadinessPorts(
+                read_target_metric_window=lambda *args, **kwargs: self._read_target_metric_window(*args, **kwargs),
+                require_runtime_plan=lambda *args, **kwargs: self._require_runtime_plan(*args, **kwargs),
+                runtime_config=lambda: self._runtime_config,
+            )
+        )
+        self._stage_metric_window = StageMetricWindow(
+            StageMetricWindowPorts(
+                runtime_monitor=lambda: self._runtime_monitor,
+            )
+        )
+        self._stage_probe_runner = StageProbeRunner(
+            StageProbeRunnerPorts(
+                irr_probe_node_unreachable_heartbeat_age_sec=lambda: self._IRR_PROBE_NODE_UNREACHABLE_HEARTBEAT_AGE_SEC,
+                irr_state_probe_retry_count=lambda: self._IRR_STATE_PROBE_RETRY_COUNT,
+                irr_state_probe_retry_delay_sec=lambda: self._IRR_STATE_PROBE_RETRY_DELAY_SEC,
+                log_probe_failure_event=lambda *args, **kwargs: self._log_probe_failure_event(*args, **kwargs),
+                maybe_emit_node_reboot_event=lambda *args, **kwargs: self._maybe_emit_node_reboot_event(
+                    *args, **kwargs
+                ),
+                raise_execution_error=lambda *args, **kwargs: self._raise_execution_error(*args, **kwargs),
+                remember_probe_state=lambda *args, **kwargs: self._remember_probe_state(*args, **kwargs),
+                require_runtime_plan=lambda *args, **kwargs: self._require_runtime_plan(*args, **kwargs),
+                run_command_batch_checked=lambda *args, **kwargs: self._run_command_batch_checked(*args, **kwargs),
+                runtime_config=lambda: self._runtime_config,
+                runtime_monitor=lambda: self._runtime_monitor,
+            )
+        )
+        self._stage_probe_backoff = StageProbeBackoff(
+            StageProbeBackoffPorts(
+                irr_probe_failure_streak_limit=lambda: self._IRR_PROBE_FAILURE_STREAK_LIMIT,
+                irr_probe_node_unreachable_heartbeat_age_sec=lambda: self._IRR_PROBE_NODE_UNREACHABLE_HEARTBEAT_AGE_SEC,
+                extract_irr_probe_node_uid=lambda *args, **kwargs: self._extract_irr_probe_node_uid(*args, **kwargs),
+                probe_irr_state=lambda *args, **kwargs: self._probe_irr_state(*args, **kwargs),
+                runtime_monitor=lambda: self._runtime_monitor,
+                task_repository=lambda: self._task_repository,
+                create_zone_event=lambda *args, **kwargs: create_zone_event(*args, **kwargs),
+            )
+        )
+        self._stage_probe_observability = StageProbeObservability(
+            StageProbeObservabilityPorts(
+                extract_irr_probe_node_uid=lambda *args, **kwargs: self._extract_irr_probe_node_uid(*args, **kwargs),
+                runtime_monitor=lambda: self._runtime_monitor,
+                create_zone_event=lambda *args, **kwargs: create_zone_event(*args, **kwargs),
+            )
+        )
+        self._stage_deadline_outcome = StageDeadlineOutcome(
+            StageDeadlineOutcomePorts(
+                target_outcome_snapshot=lambda *args, **kwargs: self._target_outcome_snapshot(*args, **kwargs),
+                create_zone_event=lambda *args, **kwargs: create_zone_event(*args, **kwargs),
+            )
+        )
 
-    @staticmethod
-    def _first_command_node_uid(commands: Sequence[Any]) -> str | None:
-        for cmd in commands:
-            uid = getattr(cmd, "node_uid", None)
-            if uid is None and isinstance(cmd, Mapping):
-                uid = cmd.get("node_uid")
-            if uid:
-                return str(uid).strip() or None
-        return None
+    @property
+    def _last_probe_state(self) -> dict[str, Any] | None:
+        return self._stage_probe_snapshot.last_probe_state
+
+    @_last_probe_state.setter
+    def _last_probe_state(self, value: dict[str, Any] | None) -> None:
+        self._stage_probe_snapshot.last_probe_state = value
+
+    _first_command_node_uid = staticmethod(StageCommandBoundary.first_command_node_uid)
 
     async def _remap_execution_error(
         self,
@@ -96,22 +205,9 @@ class BaseStageHandler:
         node_uid: str | None = None,
         plan: Any = None,
     ) -> tuple[str, str]:
-        from ae3lite.domain.services.zone_node_availability import (
-            resolve_task_error_with_node_offline,
+        return await self._stage_command_boundary.remap_execution_error(
+            task=task, error_code=error_code, error_message=error_message, node_uid=node_uid, plan=plan
         )
-
-        effective_node = node_uid or self._extract_irr_probe_node_uid(plan=plan)
-        offline = await resolve_task_error_with_node_offline(
-            zone_id=int(getattr(task, "zone_id", 0) or 0),
-            topology=str(getattr(task, "topology", "") or ""),
-            error_code=error_code,
-            error_message=error_message,
-            node_uid=effective_node,
-            runtime_monitor=self._runtime_monitor,
-        )
-        if offline is not None:
-            return offline.code, offline.message
-        return error_code, error_message
 
     async def _raise_execution_error(
         self,
@@ -123,23 +219,14 @@ class BaseStageHandler:
         plan: Any = None,
         deadline_kind: str | None = None,
     ) -> None:
-        if error_code in {
-            ErrorCodes.AE3_COMMAND_POLL_DEADLINE_EXCEEDED,
-            ErrorCodes.AE3_COMMAND_STAGE_BUDGET_INSUFFICIENT,
-        }:
-            code, message = error_code, error_message
-        else:
-            code, message = await self._remap_execution_error(
-                task=task,
-                error_code=error_code,
-                error_message=error_message,
-                node_uid=node_uid,
-                plan=plan,
-            )
-        exc = TaskExecutionError(code, message)
-        if deadline_kind is not None:
-            exc.deadline_kind = str(deadline_kind)
-        raise exc
+        return await self._stage_command_boundary.raise_execution_error(
+            task=task,
+            error_code=error_code,
+            error_message=error_message,
+            node_uid=node_uid,
+            plan=plan,
+            deadline_kind=deadline_kind,
+        )
 
     async def _ensure_command_targets_online(
         self,
@@ -147,29 +234,7 @@ class BaseStageHandler:
         task: Any,
         commands: Sequence[Any],
     ) -> None:
-        from ae3lite.domain.services.zone_node_availability import (
-            offline_failure_for_node_liveness,
-        )
-
-        zone_id = int(getattr(task, "zone_id", 0) or 0)
-        if zone_id <= 0:
-            return
-        seen: set[str] = set()
-        for cmd in commands:
-            uid = getattr(cmd, "node_uid", None)
-            if uid is None and isinstance(cmd, Mapping):
-                uid = cmd.get("node_uid")
-            uid = str(uid or "").strip()
-            if not uid or uid in seen:
-                continue
-            seen.add(uid)
-            failure = await offline_failure_for_node_liveness(
-                zone_id=zone_id,
-                node_uid=uid,
-                runtime_monitor=self._runtime_monitor,
-            )
-            if failure is not None:
-                raise TaskExecutionError(failure.code, failure.message)
+        return await self._stage_command_boundary.ensure_command_targets_online(task=task, commands=commands)
 
     async def _run_command_batch_checked(
         self,
@@ -179,26 +244,9 @@ class BaseStageHandler:
         now: datetime,
         track_task_state: bool = True,
     ) -> Mapping[str, Any]:
-        await self._ensure_command_targets_online(task=task, commands=commands)
-        result = await self._command_gateway.run_batch(
-            task=task,
-            commands=commands,
-            now=now,
-            track_task_state=track_task_state,
+        return await self._stage_command_boundary.run_command_batch_checked(
+            task=task, commands=commands, now=now, track_task_state=track_task_state
         )
-        if not result["success"]:
-            await self._raise_execution_error(
-                task=task,
-                error_code=str(result["error_code"]),
-                error_message=str(result["error_message"]),
-                node_uid=self._first_command_node_uid(commands),
-                deadline_kind=(
-                    str(result.get("deadline_kind"))
-                    if result.get("deadline_kind") is not None
-                    else None
-                ),
-            )
-        return result
 
     async def run(
         self,
@@ -211,171 +259,10 @@ class BaseStageHandler:
         raise NotImplementedError
 
     async def _checkpoint(self, *, task: Any, plan: Any, now: datetime) -> Any:
-        """Phase 5.5: live-mode config hot-swap.
-
-        Returns either the original ``plan`` unchanged (locked / no advance /
-        TTL expired) or a *new* ``CommandPlan`` rebuilt from the current zone
-        snapshot. Handlers should assign the result back to their local
-        ``plan`` variable:
-
-            plan = await self._checkpoint(task=task, plan=plan, now=now)
-
-        Hot-swap is achieved by:
-          1. Comparing `zones.config_revision` (DB) against
-             `plan.runtime.config_revision` (in-flight)
-          2. On advance + LIVE mode: re-loading the zone snapshot
-             (`PgZoneSnapshotReadModel().load`) and rebuilding via
-             `CycleStartPlanner.build` — same code path as task claim, so
-             both `runtime` and `named_plans` stay aligned with config.
-          3. Stamping the new revision onto `runtime.config_revision` so
-             subsequent checkpoints in the same `run()` don't re-trigger.
-
-        Emits `CONFIG_HOT_RELOADED` zone_event + `ae3_config_hot_reload_total`
-        metric on apply. When revision advanced but rebuild fails, fail-closed
-        via ``TaskExecutionError`` — task must not continue on stale RuntimePlan.
-        """
-        from ae3lite.infrastructure.metrics import (
-            CONFIG_HOT_RELOAD,
-            ZONE_CONFIG_LIVE_EDITS,
-            ZONE_CONFIG_MODE,
-        )
-
-        runtime = plan.runtime
-        if not self._live_reload_enabled:
-            return plan
-
-        # Phase 5: compare integer `zones.config_revision` (DB) vs the
-        # monotonic counter snapshot read at plan-build time. Do NOT use
-        # `bundle_revision` — that's a content hash, not a counter.
-        try:
-            current_revision = int(getattr(runtime, "config_revision", None) or 0)
-        except (TypeError, ValueError):
-            current_revision = 0
-
-        zone_id = int(getattr(task, "zone_id", 0) or 0)
-        if zone_id <= 0:
-            CONFIG_HOT_RELOAD.labels(result="disabled").inc()
-            return plan
-
-        try:
-            from common.db import get_pool
-            pool = await get_pool()
-        except Exception:
-            _logger.warning("checkpoint: DB pool unavailable, skipping live-reload", exc_info=True)
-            CONFIG_HOT_RELOAD.labels(result="error").inc()
-            return plan
-
-        # Cheap pre-check: read zone's mode/revision/TTL only.
-        try:
-            async with pool.acquire() as conn:
-                zone_row = await conn.fetchrow(
-                    "SELECT config_mode, config_revision, live_until FROM zones WHERE id = $1",
-                    zone_id,
-                )
-        except Exception:
-            _logger.warning("checkpoint: zone read failed zone_id=%s", zone_id, exc_info=True)
-            CONFIG_HOT_RELOAD.labels(result="error").inc()
-            return plan
-
-        from ae3lite.config.modes import ConfigMode
-
-        if zone_row is None:
-            CONFIG_HOT_RELOAD.labels(result="no_change").inc()
-            return plan
-        observed_mode = ConfigMode.parse(zone_row.get("config_mode"))
-        # Phase 7 gauge: observer-style publish на каждом checkpoint. Дёшево
-        # потому что уже читаем zone row ради revision сравнения.
-        try:
-            ZONE_CONFIG_MODE.labels(zone_id=str(zone_id)).set(
-                1.0 if observed_mode is ConfigMode.LIVE else 0.0,
-            )
-        except Exception:  # pragma: no cover — metrics exporter issue
-            pass
-        if observed_mode is not ConfigMode.LIVE:
-            CONFIG_HOT_RELOAD.labels(result="no_change").inc()
-            return plan
-        live_until = zone_row.get("live_until")
-        if isinstance(live_until, datetime):
-            now_utc = datetime.now(timezone.utc)
-            if live_until.tzinfo is None:
-                live_until = live_until.replace(tzinfo=timezone.utc)
-            if live_until < now_utc:
-                CONFIG_HOT_RELOAD.labels(result="no_change").inc()
-                return plan
-        new_revision = int(zone_row.get("config_revision") or 0)
-        if new_revision <= current_revision:
-            CONFIG_HOT_RELOAD.labels(result="no_change").inc()
-            return plan
-
-        # Revision advanced — rebuild the full CommandPlan via the canonical
-        # planner path so runtime *and* named_plans stay aligned with config.
-        try:
-            from ae3lite.infrastructure.read_models.zone_snapshot_read_model import (
-                PgZoneSnapshotReadModel,
-            )
-            from ae3lite.domain.services.cycle_start_planner import CycleStartPlanner
-
-            snapshot = await PgZoneSnapshotReadModel().load(zone_id=zone_id)
-            new_plan = CycleStartPlanner().build(task=task, snapshot=snapshot)
-            new_runtime = getattr(new_plan, "runtime", None)
-            if new_runtime is None:
-                raise TaskExecutionError(
-                    ErrorCodes.AE3_SNAPSHOT_BUILD_FAILED,
-                    f"config_revision advanced to {new_revision}, но rebuild не вернул RuntimePlan zone_id={zone_id}",
-                )
-            new_plan = replace(
-                new_plan,
-                runtime=new_runtime.model_copy(update={"config_revision": int(new_revision)}),
-            )
-        except TaskExecutionError:
-            CONFIG_HOT_RELOAD.labels(result="error").inc()
-            raise
-        except Exception:
-            _logger.warning(
-                "checkpoint: snapshot rebuild failed zone_id=%s rev=%s",
-                zone_id, new_revision, exc_info=True,
-            )
-            CONFIG_HOT_RELOAD.labels(result="error").inc()
-            raise TaskExecutionError(
-                ErrorCodes.AE3_SNAPSHOT_BUILD_FAILED,
-                f"config_revision advanced to {new_revision}, но snapshot rebuild failed zone_id={zone_id}",
-            ) from None
-
-        try:
-            await create_zone_event(
-                zone_id,
-                "CONFIG_HOT_RELOADED",
-                with_runtime_event_contract({
-                    "revision": new_revision,
-                    "previous_revision": current_revision,
-                    "task_id": int(getattr(task, "id", 0) or 0),
-                    "stage": str(getattr(task, "current_stage", "") or ""),
-                }),
-            )
-        except Exception:
-            _logger.warning(
-                "checkpoint: failed to emit CONFIG_HOT_RELOADED event zone_id=%s",
-                zone_id, exc_info=True,
-            )
-
-        CONFIG_HOT_RELOAD.labels(result="applied").inc()
-        try:
-            ZONE_CONFIG_LIVE_EDITS.labels(
-                zone_id=str(zone_id),
-                handler=str(getattr(task, "current_stage", "") or "unknown"),
-            ).inc()
-        except Exception:  # pragma: no cover — metrics exporter issue
-            pass
-        _logger.info(
-            "config_hot_reload: applied zone_id=%s rev=%s→%s",
-            zone_id, current_revision, new_revision,
-        )
-        return new_plan
+        return await self._stage_checkpoint.checkpoint(task=task, plan=plan, now=now)
 
     def _deadline_reached(self, *, now: datetime, deadline: datetime | None) -> bool:
-        if deadline is None:
-            return False
-        return _utc_naive_dt(now) >= _utc_naive_dt(deadline)
+        return self._stage_timing.deadline_reached(now=now, deadline=deadline)
 
     async def _handle_control_mode_flow_path_interrupt(
         self,
@@ -386,17 +273,8 @@ class BaseStageHandler:
         control_mode: str,
         reason: str = "control_mode_manual",
     ) -> StageOutcome | None:
-        from ae3lite.application.handlers.flow_path_guard import (
-            handle_control_mode_flow_path_interrupt,
-        )
-
-        return await handle_control_mode_flow_path_interrupt(
-            self,
-            task=task,
-            plan=plan,
-            now=now,
-            control_mode=control_mode,
-            reason=reason,
+        return await self._stage_flow_safety.handle_control_mode_flow_path_interrupt(
+            task=task, plan=plan, now=now, control_mode=control_mode, reason=reason
         )
 
     async def _ensure_flow_path_stopped(
@@ -408,56 +286,27 @@ class BaseStageHandler:
         stage: str,
         reason: str,
     ) -> Any:
-        from ae3lite.application.handlers.flow_path_guard import ensure_flow_stopped
-
-        return await ensure_flow_stopped(
-            self,
-            task=task,
-            plan=plan,
-            now=now,
-            stage=stage,
-            reason=reason,
+        return await self._stage_flow_safety.ensure_flow_path_stopped(
+            task=task, plan=plan, now=now, stage=stage, reason=reason
         )
 
     def _stage_entered_at(self, *, task: Any) -> datetime | None:
-        entered = getattr(getattr(task, "workflow", None), "stage_entered_at", None)
-        return _utc_naive_dt(entered) if isinstance(entered, datetime) else None
+        return self._stage_timing.stage_entered_at(task=task)
 
     def _stage_elapsed_ms(self, *, task: Any, now: datetime) -> int:
-        entered = self._stage_entered_at(task=task)
-        if entered is None:
-            return 0
-        return max(0, int((_utc_naive_dt(now) - entered).total_seconds() * 1000.0))
+        return self._stage_timing.stage_elapsed_ms(task=task, now=now)
 
     def _remaining_stage_time_sec(self, *, now: datetime, deadline: datetime | None) -> float | None:
-        if deadline is None:
-            return None
-        remaining = (_utc_naive_dt(deadline) - _utc_naive_dt(now)).total_seconds()
-        return max(0.0, remaining)
+        return self._stage_timing.remaining_stage_time_sec(now=now, deadline=deadline)
 
     def _require_runtime_plan(self, *, plan: Any) -> RuntimePlan:
-        runtime = getattr(plan, "runtime", None)
-        if isinstance(runtime, RuntimePlan):
-            return runtime
-        raise TaskExecutionError(
-            ErrorCodes.ZONE_CORRECTION_CONFIG_MISSING_CRITICAL,
-            "Отсутствует typed RuntimePlan в command plan",
-        )
+        return self._stage_timing.require_runtime_plan(plan=plan)
 
     def _irr_probe_deadline_budget_sec(self, *, runtime: RuntimePlan) -> float:
         # На реальном test-node roundtrip команды и состояния может занимать несколько секунд.
         # Если запускать новый IRR probe слишком близко к дедлайну stage, команда
         # может упасть уже на polling после дедлайна, а не пойти по ожидаемому stage path.
-        wait_timeout = self._runtime_config.coerce_float(runtime.irr_state_wait_timeout_sec)
-        attempts = 1 + self._IRR_STATE_PROBE_RETRY_COUNT
-        # Бюджет должен покрывать и roundtrip команды storage_state, и последующее
-        # ожидание snapshot. На реальном железе этот путь легко превышает 5 с,
-        # и для transient-потери MQTT probe допускается один republish.
-        single_attempt_budget = (wait_timeout if wait_timeout is not None else 0.0) + 2.0  # config-literal: fixed command roundtrip budget
-        base_budget = (single_attempt_budget * attempts) + (
-            self._IRR_STATE_PROBE_RETRY_DELAY_SEC * self._IRR_STATE_PROBE_RETRY_COUNT
-        )
-        return max(8.0, base_budget)  # config-literal: minimum safe IRR probe budget
+        return self._stage_timing.irr_probe_deadline_budget_sec(runtime=runtime)
 
     def _deadline_too_close_for_irr_probe(
         self,
@@ -466,10 +315,7 @@ class BaseStageHandler:
         deadline: datetime | None,
         runtime: RuntimePlan,
     ) -> bool:
-        remaining = self._remaining_stage_time_sec(now=now, deadline=deadline)
-        if remaining is None:
-            return False
-        return remaining <= self._irr_probe_deadline_budget_sec(runtime=runtime)
+        return self._stage_timing.deadline_too_close_for_irr_probe(now=now, deadline=deadline, runtime=runtime)
 
     async def _read_recent_storage_event(
         self,
@@ -478,31 +324,18 @@ class BaseStageHandler:
         event_types: Sequence[str],
         max_age_sec: int = 3600,  # config-literal: default recent-event lookup window
     ) -> Mapping[str, Any] | None:
-        read_latest_zone_event = getattr(self._runtime_monitor, "read_latest_zone_event", None)
-        if not callable(read_latest_zone_event):
-            return None
-        return await read_latest_zone_event(
-            zone_id=int(getattr(task, "zone_id", 0) or 0),
-            event_types=event_types,
-            max_age_sec=max_age_sec,
-            since_ts=self._stage_entered_at(task=task),
-            channel="storage_state",
+        return await self._stage_flow_safety.read_recent_storage_event(
+            task=task, event_types=event_types, max_age_sec=max_age_sec
         )
 
     def _storage_event_payload(self, event: Mapping[str, Any] | None) -> Mapping[str, Any]:
-        payload = event.get("payload") if isinstance(event, Mapping) else None
-        return payload if isinstance(payload, Mapping) else {}
+        return self._stage_flow_safety.storage_event_payload(event=event)
 
     def _task_topology(self, *, task: Any) -> str:
-        return str(getattr(task, "topology", "") or "").strip()
+        return self._stage_flow_safety.task_topology(task=task)
 
     def _task_stage(self, *, task: Any) -> str:
-        workflow = getattr(task, "workflow", None)
-        return str(
-            getattr(workflow, "current_stage", None)
-            or getattr(task, "current_stage", None)
-            or ""
-        ).strip()
+        return self._stage_flow_safety.task_stage(task=task)
 
     def _observe_fail_safe_transition(
         self,
@@ -513,30 +346,8 @@ class BaseStageHandler:
         next_stage: str,
         details: Mapping[str, Any] | None = None,
     ) -> None:
-        topology = self._task_topology(task=task)
-        stage = self._task_stage(task=task)
-        FAIL_SAFE_TRANSITION.labels(
-            topology=topology,
-            stage=stage or "unknown",
-            reason=str(reason or "unknown"),
-            source=str(source or "unknown"),
-        ).inc()
-        context = {
-            "zone_id": int(getattr(task, "zone_id", 0) or 0) or None,
-            "task_id": int(getattr(task, "id", 0) or 0) or None,
-            "topology": topology or None,
-            "stage": stage or None,
-            "reason": str(reason or "unknown"),
-            "source": str(source or "unknown"),
-            "next_stage": str(next_stage or "unknown"),
-        }
-        if isinstance(details, Mapping):
-            context.update({str(k): v for k, v in details.items()})
-        send_service_log(
-            service="automation-engine",
-            level="warning",
-            message="AE3 fail-safe transition selected",
-            context=context,
+        return self._stage_flow_safety.observe_fail_safe_transition(
+            task=task, reason=reason, source=source, next_stage=next_stage, details=details
         )
 
     async def _reconcile_recent_emergency_stop(
@@ -547,44 +358,9 @@ class BaseStageHandler:
         now: datetime,
         expected: Mapping[str, bool],
     ) -> None:
-        event = await self._read_recent_storage_event(
-            task=task,
-            event_types=("EMERGENCY_STOP_ACTIVATED",),
-            max_age_sec=86400,  # config-literal: one-day ESTOP replay window
+        return await self._stage_flow_safety.reconcile_recent_emergency_stop(
+            task=task, plan=plan, now=now, expected=expected
         )
-        if not isinstance(event, Mapping):
-            return
-
-        probe_error: str | None = None
-        try:
-            await self._probe_irr_state(task=task, plan=plan, now=now, expected=expected)
-        except TaskExecutionError as exc:
-            probe_error = str(exc)
-
-        EMERGENCY_STOP_RECONCILE.labels(
-            topology=self._task_topology(task=task),
-            stage=self._task_stage(task=task) or "unknown",
-            outcome="failed",
-        ).inc()
-        send_service_log(
-            service="automation-engine",
-            level="error",
-            message="AE3 emergency-stop fail-closed",
-            context={
-                "zone_id": int(getattr(task, "zone_id", 0) or 0) or None,
-                "task_id": int(getattr(task, "id", 0) or 0) or None,
-                "topology": self._task_topology(task=task) or None,
-                "stage": self._task_stage(task=task) or None,
-                "error_code": "emergency_stop_activated",
-                "error_message": probe_error,
-            },
-        )
-        detail = (
-            f"Физический E-Stop активирован: {probe_error}"
-            if probe_error
-            else "Физический E-Stop активирован; автоматика не продолжает stage после аварийного стопа"
-        )
-        raise TaskExecutionError("emergency_stop_activated", detail)
 
     # ── Probe IRR state (hardware safety check) ─────────────────────
 
@@ -596,168 +372,20 @@ class BaseStageHandler:
         now: datetime,
         expected: Mapping[str, bool],
     ) -> None:
-        """Отправляет probe-команду и проверяет, что состояние hardware совпадает с ожиданиями."""
-        await self._ensure_irr_probe_node_online(task=task, plan=plan)
-        probe_cmds = plan.named_plans.get("irr_state_probe", ())
-        if not probe_cmds:
-            raise TaskExecutionError(
-                "irr_state_probe_plan_missing",
-                f"Для stage={getattr(task, 'current_stage', None)} отсутствует command plan зонда IRR state",
-            )
-        runtime = self._require_runtime_plan(plan=plan)
-        last_state: Mapping[str, Any] = {}
-        last_probe_cmd_id: str | None = None
-        total_attempts = 1 + self._IRR_STATE_PROBE_RETRY_COUNT
-
-        for attempt_index in range(total_attempts):
-            result = await self._run_command_batch_checked(
-                task=task,
-                commands=probe_cmds,
-                now=now,
-                track_task_state=False,
-            )
-            probe_cmd_id = self._extract_probe_cmd_id(result=result)
-            state = await self._read_probe_state_with_retry(
-                task=task,
-                runtime=runtime,
-                expected=expected,
-                expected_cmd_id=probe_cmd_id,
-            )
-            last_state = state
-            last_probe_cmd_id = probe_cmd_id
-            if not self._probe_state_needs_retry(
-                state=state,
-                expected=expected,
-                expected_cmd_id=probe_cmd_id,
-            ):
-                self._remember_probe_state(task=task, state=state)
-                return
-            if attempt_index + 1 < total_attempts:
-                await asyncio.sleep(self._IRR_STATE_PROBE_RETRY_DELAY_SEC)
-
-        reason = self._classify_probe_failure_reason(
-            state=last_state,
-            expected=expected,
-            expected_cmd_id=last_probe_cmd_id,
-        )
-        await self._log_probe_failure_event(
-            task=task,
-            expected=expected,
-            expected_cmd_id=last_probe_cmd_id,
-            state=last_state,
-            reason=reason,
-        )
-        if reason == "stale":
-            raise TaskExecutionError(
-                "irr_state_stale", "Снимок состояния IRR-ноды устарел",
-            )
-        if reason == "mismatch":
-            snapshot = last_state["snapshot"] if isinstance(last_state["snapshot"], Mapping) else {}
-            if self._is_solution_fill_terminal_snapshot(task=task, expected=expected, snapshot=snapshot):
-                # Для test-node допустим штатный terminal snapshot на solution_fill_check:
-                # путь already closed после достижения solution_level_max.
-                self._remember_probe_state(task=task, state=last_state)
-                return
-            await self._maybe_emit_node_reboot_event(
-                task=task,
-                plan=plan,
-                expected=expected,
-                snapshot=snapshot,
-            )
-            for key, value in expected.items():
-                if bool(snapshot.get(key)) != bool(value):
-                    raise TaskExecutionError(
-                        "irr_state_mismatch",
-                        f"Состояние IRR-ноды не совпало по признаку {key}: ожидалось={value}, получено={snapshot.get(key)}",
-                    )
-        if await self._irr_probe_node_is_offline(task=task, plan=plan):
-            failure = await self._offline_failure_for_irr_probe(task=task, plan=plan)
-            raise TaskExecutionError(failure.code, failure.message)
-        await self._raise_execution_error(
-            task=task,
-            error_code="irr_state_unavailable",
-            error_message="Снимок состояния IRR-ноды недоступен",
-            node_uid=self._extract_irr_probe_node_uid(plan=plan),
-            plan=plan,
-        )
+        return await self._stage_probe_runner.probe_irr_state(task=task, plan=plan, now=now, expected=expected)
 
     async def _ensure_irr_probe_node_online(self, *, task: Any, plan: Any) -> None:
-        if not await self._irr_probe_node_is_offline(task=task, plan=plan):
-            return
-        failure = await self._offline_failure_for_irr_probe(task=task, plan=plan)
-        raise TaskExecutionError(failure.code, failure.message)
+        return await self._stage_probe_runner.ensure_irr_probe_node_online(task=task, plan=plan)
 
     async def _irr_probe_node_is_offline(self, *, task: Any, plan: Any) -> bool:
-        node_uid = self._extract_irr_probe_node_uid(plan=plan)
-        if not node_uid:
-            return False
-        read_node_liveness = getattr(self._runtime_monitor, "read_node_liveness", None)
-        if not callable(read_node_liveness):
-            return False
-        from ae3lite.domain.services.zone_node_availability import liveness_is_unreachable
-
-        liveness = await read_node_liveness(node_uid=node_uid)
-        return liveness_is_unreachable(
-            liveness,
-            heartbeat_age_limit_sec=self._IRR_PROBE_NODE_UNREACHABLE_HEARTBEAT_AGE_SEC,
-        )
+        return await self._stage_probe_runner.irr_probe_node_is_offline(task=task, plan=plan)
 
     async def _offline_failure_for_irr_probe(self, *, task: Any, plan: Any) -> Any:
-        from ae3lite.domain.services.zone_node_availability import offline_failure_from_liveness
+        return await self._stage_probe_runner.offline_failure_for_irr_probe(task=task, plan=plan)
 
-        node_uid = self._extract_irr_probe_node_uid(plan=plan) or ""
-        liveness: Mapping[str, Any] = {}
-        read_node_liveness = getattr(self._runtime_monitor, "read_node_liveness", None)
-        if node_uid and callable(read_node_liveness):
-            raw = await read_node_liveness(node_uid=node_uid)
-            if isinstance(raw, Mapping):
-                liveness = raw
-        return offline_failure_from_liveness(
-            zone_id=int(getattr(task, "zone_id", 0) or 0),
-            node_uid=node_uid,
-            liveness=liveness,
-        )
+    _is_solution_fill_terminal_snapshot = staticmethod(StageProbeRunner.is_solution_fill_terminal_snapshot)
 
-    @staticmethod
-    def _is_solution_fill_terminal_snapshot(
-        *,
-        task: Any,
-        expected: Mapping[str, bool],
-        snapshot: Mapping[str, Any],
-    ) -> bool:
-        stage = str(getattr(task, "current_stage", "") or "").strip().lower()
-        if stage != "solution_fill_check":
-            return False
-        if not isinstance(snapshot, Mapping):
-            return False
-
-        # Для solution_fill terminal-condition в test-node приходит как:
-        # solution_level_max=true и flow-path уже выключен.
-        if not bool(snapshot.get("solution_level_max")):
-            return False
-
-        truthy_expected_keys = [key for key, value in expected.items() if bool(value)]
-        if not truthy_expected_keys:
-            return False
-        return all(not bool(snapshot.get(key)) for key in truthy_expected_keys)
-
-    @staticmethod
-    def _is_node_reboot_pattern(
-        *,
-        expected: Mapping[str, bool],
-        snapshot: Mapping[str, Any],
-    ) -> tuple[bool, list[str]]:
-        """Эвристика: все ожидаемые truthy-поля стали ``False`` в snapshot.
-
-        Это типичный паттерн boot defaults после перезагрузки ESP32 / firmware
-        fail-safe (watchdog, brownout, сработавший firmware-side guard сбрасывает
-        valves/pump в ``False``). Возвращает ``(is_reboot, diverged_keys)``.
-        """
-        truthy_expected = [k for k, v in expected.items() if bool(v)]
-        if not truthy_expected:
-            return False, []
-        diverged = [k for k in truthy_expected if not bool(snapshot.get(k))]
-        return len(diverged) == len(truthy_expected), diverged
+    _is_node_reboot_pattern = staticmethod(StageProbeObservability.is_node_reboot_pattern)
 
     async def _maybe_emit_node_reboot_event(
         self,
@@ -767,100 +395,12 @@ class BaseStageHandler:
         expected: Mapping[str, bool],
         snapshot: Mapping[str, Any],
     ) -> None:
-        """Эмитит ``NODE_REBOOT_DETECTED`` zone-event при boot-defaults паттерне.
-
-        НЕ подавляет последующий ``irr_state_mismatch`` fail-closed: это
-        диагностический сигнал для post-mortem (operator/agronomist), а не
-        замена safety boundary. Всегда вызывается перед ``raise``.
-        """
-        is_reboot, diverged_keys = self._is_node_reboot_pattern(
-            expected=expected, snapshot=snapshot,
+        return await self._stage_probe_observability.maybe_emit_node_reboot_event(
+            task=task, plan=plan, expected=expected, snapshot=snapshot
         )
-        if not is_reboot:
-            return
-        node_uid = self._extract_irr_probe_node_uid(plan=plan)
-        liveness: Mapping[str, Any] = {}
-        read_node_liveness = getattr(self._runtime_monitor, "read_node_liveness", None)
-        if node_uid and callable(read_node_liveness):
-            try:
-                liveness = await read_node_liveness(node_uid=node_uid) or {}
-            except Exception:
-                _logger.warning(
-                    "AE3 не смог прочитать node liveness для NODE_REBOOT_DETECTED node_uid=%s",
-                    node_uid,
-                    exc_info=True,
-                )
-        details = {
-            "stage": str(getattr(task, "current_stage", "") or ""),
-            "workflow_phase": str(getattr(task.workflow, "workflow_phase", "") or ""),
-            "node_uid": node_uid,
-            "expected": dict(expected),
-            "snapshot": dict(snapshot) if isinstance(snapshot, Mapping) else {},
-            "diverged_keys": list(diverged_keys),
-            "detection_reason": "all_expected_truthy_diverged_to_false",
-            "node_status": liveness.get("status") if isinstance(liveness, Mapping) else None,
-            "heartbeat_age_sec": (
-                liveness.get("heartbeat_age_sec") if isinstance(liveness, Mapping) else None
-            ),
-            "last_seen_age_sec": (
-                liveness.get("last_seen_age_sec") if isinstance(liveness, Mapping) else None
-            ),
-            "irr_probe_failure_streak": int(getattr(task, "irr_probe_failure_streak", 0) or 0),
-        }
-        try:
-            await create_zone_event(
-                int(task.zone_id),
-                "NODE_REBOOT_DETECTED",
-                with_runtime_event_contract(details),
-            )
-        except Exception:
-            _logger.warning(
-                "AE3 не смог записать NODE_REBOOT_DETECTED zone_id=%s task_id=%s node_uid=%s",
-                int(getattr(task, "zone_id", 0) or 0),
-                int(getattr(task, "id", 0) or 0),
-                node_uid,
-                exc_info=True,
-            )
-        NODE_REBOOT_DETECTED.labels(
-            topology=str(getattr(task, "topology", "") or ""),
-            stage=str(getattr(task, "current_stage", "") or ""),
-            node_uid=str(node_uid or "unknown"),
-        ).inc()
-        try:
-            send_service_log(
-                service="automation-engine",
-                level="warning",
-                message="AE3 detected ESP32 reboot pattern during IRR state probe",
-                context={
-                    "zone_id": int(getattr(task, "zone_id", 0) or 0) or None,
-                    "task_id": int(getattr(task, "id", 0) or 0) or None,
-                    "node_uid": node_uid,
-                    "stage": details["stage"],
-                    "workflow_phase": details["workflow_phase"],
-                    "diverged_keys": list(diverged_keys),
-                    "node_status": details["node_status"],
-                    "heartbeat_age_sec": details["heartbeat_age_sec"],
-                    "irr_probe_failure_streak": details["irr_probe_failure_streak"],
-                    "detection_reason": details["detection_reason"],
-                },
-            )
-        except Exception:
-            _logger.debug(
-                "AE3 send_service_log failed для NODE_REBOOT_DETECTED zone_id=%s",
-                int(getattr(task, "zone_id", 0) or 0),
-                exc_info=True,
-            )
 
     def _extract_irr_probe_node_uid(self, *, plan: Any) -> str | None:
-        named_plans = getattr(plan, "named_plans", None) if plan is not None else None
-        if not isinstance(named_plans, Mapping):
-            return None
-        probe_cmds = named_plans.get("irr_state_probe", ())
-        for cmd in probe_cmds or ():
-            uid = str(getattr(cmd, "node_uid", "") or "").strip()
-            if uid:
-                return uid
-        return None
+        return self._stage_probe_runner.extract_irr_probe_node_uid(plan=plan)
 
     async def _probe_irr_state_with_backoff(
         self,
@@ -872,85 +412,14 @@ class BaseStageHandler:
         poll_delay_sec: int,
         exhausted_outcome: Any,
     ) -> StageOutcome | None:
-        """Resilient probe для poll-based stages (irrigation_check и др.).
-
-        Pre-probe (вариант C): если node offline или heartbeat stale — сразу poll,
-        не тратим HL roundtrip. Probe (вариант B): при ``irr_state_unavailable``
-        или ``irr_state_stale`` — не кидаем TaskExecutionError, а инкрементируем
-        ``ae_tasks.irr_probe_failure_streak``. При достижении лимита — возвращаем
-        ``exhausted_outcome`` (fail-closed). Иначе — возвращаем ``StageOutcome(poll)``.
-
-        Hardware mismatch (``irr_state_mismatch``) и другие ошибки пробрасываем
-        как TaskExecutionError — это safety-critical события.
-
-        Returns:
-            ``None`` если probe успешен (caller продолжает штатный flow).
-            ``StageOutcome`` если нужно выйти из handler (poll / fail).
-        """
-        if self._task_repository is None:
-            await self._probe_irr_state(task=task, plan=plan, now=now, expected=expected)
-            return None
-
-        node_uid = self._extract_irr_probe_node_uid(plan=plan)
-        poll_delay = max(1, int(poll_delay_sec))
-
-        read_node_liveness = getattr(self._runtime_monitor, "read_node_liveness", None)
-        if node_uid and callable(read_node_liveness):
-            liveness = await read_node_liveness(node_uid=node_uid)
-            heartbeat_age = liveness.get("heartbeat_age_sec")
-            status = str(liveness.get("status") or "").strip().lower()
-            unreachable = (
-                liveness.get("found") is True
-                and (
-                    status == "offline"
-                    or (
-                        heartbeat_age is not None
-                        and float(heartbeat_age) > self._IRR_PROBE_NODE_UNREACHABLE_HEARTBEAT_AGE_SEC
-                    )
-                )
-            )
-            if unreachable:
-                return await self._handle_probe_deferred(
-                    task=task,
-                    reason="node_unreachable",
-                    expected=expected,
-                    node_uid=node_uid,
-                    liveness=liveness,
-                    poll_delay_sec=poll_delay,
-                    exhausted_outcome=exhausted_outcome,
-                )
-
-        try:
-            await self._probe_irr_state(task=task, plan=plan, now=now, expected=expected)
-        except TaskExecutionError as exc:
-            if getattr(exc, "code", "") in {"irr_state_unavailable", "irr_state_stale"}:
-                return await self._handle_probe_deferred(
-                    task=task,
-                    reason=str(getattr(exc, "code", "") or "irr_state_unavailable"),
-                    expected=expected,
-                    node_uid=node_uid,
-                    liveness=None,
-                    poll_delay_sec=poll_delay,
-                    exhausted_outcome=exhausted_outcome,
-                )
-            raise
-
-        # Успех: сбрасываем streak только если он ненулевой, чтобы избежать
-        # лишнего UPDATE и не требовать наличия метода в legacy stub'ах.
-        current_streak = int(getattr(task, "irr_probe_failure_streak", 0) or 0)
-        if current_streak > 0:
-            reset_fn = getattr(self._task_repository, "reset_irr_probe_failure_streak", None)
-            if callable(reset_fn):
-                try:
-                    await reset_fn(task_id=int(task.id))
-                except Exception:
-                    _logger.warning(
-                        "AE3 не смог сбросить irr_probe_failure_streak task_id=%s zone_id=%s",
-                        int(getattr(task, "id", 0) or 0),
-                        int(getattr(task, "zone_id", 0) or 0),
-                        exc_info=True,
-                    )
-        return None
+        return await self._stage_probe_backoff.probe_irr_state_with_backoff(
+            task=task,
+            plan=plan,
+            now=now,
+            expected=expected,
+            poll_delay_sec=poll_delay_sec,
+            exhausted_outcome=exhausted_outcome,
+        )
 
     async def _handle_probe_deferred(
         self,
@@ -963,94 +432,15 @@ class BaseStageHandler:
         poll_delay_sec: int,
         exhausted_outcome: Any,
     ) -> StageOutcome:
-        streak = await self._task_repository.increment_irr_probe_failure_streak(
-            task_id=int(task.id),
+        return await self._stage_probe_backoff.handle_probe_deferred(
+            task=task,
+            reason=reason,
+            expected=expected,
+            node_uid=node_uid,
+            liveness=liveness,
+            poll_delay_sec=poll_delay_sec,
+            exhausted_outcome=exhausted_outcome,
         )
-        topology_label = str(getattr(task, "topology", "") or "")
-        stage_label = str(getattr(task, "current_stage", "") or "")
-        IRR_PROBE_DEFERRED.labels(
-            topology=topology_label, stage=stage_label, reason=str(reason or "unknown"),
-        ).inc()
-        details: dict[str, Any] = {
-            "stage": stage_label,
-            "workflow_phase": str(getattr(task.workflow, "workflow_phase", "") or ""),
-            "reason": reason,
-            "streak": int(streak),
-            "streak_limit": int(self._IRR_PROBE_FAILURE_STREAK_LIMIT),
-            "expected": dict(expected),
-            "node_uid": node_uid,
-        }
-        if isinstance(liveness, Mapping):
-            details["node_status"] = liveness.get("status")
-            details["heartbeat_age_sec"] = liveness.get("heartbeat_age_sec")
-            details["last_seen_age_sec"] = liveness.get("last_seen_age_sec")
-        exhausted = streak >= self._IRR_PROBE_FAILURE_STREAK_LIMIT
-        event_type = "IRR_STATE_PROBE_STREAK_EXHAUSTED" if exhausted else "IRR_STATE_PROBE_DEFERRED"
-        try:
-            await create_zone_event(
-                int(task.zone_id),
-                event_type,
-                with_runtime_event_contract(details),
-            )
-        except Exception:
-            _logger.warning(
-                "AE3 не смог записать %s zone_id=%s task_id=%s",
-                event_type,
-                int(getattr(task, "zone_id", 0) or 0),
-                int(getattr(task, "id", 0) or 0),
-                exc_info=True,
-            )
-        if exhausted:
-            IRR_PROBE_STREAK_EXHAUSTED.labels(
-                topology=topology_label, stage=stage_label,
-            ).inc()
-            if reason in {"node_unreachable", "irr_state_unavailable", "irr_state_stale"} and node_uid:
-                from ae3lite.domain.services.zone_node_availability import offline_failure_from_liveness
-
-                failure = offline_failure_from_liveness(
-                    zone_id=int(getattr(task, "zone_id", 0) or 0),
-                    node_uid=node_uid,
-                    liveness=liveness if isinstance(liveness, Mapping) else {},
-                )
-                return StageOutcome(
-                    kind="fail",
-                    error_code=failure.code,
-                    error_message=failure.message,
-                )
-            try:
-                await note_upward_report(
-                    code="biz_irr_probe_streak_exhausted",
-                    alert_type="AE3 IRR Probe Streak Exhausted",
-                    message=(
-                        "IRR-нода недоступна: исчерпан лимит подряд идущих "
-                        f"probe-deferrals ({self._IRR_PROBE_FAILURE_STREAK_LIMIT})."
-                    ),
-                    severity="warning",
-                    zone_id=int(getattr(task, "zone_id", 0) or 0) or None,
-                    node_uid=node_uid,
-                    details={
-                        "task_id": int(getattr(task, "id", 0) or 0),
-                        "stage": str(getattr(task, "current_stage", "") or ""),
-                        "workflow_phase": str(getattr(task.workflow, "workflow_phase", "") or ""),
-                        "reason": reason,
-                        "streak": int(streak),
-                        "streak_limit": int(self._IRR_PROBE_FAILURE_STREAK_LIMIT),
-                        "expected": dict(expected),
-                        "node_uid": node_uid,
-                        "component": "handler:irr_probe_backoff",
-                    },
-                    scope_parts=("irr_probe_streak_exhausted",),
-                )
-            except Exception:
-                _logger.warning(
-                    "AE3 не смог отправить biz_irr_probe_streak_exhausted alert "
-                    "zone_id=%s task_id=%s",
-                    int(getattr(task, "zone_id", 0) or 0),
-                    int(getattr(task, "id", 0) or 0),
-                    exc_info=True,
-                )
-            return exhausted_outcome
-        return StageOutcome(kind="poll", due_delay_sec=int(poll_delay_sec))
 
     def _classify_probe_failure_reason(
         self,
@@ -1059,19 +449,9 @@ class BaseStageHandler:
         expected: Mapping[str, bool],
         expected_cmd_id: str | None = None,
     ) -> str:
-        if not state.get("has_snapshot"):
-            return "unavailable"
-        if state.get("is_stale"):
-            return "stale"
-        if expected_cmd_id is not None and str(state.get("cmd_id") or "").strip() != expected_cmd_id:
-            return "cmd_id_mismatch"
-        snapshot = state.get("snapshot")
-        if not isinstance(snapshot, Mapping):
-            return "unavailable"
-        for key, value in expected.items():
-            if bool(snapshot.get(key)) != bool(value):
-                return "mismatch"
-        return "unavailable"
+        return self._stage_probe_runner.classify_probe_failure_reason(
+            state=state, expected=expected, expected_cmd_id=expected_cmd_id
+        )
 
     async def _read_probe_state_with_retry(
         self,
@@ -1081,39 +461,9 @@ class BaseStageHandler:
         expected: Mapping[str, bool],
         expected_cmd_id: str | None = None,
     ) -> Mapping[str, Any]:
-        max_age_sec = int(runtime.irr_state_max_age_sec)
-        wait_timeout = self._runtime_config.coerce_float(runtime.irr_state_wait_timeout_sec)
-        poll_interval = self._runtime_config.coerce_float(getattr(runtime, "irr_state_wait_poll_interval_sec", None))
-        timeout_sec = max(0.0, wait_timeout if wait_timeout is not None else 5.0)  # config-literal: fallback probe wait budget
-        interval_sec = max(0.05, poll_interval if poll_interval is not None else 0.5)
-
-        state = await self._runtime_monitor.read_latest_irr_state(
-            zone_id=task.zone_id,
-            max_age_sec=max_age_sec,
-            expected_cmd_id=expected_cmd_id,
+        return await self._stage_probe_runner.read_probe_state_with_retry(
+            task=task, runtime=runtime, expected=expected, expected_cmd_id=expected_cmd_id
         )
-        if not self._probe_state_needs_retry(
-            state=state,
-            expected=expected,
-            expected_cmd_id=expected_cmd_id,
-        ) or timeout_sec <= 0.0:
-            return state
-
-        deadline = monotonic() + timeout_sec
-        while monotonic() < deadline:
-            await asyncio.sleep(min(interval_sec, max(0.0, deadline - monotonic())))
-            state = await self._runtime_monitor.read_latest_irr_state(
-                zone_id=task.zone_id,
-                max_age_sec=max_age_sec,
-                expected_cmd_id=expected_cmd_id,
-            )
-            if not self._probe_state_needs_retry(
-                state=state,
-                expected=expected,
-                expected_cmd_id=expected_cmd_id,
-            ):
-                return state
-        return state
 
     def _probe_state_needs_retry(
         self,
@@ -1122,29 +472,12 @@ class BaseStageHandler:
         expected: Mapping[str, bool],
         expected_cmd_id: str | None = None,
     ) -> bool:
-        if not state.get("has_snapshot") or state.get("is_stale"):
-            return True
-        if expected_cmd_id is not None and str(state.get("cmd_id") or "").strip() != expected_cmd_id:
-            return True
-        snapshot = state.get("snapshot")
-        if not isinstance(snapshot, Mapping):
-            return True
-        for key, value in expected.items():
-            if bool(snapshot.get(key)) != bool(value):
-                return True
-        return False
+        return self._stage_probe_runner.probe_state_needs_retry(
+            state=state, expected=expected, expected_cmd_id=expected_cmd_id
+        )
 
     def _extract_probe_cmd_id(self, *, result: Mapping[str, Any]) -> str | None:
-        statuses = result.get("command_statuses")
-        if not isinstance(statuses, Sequence):
-            return None
-        for item in reversed(statuses):
-            if not isinstance(item, Mapping):
-                continue
-            probe_cmd_id = str(item.get("legacy_cmd_id") or "").strip()
-            if probe_cmd_id:
-                return probe_cmd_id
-        return None
+        return self._stage_probe_runner.extract_probe_cmd_id(result=result)
 
     async def _log_probe_failure_event(
         self,
@@ -1155,112 +488,23 @@ class BaseStageHandler:
         state: Mapping[str, Any],
         reason: str,
     ) -> None:
-        snapshot = state.get("snapshot") if isinstance(state.get("snapshot"), Mapping) else {}
-        try:
-            await create_zone_event(
-                int(task.zone_id),
-                "IRR_STATE_PROBE_FAILED",
-                with_runtime_event_contract({
-                    "stage": str(getattr(task, "current_stage", "") or ""),
-                    "workflow_phase": str(getattr(task.workflow, "workflow_phase", "") or ""),
-                    "reason": str(reason or ""),
-                    "expected": dict(expected),
-                    "expected_cmd_id": expected_cmd_id,
-                    "has_snapshot": bool(state.get("has_snapshot")),
-                    "is_stale": bool(state.get("is_stale")),
-                    "cmd_id": state.get("cmd_id"),
-                    "snapshot": dict(snapshot) if isinstance(snapshot, Mapping) else {},
-                }),
-            )
-        except Exception:
-            _logger.warning(
-                "AE3 не смог записать IRR_STATE_PROBE_FAILED zone_id=%s task_id=%s stage=%s",
-                int(getattr(task, "zone_id", 0) or 0),
-                int(getattr(task, "id", 0) or 0),
-                str(getattr(task, "current_stage", "") or ""),
-                exc_info=True,
-            )
+        return await self._stage_probe_observability.log_probe_failure_event(
+            task=task, expected=expected, expected_cmd_id=expected_cmd_id, state=state, reason=reason
+        )
 
     # ── Level switch reading ────────────────────────────────────────
 
     def _remember_probe_state(self, *, task: Any, state: Mapping[str, Any]) -> None:
-        snapshot = state.get("snapshot")
-        stored_snapshot = dict(snapshot) if isinstance(snapshot, Mapping) else None
-        self._last_probe_state = {
-            "zone_id": int(getattr(task, "zone_id", 0) or 0),
-            "task_id": int(getattr(task, "id", 0) or 0),
-            "stage": str(getattr(task, "current_stage", "") or ""),
-            "state": {
-                "has_snapshot": bool(state.get("has_snapshot")),
-                "is_stale": bool(state.get("is_stale")),
-                "snapshot": stored_snapshot,
-                "sample_age_sec": state.get("sample_age_sec"),
-                "created_at": state.get("created_at"),
-                "cmd_id": state.get("cmd_id"),
-                "event_id": state.get("event_id"),
-            },
-        }
+        return self._stage_probe_snapshot.remember_probe_state(task=task, state=state)
 
     def _probe_state_for_task(self, *, task: Any) -> Mapping[str, Any] | None:
-        probe_ctx = self._last_probe_state
-        if not isinstance(probe_ctx, Mapping):
-            return None
-        if int(probe_ctx.get("zone_id", 0) or 0) != int(getattr(task, "zone_id", 0) or 0):
-            return None
-        if int(probe_ctx.get("task_id", 0) or 0) != int(getattr(task, "id", 0) or 0):
-            return None
-        if str(probe_ctx.get("stage", "") or "") != str(getattr(task, "current_stage", "") or ""):
-            return None
-        state = probe_ctx.get("state")
-        return state if isinstance(state, Mapping) else None
+        return self._stage_probe_snapshot.probe_state_for_task(task=task)
 
     def _probe_snapshot_context(self, *, task: Any) -> Mapping[str, Any] | None:
-        state = self._probe_state_for_task(task=task)
-        if not isinstance(state, Mapping):
-            return None
-        if not bool(state.get("has_snapshot")) or bool(state.get("is_stale")):
-            return None
-
-        event_id_raw = state.get("event_id")
-        try:
-            event_id = int(event_id_raw) if event_id_raw is not None else None
-        except (TypeError, ValueError):
-            event_id = None
-
-        created_at = state.get("created_at")
-        created_at_iso = created_at.isoformat() if isinstance(created_at, datetime) else None
-        cmd_id = str(state.get("cmd_id") or "").strip() or None
-
-        context = {
-            "snapshot_event_id": event_id if event_id and event_id > 0 else None,
-            "snapshot_created_at": created_at_iso,
-            "snapshot_cmd_id": cmd_id,
-            "snapshot_source_event_type": "IRR_STATE_SNAPSHOT",
-        }
-        return {key: value for key, value in context.items() if value is not None}
+        return self._stage_probe_snapshot.probe_snapshot_context(task=task)
 
     def _probe_snapshot_correction_fields(self, *, task: Any) -> Mapping[str, Any]:
-        state = self._probe_state_for_task(task=task)
-        if not isinstance(state, Mapping):
-            return {}
-        if not bool(state.get("has_snapshot")) or bool(state.get("is_stale")):
-            return {}
-
-        event_id_raw = state.get("event_id")
-        try:
-            event_id = int(event_id_raw) if event_id_raw is not None else None
-        except (TypeError, ValueError):
-            event_id = None
-
-        created_at = state.get("created_at")
-        cmd_id = str(state.get("cmd_id") or "").strip() or None
-        fields = {
-            "snapshot_event_id": event_id if event_id and event_id > 0 else None,
-            "snapshot_created_at": created_at if isinstance(created_at, datetime) else None,
-            "snapshot_cmd_id": cmd_id,
-            "snapshot_source_event_type": "IRR_STATE_SNAPSHOT",
-        }
-        return {key: value for key, value in fields.items() if value is not None}
+        return self._stage_probe_snapshot.probe_snapshot_correction_fields(task=task)
 
     def _read_probe_level_snapshot(
         self,
@@ -1270,33 +514,9 @@ class BaseStageHandler:
         threshold: float,
         telemetry_max_age_sec: int,
     ) -> Mapping[str, Any] | None:
-        state = self._probe_state_for_task(task=task)
-        if not isinstance(state, Mapping):
-            return None
-        if not bool(state.get("has_snapshot")) or bool(state.get("is_stale")):
-            return None
-        snapshot = state.get("snapshot")
-        if not isinstance(snapshot, Mapping):
-            return None
-        age_sec = self._runtime_config.coerce_float(state.get("sample_age_sec"))
-        if age_sec is not None and age_sec > max(0, int(telemetry_max_age_sec)):
-            return None
-        lookup = self._lookup_level_value_in_probe_snapshot(snapshot=snapshot, labels=labels)
-        if lookup is None:
-            return None
-        resolved_label, is_triggered = lookup
-        sample_ts = state.get("created_at")
-        return {
-            "sensor_label": resolved_label,
-            "level": 1.0 if is_triggered else 0.0,
-            "sample_ts": sample_ts,
-            "sample_age_sec": age_sec,
-            "has_level": True,
-            "is_stale": False,
-            "is_triggered": is_triggered,
-            "expected_labels": list(labels),
-            "source": "irr_state_snapshot",
-        }
+        return self._stage_probe_snapshot.read_probe_level_snapshot(
+            task=task, labels=labels, threshold=threshold, telemetry_max_age_sec=telemetry_max_age_sec
+        )
 
     def _lookup_level_value_in_probe_snapshot(
         self,
@@ -1304,40 +524,13 @@ class BaseStageHandler:
         snapshot: Mapping[str, Any],
         labels: Sequence[str],
     ) -> tuple[str, bool] | None:
-        normalized_snapshot = {
-            str(key or "").strip().lower(): value
-            for key, value in snapshot.items()
-            if str(key or "").strip()
-        }
-        for label in labels:
-            normalized_label = str(label or "").strip().lower()
-            if normalized_label == "":
-                continue
-            aliases = self._level_snapshot_aliases(normalized_label)
-            for alias in aliases:
-                if alias not in normalized_snapshot:
-                    continue
-                coerced_value = self._coerce_probe_level_switch_value(normalized_snapshot[alias])
-                if coerced_value is None:
-                    continue
-                return alias, coerced_value
-        return None
+        return self._stage_probe_snapshot.lookup_level_value_in_probe_snapshot(snapshot=snapshot, labels=labels)
 
     def _level_snapshot_aliases(self, label: str) -> tuple[str, ...]:
-        return level_snapshot_aliases(label)
+        return self._stage_probe_snapshot.level_snapshot_aliases(label=label)
 
     def _coerce_probe_level_switch_value(self, value: Any) -> bool | None:
-        if isinstance(value, bool):
-            return value
-        if isinstance(value, (int, float)):
-            return float(value) != 0.0
-        if isinstance(value, str):
-            normalized = value.strip().lower()
-            if normalized in {"1", "true", "on", "yes"}:
-                return True
-            if normalized in {"0", "false", "off", "no"}:
-                return False
-        return None
+        return self._stage_probe_snapshot.coerce_probe_level_switch_value(value=value)
 
     async def _read_level(
         self,
@@ -1353,89 +546,18 @@ class BaseStageHandler:
         prefer_probe_snapshot: bool = False,
         allow_stale_if_untriggered: bool = False,
     ) -> Mapping[str, Any]:
-        level = await self._runtime_monitor.read_level_switch(
+        return await self._stage_level_reader.read_level(
+            task=task,
             zone_id=zone_id,
-            sensor_labels=labels,
+            labels=labels,
             threshold=threshold,
             telemetry_max_age_sec=telemetry_max_age_sec,
-            allow_initial_event_fallback=True,
+            unavailable_error=unavailable_error,
+            stale_error=stale_error,
+            stale_recheck_delay_sec=stale_recheck_delay_sec,
+            prefer_probe_snapshot=prefer_probe_snapshot,
+            allow_stale_if_untriggered=allow_stale_if_untriggered,
         )
-        if prefer_probe_snapshot:
-            probe_level = self._read_probe_level_snapshot(
-                task=task,
-                labels=labels,
-                threshold=threshold,
-                telemetry_max_age_sec=telemetry_max_age_sec,
-            )
-            if probe_level is not None and self._should_use_probe_level(
-                probe_level=probe_level,
-                runtime_level=level,
-            ):
-                self._log_level_state(
-                    task=task,
-                    labels=labels,
-                    level=probe_level,
-                    telemetry_max_age_sec=telemetry_max_age_sec,
-                    reason="probe_snapshot_used",
-                    log_method=_logger.info,
-                )
-                return probe_level
-        if not level["has_level"]:
-            await self._raise_execution_error(
-                task=task,
-                error_code=unavailable_error,
-                error_message=f"Недоступен датчик уровня: {labels}",
-            )
-        if level["is_stale"]:
-            if allow_stale_if_untriggered and not bool(level.get("is_triggered")):
-                self._log_level_state(
-                    task=task,
-                    labels=labels,
-                    level=level,
-                    telemetry_max_age_sec=telemetry_max_age_sec,
-                    reason="stale_untriggered_allowed",
-                    log_method=_logger.info,
-                )
-                return level
-            self._log_level_state(
-                task=task,
-                labels=labels,
-                level=level,
-                telemetry_max_age_sec=telemetry_max_age_sec,
-                reason="stale_first_read",
-            )
-            if stale_recheck_delay_sec is not None and stale_recheck_delay_sec > 0:
-                await asyncio.sleep(stale_recheck_delay_sec)
-                refreshed_level = await self._runtime_monitor.read_level_switch(
-                    zone_id=zone_id,
-                    sensor_labels=labels,
-                    threshold=threshold,
-                    telemetry_max_age_sec=telemetry_max_age_sec,
-                    allow_initial_event_fallback=True,
-                )
-                if refreshed_level["has_level"] and not refreshed_level["is_stale"]:
-                    self._log_level_state(
-                        task=task,
-                        labels=labels,
-                        level=refreshed_level,
-                        telemetry_max_age_sec=telemetry_max_age_sec,
-                        reason="stale_recheck_recovered",
-                        log_method=_logger.info,
-                    )
-                    return refreshed_level
-                self._log_level_state(
-                    task=task,
-                    labels=labels,
-                    level=refreshed_level,
-                    telemetry_max_age_sec=telemetry_max_age_sec,
-                    reason="stale_recheck_failed",
-                )
-            await self._raise_execution_error(
-                task=task,
-                error_code=stale_error,
-                error_message=f"Данные датчика уровня устарели: {labels}",
-            )
-        return level
 
     def _should_use_probe_level(
         self,
@@ -1443,18 +565,7 @@ class BaseStageHandler:
         probe_level: Mapping[str, Any],
         runtime_level: Mapping[str, Any],
     ) -> bool:
-        if not bool(probe_level.get("has_level")) or bool(probe_level.get("is_stale")):
-            return False
-        if not bool(runtime_level.get("has_level")) or bool(runtime_level.get("is_stale")):
-            return True
-
-        probe_ts = probe_level.get("sample_ts")
-        runtime_ts = runtime_level.get("sample_ts")
-        if isinstance(probe_ts, datetime) and isinstance(runtime_ts, datetime):
-            return probe_ts > runtime_ts
-        if isinstance(probe_ts, datetime) and runtime_ts is None:
-            return True
-        return False
+        return self._stage_level_reader.should_use_probe_level(probe_level=probe_level, runtime_level=runtime_level)
 
     def _log_level_state(
         self,
@@ -1466,70 +577,40 @@ class BaseStageHandler:
         reason: str,
         log_method: Any = _logger.warning,
     ) -> None:
-        sample_ts = level.get("sample_ts")
-        serialized_sample_ts = sample_ts.isoformat() if hasattr(sample_ts, "isoformat") else sample_ts
-        log_method(
-            "AE3 level read zone_id=%s task_id=%s stage=%s reason=%s labels=%s sample_ts=%s sample_age_sec=%s "
-            "telemetry_max_age_sec=%s has_level=%s is_stale=%s is_triggered=%s source=%s",
-            int(getattr(task, "zone_id", 0) or 0),
-            int(getattr(task, "id", 0) or 0),
-            str(getattr(task, "current_stage", "") or ""),
-            str(reason or ""),
-            list(labels),
-            serialized_sample_ts,
-            level.get("sample_age_sec"),
-            int(telemetry_max_age_sec),
-            bool(level.get("has_level")),
-            bool(level.get("is_stale")),
-            bool(level.get("is_triggered")),
-            str(level.get("source") or "telemetry_last"),
+        return self._stage_level_reader.log_level_state(
+            task=task,
+            labels=labels,
+            level=level,
+            telemetry_max_age_sec=telemetry_max_age_sec,
+            reason=reason,
+            log_method=log_method,
         )
 
     # ── PH/EC target evaluation ─────────────────────────────────────
 
     async def _targets_reached_on_deadline(
-        self, *, task: Any, plan: Any, now: datetime, runtime: Any = None,
+        self,
+        *,
+        task: Any,
+        plan: Any,
+        now: datetime,
+        runtime: Any = None,
     ) -> bool:
-        """Deadline-safe target check: stale/unavailable telemetry → not reached."""
-        snapshot = await self._target_outcome_on_deadline(
-            task=task,
-            plan=plan,
-            now=now,
-            runtime=runtime,
+        return await self._stage_deadline_outcome.targets_reached_on_deadline(
+            task=task, plan=plan, now=now, runtime=runtime
         )
-        return snapshot["chemistry_outcome"] == "targets_achieved"
 
     async def _target_outcome_on_deadline(
-        self, *, task: Any, plan: Any, now: datetime, runtime: Any = None,
+        self,
+        *,
+        task: Any,
+        plan: Any,
+        now: datetime,
+        runtime: Any = None,
     ) -> Mapping[str, Any]:
-        """Return a fail-closed, diagnostic target snapshot for a stage deadline."""
-        try:
-            return await self._target_outcome_snapshot(
-                task=task,
-                plan=plan,
-                now=now,
-                runtime=runtime,
-            )
-        except TaskExecutionError as exc:
-            return {
-                "chemistry_outcome": "unknown",
-                "targets_reached": None,
-                "reason": str(getattr(exc, "code", "") or "target_snapshot_unavailable"),
-                "error_message": str(exc),
-            }
-        except Exception as exc:
-            _logger.warning(
-                "AE3 target snapshot failed zone_id=%s task_id=%s",
-                int(getattr(task, "zone_id", 0) or 0),
-                int(getattr(task, "id", 0) or 0),
-                exc_info=True,
-            )
-            return {
-                "chemistry_outcome": "unknown",
-                "targets_reached": None,
-                "reason": "target_snapshot_evaluation_failed",
-                "error_message": str(exc),
-            }
+        return await self._stage_deadline_outcome.target_outcome_on_deadline(
+            task=task, plan=plan, now=now, runtime=runtime
+        )
 
     async def _record_deadline_target_outcome(
         self,
@@ -1538,191 +619,30 @@ class BaseStageHandler:
         snapshot: Mapping[str, Any],
         reason: str = "stage_deadline",
     ) -> None:
-        """Persist the chemistry result independently from hydraulic completion."""
-        outcome = str(snapshot.get("chemistry_outcome") or "unknown")
-        event_type = {
-            "targets_achieved": "CORRECTION_COMPLETE",
-            "targets_not_achieved": "CORRECTION_TARGETS_NOT_ACHIEVED",
-        }.get(outcome, "CORRECTION_TARGET_OUTCOME_UNKNOWN")
-        details = {
-            "task_id": int(getattr(task, "id", 0) or 0),
-            "stage": str(getattr(task, "current_stage", "") or ""),
-            "topology": str(getattr(task, "topology", "") or ""),
-            "completion_reason": reason,
-            **dict(snapshot),
-        }
-        try:
-            await create_zone_event(
-                int(getattr(task, "zone_id", 0) or 0),
-                event_type,
-                with_runtime_event_contract(details),
-            )
-        except Exception:
-            _logger.warning(
-                "AE3 could not persist deadline chemistry outcome zone_id=%s task_id=%s outcome=%s",
-                int(getattr(task, "zone_id", 0) or 0),
-                int(getattr(task, "id", 0) or 0),
-                outcome,
-                exc_info=True,
-            )
-
-        if outcome == "targets_achieved":
-            return
-        unknown = outcome == "unknown"
-        await note_upward_report(
-            code=(
-                "biz_ae3_correction_target_outcome_unknown"
-                if unknown
-                else "biz_ae3_correction_targets_not_achieved"
-            ),
-            message=(
-                "Не удалось подтвердить итоговые pH/EC на дедлайне коррекции"
-                if unknown
-                else "Целевые pH/EC не достигнуты к завершению коррекции"
-            ),
-            severity="error" if unknown else "warning",
-            zone_id=int(getattr(task, "zone_id", 0) or 0),
-            alert_type="automation",
-            dedupe_key=(
-                f"ae3:chemistry-outcome:{int(getattr(task, 'id', 0) or 0)}:{outcome}"
-            ),
-            details=details,
-            scope_parts=(str(int(getattr(task, "id", 0) or 0)), outcome),
+        return await self._stage_deadline_outcome.record_deadline_target_outcome(
+            task=task, snapshot=snapshot, reason=reason
         )
 
     async def _targets_reached(
-        self, *, task: Any, plan: Any, now: datetime, runtime: Any = None,
+        self,
+        *,
+        task: Any,
+        plan: Any,
+        now: datetime,
+        runtime: Any = None,
     ) -> bool:
-        snapshot = await self._target_outcome_snapshot(
-            task=task,
-            plan=plan,
-            now=now,
-            runtime=runtime,
-        )
-        return snapshot["chemistry_outcome"] == "targets_achieved"
+        return await self._stage_readiness.targets_reached(task=task, plan=plan, now=now, runtime=runtime)
 
     async def _target_outcome_snapshot(
-        self, *, task: Any, plan: Any, now: datetime, runtime: Any = None,
+        self,
+        *,
+        task: Any,
+        plan: Any,
+        now: datetime,
+        runtime: Any = None,
     ) -> Mapping[str, Any]:
         # Phase 5: accept hot-swapped runtime override.
-        if runtime is None:
-            runtime = self._require_runtime_plan(plan=plan)
-        max_age = int(runtime.telemetry_max_age_sec)
-        correction_cfg = self._runtime_config.correction_config_for_task(task=task, runtime=runtime)
-        process_cfg = self._runtime_config.process_cfg_for_task(task=task, runtime=runtime)
-        ph = await self._read_target_metric_window(
-            zone_id=task.zone_id,
-            sensor_type="PH",
-            telemetry_max_age_sec=max_age,
-            config=self._runtime_config.observation_config(kind="ph", correction_cfg=correction_cfg, process_cfg=process_cfg),
-            unavailable_error="two_tank_prepare_targets_unavailable",
-            stale_error="two_tank_prepare_targets_stale",
-            now=now,
-        )
-        tolerance = self._runtime_config.prepare_tolerance_for_task(task=task, runtime=runtime)
-        ph_target = self._runtime_config.effective_ph_target(task=task, runtime=runtime)
-        ec_target = self._runtime_config.effective_ec_target(task=task, runtime=runtime)
-        execution = runtime.irrigation_execution
-        ec_component = str(
-            getattr(execution, "irrigation_ec_component", None) or "none"
-        ).strip().lower()
-        corr = getattr(task, "correction", None)
-        # none — операторский pH-only. calcium/npk остаётся целью даже если
-        # доза заморожена: frozen не вычёркивает измерение из outcome.
-        ec_enabled = ec_component in {"calcium", "npk"}
-        allow_ec = ec_enabled
-        allow_ph = True
-        ec: Mapping[str, Any] = {"ready": True, "value": ec_target, "reason": "contour_disabled"}
-        if allow_ec:
-            ec = await self._read_target_metric_window(
-                zone_id=task.zone_id,
-                sensor_type="EC",
-                telemetry_max_age_sec=max_age,
-                config=self._runtime_config.observation_config(kind="ec", correction_cfg=correction_cfg, process_cfg=process_cfg),
-                unavailable_error="two_tank_prepare_targets_unavailable",
-                stale_error="two_tank_prepare_targets_stale",
-                now=now,
-            )
-        block_reason = None
-        if ec_enabled and bool(getattr(corr, "ec_pid_frozen", False)):
-            measured_ec = ec.get("value") if bool(ec.get("ready")) else None
-            block_reason = self._irrigation_ec_dosing_block_reason(
-                corr=corr,
-                ec_component=ec_component,
-                current_ec=float(measured_ec) if measured_ec is not None else None,
-                full_target_ec=float(ec_target),
-                correction_cfg=correction_cfg,
-                pid_configs=getattr(runtime, "pid_configs", {}),
-            )
-        if not ph["ready"] or not ec["ready"]:
-            reasons = [
-                str(metric.get("reason") or "window_not_ready")
-                for metric in (ph, ec)
-                if not bool(metric.get("ready"))
-            ]
-            return self._apply_ec_dosing_block(
-                {
-                    "chemistry_outcome": "unknown",
-                    "targets_reached": None,
-                    "reason": ",".join(reasons) or "target_window_not_ready",
-                    "current_ph": ph.get("value"),
-                    "current_ec": ec.get("value") if allow_ec else None,
-                    "target_ph": ph_target,
-                    "target_ec": ec_target,
-                    "allow_ph": allow_ph,
-                    "allow_ec": allow_ec,
-                    "irrigation_ec_component": ec_component,
-                },
-                block_reason,
-            )
-        current_ph = float(ph["value"])
-        current_ec = float(ec["value"])
-        planner = CorrectionPlanner()
-        deadbands = planner.resolve_deadbands(
-            current_ph=current_ph,
-            current_ec=current_ec,
-            target_ph=ph_target,
-            target_ec=ec_target,
-            correction_config=correction_cfg,
-            pid_configs=getattr(runtime, "pid_configs", {}),
-            allow_ec=allow_ec,
-            allow_ph=allow_ph,
-        )
-        targets_reached = planner.is_within_tolerance(
-            current_ph=current_ph,
-            current_ec=current_ec,
-            target_ph=ph_target,
-            target_ec=ec_target,
-            ph_tolerance_pct=self._runtime_config.required_prepare_tolerance_pct(
-                tolerance=tolerance, key="ph_pct",
-            ),
-            ec_tolerance_pct=self._runtime_config.required_prepare_tolerance_pct(
-                tolerance=tolerance, key="ec_pct",
-            ),
-            correction_config=correction_cfg,
-            pid_configs=getattr(runtime, "pid_configs", {}),
-            allow_ec=allow_ec,
-            allow_ph=allow_ph,
-        )
-        return self._apply_ec_dosing_block(
-            {
-                "chemistry_outcome": (
-                    "targets_achieved" if targets_reached else "targets_not_achieved"
-                ),
-                "targets_reached": targets_reached,
-                "reason": "within_pid_deadband" if targets_reached else "outside_pid_deadband",
-                "current_ph": current_ph,
-                "current_ec": current_ec if allow_ec else None,
-                "target_ph": ph_target,
-                "target_ec": ec_target,
-                "ph_deadband": float(deadbands["ph"]),
-                "ec_deadband": float(deadbands["ec"]) if allow_ec else None,
-                "allow_ph": allow_ph,
-                "allow_ec": allow_ec,
-                "irrigation_ec_component": ec_component,
-            },
-            block_reason,
-        )
+        return await self._stage_readiness.target_outcome_snapshot(task=task, plan=plan, now=now, runtime=runtime)
 
     def _irrigation_ec_dosing_block_reason(
         self,
@@ -1734,104 +654,31 @@ class BaseStageHandler:
         correction_cfg: Mapping[str, Any],
         pid_configs: Mapping[str, Any],
     ) -> str | None:
-        """Диагностическая причина запрета дозирования включённого EC.
-
-        ``irrigation_ec_component=none`` сюда не попадает. Заморозка сама по
-        себе не причина: её подтверждает budget guard (нет baseline, baseline
-        устарел или бюджет компонента исчерпан).
-        """
-        if corr is None:
-            return "component_budget_unavailable"
-        probe_ec = (
-            float(current_ec)
-            if current_ec is not None
-            else float(full_target_ec) - 1_000_000.0
-        )
-        deadbands = CorrectionPlanner().resolve_deadbands(
-            current_ph=0.0,
-            current_ec=probe_ec,
-            target_ph=0.0,
-            target_ec=float(full_target_ec),
-            correction_config=correction_cfg,
+        return self._stage_readiness.irrigation_ec_dosing_block_reason(
+            corr=corr,
+            ec_component=ec_component,
+            current_ec=current_ec,
+            full_target_ec=full_target_ec,
+            correction_cfg=correction_cfg,
             pid_configs=pid_configs,
-            allow_ec=True,
-            allow_ph=False,
         )
-        guard = irrigation_component_budget_guard(
-            corr=replace(corr, pipeline_phase=f"irrigation_{ec_component}"),
-            current_ec=probe_ec,
-            full_target_ec=float(full_target_ec),
-            ec_deadband=float(deadbands["ec"]),
-        )
-        if bool(guard.get("allowed", True)):
-            return None
-        reason = str(guard.get("reason") or "").strip()
-        return reason or "ec_dosing_blocked"
 
-    @staticmethod
-    def _apply_ec_dosing_block(
-        snapshot: Mapping[str, Any],
-        block_reason: str | None,
-    ) -> dict[str, Any]:
-        """Не превращать запрет дозы включённого EC в targets_achieved."""
-        updated = dict(snapshot)
-        if not block_reason:
-            return updated
-        updated["ec_dosing_blocked"] = True
-        updated["ec_dosing_block_reason"] = block_reason
-        outcome = str(updated.get("chemistry_outcome") or "")
-        prior = str(updated.get("reason") or "").strip()
-        if outcome != "targets_achieved":
-            updated["reason"] = block_reason if not prior else f"{block_reason},{prior}"
-        # Dosing permission cannot override fresh measurements in either
-        # direction: a frozen loop may already be within the full deadband.
-        return updated
+    _apply_ec_dosing_block = staticmethod(StageReadiness.apply_ec_dosing_block)
 
     async def _workflow_ready_reached(
-        self, *, task: Any, plan: Any, now: datetime, runtime: Any = None,
+        self,
+        *,
+        task: Any,
+        plan: Any,
+        now: datetime,
+        runtime: Any = None,
     ) -> bool:
         # Phase 5: accept hot-swapped runtime from handler. Falls back to
         # plan.runtime when caller didn't opt into live-mode reassignment.
-        if runtime is None:
-            runtime = self._require_runtime_plan(plan=plan)
-        max_age = int(runtime.telemetry_max_age_sec)
-        correction_cfg = self._runtime_config.correction_config_for_task(task=task, runtime=runtime)
-        process_cfg = self._runtime_config.process_cfg_for_task(task=task, runtime=runtime)
-        ph = await self._read_target_metric_window(
-            zone_id=task.zone_id,
-            sensor_type="PH",
-            telemetry_max_age_sec=max_age,
-            config=self._runtime_config.observation_config(kind="ph", correction_cfg=correction_cfg, process_cfg=process_cfg),
-            unavailable_error="two_tank_prepare_targets_unavailable",
-            stale_error="two_tank_prepare_targets_stale",
-            now=now,
-        )
-        ec = await self._read_target_metric_window(
-            zone_id=task.zone_id,
-            sensor_type="EC",
-            telemetry_max_age_sec=max_age,
-            config=self._runtime_config.observation_config(kind="ec", correction_cfg=correction_cfg, process_cfg=process_cfg),
-            unavailable_error="two_tank_prepare_targets_unavailable",
-            stale_error="two_tank_prepare_targets_stale",
-            now=now,
-        )
-        if not ph["ready"] or not ec["ready"]:
-            return False
-        return self._workflow_ready_values_match(
-            task=task,
-            runtime=runtime,
-            current_ph=float(ph["value"]),
-            current_ec=float(ec["value"]),
-        )
+        return await self._stage_readiness.workflow_ready_reached(task=task, plan=plan, now=now, runtime=runtime)
 
     def _recirc_pipeline_open(self, task: Any) -> bool:
-        """True, пока sequential recirc (Ca→pH→Mg→…→T_full) не завершён.
-
-        Prepare-share band в этот момент — цель текущего шага, не готовность рецепта.
-        """
-        corr = getattr(task, "correction", None)
-        phase = str(getattr(corr, "pipeline_phase", None) or "").strip().lower()
-        return phase.startswith("recirc_")
+        return self._stage_readiness.recirc_pipeline_open(task=task)
 
     def _workflow_ready_values_match(
         self,
@@ -1841,18 +688,8 @@ class BaseStageHandler:
         current_ph: float,
         current_ec: float,
     ) -> bool:
-        if self._recirc_pipeline_open(task):
-            return self._irrigation_band_values_match(
-                task=task,
-                runtime=runtime,
-                current_ph=current_ph,
-                current_ec=current_ec,
-            )
-        return self._phase_ready_values_match(
-            task=task,
-            runtime=runtime,
-            current_ph=current_ph,
-            current_ec=current_ec,
+        return self._stage_readiness.workflow_ready_values_match(
+            task=task, runtime=runtime, current_ph=current_ph, current_ec=current_ec
         )
 
     def _phase_ready_values_match(
@@ -1863,25 +700,9 @@ class BaseStageHandler:
         current_ph: float,
         current_ec: float,
     ) -> bool:
-        """Ready по phase-effective targets (prepare EC в solution_fill/tank_recirc)."""
-        tolerance = self._runtime_config.prepare_tolerance_for_task(task=task, runtime=runtime)
-        ph_target = self._runtime_config.effective_ph_target(task=task, runtime=runtime)
-        ec_target = self._runtime_config.effective_ec_target(task=task, runtime=runtime)
-        ph_ok = self._value_matches_ready_band(
-            current=current_ph,
-            target=ph_target,
-            tolerance_pct=self._runtime_config.required_prepare_tolerance_pct(tolerance=tolerance, key="ph_pct"),
-            explicit_min=self._runtime_config.effective_ph_min(task=task, runtime=runtime),
-            explicit_max=self._runtime_config.effective_ph_max(task=task, runtime=runtime),
+        return self._stage_readiness.phase_ready_values_match(
+            task=task, runtime=runtime, current_ph=current_ph, current_ec=current_ec
         )
-        ec_ok = self._value_matches_ready_band(
-            current=current_ec,
-            target=ec_target,
-            tolerance_pct=self._runtime_config.required_prepare_tolerance_pct(tolerance=tolerance, key="ec_pct"),
-            explicit_min=self._runtime_config.effective_ec_min(task=task, runtime=runtime),
-            explicit_max=self._runtime_config.effective_ec_max(task=task, runtime=runtime),
-        )
-        return ph_ok and ec_ok
 
     def _irrigation_band_values_match(
         self,
@@ -1891,23 +712,9 @@ class BaseStageHandler:
         current_ph: float,
         current_ec: float,
     ) -> bool:
-        """Ready по полному irrigation EC/pH band (без prepare NPK-share)."""
-        tolerance = self._runtime_config.prepare_tolerance_for_task(task=task, runtime=runtime)
-        ph_ok = self._value_matches_ready_band(
-            current=current_ph,
-            target=self._runtime_config.effective_ph_target(task=task, runtime=runtime),
-            tolerance_pct=self._runtime_config.required_prepare_tolerance_pct(tolerance=tolerance, key="ph_pct"),
-            explicit_min=self._runtime_config.effective_ph_min(task=task, runtime=runtime),
-            explicit_max=self._runtime_config.effective_ph_max(task=task, runtime=runtime),
+        return self._stage_readiness.irrigation_band_values_match(
+            task=task, runtime=runtime, current_ph=current_ph, current_ec=current_ec
         )
-        ec_ok = self._value_matches_ready_band(
-            current=current_ec,
-            target=self._runtime_config.irrigation_ec_target(runtime=runtime),
-            tolerance_pct=self._runtime_config.required_prepare_tolerance_pct(tolerance=tolerance, key="ec_pct"),
-            explicit_min=self._runtime_config.irrigation_ec_min(runtime=runtime),
-            explicit_max=self._runtime_config.irrigation_ec_max(runtime=runtime),
-        )
-        return ph_ok and ec_ok
 
     def _irrigation_ready_short_circuit(
         self,
@@ -1917,77 +724,20 @@ class BaseStageHandler:
         current_ph: float,
         current_ec: float,
     ) -> bool:
-        """Skip prepare when раствор уже в irrigation-band и EC выше prepare-target.
-
-        Post-irrigation / DIAGNOSTICS re-entry: prepare NPK-band уже пройден (EC
-        planner не дозирует вниз). Не срабатывает при EC ниже prepare — первый setup
-        по-прежнему идёт в prepare. Не подменяет ``workflow_ready`` phase-band.
-        """
-        phase = self._runtime_config.runtime_phase_key(task=task)
-        if phase not in {"solution_fill", "tank_recirc"}:
-            return False
-        if not self._irrigation_band_values_match(
-            task=task,
-            runtime=runtime,
-            current_ph=current_ph,
-            current_ec=current_ec,
-        ):
-            return False
-        prepare_ec = float(self._runtime_config.effective_ec_target(task=task, runtime=runtime))
-        return math.isfinite(prepare_ec) and current_ec > prepare_ec
+        return self._stage_readiness.irrigation_ready_short_circuit(
+            task=task, runtime=runtime, current_ph=current_ph, current_ec=current_ec
+        )
 
     async def _finish_ready_or_irrigation_short_circuit(
-        self, *, task: Any, plan: Any, now: datetime, runtime: Any = None,
+        self,
+        *,
+        task: Any,
+        plan: Any,
+        now: datetime,
+        runtime: Any = None,
     ) -> bool:
-        """True если phase-ready **или** irrigation short-circuit (fresh telemetry)."""
-        if runtime is None:
-            runtime = self._require_runtime_plan(plan=plan)
-        max_age = int(runtime.telemetry_max_age_sec)
-        correction_cfg = self._runtime_config.correction_config_for_task(task=task, runtime=runtime)
-        process_cfg = self._runtime_config.process_cfg_for_task(task=task, runtime=runtime)
-        ph = await self._read_target_metric_window(
-            zone_id=task.zone_id,
-            sensor_type="PH",
-            telemetry_max_age_sec=max_age,
-            config=self._runtime_config.observation_config(kind="ph", correction_cfg=correction_cfg, process_cfg=process_cfg),
-            unavailable_error="two_tank_prepare_targets_unavailable",
-            stale_error="two_tank_prepare_targets_stale",
-            now=now,
-        )
-        ec = await self._read_target_metric_window(
-            zone_id=task.zone_id,
-            sensor_type="EC",
-            telemetry_max_age_sec=max_age,
-            config=self._runtime_config.observation_config(kind="ec", correction_cfg=correction_cfg, process_cfg=process_cfg),
-            unavailable_error="two_tank_prepare_targets_unavailable",
-            stale_error="two_tank_prepare_targets_stale",
-            now=now,
-        )
-        if not ph["ready"] or not ec["ready"]:
-            return False
-        current_ph = float(ph["value"])
-        current_ec = float(ec["value"])
-        tolerance = self._runtime_config.prepare_tolerance_for_task(task=task, runtime=runtime)
-        target_reached = CorrectionPlanner().is_within_tolerance(
-            current_ph=current_ph,
-            current_ec=current_ec,
-            target_ph=self._runtime_config.effective_ph_target(task=task, runtime=runtime),
-            target_ec=self._runtime_config.effective_ec_target(task=task, runtime=runtime),
-            ph_tolerance_pct=self._runtime_config.required_prepare_tolerance_pct(
-                tolerance=tolerance, key="ph_pct",
-            ),
-            ec_tolerance_pct=self._runtime_config.required_prepare_tolerance_pct(
-                tolerance=tolerance, key="ec_pct",
-            ),
-            correction_config=correction_cfg,
-            pid_configs=getattr(runtime, "pid_configs", {}),
-        )
-        # Открытый recirc-pipeline нельзя закрыть кальциевой prepare-band:
-        # pH в фазовом окне и EC ≈ T_ca иначе завершают рецепт до Mg/NPK/micro.
-        if target_reached and not self._recirc_pipeline_open(task):
-            return True
-        return self._irrigation_ready_short_circuit(
-            task=task, runtime=runtime, current_ph=current_ph, current_ec=current_ec,
+        return await self._stage_readiness.finish_ready_or_irrigation_short_circuit(
+            task=task, plan=plan, now=now, runtime=runtime
         )
 
     def _value_matches_ready_band(
@@ -1999,16 +749,13 @@ class BaseStageHandler:
         explicit_min: float | None,
         explicit_max: float | None,
     ) -> bool:
-        if (
-            explicit_min is not None
-            and explicit_max is not None
-            and math.isfinite(explicit_min)
-            and math.isfinite(explicit_max)
-            and explicit_min <= explicit_max
-        ):
-            return explicit_min <= current <= explicit_max
-        tolerance = abs(target) * (float(tolerance_pct) / 100.0)
-        return (target - tolerance) <= current <= (target + tolerance)
+        return self._stage_readiness.value_matches_ready_band(
+            current=current,
+            target=target,
+            tolerance_pct=tolerance_pct,
+            explicit_min=explicit_min,
+            explicit_max=explicit_max,
+        )
 
     async def _read_target_metric_window(
         self,
@@ -2021,70 +768,20 @@ class BaseStageHandler:
         stale_error: str,
         now: datetime,
     ) -> Mapping[str, Any]:
-        since_ts = self._decision_window_since_ts(now=now, config=config)
-        window = await self._runtime_monitor.read_metric_window(
+        return await self._stage_metric_window.read_target_metric_window(
             zone_id=zone_id,
             sensor_type=sensor_type,
-            since_ts=since_ts,
             telemetry_max_age_sec=telemetry_max_age_sec,
+            config=config,
+            unavailable_error=unavailable_error,
+            stale_error=stale_error,
+            now=now,
         )
-        if not window["has_sensor"]:
-            raise TaskExecutionError(
-                unavailable_error,
-                f"Телеметрия {sensor_type} недоступна для оценки target",
-            )
-        if window["is_stale"]:
-            raise TaskExecutionError(
-                stale_error,
-                f"Телеметрия {sensor_type} устарела для оценки target",
-            )
-        summary = self._summarize_metric_window(
-            samples=window["samples"],
-            window_min_samples=int(config["window_min_samples"]),
-            stability_max_slope=float(config["stability_max_slope"]),
-        )
-        if not summary["ready"]:
-            return {"ready": False, "reason": summary.get("reason")}
-        bounds_reason = decision_window_bounds_reason(
-            sensor_type=sensor_type,
-            value=summary["value"],
-        )
-        if bounds_reason is not None:
-            _logger.warning(
-                "Sensor value out of sanity bounds: sensor_type=%s value=%s zone_id=%s",
-                sensor_type,
-                summary["value"],
-                zone_id,
-            )
-            return {"ready": False, "reason": bounds_reason}
-        timing = _validate_telemetry_window_timing(
-            samples=window["samples"],
-            minimum_span_sec=float(config["decision_window_sec"]),
-            not_after=now,
-            sample_period_sec=float(config["telemetry_period_sec"]),
-        )
-        if not timing["ready"]:
-            return {
-                "ready": False,
-                "reason": timing.get("reason"),
-                "window_span_sec": timing.get("window_span_sec"),
-            }
-        return {
-            "ready": True,
-            "value": summary["value"],
-            "sample_count": summary["sample_count"],
-            "slope": summary["slope"],
-            "window_span_sec": timing.get("window_span_sec"),
-        }
 
-    @staticmethod
-    def _sensor_value_in_bounds(*, sensor_type: str, value: Any) -> bool:
-        """Thin wrapper over ``metric_window_validator.sensor_value_in_bounds``."""
-        return sensor_value_in_bounds(sensor_type=sensor_type, value=value)
+    _sensor_value_in_bounds = staticmethod(StageMetricWindow.sensor_value_in_bounds)
 
     def _decision_window_since_ts(self, *, now: datetime, config: Mapping[str, Any]) -> datetime:
-        return _telemetry_decision_window_since_ts(now=now, config=config)
-
+        return self._stage_metric_window.decision_window_since_ts(now=now, config=config)
 
     def _summarize_metric_window(
         self,
@@ -2093,17 +790,13 @@ class BaseStageHandler:
         window_min_samples: int,
         stability_max_slope: float,
     ) -> dict[str, Any]:
-        return _telemetry_summarize_window(
-            samples=samples,
-            window_min_samples=window_min_samples,
-            stability_max_slope=stability_max_slope,
+        return self._stage_metric_window.summarize_metric_window(
+            samples=samples, window_min_samples=window_min_samples, stability_max_slope=stability_max_slope
         )
 
     # ── Per-phase EC target (NPK share для подготовки) ────────────
 
-
     # ── Day/Night helpers ────────────────────────────────────────────
-
 
     async def _check_solution_change_abort(
         self,
@@ -2111,36 +804,9 @@ class BaseStageHandler:
         task: Any,
         pending_manual_step: str,
     ) -> StageOutcome | None:
-        """Обрабатывает operator abort для task_type=solution_change."""
-        if str(getattr(task, "task_type", "") or "").strip().lower() != "solution_change":
-            return None
-        from ae3lite.application.use_cases.manual_control_contract import SOLUTION_CHANGE_ABORT_STEP
-
-        if str(pending_manual_step or "").strip() != SOLUTION_CHANGE_ABORT_STEP:
-            return None
-        _logger.info(
-            "solution_change: operator abort zone_id=%s task_id=%s stage=%s",
-            task.zone_id,
-            getattr(task, "id", None),
-            getattr(task.workflow, "current_stage", None),
+        return await self._stage_flow_safety.check_solution_change_abort(
+            task=task, pending_manual_step=pending_manual_step
         )
-        try:
-            await create_zone_event(
-                int(task.zone_id),
-                "SOLUTION_CHANGE_ABORTED",
-                {
-                    "task_id": int(getattr(task, "id", 0) or 0),
-                    "zone_id": int(getattr(task, "zone_id", 0) or 0),
-                    "stage": str(getattr(task.workflow, "current_stage", "") or ""),
-                },
-            )
-        except Exception:
-            _logger.warning(
-                "solution_change_abort: не удалось записать SOLUTION_CHANGE_ABORTED zone_id=%s",
-                getattr(task, "zone_id", None),
-                exc_info=True,
-            )
-        return StageOutcome(kind="transition", next_stage="solution_change_abort_stop")
 
     # ── Sensor consistency check (max=1, min=0 → error) ────────────
 
@@ -2155,26 +821,12 @@ class BaseStageHandler:
         stale_recheck_delay_sec: float | None = None,
         prefer_probe_snapshot: bool = False,
     ) -> None:
-        """Read min-level sensor and assert it's triggered (consistency with max)."""
-        min_labels = self._runtime_config.mapping_value(runtime, min_labels_key)
-        if min_labels is _MISSING_CONFIG:
-            raise TaskExecutionError(
-                ErrorCodes.ZONE_CORRECTION_CONFIG_MISSING_CRITICAL,
-                f"Отсутствует runtime.{min_labels_key}",
-            )
-        level = await self._read_level(
+        return await self._stage_flow_safety.check_sensor_consistency(
             task=task,
-            zone_id=task.zone_id,
-            labels=min_labels,
-            threshold=float(runtime.level_switch_on_threshold),
-            telemetry_max_age_sec=int(runtime.telemetry_max_age_sec),
-            unavailable_error=min_unavailable_error,
-            stale_error=min_stale_error,
+            runtime=runtime,
+            min_labels_key=min_labels_key,
+            min_unavailable_error=min_unavailable_error,
+            min_stale_error=min_stale_error,
             stale_recheck_delay_sec=stale_recheck_delay_sec,
             prefer_probe_snapshot=prefer_probe_snapshot,
         )
-        if not level["is_triggered"]:
-            raise TaskExecutionError(
-                "sensor_state_inconsistent",
-                f"Датчики бака противоречат друг другу: max=1 min=0 ({min_labels_key})",
-            )

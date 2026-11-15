@@ -5,7 +5,7 @@
 Документ описывает полную стратегию резервного копирования (Backup) 
 и восстановления (Recovery) для гидропонной системы 2.0.
 
-**Сверено:** 2026-11-07. Логический backup/restore реализован скриптами
+**Сверено:** 2026-11-14. Логический backup/restore реализован скриптами
 `backend/scripts/backup/postgres_backup.sh` и `backend/scripts/restore/postgres_restore.sh`.
 Полноценная процедура физического PITR этими скриптами не реализована.
 
@@ -196,6 +196,19 @@ Artisan по умолчанию создаёт **application backup**: логи�
 DB_NAME=hydro_restore_check backend/scripts/restore/postgres_restore.sh /absolute/path/backup.dump
 ```
 
+Скрипт проверяет TOC через `pg_restore --list` до остановки подключений и DROP; это не полная проверка всех блоков данных. Системные `postgres/template0/template1` не допускаются. Для дампа с TimescaleDB он создаёт extension, вызывает `timescaledb_pre_restore()`, загружает данные с `--exit-on-error`, затем вызывает `timescaledb_post_restore()`. При ошибке загрузки restoring mode сохраняется: частичная БД не готова к запуску сервисов. Повторите восстановление в чистую целевую БД после устранения причины.
+
+`--no-owner --no-privileges` не переносит исходные ACL. До запуска Python-сервисов выполните с migrator credentials, направленными на восстановленную БД:
+
+```bash
+php artisan hydro:db-runtime-roles --apply
+php artisan hydro:db-runtime-roles --check
+```
+
+`--apply` транзакционно выдаёт явные grants управляемым NOLOGIN capability roles и проверяет их; неизвестная/административная роль с тем же именем отклоняется. Имена зависят от целевой БД. Login-учётки, secrets и membership в соответствующей capability role настраиваются отдельно доверенным механизмом; dump одной БД их не восстанавливает. Команда без `--apply` не изменяет grants.
+
+Квалификация 2026-11-14: PostgreSQL 16.14 / TimescaleDB 2.28.2, четыре hypertable, round-trip 17 samples, last projection, encrypted probe с исходным тестовым APP_KEY и persisted dispatch marker. Повреждённый архив отклонён с сохранением прежней БД. Это малая fixture в изолированной среде, не доказательство production RTO/RPO или физического PITR.
+
 После восстановления проверьте таблицы и Timescale extensions, schema snapshot,
 телеметрию и конфигурацию. Возобновление AE3/scheduler — отдельный шаг после
 подтверждения готовности оборудования; восстановленный active task не означает
@@ -210,6 +223,10 @@ DB_NAME=hydro_restore_check backend/scripts/restore/postgres_restore.sh /absolut
    в конфигурации PostgreSQL; создайте `recovery.signal` в PGDATA.
 4. Запустите изолированный кластер, проверьте логи WAL replay и фактическую точку
    остановки recovery. Проверьте данные до переключения приложения.
+
+При физическом recovery значения `max_connections`, `max_worker_processes`, `max_wal_senders`, `max_prepared_transactions`, `max_locks_per_transaction` должны быть не ниже требуемых сохранённым WAL/source. В тесте PostgreSQL 16.14 clone с max_connections=30 не запустился при source=80; после выравнивания recovery прошёл. Уменьшать параметры можно после recovery/promote по отдельному плану настройки.
+
+Квалификация 2026-11-14: physical `pg_basebackup -X stream` с SHA256 manifest, успешный `pg_verifybackup`, WAL replay до именованной restore point. Marker до точки присутствует, после точки отсутствует; четыре hypertable доступны, target promoted. Это отдельный RAM-стенд; измеренные 0.720 s относятся к запуску уже подготовленной малой копии, не production RTO. Подробности и артефакт — [отчёт аудита](AUDIT_FIXES_2026_11_14.md).
 
 В PostgreSQL 12+ файл `recovery.conf` не применяется.
 Параметр `--wal-dir` в `postgres_restore.sh` лишь выводит предупреждение:

@@ -1,6 +1,10 @@
 """Исполнение одного tick климата теплицы (DB + history-logger)."""
 
 from __future__ import annotations
+from datetime import datetime
+from typing import Mapping
+from ae3lite.greenhouse_climate.decision_engine import ClimateDecision
+from ae3lite.infrastructure.clients import HistoryLoggerClient
 
 import asyncio
 import json
@@ -34,11 +38,204 @@ _LEASE_OWNER_PREFIX = "ae3_greenhouse_climate"
 _DEFAULT_LEASE_TTL_SEC = 300
 
 
+from ae3lite.greenhouse_climate.climate_tick_records import _GreenhouseLeaseStop
+from ae3lite.greenhouse_climate.climate_tick_coordination import ClimateTickCoordination, ClimateTickCoordinationPorts
+
+
+def _climate_tick_coordination() -> ClimateTickCoordination:
+    return ClimateTickCoordination(
+        ClimateTickCoordinationPorts(
+            claim_greenhouse_lease=lambda *args, **kwargs: _claim_greenhouse_lease(*args, **kwargs),
+            complete_active_tick=lambda *args, **kwargs: _complete_active_tick(*args, **kwargs),
+            complete_disabled_tick=lambda *args, **kwargs: _complete_disabled_tick(*args, **kwargs),
+            complete_missing_bundle=lambda *args, **kwargs: _complete_missing_bundle(*args, **kwargs),
+            ensure_state_row=lambda *args, **kwargs: _ensure_state_row(*args, **kwargs),
+            execute_vent_commands=lambda *args, **kwargs: _execute_vent_commands(*args, **kwargs),
+            expired_manual_override_return_mode=lambda *args, **kwargs: _expired_manual_override_return_mode(
+                *args, **kwargs
+            ),
+            parse_bundle=lambda *args, **kwargs: _parse_bundle(*args, **kwargs),
+            persist_tick_exception=lambda *args, **kwargs: _persist_tick_exception(*args, **kwargs),
+            plan_active_tick=lambda *args, **kwargs: _plan_active_tick(*args, **kwargs),
+            record_tick_metric=lambda *args, **kwargs: _record_tick_metric(*args, **kwargs),
+            release_greenhouse_lease=lambda *args, **kwargs: _release_greenhouse_lease(*args, **kwargs),
+            execute=lambda *args, **kwargs: execute(*args, **kwargs),
+            fetch=lambda *args, **kwargs: fetch(*args, **kwargs),
+            logger=lambda: logger,
+            resolve_greenhouse_lease_owner=lambda *args, **kwargs: resolve_greenhouse_lease_owner(*args, **kwargs),
+            uuid4=lambda *args, **kwargs: uuid4(*args, **kwargs),
+        )
+    )
+
+
+from ae3lite.greenhouse_climate.climate_tick_lease import ClimateTickLease, ClimateTickLeasePorts
+
+
+def _climate_tick_lease() -> ClimateTickLease:
+    return ClimateTickLease(
+        ClimateTickLeasePorts(
+            lease_owner_prefix=lambda: _LEASE_OWNER_PREFIX,
+            execute=lambda *args, **kwargs: execute(*args, **kwargs),
+            fetch=lambda *args, **kwargs: fetch(*args, **kwargs),
+        )
+    )
+
+
+from ae3lite.greenhouse_climate.climate_tick_configuration import (
+    ClimateTickConfiguration,
+    ClimateTickConfigurationPorts,
+)
+
+
+def _climate_tick_configuration() -> ClimateTickConfiguration:
+    return ClimateTickConfiguration(ClimateTickConfigurationPorts())
+
+
+from ae3lite.greenhouse_climate.climate_tick_state_queries import ClimateTickStateQueries, ClimateTickStateQueriesPorts
+
+
+def _climate_tick_state_queries() -> ClimateTickStateQueries:
+    return ClimateTickStateQueries(
+        ClimateTickStateQueriesPorts(
+            execute=lambda *args, **kwargs: execute(*args, **kwargs),
+            fetch=lambda *args, **kwargs: fetch(*args, **kwargs),
+        )
+    )
+
+
+from ae3lite.greenhouse_climate.climate_tick_alerts import ClimateTickAlerts, ClimateTickAlertsPorts
+
+
+def _climate_tick_alerts() -> ClimateTickAlerts:
+    return ClimateTickAlerts(
+        ClimateTickAlertsPorts(
+            greenhouse_climate_decision_duration_seconds=lambda: GREENHOUSE_CLIMATE_DECISION_DURATION_SECONDS,
+            greenhouse_climate_tick_total=lambda: GREENHOUSE_CLIMATE_TICK_TOTAL,
+            alert_publisher=lambda: _ALERT_PUBLISHER,
+            greenhouse_alert_codes=lambda: _GREENHOUSE_ALERT_CODES,
+            alert_severity=lambda *args, **kwargs: _alert_severity(*args, **kwargs),
+            as_float=lambda *args, **kwargs: _as_float(*args, **kwargs),
+            unique_alert_codes=lambda *args, **kwargs: _unique_alert_codes(*args, **kwargs),
+            logger=lambda: logger,
+        )
+    )
+
+
+from ae3lite.greenhouse_climate.climate_tick_sensors import ClimateTickSensors, ClimateTickSensorsPorts
+
+
+def _climate_tick_sensors() -> ClimateTickSensors:
+    return ClimateTickSensors(
+        ClimateTickSensorsPorts(
+            core_outside_weather_keys=lambda: _CORE_OUTSIDE_WEATHER_KEYS,
+            outside_channel_hints=lambda: _OUTSIDE_CHANNEL_HINTS,
+            outside_sensor_types=lambda: _OUTSIDE_SENSOR_TYPES,
+            accumulate_sensor_row=lambda *args, **kwargs: _accumulate_sensor_row(*args, **kwargs),
+            as_float=lambda *args, **kwargs: _as_float(*args, **kwargs),
+            is_truthy_sensor_value=lambda *args, **kwargs: _is_truthy_sensor_value(*args, **kwargs),
+            load_shared_weather_station_node_id=lambda *args, **kwargs: _load_shared_weather_station_node_id(
+                *args, **kwargs
+            ),
+            weather_station_fresh=lambda *args, **kwargs: _weather_station_fresh(*args, **kwargs),
+            fetch=lambda *args, **kwargs: fetch(*args, **kwargs),
+        )
+    )
+
+
+from ae3lite.greenhouse_climate.climate_tick_targets import ClimateTickTargets, ClimateTickTargetsPorts
+
+
+def _climate_tick_targets() -> ClimateTickTargets:
+    return ClimateTickTargets(
+        ClimateTickTargetsPorts(
+            as_float=lambda *args, **kwargs: _as_float(*args, **kwargs),
+            greenhouse_targets=lambda *args, **kwargs: _greenhouse_targets(*args, **kwargs),
+            fetch=lambda *args, **kwargs: fetch(*args, **kwargs),
+        )
+    )
+
+
+from ae3lite.greenhouse_climate.climate_tick_command_wait import ClimateTickCommandWait, ClimateTickCommandWaitPorts
+
+
+def _climate_tick_command_wait() -> ClimateTickCommandWait:
+    return ClimateTickCommandWait(
+        ClimateTickCommandWaitPorts(
+            lease_lost_status=lambda: _LEASE_LOST_STATUS,
+            terminal_statuses=lambda: _TERMINAL_STATUSES,
+            fetch=lambda *args, **kwargs: fetch(*args, **kwargs),
+            logger=lambda: logger,
+        )
+    )
+
+
+from ae3lite.greenhouse_climate.climate_tick_planning import ClimateTickPlanning, ClimateTickPlanningPorts
+
+
+def _climate_tick_planning() -> ClimateTickPlanning:
+    return ClimateTickPlanning(
+        ClimateTickPlanningPorts(
+            greenhouse_climate_rain_clamp_total=lambda: GREENHOUSE_CLIMATE_RAIN_CLAMP_TOTAL,
+            greenhouse_climate_sensor_stale_total=lambda: GREENHOUSE_CLIMATE_SENSOR_STALE_TOTAL,
+            greenhouse_climate_wind_clamp_total=lambda: GREENHOUSE_CLIMATE_WIND_CLAMP_TOTAL,
+            load_greenhouse_timezone=lambda *args, **kwargs: _load_greenhouse_timezone(*args, **kwargs),
+            load_manual_override=lambda *args, **kwargs: _load_manual_override(*args, **kwargs),
+            load_vents=lambda *args, **kwargs: _load_vents(*args, **kwargs),
+            resolve_target_policy=lambda *args, **kwargs: _resolve_target_policy(*args, **kwargs),
+            schedule_day_for_greenhouse=lambda *args, **kwargs: _schedule_day_for_greenhouse(*args, **kwargs),
+            sensor_snapshot=lambda *args, **kwargs: _sensor_snapshot(*args, **kwargs),
+            spread_alerts=lambda *args, **kwargs: _spread_alerts(*args, **kwargs),
+            unique_alert_codes=lambda *args, **kwargs: _unique_alert_codes(*args, **kwargs),
+            compute_climate_decision=lambda *args, **kwargs: compute_climate_decision(*args, **kwargs),
+            record_greenhouse_climate_crop_metrics=lambda *args, **kwargs: record_greenhouse_climate_crop_metrics(
+                *args, **kwargs
+            ),
+        )
+    )
+
+
+from ae3lite.greenhouse_climate.climate_tick_commands import ClimateTickCommands, ClimateTickCommandsPorts
+
+
+def _climate_tick_commands() -> ClimateTickCommands:
+    return ClimateTickCommands(
+        ClimateTickCommandsPorts(
+            greenhouse_climate_command_failed_total=lambda: GREENHOUSE_CLIMATE_COMMAND_FAILED_TOTAL,
+            greenhouse_climate_command_total=lambda: GREENHOUSE_CLIMATE_COMMAND_TOTAL,
+            lease_lost_status=lambda: _LEASE_LOST_STATUS,
+            lease_renew_transient_budget=lambda: _LEASE_RENEW_TRANSIENT_BUDGET,
+            success_status=lambda: _SUCCESS_STATUS,
+            renew_greenhouse_lease=lambda *args, **kwargs: _renew_greenhouse_lease(*args, **kwargs),
+            wait_command_terminal=lambda *args, **kwargs: _wait_command_terminal(*args, **kwargs),
+            logger=lambda: logger,
+        )
+    )
+
+
+from ae3lite.greenhouse_climate.climate_tick_completion import ClimateTickCompletion, ClimateTickCompletionPorts
+
+
+def _climate_tick_completion() -> ClimateTickCompletion:
+    return ClimateTickCompletion(
+        ClimateTickCompletionPorts(
+            lease_lost_status=lambda: _LEASE_LOST_STATUS,
+            load_manual_override=lambda *args, **kwargs: _load_manual_override(*args, **kwargs),
+            lock_owned_greenhouse_lease=lambda *args, **kwargs: _lock_owned_greenhouse_lease(*args, **kwargs),
+            publish_greenhouse_alert_lifecycle=lambda *args, **kwargs: _publish_greenhouse_alert_lifecycle(
+                *args, **kwargs
+            ),
+            record_tick_metric=lambda *args, **kwargs: _record_tick_metric(*args, **kwargs),
+            unique_alert_codes=lambda *args, **kwargs: _unique_alert_codes(*args, **kwargs),
+            get_pool=lambda *args, **kwargs: get_pool(*args, **kwargs),
+            logger=lambda: logger,
+        )
+    )
+
+
 def resolve_greenhouse_lease_owner(*, worker_owner: str | None = None) -> str:
-    owner = str(worker_owner or "").strip()
-    if owner:
-        return f"{_LEASE_OWNER_PREFIX}:{owner}"[:128]
-    return _LEASE_OWNER_PREFIX
+    return _climate_tick_lease().resolve_greenhouse_lease_owner(worker_owner=worker_owner)
+
+
 _TERMINAL_STATUSES = {"DONE", "ERROR", "INVALID", "BUSY", "NO_EFFECT", "TIMEOUT", "SEND_FAILED"}
 _SUCCESS_STATUS = "DONE"
 _LEASE_LOST_STATUS = "LEASE_LOST"
@@ -46,8 +243,6 @@ _LEASE_LOST_STATUS = "LEASE_LOST"
 _LEASE_RENEW_TRANSIENT_BUDGET = 1
 
 
-class _GreenhouseLeaseStop(Exception):
-    """Подтверждённая потеря greenhouse lease или исчерпанный транспортный бюджет."""
 _ALERT_PUBLISHER = AlertPublisher(default_source="biz")
 _GREENHOUSE_ALERT_CODES = {
     "GREENHOUSE_WEATHER_STATION_STALE",
@@ -63,84 +258,21 @@ _GREENHOUSE_ALERT_CODES = {
 
 
 def _parse_bundle(config: Mapping[str, Any] | None) -> tuple[dict[str, Any], str | None, dict[str, Any]]:
-    if not isinstance(config, dict):
-        return {}, None, {}
-    gh = config.get("greenhouse")
-    if not isinstance(gh, dict):
-        return {}, None, {}
-    lp = gh.get("logic_profile")
-    if not isinstance(lp, dict):
-        return {}, None, {}
-    mode = lp.get("active_mode")
-    active_mode = str(mode).strip().lower() if isinstance(mode, str) else None
-    if active_mode not in {"setup", "working"}:
-        return {}, None, {}
-    prof = lp.get("profiles", {}).get(active_mode)
-    if not isinstance(prof, dict):
-        return {}, active_mode, {}
-    sub = prof.get("subsystems") or {}
-    climate = sub.get("climate") if isinstance(sub, dict) else None
-    if not isinstance(climate, dict):
-        return {}, active_mode, {}
-    return climate, active_mode, lp
+    return _climate_tick_configuration().parse_bundle(config=config)
 
 
 async def _ensure_state_row(greenhouse_id: int) -> None:
-    await execute(
-        """
-        INSERT INTO greenhouse_automation_state (greenhouse_id, climate_enabled, control_mode, created_at, updated_at)
-        VALUES ($1, false, 'auto', now(), now())
-        ON CONFLICT (greenhouse_id) DO NOTHING
-        """,
-        greenhouse_id,
-    )
+    return await _climate_tick_state_queries().ensure_state_row(greenhouse_id=greenhouse_id)
 
 
 async def _load_manual_override(greenhouse_id: int) -> dict[str, Any] | None:
-    rows = await fetch(
-        """
-        SELECT id, left_position_pct, right_position_pct, ttl_sec, return_mode, reason, expires_at
-        FROM greenhouse_manual_overrides
-        WHERE greenhouse_id = $1 AND expires_at > now()
-        ORDER BY id DESC
-        LIMIT 1
-        """,
-        greenhouse_id,
-    )
-    if not rows:
-        return None
-    r = dict(rows[0])
-    return {
-        "id": int(r.get("id") or 0),
-        "left_position_pct": int(r.get("left_position_pct") or 0),
-        "right_position_pct": int(r.get("right_position_pct") or 0),
-        "ttl_sec": int(r.get("ttl_sec") or 0),
-        "return_mode": str(r.get("return_mode") or "auto"),
-        "reason": r.get("reason"),
-        "expires_at": r.get("expires_at"),
-    }
+    return await _climate_tick_state_queries().load_manual_override(greenhouse_id=greenhouse_id)
 
 
 async def _expired_manual_override_return_mode(greenhouse_id: int, state: Mapping[str, Any]) -> str | None:
-    override_id = state.get("active_manual_override_id")
-    if override_id is None:
-        return None
-    rows = await fetch(
-        """
-        SELECT return_mode
-        FROM greenhouse_manual_overrides
-        WHERE id = $1 AND greenhouse_id = $2 AND expires_at <= now()
-        LIMIT 1
-        """,
-        int(override_id),
-        greenhouse_id,
+    return await _climate_tick_state_queries().expired_manual_override_return_mode(
+        greenhouse_id=greenhouse_id, state=state
     )
-    if not rows:
-        return None
-    return_mode = str(rows[0].get("return_mode") or "auto").strip().lower()
-    if return_mode not in {"auto", "semi", "manual"}:
-        return_mode = "auto"
-    return return_mode
 
 
 async def _claim_greenhouse_lease(
@@ -149,26 +281,7 @@ async def _claim_greenhouse_lease(
     owner: str,
     ttl_sec: int = _DEFAULT_LEASE_TTL_SEC,
 ) -> bool:
-    now = datetime.now(timezone.utc)
-    leased_until = now + timedelta(seconds=max(1, int(ttl_sec)))
-    rows = await fetch(
-        """
-        INSERT INTO greenhouse_automation_leases (greenhouse_id, owner, leased_until, updated_at)
-        VALUES ($1, $2, $3, $4)
-        ON CONFLICT (greenhouse_id) DO UPDATE
-        SET owner = EXCLUDED.owner,
-            leased_until = EXCLUDED.leased_until,
-            updated_at = EXCLUDED.updated_at
-        WHERE greenhouse_automation_leases.owner = EXCLUDED.owner
-           OR greenhouse_automation_leases.leased_until <= $4
-        RETURNING greenhouse_id
-        """,
-        greenhouse_id,
-        owner,
-        leased_until,
-        now,
-    )
-    return bool(rows)
+    return await _climate_tick_lease().claim_greenhouse_lease(greenhouse_id=greenhouse_id, owner=owner, ttl_sec=ttl_sec)
 
 
 async def _renew_greenhouse_lease(
@@ -177,81 +290,31 @@ async def _renew_greenhouse_lease(
     owner: str,
     ttl_sec: int = _DEFAULT_LEASE_TTL_SEC,
 ) -> bool:
-    now = datetime.now(timezone.utc)
-    leased_until = now + timedelta(seconds=max(1, int(ttl_sec)))
-    rows = await fetch(
-        """
-        UPDATE greenhouse_automation_leases
-        SET leased_until = $3,
-            updated_at = $4
-        WHERE greenhouse_id = $1
-          AND owner = $2
-        RETURNING greenhouse_id
-        """,
-        greenhouse_id,
-        owner,
-        leased_until,
-        now,
-    )
-    return bool(rows)
+    return await _climate_tick_lease().renew_greenhouse_lease(greenhouse_id=greenhouse_id, owner=owner, ttl_sec=ttl_sec)
 
 
 async def _release_greenhouse_lease(greenhouse_id: int, *, owner: str) -> None:
-    await execute(
-        """
-        DELETE FROM greenhouse_automation_leases
-        WHERE greenhouse_id = $1 AND owner = $2
-        """,
-        greenhouse_id,
-        owner,
-    )
+    return await _climate_tick_lease().release_greenhouse_lease(greenhouse_id=greenhouse_id, owner=owner)
 
 
 async def _lock_owned_greenhouse_lease(conn: Any, *, greenhouse_id: int, owner: str) -> bool:
-    row = await conn.fetchrow(
-        """
-        SELECT greenhouse_id FROM greenhouse_automation_leases
-        WHERE greenhouse_id = $1 AND owner = $2 AND leased_until > now()
-        FOR UPDATE
-        """,
-        greenhouse_id,
-        owner,
-    )
-    return row is not None
+    return await _climate_tick_lease().lock_owned_greenhouse_lease(conn=conn, greenhouse_id=greenhouse_id, owner=owner)
 
 
 def _as_float(value: Any) -> float | None:
-    if value is None or isinstance(value, bool):
-        return None
-    if isinstance(value, (int, float)):
-        return float(value)
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
+    return _climate_tick_configuration().as_float(value=value)
 
 
 def _is_truthy_sensor_value(value: float) -> bool:
-    return value >= 0.5
+    return _climate_tick_configuration().is_truthy_sensor_value(value=value)
 
 
 def _alert_severity(code: str) -> str:
-    if code in {"GREENHOUSE_OVERHEAT_EMERGENCY", "GREENHOUSE_VENT_COMMAND_FAILED"}:
-        return "critical"
-    if code in {"GREENHOUSE_TARGET_CONFLICT", "GREENHOUSE_TARGET_POLICY_INVALID"}:
-        return "error"
-    return "warning"
+    return _climate_tick_alerts().alert_severity(code=code)
 
 
 def _unique_alert_codes(codes: list[str]) -> list[str]:
-    out: list[str] = []
-    seen: set[str] = set()
-    for code in codes:
-        normalized = str(code or "").strip().upper()
-        if normalized and normalized not in seen:
-            out.append(normalized)
-            seen.add(normalized)
-    return out
+    return _climate_tick_alerts().unique_alert_codes(codes=codes)
 
 
 async def _publish_greenhouse_alert_lifecycle(
@@ -261,64 +324,17 @@ async def _publish_greenhouse_alert_lifecycle(
     details: Mapping[str, Any],
     alert_publisher: Any,
 ) -> None:
-    active_set = set(_unique_alert_codes(active_codes))
-    publisher = alert_publisher or _ALERT_PUBLISHER
-    for code in sorted(_GREENHOUSE_ALERT_CODES):
-        payload = {
-            "greenhouse_id": greenhouse_id,
-            "component": "greenhouse_climate",
-            "code": code,
-            **dict(details),
-        }
-        dedupe_key = f"greenhouse_climate|greenhouse:{greenhouse_id}|code:{code.lower()}"
-        try:
-            if code in active_set:
-                await publisher.raise_active(
-                    zone_id=None,
-                    source="biz",
-                    code=code,
-                    alert_type="greenhouse_climate",
-                    details={**payload, "dedupe_key": dedupe_key},
-                    dedupe_key=dedupe_key,
-                    scoped=True,
-                    severity=_alert_severity(code),
-                )
-            else:
-                await publisher.resolve(
-                    zone_id=None,
-                    source="biz",
-                    code=code,
-                    alert_type="greenhouse_climate",
-                    details={**payload, "dedupe_key": dedupe_key},
-                    dedupe_key=dedupe_key,
-                    scoped=True,
-                    severity=_alert_severity(code),
-                )
-        except Exception:
-            logger.warning(
-                "greenhouse_climate_tick alert lifecycle publish failed gh=%s code=%s",
-                greenhouse_id,
-                code,
-                exc_info=True,
-            )
+    return await _climate_tick_alerts().publish_greenhouse_alert_lifecycle(
+        greenhouse_id=greenhouse_id, active_codes=active_codes, details=details, alert_publisher=alert_publisher
+    )
 
 
 def _record_tick_metric(start_monotonic: float, status: str) -> None:
-    try:
-        GREENHOUSE_CLIMATE_TICK_TOTAL.labels(status=status).inc()
-        GREENHOUSE_CLIMATE_DECISION_DURATION_SECONDS.observe(max(0.0, time.monotonic() - start_monotonic))
-    except Exception:
-        logger.debug("greenhouse climate metrics update failed", exc_info=True)
+    return _climate_tick_alerts().record_tick_metric(start_monotonic=start_monotonic, status=status)
 
 
 def _spread_alerts(snapshot: Mapping[str, Any], execution: Mapping[str, Any]) -> list[str]:
-    temp_threshold = float(_as_float(execution.get("inside_temp_spread_alert_c")) or 4.0)
-    rh_threshold = float(_as_float(execution.get("inside_rh_spread_alert_pct")) or 15.0)
-    temp_spread = _as_float(snapshot.get("inside_temp_spread"))
-    rh_spread = _as_float(snapshot.get("inside_rh_spread"))
-    if (temp_spread is not None and temp_spread > temp_threshold) or (rh_spread is not None and rh_spread > rh_threshold):
-        return ["GREENHOUSE_CLIMATE_SENSOR_SPREAD_HIGH"]
-    return []
+    return _climate_tick_alerts().spread_alerts(snapshot=snapshot, execution=execution)
 
 
 _CORE_OUTSIDE_WEATHER_KEYS = (
@@ -329,28 +345,11 @@ _CORE_OUTSIDE_WEATHER_KEYS = (
 
 
 def _weather_station_fresh(outside_fresh: Mapping[str, bool]) -> bool:
-    """Core outside weather sensors; rain/light are optional and must not stale the station."""
-    return any(bool(outside_fresh.get(key)) for key in _CORE_OUTSIDE_WEATHER_KEYS)
+    return _climate_tick_sensors().weather_station_fresh(outside_fresh=outside_fresh)
 
 
 async def _load_shared_weather_station_node_id(greenhouse_id: int) -> int | None:
-    rows = await fetch(
-        """
-        SELECT shared_weather_station_node_id
-        FROM greenhouses
-        WHERE id = $1
-        """,
-        greenhouse_id,
-    )
-    if not rows:
-        return None
-    raw = rows[0].get("shared_weather_station_node_id")
-    if raw is None:
-        return None
-    try:
-        return int(raw)
-    except (TypeError, ValueError):
-        return None
+    return await _climate_tick_sensors().load_shared_weather_station_node_id(greenhouse_id=greenhouse_id)
 
 
 def _accumulate_sensor_row(
@@ -366,65 +365,18 @@ def _accumulate_sensor_row(
     allow_inside: bool,
     allow_outside: bool,
 ) -> bool:
-    """Apply one sensor row into aggregators. Returns whether inside climate was marked fresh."""
-    scope = str(row.get("scope") or "").lower()
-    st = str(row.get("type") or "")
-    label = str(row.get("label") or "").strip().lower()
-    val = row.get("last_value")
-    ts = row.get("last_ts") or row.get("telemetry_updated_at")
-    q = str(row.get("last_quality") or "").upper()
-
-    def _fresh(ts_value: Any) -> bool:
-        if ts_value is None or not isinstance(ts_value, datetime):
-            return False
-        if ts_value.tzinfo is None:
-            ts_value = ts_value.replace(tzinfo=timezone.utc)
-        return (now - ts_value).total_seconds() <= float(freshness_sec)
-
-    fresh = _fresh(ts) and q != "BAD"
-    if not fresh:
-        return False
-    fv = _as_float(val)
-    if fv is None:
-        return False
-
-    inside_marked = False
-    if allow_inside and scope == "inside" and (st == "TEMPERATURE" or label in {"temperature", "temp_air"}):
-        inside_temps.append(fv)
-        inside_marked = True
-    elif allow_inside and scope == "inside" and (st == "HUMIDITY" or label in {"humidity", "humidity_air"}):
-        inside_rhs.append(fv)
-        inside_marked = True
-    elif allow_inside and scope == "inside" and (st == "PRESSURE" or label == "pressure"):
-        inside_pressures.append(fv)
-    elif allow_outside and (
-        scope == "outside"
-        or st in _OUTSIDE_SENSOR_TYPES
-        or label in _OUTSIDE_CHANNEL_HINTS
-        or st in {"WIND_SPEED", "WIND_DIRECTION"}
-        or label in {"wind_speed", "wind_direction"}
-    ):
-        if st in {"TEMPERATURE", "OUTSIDE_TEMP"} or label in {"outside_temp", "outdoor_temp"}:
-            outdoor_state["outside_temp"] = fv
-            outside_fresh["outside_temp"] = True
-        elif st in {"HUMIDITY", "OUTSIDE_HUMIDITY"} or label in {"outside_humidity", "outdoor_humidity"}:
-            outdoor_state["outside_humidity"] = fv
-            outside_fresh["outside_humidity"] = True
-        elif st in {"PRESSURE", "OUTSIDE_PRESSURE"} or label in {"outside_pressure"}:
-            outdoor_state["outside_pressure"] = fv
-        elif st == "WIND_SPEED" or label == "wind_speed":
-            outdoor_state["wind_speed"] = fv
-            outside_fresh["wind_speed"] = True
-        elif st == "WIND_DIRECTION" or label == "wind_direction":
-            outdoor_state["wind_direction_deg"] = fv
-        elif st in {"LIGHT_INTENSITY", "OUTSIDE_LIGHT"} or label in {"outside_light", "light"}:
-            outdoor_state["outside_light_lux"] = fv
-            outside_fresh["outside_light"] = True
-        elif st in {"RAIN_DETECTED", "RAIN"} or label in {"rain_detected", "rain"}:
-            outdoor_state["rain_detected"] = _is_truthy_sensor_value(fv)
-            outside_fresh["rain_detected"] = True
-
-    return inside_marked
+    return _climate_tick_sensors().accumulate_sensor_row(
+        row=row,
+        freshness_sec=freshness_sec,
+        now=now,
+        inside_temps=inside_temps,
+        inside_rhs=inside_rhs,
+        inside_pressures=inside_pressures,
+        outside_fresh=outside_fresh,
+        outdoor_state=outdoor_state,
+        allow_inside=allow_inside,
+        allow_outside=allow_outside,
+    )
 
 
 _OUTSIDE_SENSOR_TYPES = frozenset(
@@ -456,353 +408,30 @@ _OUTSIDE_CHANNEL_HINTS = frozenset(
 
 
 async def _sensor_snapshot(greenhouse_id: int, freshness_sec: int) -> dict[str, Any]:
-    shared_weather_node_id = await _load_shared_weather_station_node_id(greenhouse_id)
-
-    # Indoor always from the ticking greenhouse. Outdoor prefers shared site station.
-    inside_rows = await fetch(
-        """
-        SELECT s.scope::text AS scope,
-               s.type::text AS type,
-               s.label,
-               tl.last_value,
-               tl.last_ts,
-               tl.updated_at AS telemetry_updated_at,
-               tl.last_quality::text AS last_quality
-        FROM sensors s
-        LEFT JOIN telemetry_last tl ON tl.sensor_id = s.id
-        WHERE s.greenhouse_id = $1 AND s.is_active IS TRUE
-        """,
-        greenhouse_id,
-    )
-
-    outside_rows: list[Any] = []
-    if shared_weather_node_id is not None:
-        outside_rows = await fetch(
-            """
-            SELECT s.scope::text AS scope,
-                   s.type::text AS type,
-                   s.label,
-                   tl.last_value,
-                   tl.last_ts,
-                   tl.updated_at AS telemetry_updated_at,
-                   tl.last_quality::text AS last_quality
-            FROM sensors s
-            LEFT JOIN telemetry_last tl ON tl.sensor_id = s.id
-            WHERE s.node_id = $1 AND s.is_active IS TRUE
-            """,
-            shared_weather_node_id,
-        )
-    else:
-        outside_rows = [
-            row
-            for row in (inside_rows or [])
-            if str(row.get("scope") or "").lower() == "outside"
-            or str(row.get("type") or "") in _OUTSIDE_SENSOR_TYPES
-            or str(row.get("label") or "").strip().lower() in _OUTSIDE_CHANNEL_HINTS
-        ]
-
-    now = datetime.now(timezone.utc)
-    inside_temps: list[float] = []
-    inside_rhs: list[float] = []
-    inside_pressures: list[float] = []
-    outside_fresh: dict[str, bool] = {
-        "outside_temp": False,
-        "outside_humidity": False,
-        "wind_speed": False,
-        "rain_detected": False,
-        "outside_light": False,
-    }
-    outdoor_state: dict[str, Any] = {
-        "outside_temp": None,
-        "outside_humidity": None,
-        "outside_pressure": None,
-        "wind_speed": None,
-        "wind_direction_deg": None,
-        "rain_detected": False,
-        "outside_light_lux": None,
-    }
-    inside_fresh = False
-
-    for row in inside_rows or []:
-        if _accumulate_sensor_row(
-            row,
-            freshness_sec=freshness_sec,
-            now=now,
-            inside_temps=inside_temps,
-            inside_rhs=inside_rhs,
-            inside_pressures=inside_pressures,
-            outside_fresh=outside_fresh,
-            outdoor_state=outdoor_state,
-            allow_inside=True,
-            allow_outside=shared_weather_node_id is None,
-        ):
-            inside_fresh = True
-
-    if shared_weather_node_id is not None:
-        for row in outside_rows or []:
-            _accumulate_sensor_row(
-                row,
-                freshness_sec=freshness_sec,
-                now=now,
-                inside_temps=inside_temps,
-                inside_rhs=inside_rhs,
-                inside_pressures=inside_pressures,
-                outside_fresh=outside_fresh,
-                outdoor_state=outdoor_state,
-                allow_inside=False,
-                allow_outside=True,
-            )
-
-    it_med = float(median(inside_temps)) if inside_temps else None
-    it_max = max(inside_temps) if inside_temps else None
-    it_min = min(inside_temps) if inside_temps else None
-    it_spread = (it_max - it_min) if it_max is not None and it_min is not None else None
-    irh_med = float(median(inside_rhs)) if inside_rhs else None
-    irh_max = max(inside_rhs) if inside_rhs else None
-    irh_min = min(inside_rhs) if inside_rhs else None
-    irh_spread = (irh_max - irh_min) if irh_max is not None and irh_min is not None else None
-    ip_med = float(median(inside_pressures)) if inside_pressures else None
-
-    return {
-        "inside_temp_median": it_med,
-        "inside_temp_max": it_max,
-        "inside_temp_min": it_min,
-        "inside_temp_spread": it_spread,
-        "inside_rh_median": irh_med,
-        "inside_rh_max": irh_max,
-        "inside_rh_min": irh_min,
-        "inside_rh_spread": irh_spread,
-        "inside_pressure_median": ip_med,
-        "outside_temp": outdoor_state["outside_temp"],
-        "outside_humidity": outdoor_state["outside_humidity"],
-        "outside_pressure": outdoor_state["outside_pressure"],
-        "wind_speed": outdoor_state["wind_speed"],
-        "wind_direction_deg": outdoor_state["wind_direction_deg"],
-        "rain_detected": outdoor_state["rain_detected"],
-        "outside_light_lux": outdoor_state["outside_light_lux"],
-        "weather_fresh": _weather_station_fresh(outside_fresh),
-        "outside_fresh": outside_fresh,
-        "inside_fresh": inside_fresh,
-        "shared_weather_station_node_id": shared_weather_node_id,
-    }
+    return await _climate_tick_sensors().sensor_snapshot(greenhouse_id=greenhouse_id, freshness_sec=freshness_sec)
 
 
 async def _load_vents(greenhouse_id: int) -> dict[str, dict[str, Any]]:
-    rows = await fetch(
-        """
-        SELECT nc.channel AS channel,
-               n.uid AS node_uid,
-               n.zone_id AS zone_id,
-               z.uid AS zone_uid,
-               g.uid AS greenhouse_uid
-        FROM channel_bindings cb
-        JOIN infrastructure_instances ii ON ii.id = cb.infrastructure_instance_id
-        JOIN node_channels nc ON nc.id = cb.node_channel_id
-        JOIN nodes n ON n.id = nc.node_id
-        JOIN zones z ON z.id = n.zone_id
-        JOIN greenhouses g ON g.id = ii.owner_id
-        WHERE ii.owner_type = 'greenhouse'
-          AND ii.owner_id = $1
-          AND z.greenhouse_id = ii.owner_id
-          AND cb.direction = 'actuator'
-          AND cb.role = 'vent_actuator'
-          AND nc.is_active IS TRUE
-          AND nc.channel IN ('roof_vent_left', 'roof_vent_right')
-        """,
-        greenhouse_id,
-    )
-    out: dict[str, dict[str, Any]] = {}
-    for row in rows or []:
-        ch = str(row.get("channel") or "")
-        if ch:
-            out[ch] = {
-                "node_uid": str(row.get("node_uid") or ""),
-                "zone_id": int(row.get("zone_id") or 0),
-                "greenhouse_uid": str(row.get("greenhouse_uid") or ""),
-            }
-    return out
+    return await _climate_tick_state_queries().load_vents(greenhouse_id=greenhouse_id)
 
 
 async def _load_greenhouse_timezone(greenhouse_id: int) -> str:
-    rows = await fetch(
-        "SELECT timezone FROM greenhouses WHERE id = $1 LIMIT 1",
-        greenhouse_id,
-    )
-    if not rows:
-        return "UTC"
-    tz = str(rows[0].get("timezone") or "UTC").strip()
-    return tz or "UTC"
+    return await _climate_tick_targets().load_greenhouse_timezone(greenhouse_id=greenhouse_id)
 
 
 def _schedule_day_for_greenhouse(*, greenhouse_tz: str, execution: Mapping[str, Any]) -> bool:
-    try:
-        zone = ZoneInfo(greenhouse_tz)
-    except ZoneInfoNotFoundError:
-        zone = timezone.utc
-    now_local = datetime.now(zone)
-
-    def _parse_hhmm(value: Any, default: str) -> tuple[int, int]:
-        raw = str(value or default).strip()
-        try:
-            hh, mm = raw.split(":", 1)
-            h = max(0, min(23, int(hh)))
-            m = max(0, min(59, int(mm)))
-            return h, m
-        except (TypeError, ValueError):
-            dh, dm = default.split(":", 1)
-            return int(dh), int(dm)
-
-    schedule = execution.get("day_schedule") if isinstance(execution.get("day_schedule"), Mapping) else {}
-    if schedule:
-        start_h, start_m = _parse_hhmm(schedule.get("start_local"), "08:00")
-        end_h, end_m = _parse_hhmm(schedule.get("end_local"), "20:00")
-    else:
-        start_h = max(0, min(23, int(float(execution.get("day_start_hour") or 8))))
-        end_h_raw = max(0, min(24, int(float(execution.get("day_end_hour") or 20))))
-        end_h = 23 if end_h_raw == 24 else end_h_raw
-        start_m = 0
-        end_m = 59 if end_h_raw == 24 else 0
-
-    current_min = now_local.hour * 60 + now_local.minute
-    start_min = start_h * 60 + start_m
-    end_min = end_h * 60 + end_m
-    if start_min == end_min:
-        return True
-    if start_min < end_min:
-        return start_min <= current_min < end_min
-    return current_min >= start_min or current_min < end_min
+    return _climate_tick_targets().schedule_day_for_greenhouse(greenhouse_tz=greenhouse_tz, execution=execution)
 
 
 def _greenhouse_targets(execution: Mapping[str, Any]) -> dict[str, float]:
-    raw = execution.get("greenhouse_targets")
-    if not isinstance(raw, Mapping):
-        raise ValueError("greenhouse_targets is required for greenhouse climate runtime")
-    required = ("temp_min_c", "temp_max_c", "humidity_min_pct", "humidity_max_pct")
-    out: dict[str, float] = {}
-    for key in required:
-        value = _as_float(raw.get(key))
-        if value is None:
-            raise ValueError(f"greenhouse_targets.{key} is required")
-        out[key] = value
-    if out["temp_min_c"] > out["temp_max_c"]:
-        raise ValueError("greenhouse_targets temp_min_c must be <= temp_max_c")
-    if out["humidity_min_pct"] > out["humidity_max_pct"]:
-        raise ValueError("greenhouse_targets humidity_min_pct must be <= humidity_max_pct")
-    for key in ("vpd_min_kpa", "vpd_max_kpa"):
-        value = _as_float(raw.get(key))
-        if value is not None:
-            out[key] = value
-    return out
+    return _climate_tick_targets().greenhouse_targets(execution=execution)
 
 
 async def _resolve_target_policy(
     greenhouse_id: int,
     execution: Mapping[str, Any],
 ) -> tuple[dict[str, Any], list[str]]:
-    """Resolve V1 target policy into execution.greenhouse_targets.
-
-    Phase snapshots currently store climate as single target columns. For policy
-    modes, V1 treats those as the upper ventilation thresholds and keeps the
-    greenhouse-level lower bounds from the fallback policy.
-    """
-    base_targets = _greenhouse_targets(execution)
-    policy = str(execution.get("target_policy") or "greenhouse_targets").strip().lower()
-    alerts: list[str] = []
-    resolved = dict(execution)
-
-    if policy == "greenhouse_targets":
-        resolved["greenhouse_targets"] = base_targets
-        return resolved, alerts
-
-    if policy == "primary_zone":
-        primary_zone_id = int(_as_float(execution.get("primary_zone_id")) or 0)
-        rows = await fetch(
-            """
-            SELECT gcp.temp_air_target, gcp.humidity_target
-            FROM grow_cycles gc
-            JOIN zones z ON z.id = gc.zone_id
-            JOIN grow_cycle_phases gcp ON gcp.id = gc.current_phase_id
-            WHERE gc.greenhouse_id = $1
-              AND gc.zone_id = $2
-              AND z.greenhouse_id = $1
-              AND gc.status IN ('RUNNING', 'ACTIVE')
-            ORDER BY gc.id DESC
-            LIMIT 1
-            """,
-            greenhouse_id,
-            primary_zone_id,
-        )
-        if not rows:
-            alerts.append("GREENHOUSE_TARGET_POLICY_INVALID")
-            resolved["greenhouse_targets"] = base_targets
-            return resolved, alerts
-        temp_target = _as_float(rows[0].get("temp_air_target"))
-        humidity_target = _as_float(rows[0].get("humidity_target"))
-        if temp_target is None or humidity_target is None:
-            alerts.append("GREENHOUSE_TARGET_POLICY_INVALID")
-            resolved["greenhouse_targets"] = base_targets
-            return resolved, alerts
-        resolved["greenhouse_targets"] = {
-            **base_targets,
-            "temp_max_c": temp_target,
-            "humidity_max_pct": humidity_target,
-        }
-        return resolved, alerts
-
-    if policy == "active_zones_strictest":
-        rows = await fetch(
-            """
-            SELECT gcp.temp_air_target, gcp.humidity_target, gcp.extensions
-            FROM grow_cycles gc
-            JOIN zones z ON z.id = gc.zone_id
-            JOIN grow_cycle_phases gcp ON gcp.id = gc.current_phase_id
-            WHERE gc.greenhouse_id = $1
-              AND z.greenhouse_id = $1
-              AND gc.status IN ('RUNNING', 'ACTIVE')
-              AND gcp.temp_air_target IS NOT NULL
-              AND gcp.humidity_target IS NOT NULL
-            """,
-            greenhouse_id,
-        )
-        if not rows:
-            alerts.append("GREENHOUSE_TARGET_POLICY_INVALID")
-            resolved["greenhouse_targets"] = base_targets
-            return resolved, alerts
-        temp_max = min(float(row["temp_air_target"]) for row in rows)
-        humidity_max = min(float(row["humidity_target"]) for row in rows)
-        temp_mins: list[float] = [float(base_targets["temp_min_c"])]
-        humidity_mins: list[float] = [float(base_targets["humidity_min_pct"])]
-        for row in rows:
-            extensions = row.get("extensions")
-            if not isinstance(extensions, Mapping):
-                continue
-            climate = extensions.get("climate")
-            if not isinstance(climate, Mapping):
-                continue
-            zone_temp_min = _as_float(climate.get("temp_min_c") or climate.get("temp_air_min"))
-            zone_humidity_min = _as_float(climate.get("humidity_min_pct") or climate.get("humidity_min"))
-            if zone_temp_min is not None:
-                temp_mins.append(float(zone_temp_min))
-            if zone_humidity_min is not None:
-                humidity_mins.append(float(zone_humidity_min))
-        temp_min = max(temp_mins)
-        humidity_min = max(humidity_mins)
-        if temp_min > temp_max or humidity_min > humidity_max:
-            alerts.append("GREENHOUSE_TARGET_CONFLICT")
-            resolved["greenhouse_targets"] = base_targets
-            return resolved, alerts
-        resolved["greenhouse_targets"] = {
-            **base_targets,
-            "temp_min_c": temp_min,
-            "temp_max_c": temp_max,
-            "humidity_min_pct": humidity_min,
-            "humidity_max_pct": humidity_max,
-        }
-        return resolved, alerts
-
-    alerts.append("GREENHOUSE_TARGET_POLICY_INVALID")
-    resolved["greenhouse_targets"] = base_targets
-    return resolved, alerts
+    return await _climate_tick_targets().resolve_target_policy(greenhouse_id=greenhouse_id, execution=execution)
 
 
 async def _wait_command_terminal(
@@ -813,50 +442,132 @@ async def _wait_command_terminal(
     lease_renew: Any | None = None,
     renew_interval_sec: float | None = None,
 ) -> str:
-    """Ждёт terminal текущей команды.
-
-    ``lease_renew``:
-    - ``False`` — подтверждённая потеря владельца, немедленный ``LEASE_LOST``;
-    - исключение внутри бюджета — текущую команду не отменяет;
-    - ``_GreenhouseLeaseStop`` или ошибка сверх бюджета — ``LEASE_LOST``.
-    Голый ``CancelledError`` не поглощается.
-    """
-    deadline = time.monotonic() + max(0.1, float(timeout_sec))
-    next_renew = time.monotonic()
-    interval = (
-        max(0.0, float(renew_interval_sec))
-        if renew_interval_sec is not None
-        else max(10.0, float(poll_sec) * 5)
+    return await _climate_tick_command_wait().wait_command_terminal(
+        cmd_id=cmd_id,
+        timeout_sec=timeout_sec,
+        poll_sec=poll_sec,
+        lease_renew=lease_renew,
+        renew_interval_sec=renew_interval_sec,
     )
-    while True:
-        if lease_renew is not None and time.monotonic() >= next_renew:
-            try:
-                renewed = await lease_renew()
-            except asyncio.CancelledError:
-                raise
-            except _GreenhouseLeaseStop:
-                return _LEASE_LOST_STATUS
-            except Exception:
-                logger.warning(
-                    "greenhouse_climate_tick lease renew unclassified failure cmd_id=%s",
-                    cmd_id,
-                    exc_info=True,
-                )
-                return _LEASE_LOST_STATUS
-            if renewed is False:
-                return _LEASE_LOST_STATUS
-            next_renew = time.monotonic() + interval
-        rows = await fetch(
-            "SELECT status FROM commands WHERE cmd_id = $1 LIMIT 1",
-            cmd_id,
-        )
-        if rows:
-            status = str(rows[0].get("status") or "").strip().upper()
-            if status in _TERMINAL_STATUSES:
-                return status
-        if time.monotonic() >= deadline:
-            return "TIMEOUT"
-        await asyncio.sleep(max(0.1, float(poll_sec)))
+
+
+async def _complete_missing_bundle(
+    *, greenhouse_id: int, lease_owner: str, intent_id: int, task_id: int | None, tick_started: float
+) -> Any:
+    return await _climate_tick_completion().complete_missing_bundle(
+        greenhouse_id=greenhouse_id,
+        lease_owner=lease_owner,
+        intent_id=intent_id,
+        task_id=task_id,
+        tick_started=tick_started,
+    )
+
+
+async def _complete_disabled_tick(
+    *,
+    greenhouse_id: int,
+    lease_owner: str,
+    intent_id: int,
+    task_id: int | None,
+    tick_started: float,
+    state: Mapping[str, Any],
+    control_mode: str,
+    alert_publisher: Any,
+) -> Any:
+    return await _climate_tick_completion().complete_disabled_tick(
+        greenhouse_id=greenhouse_id,
+        lease_owner=lease_owner,
+        intent_id=intent_id,
+        task_id=task_id,
+        tick_started=tick_started,
+        state=state,
+        control_mode=control_mode,
+        alert_publisher=alert_publisher,
+    )
+
+
+async def _plan_active_tick(
+    *, greenhouse_id: int, execution: Mapping[str, Any], state: Mapping[str, Any], control_mode: str
+) -> Any:
+    return await _climate_tick_planning().plan_active_tick(
+        greenhouse_id=greenhouse_id, execution=execution, state=state, control_mode=control_mode
+    )
+
+
+async def _execute_vent_commands(
+    *,
+    greenhouse_id: int,
+    execution: Mapping[str, Any],
+    state: Mapping[str, Any],
+    decision: ClimateDecision,
+    vents: Mapping[str, Mapping[str, Any]],
+    lease_owner: str,
+    lease_ttl_sec: int,
+    idempotency_key: str,
+    history_logger_client: HistoryLoggerClient,
+) -> Any:
+    return await _climate_tick_commands().execute_vent_commands(
+        greenhouse_id=greenhouse_id,
+        execution=execution,
+        state=state,
+        decision=decision,
+        vents=vents,
+        lease_owner=lease_owner,
+        lease_ttl_sec=lease_ttl_sec,
+        idempotency_key=idempotency_key,
+        history_logger_client=history_logger_client,
+    )
+
+
+async def _complete_active_tick(
+    *,
+    greenhouse_id: int,
+    lease_owner: str,
+    intent_id: int,
+    task_id: int | None,
+    tick_started: float,
+    state: Mapping[str, Any],
+    decision: ClimateDecision,
+    left_cmd_id: str | None,
+    right_cmd_id: str | None,
+    left_done: bool,
+    right_done: bool,
+    command_failures: list[str],
+    control_mode: str,
+    snap: Mapping[str, Any],
+    next_tick_active: datetime,
+    active_override_id: int | None,
+    active_alerts: list[str],
+    alert_publisher: Any,
+) -> Any:
+    return await _climate_tick_completion().complete_active_tick(
+        greenhouse_id=greenhouse_id,
+        lease_owner=lease_owner,
+        intent_id=intent_id,
+        task_id=task_id,
+        tick_started=tick_started,
+        state=state,
+        decision=decision,
+        left_cmd_id=left_cmd_id,
+        right_cmd_id=right_cmd_id,
+        left_done=left_done,
+        right_done=right_done,
+        command_failures=command_failures,
+        control_mode=control_mode,
+        snap=snap,
+        next_tick_active=next_tick_active,
+        active_override_id=active_override_id,
+        active_alerts=active_alerts,
+        alert_publisher=alert_publisher,
+    )
+
+
+async def _persist_tick_exception(
+    *, greenhouse_id: int, lease_owner: str, intent_id: int, task_id: int | None, exc: Exception
+) -> Any:
+    return await _climate_tick_completion().persist_tick_exception(
+        greenhouse_id=greenhouse_id, lease_owner=lease_owner, intent_id=intent_id, task_id=task_id, exc=exc
+    )
 
 
 async def run_greenhouse_climate_tick(
@@ -868,624 +579,14 @@ async def run_greenhouse_climate_tick(
     worker_owner: str | None = None,
     lease_ttl_sec: int = _DEFAULT_LEASE_TTL_SEC,
 ) -> dict[str, Any]:
-    tick_started = time.monotonic()
-    # One owner per execution, not per process: a second tick from the same
-    # worker must not renew or release the first tick's lease.
-    lease_owner = f"{resolve_greenhouse_lease_owner(worker_owner=worker_owner)[:51]}:{uuid4().hex[:12]}"
-    await _ensure_state_row(greenhouse_id)
-
-    claimed = await fetch(
-        """
-        WITH c AS (
-            SELECT id FROM greenhouse_automation_intents
-            WHERE greenhouse_id = $1 AND idempotency_key = $2 AND status = 'pending'
-            ORDER BY id ASC
-            LIMIT 1
-            FOR UPDATE SKIP LOCKED
-        )
-        UPDATE greenhouse_automation_intents AS i
-        SET status = 'running',
-            claimed_at = now(),
-            updated_at = now()
-        FROM c
-        WHERE i.id = c.id
-        RETURNING i.id AS intent_id
-        """,
-        greenhouse_id,
-        idempotency_key,
+    return await _climate_tick_coordination().run_greenhouse_climate_tick(
+        greenhouse_id=greenhouse_id,
+        idempotency_key=idempotency_key,
+        history_logger_client=history_logger_client,
+        alert_publisher=alert_publisher,
+        worker_owner=worker_owner,
+        lease_ttl_sec=lease_ttl_sec,
     )
-    if not claimed:
-        _record_tick_metric(tick_started, "skipped")
-        return {"status": "skipped", "reason": "no_pending_intent", "greenhouse_id": greenhouse_id}
-
-    intent_id = int(claimed[0]["intent_id"])
-    lease_claimed = await _claim_greenhouse_lease(
-        greenhouse_id,
-        owner=lease_owner,
-        ttl_sec=lease_ttl_sec,
-    )
-    if not lease_claimed:
-        await execute(
-            """
-            UPDATE greenhouse_automation_intents
-            SET status = 'pending',
-                claimed_at = NULL,
-                updated_at = now(),
-                error_code = NULL,
-                error_message = NULL
-            WHERE id = $1
-              AND status = 'running'
-            """,
-            intent_id,
-        )
-        _record_tick_metric(tick_started, "skipped")
-        return {"status": "skipped", "reason": "greenhouse_climate_busy", "greenhouse_id": greenhouse_id}
-
-    task_id: int | None = None
-    try:
-        task_rows = await fetch(
-            """
-            INSERT INTO greenhouse_automation_tasks (
-                greenhouse_id, intent_id, task_type, status, idempotency_key, workflow_stage, created_at, updated_at
-            )
-            VALUES ($1, $2, 'greenhouse_climate_tick', 'running', $3, 'decision', now(), now())
-            ON CONFLICT (greenhouse_id, idempotency_key) DO UPDATE
-            SET status = 'running',
-                intent_id = EXCLUDED.intent_id,
-                workflow_stage = 'decision',
-                updated_at = now()
-            RETURNING id
-            """,
-            greenhouse_id,
-            intent_id,
-            idempotency_key,
-        )
-        task_id = int(task_rows[0]["id"]) if task_rows else None
-
-        bundle_rows = await fetch(
-            """
-            SELECT config, status
-            FROM automation_effective_bundles
-            WHERE scope_type = 'greenhouse' AND scope_id = $1
-            LIMIT 1
-            """,
-            greenhouse_id,
-        )
-        if not bundle_rows or str(bundle_rows[0].get("status") or "").lower() != "valid":
-            pool = await get_pool()
-            async with pool.acquire() as conn:
-                async with conn.transaction():
-                    if not await _lock_owned_greenhouse_lease(conn, greenhouse_id=greenhouse_id, owner=lease_owner):
-                        _record_tick_metric(tick_started, "failed")
-                        return {"status": "failed", "error_code": "greenhouse_climate_lease_lost", "greenhouse_id": greenhouse_id}
-                    intent_update = await conn.execute(
-                        """
-                        UPDATE greenhouse_automation_intents
-                        SET status = 'failed', completed_at = now(), updated_at = now(),
-                            error_code = 'greenhouse_bundle_missing', error_message = 'No valid automation bundle'
-                        WHERE id = $1 AND status = 'running'
-                        """,
-                        intent_id,
-                    )
-                    if intent_update != "UPDATE 1":
-                        raise RuntimeError("greenhouse_climate_intent_transition_failed")
-                    if task_id is not None:
-                        task_update = await conn.execute(
-                            """
-                            UPDATE greenhouse_automation_tasks
-                            SET status = 'failed',
-                                workflow_stage = 'bundle_load',
-                                error_code = 'greenhouse_bundle_missing',
-                                error_message = 'No valid automation bundle',
-                                completed_at = now(),
-                                updated_at = now()
-                            WHERE id = $1 AND status IN ('claimed', 'running', 'waiting_command')
-                            """,
-                            task_id,
-                        )
-                        if task_update != "UPDATE 1":
-                            raise RuntimeError("greenhouse_climate_task_transition_failed")
-            _record_tick_metric(tick_started, "failed")
-            return {"status": "failed", "reason": "bundle_missing", "greenhouse_id": greenhouse_id}
-
-        config = bundle_rows[0].get("config") or {}
-        climate, _active_mode, _lp = _parse_bundle(config if isinstance(config, dict) else None)
-        enabled = bool(climate.get("enabled") is True)
-        control_mode = str(climate.get("control_mode") or "auto").strip().lower()
-        execution = climate.get("execution") if isinstance(climate.get("execution"), dict) else {}
-
-        state_rows = await fetch(
-            "SELECT * FROM greenhouse_automation_state WHERE greenhouse_id = $1 LIMIT 1",
-            greenhouse_id,
-        )
-        state = dict(state_rows[0]) if state_rows else {}
-        restored_mode = await _expired_manual_override_return_mode(greenhouse_id, state)
-        if restored_mode is not None:
-            state["control_mode"] = restored_mode
-            state["active_manual_override_id"] = None
-        db_control = str(state.get("control_mode") or "auto").strip().lower()
-        if db_control in {"auto", "semi", "manual"}:
-            control_mode = db_control
-
-        if not enabled:
-            override = await _load_manual_override(greenhouse_id)
-            active_override_id = int(override.get("id")) if isinstance(override, dict) and override.get("id") else None
-            next_tick_idle = datetime.now(timezone.utc) + timedelta(hours=1)
-            current_left = int(state.get("left_position_pct") or 0)
-            current_right = int(state.get("right_position_pct") or 0)
-            factors = {"enabled": False, "control_mode": control_mode}
-            pool = await get_pool()
-            async with pool.acquire() as conn:
-                async with conn.transaction():
-                    if not await _lock_owned_greenhouse_lease(conn, greenhouse_id=greenhouse_id, owner=lease_owner):
-                        _record_tick_metric(tick_started, "failed")
-                        return {"status": "failed", "error_code": "greenhouse_climate_lease_lost", "greenhouse_id": greenhouse_id}
-                    state_update = await conn.execute(
-                        """
-                        UPDATE greenhouse_automation_state
-                        SET climate_enabled = false,
-                            control_mode = $8,
-                            recommended_left_position_pct = $2,
-                            recommended_right_position_pct = $3,
-                            decision_reason = 'climate_disabled',
-                            decision_factors = $4::jsonb,
-                            weather_fresh = false,
-                            inside_climate_fresh = false,
-                            active_alerts_summary = '[]'::jsonb,
-                            last_decision_at = now(),
-                            next_scheduled_tick_at = $5,
-                            active_manual_override_id = $6,
-                            last_task_id = $7,
-                            last_error_code = NULL,
-                            last_error_message = NULL,
-                            updated_at = now()
-                        WHERE greenhouse_id = $1
-                        """,
-                        greenhouse_id,
-                        current_left,
-                        current_right,
-                        json.dumps(factors),
-                        next_tick_idle,
-                        active_override_id,
-                        task_id,
-                        control_mode,
-                    )
-                    if state_update != "UPDATE 1":
-                        raise RuntimeError("greenhouse_climate_state_transition_failed")
-                    intent_update = await conn.execute(
-                        """
-                        UPDATE greenhouse_automation_intents
-                        SET status = 'completed', completed_at = now(), updated_at = now()
-                        WHERE id = $1 AND status = 'running'
-                        """,
-                        intent_id,
-                    )
-                    if intent_update != "UPDATE 1":
-                        raise RuntimeError("greenhouse_climate_intent_transition_failed")
-                    if task_id is not None:
-                        task_update = await conn.execute(
-                            """
-                            UPDATE greenhouse_automation_tasks
-                            SET status = 'completed',
-                                workflow_stage = 'disabled',
-                                decision_snapshot = $2::jsonb,
-                                completed_at = now(),
-                                updated_at = now()
-                            WHERE id = $1 AND status IN ('claimed', 'running', 'waiting_command')
-                            """,
-                            task_id,
-                            json.dumps({"decision_reason": "climate_disabled", "factors": factors}),
-                        )
-                        if task_update != "UPDATE 1":
-                            raise RuntimeError("greenhouse_climate_task_transition_failed")
-            await _publish_greenhouse_alert_lifecycle(
-                greenhouse_id=greenhouse_id,
-                active_codes=[],
-                details={"decision_reason": "climate_disabled", "task_id": task_id},
-                alert_publisher=alert_publisher,
-            )
-            _record_tick_metric(tick_started, "completed")
-            return {"status": "completed", "reason": "climate_disabled", "greenhouse_id": greenhouse_id}
-
-        execution, policy_alerts = await _resolve_target_policy(greenhouse_id, execution)
-        freshness = int(float(execution.get("sensor_freshness_sec") or 1200))
-        snap = await _sensor_snapshot(greenhouse_id, freshness)
-        vents = await _load_vents(greenhouse_id)
-        override = await _load_manual_override(greenhouse_id)
-        active_override_id = int(override.get("id")) if isinstance(override, dict) and override.get("id") else None
-
-        now_ts = time.time()
-        last_cmd_at = state.get("last_command_at")
-        last_cmd_ts = None
-        if isinstance(last_cmd_at, datetime):
-            last = last_cmd_at if last_cmd_at.tzinfo else last_cmd_at.replace(tzinfo=timezone.utc)
-            last_cmd_ts = last.timestamp()
-
-        greenhouse_tz = await _load_greenhouse_timezone(greenhouse_id)
-        schedule_day = _schedule_day_for_greenhouse(greenhouse_tz=greenhouse_tz, execution=execution)
-
-        decision = compute_climate_decision(
-            execution=execution,
-            control_mode=control_mode,
-            manual_override=override,
-            inside_temp_median=snap["inside_temp_median"],
-            inside_temp_max=snap["inside_temp_max"],
-            inside_rh_max=snap["inside_rh_max"],
-            outside_temp=snap["outside_temp"],
-            outside_humidity=snap["outside_humidity"],
-            wind_speed=snap["wind_speed"],
-            wind_direction_deg=snap["wind_direction_deg"],
-            rain_detected=bool(snap["rain_detected"]),
-            outside_light_lux=snap["outside_light_lux"],
-            schedule_day=schedule_day,
-            weather_fresh=bool(snap["weather_fresh"]),
-            outside_light_fresh=bool((snap.get("outside_fresh") or {}).get("outside_light", False)),
-            inside_fresh=bool(snap["inside_fresh"]),
-            current_left_pct=int(state.get("left_position_pct") or 0),
-            current_right_pct=int(state.get("right_position_pct") or 0),
-            now_ts=now_ts,
-            last_command_ts=last_cmd_ts,
-        )
-        record_greenhouse_climate_crop_metrics(
-            greenhouse_id=int(greenhouse_id),
-            factors=decision.factors,
-        )
-        active_alerts = list(policy_alerts)
-        active_alerts.extend(_spread_alerts(snap, execution))
-        if not bool(snap["weather_fresh"]):
-            active_alerts.append("GREENHOUSE_WEATHER_STATION_STALE")
-            GREENHOUSE_CLIMATE_SENSOR_STALE_TOTAL.labels(kind="weather").inc()
-        if not bool(snap["inside_fresh"]):
-            active_alerts.append("GREENHOUSE_INSIDE_CLIMATE_STALE")
-            GREENHOUSE_CLIMATE_SENSOR_STALE_TOTAL.labels(kind="inside").inc()
-        if decision.emergency_overheat:
-            active_alerts.append("GREENHOUSE_OVERHEAT_EMERGENCY")
-        if "wind_clamp" in decision.decision_reason:
-            active_alerts.append("GREENHOUSE_WIND_CLAMP_ACTIVE")
-            GREENHOUSE_CLIMATE_WIND_CLAMP_TOTAL.inc()
-        if "rain_clamp" in decision.decision_reason:
-            active_alerts.append("GREENHOUSE_RAIN_CLAMP_ACTIVE")
-            GREENHOUSE_CLIMATE_RAIN_CLAMP_TOTAL.inc()
-        active_alerts = _unique_alert_codes(active_alerts)
-
-        if decision.emergency_overheat:
-            interval = int(float(execution.get("emergency_decision_interval_sec") or execution.get("decision_interval_sec") or 900))
-        else:
-            interval = int(float(execution.get("decision_interval_sec") or 900))
-        next_tick_active = datetime.now(timezone.utc) + timedelta(seconds=interval)
-
-        left_cmd_id = None
-        right_cmd_id = None
-        left_done = False
-        right_done = False
-        command_failures: list[str] = []
-        lease_renew_failures = 0
-        stop_ordinary_commands = False
-
-        async def _climate_lease_renew() -> bool | None:
-            nonlocal lease_renew_failures
-            try:
-                renewed = await _renew_greenhouse_lease(
-                    greenhouse_id,
-                    owner=lease_owner,
-                    ttl_sec=lease_ttl_sec,
-                )
-            except asyncio.CancelledError:
-                raise
-            except Exception:
-                lease_renew_failures += 1
-                logger.warning(
-                    "greenhouse_climate_tick lease renew transport error gh=%s failures=%s",
-                    greenhouse_id,
-                    lease_renew_failures,
-                    exc_info=True,
-                )
-                if lease_renew_failures > _LEASE_RENEW_TRANSIENT_BUDGET:
-                    raise _GreenhouseLeaseStop()
-                return None
-            if renewed is False:
-                raise _GreenhouseLeaseStop()
-            return True
-
-        renew_interval_raw = execution.get("lease_renew_interval_sec")
-        renew_interval_sec = float(renew_interval_raw) if renew_interval_raw is not None else None
-        if not decision.suppress_commands:
-            for side, channel in (("left", "roof_vent_left"), ("right", "roof_vent_right")):
-                if stop_ordinary_commands:
-                    break
-                if side not in decision.command_sides:
-                    continue
-                target = decision.left_target_pct if side == "left" else decision.right_target_pct
-                cur = int(state.get("left_position_pct") or 0) if side == "left" else int(state.get("right_position_pct") or 0)
-                if target == cur:
-                    continue
-                vent = vents.get(channel)
-                if not vent or not vent.get("node_uid") or int(vent.get("zone_id") or 0) <= 0:
-                    logger.warning("greenhouse_climate_tick missing vent binding channel=%s gh=%s", channel, greenhouse_id)
-                    command_failures.append(f"{channel}:MISSING_BINDING")
-                    GREENHOUSE_CLIMATE_COMMAND_FAILED_TOTAL.labels(side=side, failure="MISSING_BINDING").inc()
-                    continue
-                try:
-                    renewed = await _climate_lease_renew()
-                    if renewed is None:
-                        # One transport error is tolerated for an in-flight
-                        # command, but a new command needs confirmed ownership.
-                        if await _climate_lease_renew() is not True:
-                            raise _GreenhouseLeaseStop()
-                except asyncio.CancelledError:
-                    raise
-                except _GreenhouseLeaseStop:
-                    command_failures.append(f"{channel}:{_LEASE_LOST_STATUS}")
-                    GREENHOUSE_CLIMATE_COMMAND_FAILED_TOTAL.labels(side=side, failure=_LEASE_LOST_STATUS).inc()
-                    stop_ordinary_commands = True
-                    break
-                params = {
-                    "position_pct": int(target),
-                    "max_step_pct": int(float(execution.get("max_step_pct") or 25)),
-                    "reason": decision.decision_reason,
-                }
-                cmd_id = f"ghc-{greenhouse_id}-{idempotency_key}-{side}-{target}"
-                try:
-                    hl_id = await history_logger_client.publish(
-                        greenhouse_uid=str(vent["greenhouse_uid"]),
-                        zone_id=int(vent["zone_id"]),
-                        node_uid=str(vent["node_uid"]),
-                        channel=channel,
-                        cmd="set_position",
-                        params=params,
-                        cmd_id=cmd_id,
-                    )
-                except asyncio.CancelledError:
-                    raise
-                except Exception:
-                    logger.warning(
-                        "greenhouse_climate_tick command publish failed gh=%s channel=%s",
-                        greenhouse_id,
-                        channel,
-                        exc_info=True,
-                    )
-                    command_failures.append(f"{channel}:SEND_FAILED")
-                    GREENHOUSE_CLIMATE_COMMAND_TOTAL.labels(side=side, status="SEND_FAILED").inc()
-                    GREENHOUSE_CLIMATE_COMMAND_FAILED_TOTAL.labels(side=side, failure="SEND_FAILED").inc()
-                    continue
-                if side == "left":
-                    left_cmd_id = hl_id
-                else:
-                    right_cmd_id = hl_id
-
-                terminal = await _wait_command_terminal(
-                    hl_id,
-                    timeout_sec=float(execution.get("command_terminal_timeout_sec") or 120),
-                    poll_sec=float(execution.get("command_poll_sec") or 1),
-                    lease_renew=_climate_lease_renew,
-                    renew_interval_sec=renew_interval_sec,
-                )
-                if terminal == _LEASE_LOST_STATUS:
-                    command_failures.append(f"{channel}:{_LEASE_LOST_STATUS}")
-                    stop_ordinary_commands = True
-                    GREENHOUSE_CLIMATE_COMMAND_TOTAL.labels(side=side, status=terminal).inc()
-                    GREENHOUSE_CLIMATE_COMMAND_FAILED_TOTAL.labels(side=side, failure=terminal).inc()
-                    break
-                if terminal == _SUCCESS_STATUS:
-                    if side == "left":
-                        left_done = True
-                    else:
-                        right_done = True
-                else:
-                    command_failures.append(f"{channel}:{terminal}")
-                GREENHOUSE_CLIMATE_COMMAND_TOTAL.labels(side=side, status=terminal).inc()
-                if terminal != _SUCCESS_STATUS:
-                    GREENHOUSE_CLIMATE_COMMAND_FAILED_TOTAL.labels(side=side, failure=terminal).inc()
-                if stop_ordinary_commands:
-                    break
-                try:
-                    await _climate_lease_renew()
-                except asyncio.CancelledError:
-                    raise
-                except _GreenhouseLeaseStop:
-                    command_failures.append(f"{channel}:{_LEASE_LOST_STATUS}")
-                    stop_ordinary_commands = True
-                    break
-
-        model_left = int(decision.left_target_pct) if left_done else int(state.get("left_position_pct") or 0)
-        model_right = int(decision.right_target_pct) if right_done else int(state.get("right_position_pct") or 0)
-        lease_lost = any(str(item).endswith(f":{_LEASE_LOST_STATUS}") for item in command_failures)
-        final_status = "failed" if command_failures else "completed"
-        if lease_lost:
-            error_code = "greenhouse_climate_lease_lost"
-        elif command_failures:
-            error_code = "greenhouse_vent_command_failed"
-        else:
-            error_code = None
-        error_message = None if not command_failures else ", ".join(command_failures)
-        if command_failures:
-            active_alerts.append("GREENHOUSE_VENT_COMMAND_FAILED")
-            active_alerts = _unique_alert_codes(active_alerts)
-
-        def lease_lost_response() -> dict[str, Any]:
-            _record_tick_metric(tick_started, "failed")
-            return {
-                "status": "failed",
-                "greenhouse_id": greenhouse_id,
-                "decision": decision.decision_reason,
-                "suppress": decision.suppress_commands,
-                "left_cmd_id": left_cmd_id,
-                "right_cmd_id": right_cmd_id,
-                "command_failures": command_failures,
-                "error_code": "greenhouse_climate_lease_lost",
-            }
-
-        if lease_lost:
-            # A successor tick may already own the greenhouse. Leave this
-            # intent/task for stale recovery instead of overwriting its state.
-            logger.warning("greenhouse_climate_tick lost lease before outcome gh=%s intent=%s", greenhouse_id, intent_id)
-            return lease_lost_response()
-
-        pool = await get_pool()
-        async with pool.acquire() as conn:
-            async with conn.transaction():
-                if not await _lock_owned_greenhouse_lease(conn, greenhouse_id=greenhouse_id, owner=lease_owner):
-                    logger.warning("greenhouse_climate_tick lost lease at outcome gh=%s intent=%s", greenhouse_id, intent_id)
-                    command_failures.append("lease:LEASE_LOST")
-                    return lease_lost_response()
-
-                state_update = await conn.execute(
-                    """
-                    UPDATE greenhouse_automation_state
-                    SET climate_enabled = true,
-                        control_mode = $2,
-                        left_position_pct = $3,
-                        right_position_pct = $4,
-                        recommended_left_position_pct = $5,
-                        recommended_right_position_pct = $6,
-                        last_sent_left_position_pct = CASE WHEN $14 THEN $5 ELSE last_sent_left_position_pct END,
-                        last_sent_right_position_pct = CASE WHEN $15 THEN $6 ELSE last_sent_right_position_pct END,
-                        decision_reason = $7,
-                        decision_factors = $8::jsonb,
-                        weather_fresh = $11,
-                        inside_climate_fresh = $12,
-                        last_decision_at = now(),
-                        last_command_at = CASE WHEN ($9::varchar IS NOT NULL OR $10::varchar IS NOT NULL) THEN now() ELSE last_command_at END,
-                        last_left_cmd_id = COALESCE($9, last_left_cmd_id),
-                        last_right_cmd_id = COALESCE($10, last_right_cmd_id),
-                        next_scheduled_tick_at = $13,
-                        active_manual_override_id = $16,
-                        last_task_id = $17,
-                        last_error_code = $18,
-                        last_error_message = $19,
-                        active_alerts_summary = $20::jsonb,
-                        updated_at = now()
-                    WHERE greenhouse_id = $1
-                    """,
-                    greenhouse_id,
-                    control_mode,
-                    model_left,
-                    model_right,
-                    decision.left_target_pct,
-                    decision.right_target_pct,
-                    decision.decision_reason,
-                    json.dumps(decision.factors),
-                    left_cmd_id,
-                    right_cmd_id,
-                    snap["weather_fresh"],
-                    snap["inside_fresh"],
-                    next_tick_active,
-                    left_done,
-                    right_done,
-                    active_override_id,
-                    task_id,
-                    error_code,
-                    error_message,
-                    json.dumps(active_alerts),
-                )
-                if state_update != "UPDATE 1":
-                    raise RuntimeError("greenhouse_climate_state_transition_failed")
-                intent_update = await conn.execute(
-                    """
-                    UPDATE greenhouse_automation_intents
-                    SET status = $2, completed_at = now(), updated_at = now(),
-                        error_code = $3, error_message = $4
-                    WHERE id = $1 AND status = 'running'
-                    """,
-                    intent_id,
-                    final_status,
-                    error_code,
-                    error_message,
-                )
-                if intent_update != "UPDATE 1":
-                    raise RuntimeError("greenhouse_climate_intent_transition_failed")
-                if task_id is not None:
-                    task_update = await conn.execute(
-                        """
-                        UPDATE greenhouse_automation_tasks
-                        SET status = $2,
-                            workflow_stage = 'terminal',
-                            decision_snapshot = $3::jsonb,
-                            command_refs = $4::jsonb,
-                            error_code = $5,
-                            error_message = $6,
-                            completed_at = now(),
-                            updated_at = now()
-                        WHERE id = $1 AND status IN ('claimed', 'running', 'waiting_command')
-                        """,
-                        task_id,
-                        final_status,
-                        json.dumps({"decision_reason": decision.decision_reason, "factors": decision.factors}),
-                        json.dumps({"left_cmd_id": left_cmd_id, "right_cmd_id": right_cmd_id}),
-                        error_code,
-                        error_message,
-                    )
-                    if task_update != "UPDATE 1":
-                        raise RuntimeError("greenhouse_climate_task_transition_failed")
-
-        await _publish_greenhouse_alert_lifecycle(
-            greenhouse_id=greenhouse_id,
-            active_codes=active_alerts,
-            details={
-                "task_id": task_id,
-                "decision_reason": decision.decision_reason,
-                "weather_fresh": bool(snap["weather_fresh"]),
-                "inside_climate_fresh": bool(snap["inside_fresh"]),
-                "inside_temp_spread": snap.get("inside_temp_spread"),
-                "inside_rh_spread": snap.get("inside_rh_spread"),
-                "command_failures": command_failures,
-            },
-            alert_publisher=alert_publisher,
-        )
-        _record_tick_metric(tick_started, final_status)
-        return {
-            "status": "ok" if final_status == "completed" else "failed",
-            "greenhouse_id": greenhouse_id,
-            "decision": decision.decision_reason,
-            "suppress": decision.suppress_commands,
-            "left_cmd_id": left_cmd_id,
-            "right_cmd_id": right_cmd_id,
-            "command_failures": command_failures,
-        }
-    except Exception as exc:
-        logger.error("greenhouse_climate_tick failed gh=%s intent=%s", greenhouse_id, intent_id, exc_info=True)
-        try:
-            pool = await get_pool()
-            async with pool.acquire() as conn:
-                async with conn.transaction():
-                    if await _lock_owned_greenhouse_lease(conn, greenhouse_id=greenhouse_id, owner=lease_owner):
-                        await conn.execute(
-                            """
-                            UPDATE greenhouse_automation_intents
-                            SET status = 'failed', completed_at = now(), updated_at = now(),
-                                error_code = 'greenhouse_climate_tick_failed', error_message = $2
-                            WHERE id = $1 AND status = 'running'
-                            """,
-                            intent_id,
-                            str(exc)[:2000],
-                        )
-                        if task_id is not None:
-                            await conn.execute(
-                                """
-                                UPDATE greenhouse_automation_tasks
-                                SET status = 'failed',
-                                    workflow_stage = 'exception',
-                                    error_code = 'greenhouse_climate_tick_failed',
-                                    error_message = $2,
-                                    completed_at = now(),
-                                    updated_at = now()
-                                WHERE id = $1 AND status IN ('claimed', 'running', 'waiting_command')
-                                """,
-                                task_id,
-                                str(exc)[:2000],
-                            )
-        except Exception:
-            logger.warning("greenhouse_climate_tick could not persist failure gh=%s intent=%s", greenhouse_id, intent_id, exc_info=True)
-        _record_tick_metric(tick_started, "failed")
-        raise
-    finally:
-        if lease_claimed:
-            try:
-                await _release_greenhouse_lease(greenhouse_id, owner=lease_owner)
-            except Exception:
-                # The TTL will release ownership even when cleanup is unavailable.
-                # Do not replace a committed outcome or its original exception.
-                logger.warning("greenhouse_climate_tick lease release failed gh=%s", greenhouse_id, exc_info=True)
 
 
 __all__ = ["run_greenhouse_climate_tick"]

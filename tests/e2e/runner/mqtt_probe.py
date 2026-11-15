@@ -40,23 +40,32 @@ class MQTTProbe:
         self._message_queue: List[Dict[str, Any]] = []
         self._last_checked_message_index = 0
         self._subscribed_topics: List[str] = []
+        self._subscription_qos: Dict[str, int] = {}
     
     def connect(self):
         """Подключиться к MQTT брокеру."""
         if self.connected:
             return
         
-        self.client = mqtt.Client()
+        options = ({"callback_api_version": mqtt.CallbackAPIVersion.VERSION2}
+                   if hasattr(mqtt, "CallbackAPIVersion") else {})
+        self.client = mqtt.Client(**options)
         
         if self.username and self.password:
             self.client.username_pw_set(self.username, self.password)
         
-        def on_connect(client, userdata, flags, rc):
+        def on_connect(client, userdata, flags, rc, properties=None):
             if rc == 0:
+                for topic in self._subscribed_topics:
+                    client.subscribe(topic, qos=self._subscription_qos[topic])
                 self.connected = True
                 logger.info(f"Connected to MQTT broker at {self.host}:{self.port}")
             else:
+                self.connected = False
                 logger.error(f"Failed to connect to MQTT broker: {rc}")
+
+        def on_disconnect(client, userdata, flags_or_rc, reason_code=None, properties=None):
+            self.connected = False
         
         def on_message(client, userdata, msg):
             try:
@@ -76,6 +85,7 @@ class MQTTProbe:
             logger.debug(f"Received MQTT message on {msg.topic}: {payload}")
         
         self.client.on_connect = on_connect
+        self.client.on_disconnect = on_disconnect
         self.client.on_message = on_message
         
         self.client.connect(self.host, self.port, 60)
@@ -109,8 +119,10 @@ class MQTTProbe:
         if not self.connected or not self.client:
             raise RuntimeError("MQTT not connected")
         
+        self._subscription_qos[topic] = qos
+        if topic not in self._subscribed_topics:
+            self._subscribed_topics.append(topic)
         self.client.subscribe(topic, qos)
-        self._subscribed_topics.append(topic)
         logger.info(f"Subscribed to MQTT topic: {topic}")
 
     def publish_json(self, topic: str, payload: Any, qos: int = 1, retain: bool = False):
@@ -120,8 +132,9 @@ class MQTTProbe:
         if not self.connected or not self.client:
             raise RuntimeError("MQTT not connected")
         data = json.dumps(payload).encode("utf-8") if not isinstance(payload, (bytes, bytearray)) else payload
-        self.client.publish(topic, data, qos=qos, retain=retain)
+        info = self.client.publish(topic, data, qos=qos, retain=retain)
         logger.info(f"Published MQTT message to {topic} (qos={qos}, retain={retain})")
+        return info
     
     async def wait_message(
         self,

@@ -22,6 +22,7 @@ from common.redis_queue import (
 def mock_redis_client():
     """Создает мок Redis клиента."""
     client = AsyncMock()
+    client.register_script = MagicMock(return_value=AsyncMock())
     client.ping = AsyncMock(return_value=True)
     client.llen = AsyncMock(return_value=0)
     client.rpush = AsyncMock(return_value=1)
@@ -241,6 +242,7 @@ async def test_get_redis_client_connection():
     """Тест получения Redis клиента."""
     with patch('common.redis_queue.redis_async.Redis') as mock_redis_class:
         mock_client = AsyncMock()
+        mock_client.register_script = MagicMock(return_value=AsyncMock())
         mock_client.ping = AsyncMock(return_value=True)
         mock_redis_class.return_value = mock_client
         
@@ -259,6 +261,7 @@ async def test_get_redis_client_connection_failure():
     """Тест обработки ошибки подключения к Redis."""
     with patch('common.redis_queue.redis_async.Redis') as mock_redis_class:
         mock_client = AsyncMock()
+        mock_client.register_script = MagicMock(return_value=AsyncMock())
         mock_client.ping = AsyncMock(side_effect=Exception("Connection failed"))
         mock_redis_class.return_value = mock_client
         
@@ -314,6 +317,7 @@ async def test_requeue_batch_uses_atomic_move_script():
     raw = TelemetryQueueItem(node_uid="n1", metric_type="PH", value=1.0).to_json()
     entry = QueueEntry(raw=raw, item=TelemetryQueueItem.from_json(raw), retry_count=1)
     queue._client = AsyncMock()
+    queue._client.register_script = MagicMock(return_value=AsyncMock())
     queue._move_processing_to_queue_script = AsyncMock(return_value=1)
 
     with patch.object(queue, "_max_pg_retries", return_value=3):
@@ -330,6 +334,7 @@ async def test_move_raw_to_dead_uses_atomic_script():
     queue = TelemetryQueue()
     raw = TelemetryQueueItem(node_uid="n1", metric_type="PH", value=1.0).to_json()
     queue._client = AsyncMock()
+    queue._client.register_script = MagicMock(return_value=AsyncMock())
     queue._move_processing_to_dead_script = AsyncMock(return_value=1)
     queue.prune_expired_dead = AsyncMock(return_value=0)
     queue._client.llen = AsyncMock(return_value=1)

@@ -1,0 +1,38 @@
+name: Production image qualification
+
+on:
+  workflow_dispatch:
+    inputs:
+      export_images:
+        description: Export the locally built images as a review artifact
+        required: true
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  production-images:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Build the production image set without pushing or deploying
+        env:
+          EXPORT_IMAGES: ${{ inputs.export_images }}
+        run: |
+          args=(--output "$RUNNER_TEMP/image-qualification" --tag "${GITHUB_SHA}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}")
+          if [ "$EXPORT_IMAGES" = true ]; then args+=(--export-images); fi
+          python tools/ci/qualify_release_images.py "${args[@]}"
+      - name: Preserve manifest, build logs and optional image archive
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-image-qualification-${{ github.sha }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/image-qualification
+          if-no-files-found: error
+          retention-days: 7

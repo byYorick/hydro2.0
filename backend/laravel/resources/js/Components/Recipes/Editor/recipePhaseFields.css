@@ -1,0 +1,352 @@
+/* Scoped by RecipePhaseEditor across its field components; selectors preserve the existing field styling. */
+:deep(.hide-spin::-webkit-outer-spin-button),
+:deep(.hide-spin::-webkit-inner-spin-button) {
+  -webkit-appearance: none;
+  margin: 0;
+}
+:deep(.hide-spin) {
+  -moz-appearance: textfield;
+}
+
+:deep(.target-row) {
+  display: flex;
+  align-items: stretch;
+  border: 1px solid var(--border-muted);
+  border-radius: 0.6rem;
+  overflow: hidden;
+  background: var(--bg-elevated);
+}
+:deep(.target-row__side) {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 4.5rem;
+  padding: 0.15rem 0;
+}
+:deep(.target-row__label) {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  line-height: 1;
+  letter-spacing: 0.03em;
+  margin-bottom: 0.15rem;
+}
+:deep(.target-row__center) {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-left: 1px solid var(--border-muted);
+  border-right: 1px solid var(--border-muted);
+  background: color-mix(in srgb, var(--status-ok) 6%, var(--bg-elevated));
+}
+:deep(.target-row__input) {
+  width: 100%;
+  height: 2.2rem;
+  border: none;
+  background: transparent;
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--text-primary);
+  outline: none;
+}
+:deep(.target-row__input:focus) {
+  outline: none;
+  box-shadow: none;
+}
+:deep(.target-row__input--main) {
+  flex: 1;
+  min-width: 0;
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+/* Круглая +-кнопка рядом с select */
+:deep(.pill-btn) {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.6rem;
+  height: 2.6rem;
+  border-radius: 0.85rem;
+  background: color-mix(in srgb, var(--status-ok) 12%, transparent);
+  color: var(--status-ok);
+  border: 1px solid color-mix(in srgb, var(--status-ok) 25%, transparent);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, transform 0.08s;
+}
+:deep(.pill-btn:hover) {
+  background: color-mix(in srgb, var(--status-ok) 20%, transparent);
+  border-color: color-mix(in srgb, var(--status-ok) 45%, transparent);
+}
+:deep(.pill-btn:active) {
+  transform: scale(0.94);
+}
+
+/* Мягкая кнопка (normalize и подобные) с иконкой */
+:deep(.soft-btn) {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.85rem;
+  border-radius: 0.6rem;
+  background: color-mix(in srgb, var(--status-ok) 8%, transparent);
+  color: var(--status-ok);
+  font-size: 0.75rem;
+  font-weight: 600;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, transform 0.08s;
+}
+:deep(.soft-btn:hover) {
+  background: color-mix(in srgb, var(--status-ok) 16%, transparent);
+}
+:deep(.soft-btn:active) {
+  transform: scale(0.97);
+}
+
+/* Material-style toggle switch */
+:deep(.md-switch) {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  cursor: pointer;
+  user-select: none;
+  height: 2.6rem;
+}
+:deep(.md-switch input) {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+:deep(.md-switch__track) {
+  position: relative;
+  width: 2.6rem;
+  height: 1rem;
+  border-radius: 0.5rem;
+  background: color-mix(in srgb, var(--text-dim) 40%, transparent);
+  transition: background 0.2s ease;
+  flex-shrink: 0;
+}
+:deep(.md-switch__thumb) {
+  position: absolute;
+  top: 50%;
+  left: -0.15rem;
+  transform: translateY(-50%);
+  width: 1.3rem;
+  height: 1.3rem;
+  border-radius: 50%;
+  background: #f4f4f5;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25), 0 1px 2px rgba(0, 0, 0, 0.15);
+  transition: left 0.2s ease, background 0.2s ease;
+}
+:deep(.md-switch input:checked + .md-switch__track) {
+  background: color-mix(in srgb, var(--status-ok) 45%, transparent);
+}
+:deep(.md-switch input:checked + .md-switch__track .md-switch__thumb) {
+  left: calc(100% - 1.15rem);
+  background: var(--status-ok);
+  box-shadow: 0 1px 4px color-mix(in srgb, var(--status-ok) 40%, transparent);
+}
+:deep(.md-switch input:focus-visible + .md-switch__track) {
+  outline: 2px solid color-mix(in srgb, var(--status-ok) 40%, transparent);
+  outline-offset: 2px;
+}
+:deep(.md-switch__label) {
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  min-width: 2rem;
+}
+:deep(.md-switch input:checked ~ .md-switch__label) {
+  color: var(--status-ok);
+}
+
+/* EC breakdown — карточка */
+:deep(.ec-breakdown-card) {
+  border: 1px solid var(--border-muted);
+  border-radius: 0.75rem;
+  padding: 0.75rem;
+  background: color-mix(in srgb, var(--status-ok) 3%, var(--bg-elevated));
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+:deep(.ec-breakdown-card--night) {
+  background: color-mix(in srgb, #1e3a5f 5%, var(--bg-elevated));
+}
+:deep(.ec-breakdown-card__header) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+:deep(.ec-breakdown-card__title) {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+:deep(.ec-breakdown-card__total) {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--status-ok);
+  background: color-mix(in srgb, var(--status-ok) 12%, transparent);
+  padding: 0.15rem 0.55rem;
+  border-radius: 0.35rem;
+}
+:deep(.ec-breakdown-card__chips) {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.4rem;
+}
+:deep(.ec-chip) {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0.35rem 0.25rem;
+  border-radius: 0.5rem;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-muted);
+}
+:deep(.ec-chip__label) {
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+:deep(.ec-chip__value) {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+:deep(.ec-chip--npk) { border-color: color-mix(in srgb, #10b981 35%, transparent); }
+:deep(.ec-chip--npk .ec-chip__label) { color: #059669; }
+:deep(.ec-chip--ca) { border-color: color-mix(in srgb, #3b82f6 35%, transparent); }
+:deep(.ec-chip--ca .ec-chip__label) { color: #2563eb; }
+:deep(.ec-chip--mg) { border-color: color-mix(in srgb, #f59e0b 35%, transparent); }
+:deep(.ec-chip--mg .ec-chip__label) { color: #d97706; }
+:deep(.ec-chip--micro) { border-color: color-mix(in srgb, #a855f7 35%, transparent); }
+:deep(.ec-chip--micro .ec-chip__label) { color: #9333ea; }
+
+:deep(.ec-breakdown-card__flow) {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding-top: 0.35rem;
+  border-top: 1px dashed var(--border-muted);
+}
+:deep(.ec-flow-stage) {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+:deep(.ec-flow-stage__icon) {
+  color: var(--status-ok);
+  font-size: 0.7rem;
+}
+:deep(.ec-flow-stage__label) {
+  font-weight: 500;
+}
+:deep(.ec-flow-stage__value) {
+  font-weight: 700;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+:deep(.ec-flow-arrow) {
+  color: var(--text-dim);
+  font-size: 0.85rem;
+}
+
+/* Stepper input — компактное поле с кнопками - / + */
+:deep(.stepper) {
+  display: inline-flex;
+  align-items: stretch;
+  border: 1px solid var(--border-muted);
+  border-radius: 0.6rem;
+  overflow: hidden;
+  background: var(--bg-elevated);
+  width: 100%;
+  max-width: 11rem;
+  height: 2.2rem;
+}
+:deep(.stepper__btn) {
+  width: 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--status-ok);
+  background: color-mix(in srgb, var(--status-ok) 6%, transparent);
+  border: none;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.08s;
+  user-select: none;
+}
+:deep(.stepper__btn:hover) {
+  background: color-mix(in srgb, var(--status-ok) 15%, transparent);
+}
+:deep(.stepper__btn:active) {
+  transform: scale(0.92);
+}
+:deep(.stepper__input) {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  text-align: center;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  outline: none;
+  -moz-appearance: textfield;
+}
+:deep(.stepper__input::-webkit-outer-spin-button),
+:deep(.stepper__input::-webkit-inner-spin-button) {
+  -webkit-appearance: none;
+  margin: 0;
+}
+:deep(.stepper__input:focus) {
+  outline: none;
+  box-shadow: none;
+}
+:deep(.stepper__unit) {
+  display: flex;
+  align-items: center;
+  padding-right: 0.5rem;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+:deep(.target-row__btn) {
+  width: 2rem;
+  height: 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--status-ok);
+  background: color-mix(in srgb, var(--status-ok) 10%, transparent);
+  border: none;
+  border-radius: 50%;
+  margin: 0 0.15rem;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s, transform 0.1s;
+}
+:deep(.target-row__btn:hover) {
+  background: color-mix(in srgb, var(--status-ok) 20%, transparent);
+}
+:deep(.target-row__btn:active) {
+  transform: scale(0.9);
+}

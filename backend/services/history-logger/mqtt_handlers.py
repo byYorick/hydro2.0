@@ -10,6 +10,8 @@ import logging
 import httpx
 import asyncio
 import state
+from handlers.dependencies import bind_dependencies as bind_config_report_dependencies
+from handlers.dependencies import snapshot as config_report_dependency_snapshot
 
 # Re-export dependencies: historical test patches target ``mqtt_handlers.X``.
 from common.command_status_queue import (
@@ -54,13 +56,11 @@ from utils import (
 )
 
 # Public handlers (используются ``app.py`` для подписок MQTT).
-from handlers import command_response as command_response_module
-from handlers import config_report as config_report_module
-from handlers import heartbeat_status as heartbeat_status_module
-from handlers import node_event as node_event_module
-from handlers import node_hello as node_hello_module
-from handlers import node_channels_sync as node_channels_sync_module
-from handlers import _shared as handlers_shared_module
+from handlers import command_response as command_response_module  # noqa: F401 - legacy facade re-export
+from handlers import heartbeat_status as heartbeat_status_module  # noqa: F401 - legacy facade re-export
+from handlers import node_event as node_event_module  # noqa: F401 - legacy facade re-export
+from handlers import node_hello as node_hello_module  # noqa: F401 - legacy facade re-export
+from handlers import _shared as handlers_shared_module  # noqa: F401 - legacy facade re-export
 from handlers.command_response import handle_command_response as _handle_command_response_impl
 from handlers.config_report import handle_config_report as _handle_config_report_impl
 from handlers.config_report import sync_node_channels_from_payload as _sync_node_channels_from_payload_impl
@@ -91,87 +91,118 @@ _ORIG_COMPLETE_BINDING_AFTER_CONFIG_REPORT = _complete_binding_after_config_repo
 _ORIG_COMPLETE_SENSOR_CALIBRATIONS_AFTER_CONFIG_REPORT = _complete_sensor_calibrations_after_config_report
 
 
-def _sync_command_response_overrides() -> None:
-    """Сохраняет patch-совместимость тестов через ``mqtt_handlers.*`` символы."""
-    command_response_module.fetch = fetch
-    command_response_module.execute = execute
-    command_response_module.deliver_status_to_laravel = deliver_status_to_laravel
-    command_response_module.record_simulation_event = record_simulation_event
-    command_response_module.create_zone_event = create_zone_event
-    command_response_module.normalize_status = normalize_status
-    command_response_module.COMMAND_RESPONSE_RECEIVED = COMMAND_RESPONSE_RECEIVED
-    command_response_module.COMMAND_RESPONSE_ERROR = COMMAND_RESPONSE_ERROR
-    command_response_module._extract_node_uid = _extract_node_uid
-    command_response_module._extract_channel_from_topic = _extract_channel_from_topic
-    command_response_module._extract_gh_uid = _extract_gh_uid
-    command_response_module._parse_json = _parse_json
-
-
 async def handle_command_response(topic: str, payload: bytes) -> None:
-    _sync_command_response_overrides()
-    await _handle_command_response_impl(topic, payload)
+    with bind_config_report_dependencies(
+        **config_report_dependency_snapshot(
+            {
+                'fetch': fetch,
+                'execute': execute,
+                'deliver_status_to_laravel': deliver_status_to_laravel,
+                'record_simulation_event': record_simulation_event,
+                'create_zone_event': create_zone_event,
+                'normalize_status': normalize_status,
+                'COMMAND_RESPONSE_RECEIVED': COMMAND_RESPONSE_RECEIVED,
+                'COMMAND_RESPONSE_ERROR': COMMAND_RESPONSE_ERROR,
+                '_extract_node_uid': _extract_node_uid,
+                '_extract_channel_from_topic': _extract_channel_from_topic,
+                '_extract_gh_uid': _extract_gh_uid,
+                '_parse_json': _parse_json,
+            }
+        ).values
+    ):
+        await _handle_command_response_impl(topic, payload)
 
 
-def _sync_config_report_overrides() -> None:
-    config_report_module.fetch = fetch
-    config_report_module.execute = execute
-    config_report_module.get_settings = get_settings
-    config_report_module._parse_json = _parse_json
-    config_report_module._extract_node_uid = _extract_node_uid
-    config_report_module._extract_gh_uid = _extract_gh_uid
-    config_report_module._extract_zone_uid = _extract_zone_uid
-    config_report_module.httpx = httpx
-    config_report_module.logger = logger
-    config_report_module.CONFIG_REPORT_RECEIVED = CONFIG_REPORT_RECEIVED
-    config_report_module.CONFIG_REPORT_PROCESSED = CONFIG_REPORT_PROCESSED
-    config_report_module.CONFIG_REPORT_ERROR = CONFIG_REPORT_ERROR
-    config_report_module.store_pending_config_report = _store_pending_config_report
-    config_report_module.sync_node_channels_from_payload = sync_node_channels_from_payload
-    config_report_module._complete_binding_after_config_report = _complete_binding_after_config_report
-    config_report_module._complete_sensor_calibrations_after_config_report = _complete_sensor_calibrations_after_config_report
+def _config_report_dependencies() -> dict:
+    return {
+        "fetch": fetch,
+        "execute": execute,
+        "get_settings": get_settings,
+        "_parse_json": _parse_json,
+        "_extract_node_uid": _extract_node_uid,
+        "_extract_gh_uid": _extract_gh_uid,
+        "_extract_zone_uid": _extract_zone_uid,
+        "httpx": httpx,
+        "logger": logger,
+        "CONFIG_REPORT_RECEIVED": CONFIG_REPORT_RECEIVED,
+        "CONFIG_REPORT_PROCESSED": CONFIG_REPORT_PROCESSED,
+        "CONFIG_REPORT_ERROR": CONFIG_REPORT_ERROR,
+        "store_pending_config_report": _store_pending_config_report,
+        "sync_node_channels_from_payload": sync_node_channels_from_payload,
+        "_complete_binding_after_config_report": _complete_binding_after_config_report,
+        "_complete_sensor_calibrations_after_config_report": _complete_sensor_calibrations_after_config_report,
+    }
 
 
 async def handle_config_report(topic: str, payload: bytes) -> None:
-    _sync_config_report_overrides()
-    await _handle_config_report_impl(topic, payload)
+    with bind_config_report_dependencies(**config_report_dependency_snapshot(_config_report_dependencies()).values):
+        await _handle_config_report_impl(topic, payload)
 
 
 async def sync_node_channels_from_payload(
     node_id: int, node_uid: str, channels_payload, *, allow_prune: bool = False
 ) -> None:
-    node_channels_sync_module.execute = execute
     await _sync_node_channels_from_payload_impl(
         node_id,
         node_uid,
         channels_payload,
         allow_prune=allow_prune,
+        execute_fn=config_report_dependency_snapshot({"execute": execute}).execute,
     )
 
 
-def _sync_heartbeat_overrides() -> None:
-    heartbeat_status_module.fetch = fetch
-    heartbeat_status_module.execute = execute
-    heartbeat_status_module.logger = logger
-    heartbeat_status_module.HEARTBEAT_RECEIVED = HEARTBEAT_RECEIVED
-    heartbeat_status_module._extract_node_uid = _extract_node_uid
-    heartbeat_status_module._extract_gh_uid = _extract_gh_uid
-    heartbeat_status_module._extract_zone_uid = _extract_zone_uid
-    heartbeat_status_module._parse_json = _parse_json
-
-
 async def handle_heartbeat(topic: str, payload: bytes) -> None:
-    _sync_heartbeat_overrides()
-    await _handle_heartbeat_impl(topic, payload)
+    with bind_config_report_dependencies(
+        **config_report_dependency_snapshot(
+            {
+                'fetch': fetch,
+                'execute': execute,
+                'logger': logger,
+                'HEARTBEAT_RECEIVED': HEARTBEAT_RECEIVED,
+                '_extract_node_uid': _extract_node_uid,
+                '_extract_gh_uid': _extract_gh_uid,
+                '_extract_zone_uid': _extract_zone_uid,
+                '_parse_json': _parse_json,
+            }
+        ).values
+    ):
+        await _handle_heartbeat_impl(topic, payload)
 
 
 async def handle_status(topic: str, payload: bytes) -> None:
-    _sync_heartbeat_overrides()
-    await _handle_status_impl(topic, payload)
+    with bind_config_report_dependencies(
+        **config_report_dependency_snapshot(
+            {
+                'fetch': fetch,
+                'execute': execute,
+                'logger': logger,
+                'HEARTBEAT_RECEIVED': HEARTBEAT_RECEIVED,
+                '_extract_node_uid': _extract_node_uid,
+                '_extract_gh_uid': _extract_gh_uid,
+                '_extract_zone_uid': _extract_zone_uid,
+                '_parse_json': _parse_json,
+            }
+        ).values
+    ):
+        await _handle_status_impl(topic, payload)
 
 
 async def monitor_offline_nodes() -> None:
-    _sync_heartbeat_overrides()
-    await _monitor_offline_nodes_impl()
+    with bind_config_report_dependencies(
+        **config_report_dependency_snapshot(
+            {
+                'fetch': fetch,
+                'execute': execute,
+                'logger': logger,
+                'HEARTBEAT_RECEIVED': HEARTBEAT_RECEIVED,
+                '_extract_node_uid': _extract_node_uid,
+                '_extract_gh_uid': _extract_gh_uid,
+                '_extract_zone_uid': _extract_zone_uid,
+                '_parse_json': _parse_json,
+            }
+        ).values
+    ):
+        await _monitor_offline_nodes_impl()
 
 
 async def _resolve_zone_id_for_node_event_legacy(zone_uid, node_uid):
@@ -210,50 +241,54 @@ async def _resolve_zone_id_for_node_event_legacy(zone_uid, node_uid):
     return None
 
 
-def _sync_node_event_overrides() -> None:
-    handlers_shared_module.fetch = fetch
-    node_event_module.resolve_zone_id_for_node_event = _resolve_zone_id_for_node_event_legacy
-    node_event_module.create_zone_event = create_zone_event
-    node_event_module.notify_zone_event_ingested = notify_zone_event_ingested
-    node_event_module.NODE_EVENT_RECEIVED = NODE_EVENT_RECEIVED
-    node_event_module.NODE_EVENT_ERROR = NODE_EVENT_ERROR
-    node_event_module.NODE_EVENT_UNKNOWN = NODE_EVENT_UNKNOWN
-    node_event_module._parse_json = _parse_json
-    node_event_module._extract_gh_uid = _extract_gh_uid
-    node_event_module._extract_zone_uid = _extract_zone_uid
-    node_event_module._extract_node_uid = _extract_node_uid
-    node_event_module._extract_channel_from_topic = _extract_channel_from_topic
-
-
 async def handle_node_event(topic: str, payload: bytes) -> None:
-    _sync_node_event_overrides()
-    await _handle_node_event_impl(topic, payload)
-
-
-def _sync_node_hello_overrides() -> None:
-    node_hello_module.get_settings = get_settings
-    node_hello_module.asyncio = asyncio
-    node_hello_module.NODE_HELLO_RECEIVED = NODE_HELLO_RECEIVED
-    node_hello_module.NODE_HELLO_REGISTERED = NODE_HELLO_REGISTERED
-    node_hello_module.NODE_HELLO_ERRORS = NODE_HELLO_ERRORS
-    node_hello_module._parse_json = _parse_json
-    node_hello_module.logger = logger
-    node_hello_module._process_pending_config_report_after_registration = _process_pending_config_report_after_registration
+    with bind_config_report_dependencies(
+        **config_report_dependency_snapshot(
+            {
+                'fetch': fetch,
+                'resolve_zone_id_for_node_event': _resolve_zone_id_for_node_event_legacy,
+                'create_zone_event': create_zone_event,
+                'notify_zone_event_ingested': notify_zone_event_ingested,
+                'NODE_EVENT_RECEIVED': NODE_EVENT_RECEIVED,
+                'NODE_EVENT_ERROR': NODE_EVENT_ERROR,
+                'NODE_EVENT_UNKNOWN': NODE_EVENT_UNKNOWN,
+                '_parse_json': _parse_json,
+                '_extract_gh_uid': _extract_gh_uid,
+                '_extract_zone_uid': _extract_zone_uid,
+                '_extract_node_uid': _extract_node_uid,
+                '_extract_channel_from_topic': _extract_channel_from_topic,
+            }
+        ).values
+    ):
+        await _handle_node_event_impl(topic, payload)
 
 
 async def handle_node_hello(topic: str, payload: bytes) -> None:
-    _sync_node_hello_overrides()
-    await _handle_node_hello_impl(topic, payload)
+    with bind_config_report_dependencies(
+        **config_report_dependency_snapshot(
+            {
+                'get_settings': get_settings,
+                'asyncio': asyncio,
+                'NODE_HELLO_RECEIVED': NODE_HELLO_RECEIVED,
+                'NODE_HELLO_REGISTERED': NODE_HELLO_REGISTERED,
+                'NODE_HELLO_ERRORS': NODE_HELLO_ERRORS,
+                '_parse_json': _parse_json,
+                'logger': logger,
+                '_process_pending_config_report_after_registration': _process_pending_config_report_after_registration,
+            }
+        ).values
+    ):
+        await _handle_node_hello_impl(topic, payload)
 
 
 async def _complete_sensor_calibrations_after_config_report(node_id: int, config):
-    _sync_config_report_overrides()
-    return await _ORIG_COMPLETE_SENSOR_CALIBRATIONS_AFTER_CONFIG_REPORT(node_id, config)
+    with bind_config_report_dependencies(**config_report_dependency_snapshot(_config_report_dependencies()).values):
+        return await _ORIG_COMPLETE_SENSOR_CALIBRATIONS_AFTER_CONFIG_REPORT(node_id, config)
 
 
 async def _complete_binding_after_config_report(node, node_uid: str, **kwargs):
-    _sync_config_report_overrides()
-    return await _ORIG_COMPLETE_BINDING_AFTER_CONFIG_REPORT(node, node_uid, **kwargs)
+    with bind_config_report_dependencies(**config_report_dependency_snapshot(_config_report_dependencies()).values):
+        return await _ORIG_COMPLETE_BINDING_AFTER_CONFIG_REPORT(node, node_uid, **kwargs)
 
 
 async def _store_pending_config_report(hardware_id: str, topic: str, payload: bytes) -> None:
@@ -265,6 +300,7 @@ async def _process_pending_config_report_after_registration(hardware_id: str) ->
     if not pending:
         return
     await handle_config_report(pending["topic"], pending["payload"])
+
 
 __all__ = [
     # Handlers

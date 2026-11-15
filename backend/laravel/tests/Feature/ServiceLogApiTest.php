@@ -153,7 +153,8 @@ class ServiceLogApiTest extends TestCase
             ],
         ];
 
-        $response = $this->postJson('/api/python/logs', $payload);
+        config(['services.python_bridge.token' => 'log-service-token']);
+        $response = $this->withHeader('Authorization', 'Bearer log-service-token')->postJson('/api/python/logs', $payload);
 
         $response->assertStatus(200);
         $log = SystemLog::query()->latest('id')->first();
@@ -165,5 +166,13 @@ class ServiceLogApiTest extends TestCase
         $this->assertEquals('abc123', $log->context['trace_id'] ?? null);
         $this->assertEquals('RuntimeException', $log->context['exception']['type'] ?? null);
         $this->assertEquals($timestamp->getTimestamp(), $log->created_at?->getTimestamp());
+    }
+
+    public function test_authenticated_admin_cannot_ingest_service_logs_without_service_token(): void
+    {
+        $this->postJson('/api/python/logs', [
+            'log' => ['level' => 'INFO', 'message' => 'unauthorized-log', 'service' => 'qa'],
+        ])->assertUnauthorized();
+        $this->assertDatabaseMissing('system_logs', ['message' => 'unauthorized-log']);
     }
 }

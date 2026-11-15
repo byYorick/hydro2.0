@@ -1411,3 +1411,26 @@ node → heartbeat → history-logger → nodes table (uptime, free_heap, rssi)
 ---
 
 # Конец файла
+
+
+## Уточнения по результатам исправлений аудита
+
+Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0
+
+Исправления аудита 2026-11-14: production ACL привязан к индивидуальному authenticated username, явные правила генерирует tools/mqtt/generate_node_acl.py. Общий esp32_node/%c ACL допустим только в dev. Генератор не меняет топики или payload. MQTT_NODE_PASSWORDS_FILE задаёт индивидуальный ключ wrapping для каждого node_uid. Config HMAC по-прежнему planned, а не реализован. Прошивка расширяет cmd_id buffer до 129 байт (128 ASCII символов), command-name buffer до 257 байт (64 Unicode codepoints UTF-8), согласуя ограничения с JSON Schema.
+
+
+### Offline credentials bundle (2026-11-14)
+
+Production broker требует MQTT_PRODUCTION_PASSWORD_FILE; при отсутствии mounted password file запуск запрещён. tools/mqtt/prepare_node_credentials.py генерирует согласованные ACL, hashed password file и per-node wrapping map; повторная генерация сохраняет пароли через --previous, ротация только через --rotate-node. Секретные файлы имеют mode 0600, каталог 0700; entrypoint делает приватную runtime-копию password file с владельцем mosquitto, не изменяя mounted source. Генератор не подключается к узлам, перенос credentials на существующие ESP32 выполняется отдельно доверенным способом.
+
+
+## Backend ingress: восстановление MQTT (аудит 2026-11-14)
+
+HL использует постоянную MQTT-сессию (`MQTT_CLEAN_SESSION=0`) со стабильным уникальным client_id. Все callbacks регистрируются **до CONNECT**: брокер может сразу после CONNACK повторить unacknowledged сообщения старой сессии. Ожидание reconnect внутри сетевого callback запрещено; Paho network loop выполняет reconnect с backoff 1–30 s.
+
+Для telemetry QoS 1 HL включает manual ACK (`paho-mqtt==2.1.0`, Callback API v2): PUBACK подписчика отправляется после успешного помещения валидного sample в Redis. При недоступности/переполнении Redis обработчик остаётся pending, брокер ограничивает число in-flight сообщений и удерживает неподтверждённые delivery. Ошибка или отмена обработчика не подтверждает сообщение. Callback старого подключения не должен подтверждать повторно использованный MID нового подключения. QoS 0 на этой подписке отвергается как нарушение действующего QoS-контракта. Остальные backend subscriptions сохраняют прежний момент ACK.
+
+Это доставка «как минимум один раз», не exactly-once: завершение записи до ACK и последующий crash могут дать повтор sample. Publisher PUBACK означает приём брокером, а не commit в PostgreSQL. Сохранность при отказе самого Redis/брокера ограничена их persistence/RPO и ёмкостью буферов; enqueue в Redis не означает синхронный fsync AOF. Форматы topic/payload, HMAC и lifecycle команд не меняются. После изменения requirements нужно пересобрать Python images.
+
+Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0

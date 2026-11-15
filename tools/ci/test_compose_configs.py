@@ -22,7 +22,7 @@ class ComposeConfigsTest(unittest.TestCase):
         # Do not use deployed credentials or the repository's local .env files.
         for name in FILES:
             for key in re.findall(r'\$\{([A-Z][A-Z0-9_]*):\?', (ROOT / name).read_text()):
-                env[key] = secrets.token_hex(32)
+                env[key] = str(ROOT / "backend/services/mqtt-bridge/acl") if key in {"MQTT_PRODUCTION_ACL_FILE", "MQTT_NODE_PASSWORDS_FILE", "MQTT_PRODUCTION_PASSWORD_FILE"} else secrets.token_hex(32)
         with tempfile.NamedTemporaryFile() as empty_env:
             for name in FILES:
                 with self.subTest(compose=name):
@@ -37,7 +37,7 @@ class ComposeConfigsTest(unittest.TestCase):
         files = ['backend/docker-compose.dev.yml', 'backend/docker-compose.prod.yml']
         for name in files:
             for key in re.findall(r'\$\{([A-Z][A-Z0-9_]*):\?', (ROOT / name).read_text()):
-                env[key] = secrets.token_hex(32)
+                env[key] = str(ROOT / "backend/services/mqtt-bridge/acl") if key in {"MQTT_PRODUCTION_ACL_FILE", "MQTT_NODE_PASSWORDS_FILE", "MQTT_PRODUCTION_PASSWORD_FILE"} else secrets.token_hex(32)
         with tempfile.NamedTemporaryFile() as empty_env:
             for name in files:
                 with self.subTest(compose=name):

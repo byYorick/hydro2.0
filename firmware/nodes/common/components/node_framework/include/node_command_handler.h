@@ -28,7 +28,7 @@ extern "C" {
 /**
  * @brief Максимальная длина имени команды
  */
-#define NODE_COMMAND_NAME_MAX_LEN 32
+#define NODE_COMMAND_NAME_MAX_LEN 257
 
 /**
  * @brief Обработчик команды

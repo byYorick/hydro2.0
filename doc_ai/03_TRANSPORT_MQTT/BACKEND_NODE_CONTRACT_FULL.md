@@ -700,3 +700,10 @@ Backend обязан:
 ---
 
 # Конец файла BACKEND_NODE_CONTRACT_FULL.md
+
+
+## Уточнения по результатам исправлений аудита
+
+Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0
+
+Исправления аудита 2026-11-14: production MQTT использует отдельный username/password на устройство и явные ACL для node_uid/hardware_id. Генератор: tools/mqtt/generate_node_acl.py. Общие credentials и client_id не являются идентичностью. При migration нужно установить индивидуальные mqtt.username/password в NodeConfig/NVS, добавить password hash на брокере и node_uid -> MQTT password в secret mount HL. Во время изменения credentials остановить автоматизацию и проверить config_report/подписи до возобновления. Форматы MQTT не изменены.

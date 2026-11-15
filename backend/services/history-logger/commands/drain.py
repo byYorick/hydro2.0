@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import logging
-import zlib
-from contextlib import asynccontextmanager
-from typing import Any, AsyncIterator
+from typing import Any
 
 from command_service import (
     NodeSecretResolutionError,
@@ -30,16 +28,10 @@ logger = logging.getLogger(__name__)
 _SUSTAINED_FAIL_CYCLES_BEFORE_ALERT = 3
 _consecutive_fail_cycles = 0
 
-# Namespace for per-cmd_id session advisory locks during MQTT republish.
-# Keeps concurrent drain workers from double-publishing the same row after
-# FOR UPDATE is released (previous bug: SKIP LOCKED ended with the SELECT txn).
-_DRAIN_PUBLISH_LOCK_NAMESPACE = zlib.crc32(b"hl_queued_cmd_drain_publish") & 0x7FFFFFFF
-
-
-def _cmd_publish_advisory_lock_key(cmd_id: str) -> int:
-    """Stable 63-bit key: namespace in high 31 bits + crc32(cmd_id) in low 32."""
-    cmd_hash = zlib.crc32(cmd_id.encode("utf-8")) & 0xFFFFFFFF
-    return (_DRAIN_PUBLISH_LOCK_NAMESPACE << 32) | cmd_hash
+from commands.dispatch import _try_claim_cmd_for_publish
+from commands.dispatch import _cmd_publish_advisory_lock_key as _cmd_publish_advisory_lock_key
+from commands.lease_gate import is_fail_safe_off_command, reject_if_zone_lease_held
+from datetime import datetime, timezone
 
 
 def _extract_signed_payload_fields(params: dict[str, Any]) -> tuple[dict[str, Any], int | None, str | None]:
@@ -141,6 +133,7 @@ async def _claim_stale_queued_command_rows(
                 c.params,
                 c.status,
                 c.source,
+                c.created_at,
                 n.uid AS node_uid
             FROM commands c
             INNER JOIN nodes n ON n.id = c.node_id
@@ -155,36 +148,6 @@ async def _claim_stale_queued_command_rows(
         return [dict(row) for row in rows]
 
 
-@asynccontextmanager
-async def _try_claim_cmd_for_publish(cmd_id: str) -> AsyncIterator[bool]:
-    """Hold a session advisory lock on ``cmd_id`` for the publish window.
-
-    Yields True only when the lock was acquired AND the row is still in
-    QUEUED/SEND_FAILED. Connection stays checked out until exit so the
-    session lock survives MQTT I/O (unlike FOR UPDATE SKIP LOCKED alone).
-    """
-    lock_key = _cmd_publish_advisory_lock_key(cmd_id)
-    pool = await get_pool()
-    async with pool.acquire() as conn:
-        acquired = bool(
-            await conn.fetchval("SELECT pg_try_advisory_lock($1::bigint)", int(lock_key))
-        )
-        if not acquired:
-            yield False
-            return
-        try:
-            still_pending = await conn.fetchval(
-                """
-                SELECT 1
-                FROM commands
-                WHERE cmd_id = $1
-                  AND status IN ('QUEUED', 'SEND_FAILED')
-                """,
-                cmd_id,
-            )
-            yield still_pending is not None
-        finally:
-            await conn.execute("SELECT pg_advisory_unlock($1::bigint)", int(lock_key))
 
 
 async def drain_stale_queued_commands_once(
@@ -251,6 +214,18 @@ async def drain_stale_queued_commands_once(
                 continue
 
             try:
+                created_at = row.get("created_at")
+                if isinstance(created_at, datetime) and created_at.tzinfo is None:
+                    created_at = created_at.replace(tzinfo=timezone.utc)
+                safe_retry = cmd_name in {"state", "test_sensor"} or is_fail_safe_off_command(cmd_name, raw_params)
+                expired = not isinstance(created_at, datetime) or (datetime.now(timezone.utc) - created_at).total_seconds() > 60
+                if not safe_retry or expired:
+                    abandoned = await _abandon_non_republishable_command(cmd_id=cmd_id, reason="unsafe_or_expired_recovery")
+                    summary["skipped" if abandoned else "failed"] += 1
+                    (COMMAND_QUEUE_DRAIN_SKIPPED if abandoned else COMMAND_QUEUE_DRAIN_FAILED).inc()
+                    continue
+                await reject_if_zone_lease_held(zone_id=zone_id, cmd=cmd_name, params=raw_params,
+                    source="recovery", node_uid=node_uid, node_id=node_id)
                 skip_response = await ensure_command_for_publish(
                     cmd_id=cmd_id,
                     zone_id=zone_id,

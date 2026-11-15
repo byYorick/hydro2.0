@@ -2,18 +2,16 @@ package com.hydro.app.features.provisioning
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.hydro.app.core.config.ConfigLoader
-import com.hydro.app.features.provisioning.ProvisioningRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
 import javax.inject.Inject
 
 @HiltViewModel
 class ProvisioningViewModel @Inject constructor(
-    private val repository: ProvisioningRepository,
-    private val configLoader: ConfigLoader
+    private val repository: ProvisioningRepository
 ) : ViewModel() {
     private val _state = MutableStateFlow<ProvisioningState>(ProvisioningState.Idle)
     val state: StateFlow<ProvisioningState> = _state
@@ -37,8 +35,14 @@ class ProvisioningViewModel @Inject constructor(
         val wifiPassword: String,
         val greenhouseUid: String? = null,
         val zoneUid: String? = null,
-        val nodeName: String
+        val nodeName: String,
+        val mqttHost: String,
+        val mqttPort: Int = 1883
     )
+
+    fun configureConnectedDevice() {
+        _state.value = ProvisioningState.FoundDevices(listOf(ProvisioningDevice("Подключённый ESP32", "192.168.4.1")))
+    }
 
     fun scanDevices() {
         _state.value = ProvisioningState.Scanning
@@ -46,6 +50,8 @@ class ProvisioningViewModel @Inject constructor(
             try {
                 val devices = repository.scanForDevices()
                 _state.value = ProvisioningState.FoundDevices(devices)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _state.value = ProvisioningState.Error(e.message ?: "Scan failed")
             }
@@ -56,9 +62,10 @@ class ProvisioningViewModel @Inject constructor(
         _state.value = ProvisioningState.Configuring
         viewModelScope.launch {
             try {
-                val backendUrl = configLoader.loadConfig().apiBaseUrl
-                repository.provisionDevice(device, config, backendUrl)
+                repository.provisionDevice(device, config).getOrThrow()
                 _state.value = ProvisioningState.Success
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _state.value = ProvisioningState.Error(e.message ?: "Provisioning failed")
             }

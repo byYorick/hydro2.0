@@ -13,6 +13,7 @@ Steps:
 
 from __future__ import annotations
 
+import asyncio
 from copy import deepcopy
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
@@ -25,6 +26,8 @@ from prometheus_client import REGISTRY
 from _test_support_runtime_plan import make_runtime_plan
 from ae3_preflight_helpers import patch_fetch_zone_nodes_diagnostics
 from ae3lite.application.handlers.correction import CorrectionHandler
+from ae3lite.application.dto.stage_outcome import StageOutcome
+from ae3lite.application.services.correction_observation_reader import ObservationWindow
 from ae3lite.domain.entities.automation_task import AutomationTask
 from ae3lite.domain.entities.planned_command import PlannedCommand
 from ae3lite.domain.entities.workflow_state import CorrectionState
@@ -4486,3 +4489,59 @@ async def test_corr_check_partial_multi_component_discard_emits_event(monkeypatc
     assert discarded, "partial discard must emit observability event"
     assert discarded[0].args[2]["reason"] == "multi_component_partial"
     assert discarded[0].args[2]["partial"] is True
+
+
+@pytest.mark.parametrize('failure', [None, 'event', 'sink', 'persist', 'cancel_persist'])
+async def test_observation_finalization_keeps_event_persist_limit_order(monkeypatch, failure):
+    corr = _base_corr(corr_step='corr_wait_ec', needs_ec=True, ec_amount_ml=2.0)
+    task = _make_task(corr=corr)
+    window = ObservationWindow(
+        samples=[{'ts': NOW - timedelta(seconds=n), 'value': 1.0} for n in (8, 4, 0)],
+        summary_value=1.0, baseline_value=1.0, last_dose_at=NOW - timedelta(seconds=20),
+        observe_cfg=dict(min_effect_fraction=0.25, transport_delay_sec=6,
+                         settle_sec=4, window_min_samples=3, no_effect_limit=3),
+        pid_entry={'no_effect_count': 2},
+        process_cfg=RUNTIME['process_calibrations']['solution_fill'],
+    )
+    handler = _make_handler(pid_repo=_MockPidStateRepository())
+    calls = []
+    limit_outcome = StageOutcome(kind='exit_correction', correction=replace(corr, outcome_success=False))
+
+    async def log_event(**kwargs):
+        calls.append('event')
+        assert kwargs['payload']['no_effect_count_next'] == 3
+        if failure == 'event':
+            raise OSError('event unavailable')
+
+    async def persist(**kwargs):
+        calls.append('persist')
+        assert kwargs['updates']['ec']['no_effect_count'] == 3
+        if failure == 'persist':
+            raise OSError('PID unavailable')
+        if failure == 'cancel_persist':
+            raise asyncio.CancelledError
+
+    async def no_effect_limit(**kwargs):
+        calls.append('limit')
+        assert kwargs['actual_effect'] == 0.0
+        return limit_outcome
+
+    if failure == 'sink':
+        async def failed_sink(*args):
+            calls.append('event')
+            raise OSError('observability sink unavailable')
+        monkeypatch.setattr(handler._event_logger, '_create_event', failed_sink)
+    else:
+        monkeypatch.setattr(handler, '_log_correction_event', log_event)
+    monkeypatch.setattr(handler._pid_state, 'persist', persist)
+    monkeypatch.setattr(handler, '_no_effect_limit_reached', no_effect_limit)
+    args = dict(task=task, plan=_MockPlan(), corr=corr, now=NOW,
+                pid_type='ec', sensor_type='EC', window=window)
+    if failure and failure != 'sink':
+        error_type = asyncio.CancelledError if failure == 'cancel_persist' else OSError
+        with pytest.raises(error_type):
+            await handler._finalize_observation_result(**args)
+        assert calls == (['event'] if failure == 'event' else ['event', 'persist'])
+    else:
+        assert await handler._finalize_observation_result(**args) is limit_outcome
+        assert calls == ['event', 'persist', 'limit']

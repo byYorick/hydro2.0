@@ -27,8 +27,28 @@ class BrokerRuntimeTest(unittest.TestCase):
             ["docker", "rm", "-fv", cls.name], capture_output=True, check=False))
         subprocess.run(["sh", str(SOURCE / "generate_mqtt_certs.sh"),
                         str(cls.directory / "certs")], check=True, capture_output=True)
+        extra = []
+        if getattr(cls, "production", False):
+            import json
+            import sys
+            sys.path.insert(0, str(ROOT / "tools/mqtt"))
+            try:
+                from prepare_node_credentials import prepare
+                bundle = cls.directory / "bundle"
+                prepare([
+                    {"username": "node_A", "node_uid": "nd-A", "hardware_id": "hw-A"},
+                    {"username": "node_B", "node_uid": "nd-B", "hardware_id": "hw-B"},
+                ], {"history_logger": "h"*40, "mqtt_bridge": "b"*40}, bundle,
+                    image=os.getenv("MQTT_TEST_IMAGE", "eclipse-mosquitto:2.0.22"))
+            finally:
+                sys.path.pop(0)
+            (cls.directory / "acl").write_text((bundle / "production.acl").read_text())
+            nodes = json.loads((bundle / "node_credentials.json").read_text())
+            cls.passwords = {"history_logger": "h"*40, "node_A": nodes["nd-A"]["password"],
+                "node_B": nodes["nd-B"]["password"], "python_service": "python_service_pass"}
+            extra = ["-v", f"{bundle}/passwords:/mosquitto/config/passwords:ro", "-e", "MQTT_REQUIRE_STRONG_PASSWORDS=1"]
         subprocess.run([
-            "docker", "run", "-d", "--name", cls.name,
+            "docker", "run", "-d", *extra, "--name", cls.name,
             "-e", "MQTT_PLAINTEXT_ENABLED=0",
             "-v", f"{cls.directory}/acl:/mosquitto/config/acl:ro",
             "-v", f"{cls.directory}/mosquitto.dev.conf:/mosquitto/config/mosquitto.conf:ro",
@@ -53,8 +73,8 @@ class BrokerRuntimeTest(unittest.TestCase):
         if tls:
             command += ["--cafile", ca]
         if user:
-            passwords = {"history_logger": "logger_pass", "esp32_node": "esp32_pass"}
-            command += ["-u", user, "-P", passwords[user]]
+            passwords = {"history_logger": "logger_pass", "esp32_node": "esp32_pass", "node_A": "node_A_pass", "node_B": "node_B_pass", "python_service": "python_service_pass"}
+            command += ["-u", user, "-P", getattr(cls, "passwords", passwords)[user]]
         return subprocess.run(command, capture_output=True, text=True, timeout=8)
 
     def assert_allowed(self, result):
@@ -81,6 +101,36 @@ class BrokerRuntimeTest(unittest.TestCase):
     def test_untrusted_certificate_is_rejected(self):
         self.assertNotEqual(self.publish("history_logger", "hl-bad-ca", "hydro/test",
                                         ca="/etc/ssl/certs/ca-certificates.crt").returncode, 0)
+
+
+class ProductionBrokerTest(unittest.TestCase):
+    production = True
+    setUpClass = classmethod(BrokerRuntimeTest.setUpClass.__func__)
+    publish = classmethod(BrokerRuntimeTest.publish.__func__)
+    assert_allowed = BrokerRuntimeTest.assert_allowed
+    assert_denied = BrokerRuntimeTest.assert_denied
+
+    def test_production_without_password_file_fails_closed(self):
+        result = subprocess.run([
+            "docker", "run", "--rm", "--network", "none", "-e", "MQTT_REQUIRE_STRONG_PASSWORDS=1",
+            "-v", f"{SOURCE}/mosquitto.dev.conf:/mosquitto/config/mosquitto.conf:ro",
+            "-v", f"{SOURCE}/mosquitto-entrypoint.sh:/entrypoint.sh:ro",
+            "--entrypoint", "sh", os.getenv("MQTT_TEST_IMAGE", "eclipse-mosquitto:2.0.22"), "/entrypoint.sh",
+        ], capture_output=True, text=True, timeout=10)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("production requires a mounted password file", result.stderr)
+
+    def test_identity_cannot_be_changed_by_client_id(self):
+        self.assert_allowed(self.publish("node_A", "nd-A", "hydro/gh/zn/nd-A/ph/telemetry"))
+        self.assert_denied(self.publish("node_A", "nd-B", "hydro/gh/zn/nd-B/ph/telemetry"))
+        self.assert_denied(self.publish("node_A", "nd-B", "hydro/gh-temp/zn-temp/hw-B/ph/telemetry"))
+
+    def test_unused_fallback_account_denied(self):
+        self.assert_denied(self.publish("python_service", "nd-B", "hydro/gh/zn/nd-B/ph/telemetry"))
+
+    def test_node_cannot_write_commands(self):
+        self.assert_denied(self.publish("node_A", "nd-A", "hydro/gh/zn/nd-A/ph/command"))
+        self.assert_allowed(self.publish("history_logger", "hl-ci", "hydro/gh/zn/nd-A/ph/command"))
 
 
 if __name__ == "__main__":

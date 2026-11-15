@@ -2817,3 +2817,17 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 lease token с первой попыткой следующей задачи той же зоны.
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
+
+
+## Уточнения по результатам исправлений аудита
+
+Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0
+
+Исправления аудита 2026-11-14: telemetry_last обновляется только при строго большем last_ts; равный timestamp сохраняет первое значение. Основная batch-запись и per-item fallback сохраняют telemetry_samples и telemetry_last одним SQL statement через data-modifying CTE. Ошибка projection откатывает sample в том же statement. Дополнительный legacy upsert остаётся совместимым и также монотонен. Сверка RETURNING для batch samples учитывает округление PostgreSQL timestamp(0): доли секунды во входном payload не должны приводить к повторной записи уже сохранённого sample и ложному DLQ. Схема БД не изменяется. commands.params.__hl_dispatch_started — внутренний маркер неопределённого результата MQTT; наружу в MQTT params не передаётся.
+
+
+## Runtime capability roles (2026-11-14)
+
+Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0
+
+Laravel migration 2026_11_14_100000 создаёт database-scoped NOLOGIN роли hl/ae/bridge/aggregator. Явная матрица прав находится в App\Support\Database\RuntimeRoleGrants; проверка — php artisan hydro:db-runtime-roles --check. Схема таблиц и владелец миграций не меняются. Имена ролей выводятся read-only командой; явный `--apply` транзакционно повторяет выдачу управляемых grants после restore и выполняет проверку. Login-учётки подключаются отдельно и наследуют capability role. Мигратор требует CREATEROLE. Rollback отзывает права без удаления данных/NOLOGIN ролей. Не выдавать runtime users владение объектами, SUPERUSER или административные memberships. Порядок перехода и результаты проверки: [исправления аудита](../08_SECURITY_AND_OPS/AUDIT_FIXES_2026_11_14.md).
