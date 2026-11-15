@@ -2,6 +2,7 @@
 
 namespace Tests\Unit;
 
+use App\Exceptions\InvalidNodeConfigException;
 use App\Models\AutomationEffectiveBundle;
 use App\Models\DeviceNode;
 use App\Models\Zone;
@@ -289,5 +290,151 @@ class NodeConfigServiceTest extends TestCase
         $config = $service->generateNodeConfig($node, null, true, false);
 
         $this->assertSame($secret, $config['node_secret']);
+    }
+
+    public function test_link_loss_timeout_accepts_bounds_and_defaults_when_absent(): void
+    {
+        foreach ([10, 30, 300] as $timeout) {
+            $node = DeviceNode::factory()->create([
+                'type' => 'ph',
+                'config' => [
+                    'node_id' => 'nd-ph-timeout',
+                    'version' => 3,
+                    'type' => 'ph',
+                    'link_loss_timeout_sec' => $timeout,
+                    'channels' => [],
+                ],
+            ]);
+
+            $config = $this->app->make(NodeConfigService::class)->generateNodeConfig($node, null, true, false);
+
+            $this->assertSame($timeout, $config['link_loss_timeout_sec']);
+        }
+    }
+
+    public function test_link_loss_timeout_rejects_zero_and_out_of_range_without_clamp(): void
+    {
+        foreach ([0, 9, 301] as $timeout) {
+            $node = new DeviceNode([
+                'uid' => 'nd-ph-bad-timeout',
+                'type' => 'ph',
+                'config' => [
+                    'node_id' => 'nd-ph-bad-timeout',
+                    'version' => 3,
+                    'type' => 'ph',
+                    'link_loss_timeout_sec' => $timeout,
+                    'channels' => [],
+                ],
+            ]);
+
+            try {
+                $this->app->make(NodeConfigService::class)->generateNodeConfig($node, null, true, false);
+                $this->fail("link_loss_timeout_sec {$timeout} must reject the config");
+            } catch (InvalidNodeConfigException $e) {
+                $this->assertStringContainsString('10 to 300', $e->getMessage());
+            }
+        }
+    }
+
+    public function test_link_loss_timeout_rejects_non_integer(): void
+    {
+        $node = new DeviceNode([
+            'uid' => 'nd-ph-fraction',
+            'type' => 'ph',
+            'config' => [
+                'node_id' => 'nd-ph-fraction',
+                'version' => 3,
+                'type' => 'ph',
+                'link_loss_timeout_sec' => 30.5,
+                'channels' => [],
+            ],
+        ]);
+
+        $this->expectException(InvalidNodeConfigException::class);
+        $this->app->make(NodeConfigService::class)->generateNodeConfig($node, null, true, false);
+    }
+
+    public function test_irrigation_profile_link_loss_timeout_rejects_zero_and_accepts_bounds(): void
+    {
+        $zone = Zone::factory()->create();
+        $node = DeviceNode::factory()->create([
+            'zone_id' => $zone->id,
+            'type' => 'irrig',
+            'config' => [
+                'node_id' => 'nd-irrig-1',
+                'version' => 3,
+                'type' => 'irrig',
+                'channels' => [],
+            ],
+        ]);
+
+        $this->storeIrrigationLinkLoss($zone, 0);
+
+        try {
+            $this->app->make(NodeConfigService::class)->generateNodeConfig($node, null, true, false);
+            $this->fail('profile link_loss_timeout_sec 0 must reject the config');
+        } catch (InvalidNodeConfigException) {
+            $this->assertTrue(true);
+        }
+
+        foreach ([10, 30, 300] as $timeout) {
+            $this->storeIrrigationLinkLoss($zone, $timeout);
+            $config = $this->app->make(NodeConfigService::class)->generateNodeConfig($node, null, true, false);
+            $this->assertSame($timeout, $config['link_loss_timeout_sec']);
+            $this->assertSame($timeout, $config['fail_safe_guards']['link_loss_timeout_sec']);
+        }
+    }
+
+    public function test_stored_guard_link_loss_zero_rejects_even_when_top_level_is_valid(): void
+    {
+        $node = new DeviceNode([
+            'uid' => 'nd-ph-guard-zero',
+            'type' => 'ph',
+            'config' => [
+                'node_id' => 'nd-ph-guard-zero',
+                'version' => 3,
+                'type' => 'ph',
+                'link_loss_timeout_sec' => 30,
+                'fail_safe_guards' => [
+                    'link_loss_timeout_sec' => 0,
+                ],
+                'channels' => [],
+            ],
+        ]);
+
+        $this->expectException(InvalidNodeConfigException::class);
+        $this->app->make(NodeConfigService::class)->generateNodeConfig($node, null, true, false);
+    }
+
+    private function storeIrrigationLinkLoss(Zone $zone, int $timeout): void
+    {
+        AutomationEffectiveBundle::query()->updateOrCreate([
+            'scope_type' => 'zone',
+            'scope_id' => $zone->id,
+        ], [
+            'bundle_revision' => 'test-rev',
+            'schema_revision' => '1',
+            'status' => 'valid',
+            'inputs_checksum' => 'test-checksum',
+            'compiled_at' => now(),
+            'config' => [
+                'zone' => [
+                    'logic_profile' => [
+                        'active_mode' => 'working',
+                        'active_profile' => [
+                            'subsystems' => [
+                                'diagnostics' => [
+                                    'execution' => [
+                                        'fail_safe_guards' => [
+                                            'link_loss_timeout_sec' => $timeout,
+                                        ],
+                                    ],
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        ]);
     }
 }

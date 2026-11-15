@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Exceptions\InvalidNodeConfigException;
 use App\Models\AutomationEffectiveBundle;
 use App\Models\DeviceNode;
 use Illuminate\Support\Facades\DB;
@@ -47,8 +48,9 @@ class NodeConfigService
             $this->injectResolvedNodeSecret($node, $config);
         }
 
+        $this->assertStoredLinkLossTimeouts($config);
         $config = $this->mergeIrrigationFailSafeMirror($node, $config);
-        $config = $this->mergeLinkLossTimeout($node, $config);
+        $config = $this->mergeLinkLossTimeout($config);
 
         return $config;
     }
@@ -285,12 +287,11 @@ class NodeConfigService
                 20,
                 5000
             );
-            $failSafeGuards['link_loss_timeout_sec'] = $this->toBoundedInt(
-                $profileGuards['link_loss_timeout_sec'] ?? null,
-                $failSafeGuards['link_loss_timeout_sec'],
-                5,
-                3600
-            );
+            if (array_key_exists('link_loss_timeout_sec', $profileGuards)) {
+                $failSafeGuards['link_loss_timeout_sec'] = $this->requireLinkLossTimeout(
+                    $profileGuards['link_loss_timeout_sec']
+                );
+            }
         }
 
         $config['fail_safe_guards'] = $failSafeGuards;
@@ -316,28 +317,68 @@ class NodeConfigService
 
     /**
      * Таймаут link-loss fail-safe на всех актуаторных нодах (не только irrig).
-     * Firmware читает top-level `link_loss_timeout_sec`, затем fail_safe_guards.
+     * Нет поля — 30 с. Явное значение вне 10…300, включая 0, отклоняет конфиг
+     * целиком: без клампа и без подмены дефолтом. Верхнее поле важнее зеркала.
      *
      * @param  array<string, mixed>  $config
      * @return array<string, mixed>
      */
-    private function mergeLinkLossTimeout(DeviceNode $node, array $config): array
+    private function mergeLinkLossTimeout(array $config): array
     {
-        $fromGuards = is_array($config['fail_safe_guards'] ?? null)
-            ? ($config['fail_safe_guards']['link_loss_timeout_sec'] ?? null)
-            : null;
-        $timeout = $this->toBoundedInt(
-            $config['link_loss_timeout_sec'] ?? $fromGuards,
-            30,
-            5,
-            3600
-        );
+        $top = $this->explicitLinkLossTimeout($config, 'link_loss_timeout_sec');
+        $fromGuards = null;
+        if (is_array($config['fail_safe_guards'] ?? null)) {
+            $fromGuards = $this->explicitLinkLossTimeout($config['fail_safe_guards'], 'link_loss_timeout_sec');
+        }
+        $timeout = $top ?? $fromGuards ?? 30;
         $config['link_loss_timeout_sec'] = $timeout;
         if (isset($config['fail_safe_guards']) && is_array($config['fail_safe_guards'])) {
             $config['fail_safe_guards']['link_loss_timeout_sec'] = $timeout;
         }
 
         return $config;
+    }
+
+    /**
+     * @param  array<string, mixed>  $config
+     */
+    private function assertStoredLinkLossTimeouts(array $config): void
+    {
+        $this->explicitLinkLossTimeout($config, 'link_loss_timeout_sec');
+        $guards = $config['fail_safe_guards'] ?? null;
+        if (is_array($guards)) {
+            $this->explicitLinkLossTimeout($guards, 'link_loss_timeout_sec');
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $source
+     */
+    private function explicitLinkLossTimeout(array $source, string $key): ?int
+    {
+        if (! array_key_exists($key, $source)) {
+            return null;
+        }
+
+        return $this->requireLinkLossTimeout($source[$key]);
+    }
+
+    private function requireLinkLossTimeout(mixed $value): int
+    {
+        $timeout = null;
+        if (is_int($value)) {
+            $timeout = $value;
+        } elseif (is_float($value) && is_finite($value) && floor($value) === $value) {
+            $timeout = (int) $value;
+        }
+
+        if ($timeout === null || $timeout < 10 || $timeout > 300) {
+            throw new InvalidNodeConfigException(
+                'link_loss_timeout_sec must be an integer from 10 to 300; 0 does not disable the timer'
+            );
+        }
+
+        return $timeout;
     }
 
     private function toBoundedInt(mixed $value, int $fallback, int $min, int $max): int

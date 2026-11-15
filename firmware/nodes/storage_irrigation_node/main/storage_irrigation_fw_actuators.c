@@ -199,6 +199,9 @@ esp_err_t storage_irrigation_node_set_actuator_state_locked(size_t index, bool s
     if (index >= g_actuator_runtime_count || !g_actuator_runtime[index].cfg) {
         return ESP_ERR_NOT_FOUND;
     }
+    if (state && storage_irrigation_node_is_link_loss_latched() && !mqtt_manager_is_connected()) {
+        return ESP_ERR_INVALID_STATE;
+    }
 
     const storage_irrigation_node_actuator_channel_t *cfg = g_actuator_runtime[index].cfg;
     esp_err_t err = state

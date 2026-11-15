@@ -7,6 +7,7 @@ idf_component_register(
         "storage_irrigation_fw_actuators.c"
         "storage_irrigation_fw_stage_guards.c"
         "storage_irrigation_fw_fail_safe.c"
+        "storage_irrigation_link_loss_logic.c"
         "storage_irrigation_fw_level_switch.c"
         "storage_irrigation_fw_events.c"
         "storage_irrigation_fw_commands.c"

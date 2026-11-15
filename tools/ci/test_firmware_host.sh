@@ -35,3 +35,11 @@ gcc -std=c11 -Wall -Wextra -Werror -fsanitize=undefined \
   firmware/nodes/common/components/sensors/ds18b20/ds18b20_parse.c \
   -lm -o "$out/ds18b20"
 "$out/ds18b20"
+gcc -std=c11 -Wall -Wextra -Werror -fsanitize=undefined \
+  -I firmware/nodes/common/components/config_storage/include \
+  -I firmware/nodes/storage_irrigation_node/main \
+  firmware/tests/host/test_storage_irr_link_loss.c \
+  firmware/nodes/common/components/config_storage/link_loss_timeout.c \
+  firmware/nodes/storage_irrigation_node/main/storage_irrigation_link_loss_logic.c \
+  -o "$out/storage-irr-link-loss"
+"$out/storage-irr-link-loss"

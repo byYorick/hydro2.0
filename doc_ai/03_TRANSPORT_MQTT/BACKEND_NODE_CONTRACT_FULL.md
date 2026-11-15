@@ -663,7 +663,7 @@ Backend обязан логировать.
 - ограничивать max_duration насосов,
 - соблюдать min_off_time,
 - предотвращать повторные команды,
-- безопасно завершать действие при потере MQTT (link-loss fail-safe: `link_loss_timeout_sec`, event `link_loss_failsafe`);
+- безопасно завершать действие при потере MQTT (link-loss fail-safe: `link_loss_timeout_sec` 10…300 с, нет поля = 30, `0` отклоняет конфиг; event `link_loss_failsafe` после reconnect; нода сама полив не возобновляет);
 - на невалидный JSON команды отвечать `command_response` со статусом `INVALID` и `error_code=invalid_json`, если извлекается `cmd_id`;
 
 Backend обязан:

@@ -41,18 +41,7 @@ static const char *TAG = STORAGE_IRRIGATION_FW_TAG;
 esp_err_t storage_irrigation_node_disable_actuators_in_safe_mode(void *user_ctx) {
     (void)user_ctx;
     ESP_LOGW(TAG, "Disabling all actuators in safe mode");
-    (void)pump_driver_emergency_stop();
-
-    if (!g_actuator_mutex || xSemaphoreTake(g_actuator_mutex, pdMS_TO_TICKS(1000)) != pdTRUE) {
-        return ESP_ERR_TIMEOUT;
-    }
-
-    for (size_t i = 0; i < g_actuator_runtime_count; i++) {
-        (void)storage_irrigation_node_set_actuator_state_locked(i, false);
-    }
-    xSemaphoreGive(g_actuator_mutex);
-    storage_irrigation_node_update_oled_runtime();
-    return ESP_OK;
+    return storage_irrigation_node_apply_link_loss_safe_stop();
 }
 
 esp_err_t storage_irrigation_node_framework_init(void) {

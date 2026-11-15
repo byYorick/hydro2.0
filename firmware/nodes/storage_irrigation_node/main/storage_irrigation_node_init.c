@@ -140,8 +140,10 @@ static void storage_irrigation_node_publish_hello(void) {
 }
 
 void storage_irrigation_node_mqtt_connection_cb(bool connected, void *user_ctx) {
+    (void)user_ctx;
     if (connected) {
         ESP_LOGI(TAG, "MQTT connected - storage_irrigation_node is online");
+        storage_irrigation_node_on_link_restored();
 
         // На старте и после reconnect всегда публикуем node_hello, чтобы backend
         // видел факт присутствия реальной IRR-ноды независимо от namespace.

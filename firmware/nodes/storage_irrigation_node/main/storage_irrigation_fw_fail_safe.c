@@ -4,6 +4,8 @@
  */
 
 #include "storage_irrigation_fw_internal.h"
+#include "storage_irrigation_link_loss_logic.h"
+#include "node_link_loss_failsafe.h"
 #include "estop_lock_policy.h"
 #include "storage_irrigation_node_framework_integration.h"
 #include "storage_irrigation_node_config.h"
@@ -483,6 +485,12 @@ bool storage_irrigation_node_restore_estop_snapshot_locked(void) {
     return all_ok;
 }
 
+static volatile bool g_link_loss_latched = false;
+
+bool storage_irrigation_node_is_link_loss_latched(void) {
+    return g_link_loss_latched;
+}
+
 /**
  * Прямой safe-OFF всех актуаторов без g_actuator_mutex.
  * MOSFET-путь pump_driver: OFF = GPIO level 0 (fail_safe_nc не инвертирует direct GPIO).
@@ -503,6 +511,84 @@ static void storage_irrigation_node_force_actuators_off_unlocked(void) {
                  "E-STOP pump_driver_emergency_stop failed: %s; GPIO already forced OFF",
                  esp_err_to_name(drv_err));
     }
+}
+
+static void storage_irrigation_node_clear_flow_guards_locked(void) {
+    storage_irrigation_node_disarm_all_stage_guards_locked();
+    memset(&g_clean_fill_guard, 0, sizeof(g_clean_fill_guard));
+    memset(&g_solution_fill_guard, 0, sizeof(g_solution_fill_guard));
+    memset(&g_recirculation_guard, 0, sizeof(g_recirculation_guard));
+    memset(&g_irrigation_guard, 0, sizeof(g_irrigation_guard));
+}
+
+esp_err_t storage_irrigation_node_apply_link_loss_safe_stop(void) {
+    bool desired[PUMP_DRIVER_MAX_CHANNELS];
+    bool command_active = true;
+    size_t count;
+    size_t i;
+
+    if (node_link_loss_failsafe_is_latched()) {
+        g_link_loss_latched = true;
+    }
+    storage_irrigation_node_force_actuators_off_unlocked();
+    (void)pump_driver_force_deenergize();
+    storage_irrigation_node_cancel_pending_pump_commands();
+
+    if (!g_actuator_mutex || xSemaphoreTake(g_actuator_mutex, pdMS_TO_TICKS(1000)) != pdTRUE) {
+        ESP_LOGW(TAG, "Link-loss actuator lock unavailable; outputs forced OFF, commands cancelled");
+        return ESP_OK;
+    }
+
+    count = g_actuator_runtime_count;
+    if (count > PUMP_DRIVER_MAX_CHANNELS) {
+        count = PUMP_DRIVER_MAX_CHANNELS;
+    }
+    for (i = 0; i < count; i++) {
+        desired[i] = g_actuator_runtime[i].state;
+    }
+    storage_irr_link_loss_safe_stop(desired, count, &command_active);
+    for (i = 0; i < count; i++) {
+        (void)storage_irrigation_node_set_actuator_state_locked(i, desired[i]);
+        g_actuator_runtime[i].state = false;
+    }
+    if (!command_active) {
+        storage_irrigation_node_clear_flow_guards_locked();
+    }
+    xSemaphoreGive(g_actuator_mutex);
+    storage_irrigation_node_update_oled_runtime();
+    return ESP_OK;
+}
+
+void storage_irrigation_node_on_link_restored(void) {
+    bool desired[PUMP_DRIVER_MAX_CHANNELS];
+    bool command_active = false;
+    size_t count;
+    size_t i;
+
+    if (!g_actuator_mutex || xSemaphoreTake(g_actuator_mutex, pdMS_TO_TICKS(200)) != pdTRUE) {
+        g_link_loss_latched = false;
+        return;
+    }
+
+    count = g_actuator_runtime_count;
+    if (count > PUMP_DRIVER_MAX_CHANNELS) {
+        count = PUMP_DRIVER_MAX_CHANNELS;
+    }
+    for (i = 0; i < count; i++) {
+        desired[i] = g_actuator_runtime[i].state;
+    }
+    storage_irr_link_loss_on_link_restored(desired, count, &command_active);
+    for (i = 0; i < count; i++) {
+        if (desired[i] && !g_actuator_runtime[i].state) {
+            continue;
+        }
+        if (desired[i] != g_actuator_runtime[i].state) {
+            (void)storage_irrigation_node_set_actuator_state_locked(i, false);
+        }
+    }
+    (void)command_active;
+    g_link_loss_latched = false;
+    xSemaphoreGive(g_actuator_mutex);
 }
 
 static void storage_irrigation_node_estop_activate_bookkeeping_locked(void) {

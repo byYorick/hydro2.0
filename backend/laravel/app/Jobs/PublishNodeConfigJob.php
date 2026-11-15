@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Exceptions\InvalidNodeConfigException;
 use App\Helpers\TransactionHelper;
 use App\Models\DeviceNode;
 use App\Services\NodeConfigService;
@@ -306,6 +307,13 @@ class PublishNodeConfigJob implements ShouldQueue
 
                 return;
             }
+        } catch (InvalidNodeConfigException $e) {
+            Log::error('PublishNodeConfigJob: NodeConfig rejected, not published', [
+                'node_id' => $this->nodeId,
+                'error' => $e->getMessage(),
+            ]);
+
+            return;
         } catch (ConnectionException|TimeoutException|RequestException $e) {
             Log::warning('PublishNodeConfigJob: Network error', [
                 'node_id' => $this->nodeId,

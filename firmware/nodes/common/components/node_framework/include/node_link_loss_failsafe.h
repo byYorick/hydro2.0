@@ -3,7 +3,8 @@
  * @brief Link-loss fail-safe policy: stop actuators after MQTT disconnect timeout.
  *
  * Timeout from NodeConfig `link_loss_timeout_sec` / `fail_safe_guards.link_loss_timeout_sec`.
- * If omitted, firmware uses 30 s (fail-closed).
+ * Absent field: 30 s. Explicit 0 and any value outside 10..300 is rejected by
+ * config_apply and is not substituted for the running timer.
  */
 
 #ifndef NODE_LINK_LOSS_FAILSAFE_H
@@ -32,6 +33,12 @@ void node_link_loss_failsafe_reload_config(void);
  * @param connected true on MQTT connect, false on disconnect
  */
 void node_link_loss_failsafe_on_mqtt_connected(bool connected);
+
+/**
+ * @brief true после срабатывания таймаута, пока MQTT снова не подключен.
+ * Callback актуаторов читает это, чтобы не принять новый ON до reconnect.
+ */
+bool node_link_loss_failsafe_is_latched(void);
 
 #ifdef __cplusplus
 }

@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hydro2.local/schemas/node_config_link_loss.schema.json",
+  "title": "NodeConfig link_loss_timeout_sec",
+  "description": "Фрагмент NodeConfig: link_loss_timeout_sec необязателен. Если поле есть (верхний уровень или fail_safe_guards), это целое 10…300. 0 не выключает таймер и не проходит схему. Отсутствие поля — дефолт 30 с на стороне прошивки и Laravel, не в этой схеме.",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "link_loss_timeout_sec": {
+      "type": "integer",
+      "minimum": 10,
+      "maximum": 300
+    },
+    "fail_safe_guards": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "link_loss_timeout_sec": {
+          "type": "integer",
+          "minimum": 10,
+          "maximum": 300
+        }
+      }
+    }
+  }
+}
