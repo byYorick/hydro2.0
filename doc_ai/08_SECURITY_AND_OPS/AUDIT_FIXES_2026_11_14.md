@@ -687,3 +687,14 @@ release-сборки не получены; ошибки и статус сох�
 .env не менялись. Deployment target/канал и реальный inventory узлов не заданы.
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
+
+
+## Проверки перед слиянием в main, 2026-11-15
+
+PR #40 запускает полный ci, Protocol Contract Tests и security/chaos workflow.
+Первый запуск Composer audit выявил новый advisory PKSA-yxbx-3c9s-cjt9 /
+CVE-2026-128083 (Concurrency Process task output injection). В composer.lock
+обновлён только `laravel/framework`: 12.70.2 → 12.71.0. Constraint `^12.0`
+сохранён, остальные пакеты не менялись. Update и `composer audit --locked`
+выполнены в Docker с проверкой CA; после обновления advisories нет. Полный CI
+повторно проверяет новый lock-файл; ни одна проверка безопасности не отключена.
