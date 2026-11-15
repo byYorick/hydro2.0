@@ -28,6 +28,15 @@ FAILURE_WINDOW_MINUTES = 30  # Окно времени для подсчёта �
 MCU_OFFLINE_TIMEOUT_SEC = 300  # 5 минут - время без телеметрии для определения offline
 
 
+def _json_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _to_naive_utc(value: Optional[datetime]) -> Optional[datetime]:
     if value is None:
         return None
@@ -161,8 +170,14 @@ async def check_dry_run(
     quality = str(chosen.get("quality") or "").strip().upper()
     ts = _to_naive_utc(chosen.get("ts"))
     age_sec = None if ts is None else (moment - ts).total_seconds()
-    details.update({"label": chosen.get("label"), "quality": quality, "age_sec": age_sec, "value": chosen.get("value")})
-    if quality in {"BAD", "STUB"} or ts is None or age_sec is None or age_sec > float(max_age_sec) or age_sec < 0:
+    details.update({
+        "label": chosen.get("label"),
+        "quality": quality,
+        "age_sec": None if age_sec is None else float(age_sec),
+        "value": _json_float(chosen.get("value")),
+    })
+    # timestamp(0) округляет метку до секунды вперёд. Это не устаревший уровень.
+    if quality in {"BAD", "STUB"} or ts is None or age_sec is None or age_sec > float(max_age_sec) or age_sec < -2:
         details["reason"] = "source_level_stale"
         logger.warning("Zone %s: dry-run blocked, source level stale or bad", zone_id)
         await _alert_dry_run(zone_id, details)

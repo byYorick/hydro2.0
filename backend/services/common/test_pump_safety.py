@@ -29,6 +29,34 @@ def _level_row(label: str, value: float, *, age_sec: float = 0, quality: str = "
 
 
 @pytest.mark.asyncio
+async def test_check_dry_run_accepts_timestamp_rounded_one_second_ahead():
+    """timestamp(0) может округлить свежую метку на секунду вперёд."""
+    from decimal import Decimal
+
+    with patch("common.pump_safety.fetch", new_callable=AsyncMock) as mock_fetch:
+        mock_fetch.return_value = [_level_row("level_solution", Decimal("0.8000"), age_sec=-1)]
+
+        is_safe, error_msg = await check_dry_run(1, source="dose", channel="pump_main")
+
+        assert is_safe is True
+        assert error_msg is None
+
+
+@pytest.mark.asyncio
+async def test_check_dry_run_rejects_far_future_timestamp():
+    with patch("common.pump_safety.fetch", new_callable=AsyncMock) as mock_fetch, \
+         patch("common.pump_safety.create_alert", new_callable=AsyncMock) as mock_alert:
+        mock_fetch.return_value = [_level_row("level_solution", 0.8, age_sec=-30)]
+
+        is_safe, error_msg = await check_dry_run(1, source="dose", channel="pump_main")
+
+        assert is_safe is False
+        assert error_msg == "Source tank level is stale"
+        details = mock_alert.call_args.kwargs["details"]
+        assert isinstance(details["value"], float)
+
+
+@pytest.mark.asyncio
 async def test_check_dry_run_safe():
     """Свежий уровень бака раствора позволяет пуск."""
     with patch("common.pump_safety.fetch", new_callable=AsyncMock) as mock_fetch:
