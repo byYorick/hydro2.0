@@ -33,30 +33,57 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [nodes/ph_node, nodes/ec_node, nodes/pump_node, nodes/storage_irrigation_node, nodes/climate_node, nodes/light_node, nodes/relay_node, test_node]
+        include:
+          - { target: nodes/ph_node, id: ph_node }
+          - { target: nodes/ec_node, id: ec_node }
+          - { target: nodes/pump_node, id: pump_node }
+          - { target: nodes/storage_irrigation_node, id: storage_irrigation_node }
+          - { target: nodes/climate_node, id: climate_node }
+          - { target: nodes/light_node, id: light_node }
+          - { target: nodes/relay_node, id: relay_node }
+          - { target: test_node, id: test_node }
     runs-on: ubuntu-latest
     timeout-minutes: 30
     container:
       image: espressif/idf:release-v5.5
+    env:
+      IDF_CCACHE_ENABLE: "1"
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_MAXSIZE: 200M
+      CCACHE_COMPRESS: "1"
     steps:
       - uses: actions/checkout@v4
-      - name: Build ph_node
+      - name: Restore ccache
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/.ccache
+          key: idf55-${{ matrix.id }}-${{ github.sha }}
+          restore-keys: |
+            idf55-${{ matrix.id }}-
+      - name: Build ${{ matrix.id }}
         working-directory: firmware/${{ matrix.target }}
         shell: bash
         run: |
-          . ${IDF_PATH}/export.sh
+          if ! command -v ccache >/dev/null 2>&1; then
+            apt-get update && apt-get install -y ccache
+          fi
+          . "${IDF_PATH}/export.sh"
           idf.py build
-      - name: Report ph_node binary size
+      - name: ccache stats (${{ matrix.id }})
+        if: always()
+        shell: bash
+        run: ccache -s || true
+      - name: Report ${{ matrix.id }} binary size
         working-directory: firmware/${{ matrix.target }}
         shell: bash
         run: |
-          . ${IDF_PATH}/export.sh
+          . "${IDF_PATH}/export.sh"
           idf.py size || true
-      - name: Upload ph_node binary artifact
+      - name: Upload ${{ matrix.id }} binary artifact
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: firmware-${{ strategy.job-index }}-${{ github.sha }}
+          name: firmware-${{ matrix.id }}-${{ github.sha }}
           path: firmware/${{ matrix.target }}/build/*.bin
           retention-days: 7
           if-no-files-found: warn
