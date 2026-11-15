@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Callable, Mapping
@@ -22,6 +23,7 @@ class ClimateTickCommandsPorts:
     renew_greenhouse_lease: Callable[..., Any]
     wait_command_terminal: Callable[..., Any]
     logger: Callable[..., Any]
+    fetch: Callable[..., Any]
 
 
 class ClimateTickCommands:
@@ -183,4 +185,92 @@ class ClimateTickCommands:
                     command_failures.append(f"{channel}:{self._ports.lease_lost_status()}")
                     stop_ordinary_commands = True
                     break
+        await self._publish_exhaust_if_changed(
+            greenhouse_id=greenhouse_id,
+            state=state,
+            decision=decision,
+            idempotency_key=idempotency_key,
+            history_logger_client=history_logger_client,
+            stop_ordinary_commands=stop_ordinary_commands,
+        )
         return ClimateCommandResult(left_cmd_id, right_cmd_id, left_done, right_done, command_failures)
+
+    async def _publish_exhaust_if_changed(
+        self,
+        *,
+        greenhouse_id: int,
+        state: Mapping[str, Any],
+        decision: ClimateDecision,
+        idempotency_key: str,
+        history_logger_client: HistoryLoggerClient,
+        stop_ordinary_commands: bool,
+    ) -> None:
+        control_mode = str(state.get("control_mode") or "auto").strip().lower()
+        desired = bool((decision.factors or {}).get("exhaust_on"))
+        previous = _previous_exhaust_on(state)
+        if control_mode != "auto" or decision.suppress_commands or stop_ordinary_commands or desired == previous:
+            return
+        try:
+            rows = await self._ports.fetch(
+                """
+                SELECT nc.channel AS channel,
+                       n.uid AS node_uid,
+                       n.zone_id AS zone_id,
+                       g.uid AS greenhouse_uid
+                FROM channel_bindings cb
+                JOIN infrastructure_instances ii ON ii.id = cb.infrastructure_instance_id
+                JOIN node_channels nc ON nc.id = cb.node_channel_id
+                JOIN nodes n ON n.id = nc.node_id
+                JOIN zones z ON z.id = n.zone_id
+                JOIN greenhouses g ON g.id = ii.owner_id
+                WHERE ii.owner_type = 'greenhouse'
+                  AND ii.owner_id = $1
+                  AND z.greenhouse_id = ii.owner_id
+                  AND cb.direction = 'actuator'
+                  AND cb.role = 'fan_actuator'
+                  AND nc.is_active IS TRUE
+                """,
+                greenhouse_id,
+            )
+        except Exception:
+            self._ports.logger().warning(
+                "greenhouse_climate_tick exhaust bindings failed gh=%s", greenhouse_id, exc_info=True
+            )
+            return
+        for row in rows or []:
+            channel = str(row.get("channel") or "")
+            node_uid = str(row.get("node_uid") or "")
+            zone_id = int(row.get("zone_id") or 0)
+            if not channel or not node_uid or zone_id <= 0:
+                continue
+            try:
+                await history_logger_client.publish(
+                    greenhouse_uid=str(row.get("greenhouse_uid") or ""),
+                    zone_id=zone_id,
+                    node_uid=node_uid,
+                    channel=channel,
+                    cmd="set_relay",
+                    params={"state": desired, "reason": "exhaust_hysteresis"},
+                    cmd_id=f"ghc-{greenhouse_id}-{idempotency_key}-fan-{channel}-{int(desired)}",
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                self._ports.logger().warning(
+                    "greenhouse_climate_tick exhaust command failed gh=%s channel=%s",
+                    greenhouse_id,
+                    channel,
+                    exc_info=True,
+                )
+
+
+def _previous_exhaust_on(state: Mapping[str, Any]) -> bool:
+    raw = state.get("decision_factors")
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except json.JSONDecodeError:
+            return False
+    if isinstance(raw, dict):
+        return bool(raw.get("exhaust_on"))
+    return False

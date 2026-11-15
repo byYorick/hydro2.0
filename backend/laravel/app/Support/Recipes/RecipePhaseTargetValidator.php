@@ -154,6 +154,39 @@ class RecipePhaseTargetValidator
                 );
             }
         }
+
+        $warn = $health['warn_c'] ?? null;
+        $stop = $health['stop_c'] ?? null;
+        $warnSet = ! $this->isEmptyCropDayValue($warn);
+        $stopSet = ! $this->isEmptyCropDayValue($stop);
+        if ($warnSet && ! is_numeric($warn)) {
+            $validator->errors()->add(
+                $attributePrefix.'extensions.solution_health.warn_c',
+                'solution_health.warn_c должен быть числом.'
+            );
+        }
+        if ($stopSet && ! is_numeric($stop)) {
+            $validator->errors()->add(
+                $attributePrefix.'extensions.solution_health.stop_c',
+                'solution_health.stop_c должен быть числом.'
+            );
+        }
+        if ($warnSet && $stopSet && is_numeric($warn) && is_numeric($stop) && (float) $warn >= (float) $stop) {
+            $validator->errors()->add(
+                $attributePrefix.'extensions.solution_health.warn_c',
+                'Порог предупреждения раствора должен быть ниже аварийного стопа.'
+            );
+        }
+
+        if (array_key_exists('max_temp_skip_pause_sec', $health) && ! $this->isEmptyCropDayValue($health['max_temp_skip_pause_sec'])) {
+            $pause = $health['max_temp_skip_pause_sec'];
+            if (filter_var($pause, FILTER_VALIDATE_INT) === false || (int) $pause < 60 || (int) $pause > 86400) {
+                $validator->errors()->add(
+                    $attributePrefix.'extensions.solution_health.max_temp_skip_pause_sec',
+                    'max_temp_skip_pause_sec пустое или целое 60…86400.'
+                );
+            }
+        }
     }
 
     private function isEmptyCropDayValue(mixed $value): bool

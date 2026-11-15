@@ -208,6 +208,7 @@ def _climate_tick_commands() -> ClimateTickCommands:
             renew_greenhouse_lease=lambda *args, **kwargs: _renew_greenhouse_lease(*args, **kwargs),
             wait_command_terminal=lambda *args, **kwargs: _wait_command_terminal(*args, **kwargs),
             logger=lambda: logger,
+            fetch=lambda *args, **kwargs: fetch(*args, **kwargs),
         )
     )
 

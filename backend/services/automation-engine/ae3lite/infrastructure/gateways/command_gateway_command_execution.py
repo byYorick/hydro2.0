@@ -21,6 +21,18 @@ from ae3lite.infrastructure.metrics import (
 )
 
 
+_DRY_RUN_REFUSAL_MARKERS = (
+    "source tank level",
+    "water level too low",
+    "dry_run",
+)
+
+
+def _is_dry_run_refusal(message: str) -> bool:
+    text = str(message or "").strip().lower()
+    return any(marker in text for marker in _DRY_RUN_REFUSAL_MARKERS)
+
+
 @dataclass(frozen=True)
 class CommandGatewayCommandExecutionPorts:
     await_terminal_without_task_fsm: Callable[..., Awaitable[Any]]
@@ -324,6 +336,8 @@ class CommandGatewayCommandExecution:
                 task=task,
                 message=(f"Задача {task.id} исчезла во время publish pipeline (вероятно параллельная очистка): {exc}"),
             )
+        if _is_dry_run_refusal(normalized_error):
+            raise TaskExecutionError("dry_run", normalized_error) from exc
         await self._ports.maybe_raise_offline_instead_of_command_error(
             task=task,
             planned=planned,

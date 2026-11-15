@@ -4,12 +4,14 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
 from _test_support_runtime_plan import make_runtime_plan
 from ae3lite.application.handlers.decision_gate import DecisionGateHandler
+from ae3lite.application.handlers.irrigation_check import IrrigationCheckHandler
 from ae3lite.config.loader import load_runtime_plan
 from ae3lite.config.runtime_plan_builder import resolve_two_tank_runtime
 from ae3lite.domain.services.irrigation_decision_controller import (
@@ -17,10 +19,16 @@ from ae3lite.domain.services.irrigation_decision_controller import (
     IrrigationDecisionController,
 )
 from ae3lite.domain.services.solution_temp_irrigation_guard import (
+    DEFAULT_MAX_TEMP_SKIP_PAUSE_SEC,
     DEFAULT_SOLUTION_TEMP_STALE_SEC,
+    REASON_SOLUTION_TEMP_HOT_STOP,
+    REASON_SOLUTION_TEMP_HOT_WARN,
     REASON_SOLUTION_TEMP_OUT_OF_BAND,
     REASON_SOLUTION_TEMP_UNAVAILABLE,
+    SOLUTION_TEMP_CHANNEL_LABELS,
+    assess_temp_skip_budget,
     evaluate_solution_temp_hold,
+    irrigation_block_pause_sec,
 )
 from ae3lite.hydraulics.failure_report import close_upward_capture, drain_upward_reports, open_upward_capture
 from ae3lite.infrastructure.read_models.zone_snapshot_read_model import PgZoneSnapshotReadModel
@@ -67,9 +75,13 @@ class _Monitor:
 
 
 class _Repository:
-    def __init__(self) -> None:
+    def __init__(self, history: list[dict] | None = None) -> None:
         self.saved: list[dict] = []
         self.mark_failed_called = False
+        self.history = list(history or [])
+
+    async def list_completed_irrigation_decisions(self, **_kwargs):
+        return list(self.history)
 
     async def update_irrigation_runtime(self, **kwargs):
         self.saved.append(kwargs)
@@ -137,8 +149,14 @@ def _silent_zone_event(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
 
-async def _run(monitor: _Monitor, *, controller: object | None = None, plan: object | None = None):
-    repository = _Repository()
+async def _run(
+    monitor: _Monitor,
+    *,
+    controller: object | None = None,
+    plan: object | None = None,
+    history: list[dict] | None = None,
+):
+    repository = _Repository(history)
     handler = DecisionGateHandler(
         runtime_monitor=monitor,
         command_gateway=object(),
@@ -167,20 +185,18 @@ def _assert_not_failed(outcome, repository: _Repository) -> None:
 
 
 @pytest.mark.asyncio
-async def test_full_hold_above_max_skips_without_fail_or_temp_alert() -> None:
+async def test_full_hold_above_comfort_max_warns_and_continues() -> None:
     outcome, reports, repository, monitor = await _run(
         _Monitor(_reading(samples=_hot_series(), last={"ts": NOW, "value": 30.0})),
     )
 
     _assert_not_failed(outcome, repository)
     assert outcome.kind == "transition"
-    assert outcome.next_stage == "completed_skip"
-    assert outcome.next_stage != "irrigation_start"
-    assert repository.saved[0]["irrigation_decision_reason_code"] == REASON_SOLUTION_TEMP_OUT_OF_BAND
+    assert outcome.next_stage == "irrigation_start"
+    assert repository.saved[0]["irrigation_decision_reason_code"] != REASON_SOLUTION_TEMP_HOT_STOP
     assert monitor.calls[0]["since_ts"] == NOW - timedelta(seconds=HOLD_SEC)
-    assert monitor.calls[0]["until_ts"] == NOW
-    assert [report.code for report in reports] == []
-    assert not any(str(report.code).startswith("biz_solution_temp") for report in reports)
+    assert [report.code for report in reports] == ["biz_solution_temp_hot_warn"]
+    assert reports[0].severity == "warning"
 
 
 @pytest.mark.asyncio
@@ -199,18 +215,20 @@ async def test_single_sample_and_telemetry_last_do_not_block() -> None:
     assert repository.saved[0]["irrigation_decision_reason_code"] == "irrigation_task_strategy_run"
     assert repository.saved[0]["irrigation_decision_reason_code"] != REASON_SOLUTION_TEMP_OUT_OF_BAND
     assert len(monitor.calls) == 1
-    assert [report.code for report in reports] == []
+    assert [report.code for report in reports] == ["biz_solution_temp_hot_warn"]
 
 
 @pytest.mark.asyncio
-async def test_required_without_telemetry_skips_unavailable() -> None:
-    outcome, _reports, repository, monitor = await _run(
+async def test_required_without_telemetry_irrigates_and_alerts() -> None:
+    outcome, reports, repository, monitor = await _run(
         _Monitor(_reading(samples=())),
     )
 
     _assert_not_failed(outcome, repository)
-    assert outcome.next_stage == "completed_skip"
-    assert repository.saved[0]["irrigation_decision_reason_code"] == REASON_SOLUTION_TEMP_UNAVAILABLE
+    assert outcome.next_stage == "irrigation_start"
+    assert repository.saved[0]["irrigation_decision_reason_code"] != REASON_SOLUTION_TEMP_UNAVAILABLE
+    assert [report.code for report in reports] == ["biz_solution_temp_unavailable"]
+    assert reports[0].severity == "warning"
     assert len(monitor.calls) == 1
 
 
@@ -245,14 +263,14 @@ async def test_g1_skip_is_replaced_by_one_temperature_outcome() -> None:
         IrrigationDecision(outcome="skip", reason_code="smart_soil_target_missing", degraded=False)
     )
     outcome, reports, repository, _monitor = await _run(
-        _Monitor(_reading(samples=_hot_series())),
+        _Monitor(_reading(samples=_series(33.0))),
         controller=controller,
     )
 
     _assert_not_failed(outcome, repository)
     assert outcome.next_stage == "completed_skip"
-    assert repository.saved[0]["irrigation_decision_reason_code"] == REASON_SOLUTION_TEMP_OUT_OF_BAND
-    assert [report.code for report in reports] == []
+    assert repository.saved[0]["irrigation_decision_reason_code"] == REASON_SOLUTION_TEMP_HOT_STOP
+    assert [report.code for report in reports] == ["biz_solution_temp_hot_stop"]
 
 
 @pytest.mark.asyncio
@@ -272,40 +290,40 @@ async def test_g1_skip_stays_when_temperature_does_not_block() -> None:
     _assert_not_failed(outcome, repository)
     assert outcome.next_stage == "completed_skip"
     assert repository.saved[0]["irrigation_decision_reason_code"] == "smart_soil_telemetry_missing_or_stale"
-    assert [report.code for report in reports] == []
+    assert [report.code for report in reports] == ["biz_solution_temp_hot_warn"]
 
 
 def test_in_band_sample_or_gap_does_not_block() -> None:
     start = NOW - timedelta(seconds=HOLD_SEC)
     in_band = _hot_series()[:1] + ({"ts": start + timedelta(seconds=300), "value": 20.0},) + _hot_series()[2:]
-    assert (
-        evaluate_solution_temp_hold(
-            min_c=MIN_C,
-            max_c=MAX_C,
-            hold_sec=HOLD_SEC,
-            stale_sec=DEFAULT_SOLUTION_TEMP_STALE_SEC,
-            now=NOW,
-            reading=_reading(samples=in_band),
-        )
-        is None
+    mixed = evaluate_solution_temp_hold(
+        min_c=MIN_C,
+        max_c=MAX_C,
+        hold_sec=HOLD_SEC,
+        stale_sec=DEFAULT_SOLUTION_TEMP_STALE_SEC,
+        now=NOW,
+        reading=_reading(samples=in_band),
     )
+    assert mixed is not None
+    assert mixed.blocks_irrigation is False
+    assert mixed.reason_code == REASON_SOLUTION_TEMP_HOT_WARN
 
     gapped = (
         {"ts": start, "value": 30.0},
         {"ts": start + timedelta(seconds=250), "value": 30.0},
         {"ts": NOW, "value": 30.0},
     )
-    assert (
-        evaluate_solution_temp_hold(
-            min_c=MIN_C,
-            max_c=MAX_C,
-            hold_sec=HOLD_SEC,
-            stale_sec=200,
-            now=NOW,
-            reading=_reading(samples=gapped, last={"ts": NOW, "value": 30.0}),
-        )
-        is None
+    gapped_verdict = evaluate_solution_temp_hold(
+        min_c=MIN_C,
+        max_c=MAX_C,
+        hold_sec=HOLD_SEC,
+        stale_sec=200,
+        now=NOW,
+        reading=_reading(samples=gapped, last={"ts": NOW, "value": 30.0}),
     )
+    assert gapped_verdict is not None
+    assert gapped_verdict.blocks_irrigation is False
+    assert gapped_verdict.reason_code == REASON_SOLUTION_TEMP_HOT_WARN
 
     on_max = tuple({**sample, "value": MAX_C} for sample in _hot_series())
     assert (
@@ -330,7 +348,9 @@ def test_telemetry_last_alone_does_not_prove_hold() -> None:
         now=NOW,
         reading=_reading(samples=(), last={"ts": NOW, "value": 30.0}),
     )
-    assert verdict is None
+    assert verdict is not None
+    assert verdict.blocks_irrigation is False
+    assert verdict.reason_code == REASON_SOLUTION_TEMP_HOT_WARN
 
 
 def test_builder_takes_limits_from_phase_columns_and_required_from_extensions() -> None:
@@ -364,7 +384,10 @@ def test_builder_takes_limits_from_phase_columns_and_required_from_extensions() 
         "required": True,
         "min_c": 18.0,
         "max_c": 24.0,
+        "warn_c": None,
+        "stop_c": None,
         "breach_hold_sec": 900,
+        "max_temp_skip_pause_sec": 5400,
     }
     assert plan.solution_health.required is True
     assert plan.solution_health.min_c == 18.0
@@ -378,7 +401,10 @@ def test_builder_defaults_when_extension_and_limits_absent() -> None:
         "required": False,
         "min_c": None,
         "max_c": None,
+        "warn_c": None,
+        "stop_c": None,
         "breach_hold_sec": 600,
+        "max_temp_skip_pause_sec": 5400,
     }
 
 
@@ -403,4 +429,246 @@ def test_target_column_does_not_fill_empty_limits() -> None:
     assert health["required"] is True
     assert health["min_c"] == 18.0
     assert health["max_c"] is None
+    assert health["warn_c"] is None
+    assert health["stop_c"] is None
     assert health["breach_hold_sec"] == 600
+    assert health["max_temp_skip_pause_sec"] == 5400
+
+
+def _series(value: float) -> tuple[dict, ...]:
+    start = NOW - timedelta(seconds=HOLD_SEC)
+    return (
+        {"ts": start, "value": value},
+        {"ts": start + timedelta(seconds=HOLD_SEC // 2), "value": value},
+        {"ts": NOW, "value": value},
+    )
+
+
+@pytest.mark.asyncio
+async def test_hot_warn_continues_irrigation_and_raises_warning() -> None:
+    outcome, reports, repository, _monitor = await _run(
+        _Monitor(_reading(samples=_series(28.0), last={"ts": NOW, "value": 28.0})),
+        plan=_plan(max_c=22.0, warn_c=26.0, stop_c=32.0),
+    )
+
+    _assert_not_failed(outcome, repository)
+    assert outcome.next_stage == "irrigation_start"
+    assert repository.saved[0]["irrigation_decision_reason_code"] != REASON_SOLUTION_TEMP_HOT_STOP
+    assert [report.code for report in reports] == ["biz_solution_temp_hot_warn"]
+    assert reports[0].severity == "warning"
+
+
+@pytest.mark.asyncio
+async def test_hot_stop_skips_irrigation_and_raises_alarm() -> None:
+    outcome, reports, repository, _monitor = await _run(
+        _Monitor(_reading(samples=_series(33.0), last={"ts": NOW, "value": 33.0})),
+        plan=_plan(max_c=22.0, warn_c=26.0, stop_c=32.0),
+    )
+
+    _assert_not_failed(outcome, repository)
+    assert outcome.next_stage == "completed_skip"
+    assert repository.saved[0]["irrigation_decision_reason_code"] == REASON_SOLUTION_TEMP_HOT_STOP
+    assert [report.code for report in reports] == ["biz_solution_temp_hot_stop"]
+    assert reports[0].severity == "critical"
+    assert "Новый полив не запущен" in reports[0].message
+
+
+def test_warn_without_full_stop_window_does_not_block() -> None:
+    verdict = evaluate_solution_temp_hold(
+        min_c=MIN_C,
+        max_c=22.0,
+        warn_c=26.0,
+        stop_c=32.0,
+        hold_sec=HOLD_SEC,
+        stale_sec=DEFAULT_SOLUTION_TEMP_STALE_SEC,
+        now=NOW,
+        reading=_reading(samples=({"ts": NOW, "value": 33.0},), last={"ts": NOW, "value": 33.0}),
+    )
+    assert verdict is not None
+    assert verdict.reason_code == REASON_SOLUTION_TEMP_HOT_WARN
+    assert verdict.blocks_irrigation is False
+
+
+def test_full_cold_window_still_skips() -> None:
+    verdict = evaluate_solution_temp_hold(
+        min_c=MIN_C,
+        max_c=MAX_C,
+        hold_sec=HOLD_SEC,
+        stale_sec=DEFAULT_SOLUTION_TEMP_STALE_SEC,
+        now=NOW,
+        reading=_reading(samples=_series(10.0), last={"ts": NOW, "value": 10.0}),
+    )
+    assert verdict is not None
+    assert verdict.reason_code == REASON_SOLUTION_TEMP_OUT_OF_BAND
+    assert verdict.blocks_irrigation is True
+
+
+@pytest.mark.asyncio
+async def test_stale_sensor_irrigates_with_alert_and_read_error_does_too() -> None:
+    stale_at = NOW - timedelta(seconds=DEFAULT_SOLUTION_TEMP_STALE_SEC + 5)
+    outcome, reports, repository, _monitor = await _run(
+        _Monitor(_reading(samples=(), last={"ts": stale_at, "value": 40.0})),
+        plan=_plan(warn_c=26.0, stop_c=32.0),
+    )
+    _assert_not_failed(outcome, repository)
+    assert outcome.next_stage == "irrigation_start"
+    assert [report.code for report in reports] == ["biz_solution_temp_unavailable"]
+
+    failed, failed_reports, failed_repository, _failed_monitor = await _run(
+        _Monitor(boom=True),
+        plan=_plan(warn_c=26.0, stop_c=32.0),
+    )
+    _assert_not_failed(failed, failed_repository)
+    assert failed.next_stage == "irrigation_start"
+    assert [report.code for report in failed_reports] == ["biz_solution_temp_unavailable"]
+
+
+@pytest.mark.asyncio
+async def test_long_temp_block_alerts_but_keeps_stop() -> None:
+    history = [
+        {
+            "current_stage": "completed_skip",
+            "irrigation_decision_reason_code": REASON_SOLUTION_TEMP_HOT_STOP,
+            "updated_at": NOW - timedelta(seconds=DEFAULT_MAX_TEMP_SKIP_PAUSE_SEC),
+        }
+    ]
+    outcome, reports, repository, _monitor = await _run(
+        _Monitor(_reading(samples=_series(33.0), last={"ts": NOW, "value": 33.0})),
+        plan=_plan(warn_c=26.0, stop_c=32.0),
+        history=history,
+    )
+    _assert_not_failed(outcome, repository)
+    assert outcome.next_stage == "completed_skip"
+    assert repository.saved[0]["irrigation_decision_reason_code"] == REASON_SOLUTION_TEMP_HOT_STOP
+    assert [report.code for report in reports] == [
+        "biz_solution_temp_hot_stop",
+        "biz_solution_temp_irrigation_blocked_too_long",
+    ]
+    assert reports[1].severity == "critical"
+    assert "Полив заблокирован слишком долго" in reports[1].message
+
+    recent = [
+        {
+            "current_stage": "completed_run",
+            "updated_at": NOW - timedelta(minutes=10),
+        }
+    ]
+    short_outcome, short_reports, short_repository, _short_monitor = await _run(
+        _Monitor(_reading(samples=_series(33.0))),
+        plan=_plan(warn_c=26.0, stop_c=32.0, max_temp_skip_pause_sec=5400),
+        history=recent,
+    )
+    assert short_outcome.next_stage == "completed_skip"
+    assert short_repository.saved[0]["irrigation_decision_reason_code"] == REASON_SOLUTION_TEMP_HOT_STOP
+    assert [report.code for report in short_reports] == ["biz_solution_temp_hot_stop"]
+
+
+def test_pause_budget_uses_last_run_and_does_not_lift_stop() -> None:
+    rows = [
+        {
+            "current_stage": "completed_skip",
+            "irrigation_decision_reason_code": REASON_SOLUTION_TEMP_HOT_STOP,
+            "updated_at": NOW - timedelta(minutes=20),
+        },
+        {
+            "current_stage": "completed_run",
+            "updated_at": NOW - timedelta(seconds=DEFAULT_MAX_TEMP_SKIP_PAUSE_SEC),
+        },
+    ]
+    pause = irrigation_block_pause_sec(rows, now=NOW)
+    budget = assess_temp_skip_budget(pause_sec=pause, max_pause_sec=DEFAULT_MAX_TEMP_SKIP_PAUSE_SEC)
+    assert pause == float(DEFAULT_MAX_TEMP_SKIP_PAUSE_SEC)
+    assert budget.exceeded is True
+    fresh = assess_temp_skip_budget(pause_sec=60, max_pause_sec=5400)
+    assert fresh.exceeded is False
+    assert assess_temp_skip_budget(pause_sec=None, max_pause_sec=5400).exceeded is False
+
+
+def test_solution_health_rejects_short_pause() -> None:
+    from pydantic import ValidationError
+
+    from ae3lite.config.schema.runtime_plan import SolutionHealth
+
+    SolutionHealth(max_temp_skip_pause_sec=5400)
+    with pytest.raises(ValidationError):
+        SolutionHealth(max_temp_skip_pause_sec=10)
+    with pytest.raises(ValidationError):
+        SolutionHealth(warn_c=32, stop_c=26)
+
+
+def test_firmware_solution_temp_channel_is_readable_by_the_gate() -> None:
+    assert "solution_temp_c" in SOLUTION_TEMP_CHANNEL_LABELS
+    firmware = (
+        Path(__file__).resolve().parents[5]
+        / "firmware/nodes/ph_node/main/ph_node_framework_integration.c"
+    ).read_text(encoding="utf-8")
+    assert '"solution_temp_c"' in firmware
+    assert "METRIC_TYPE_TEMPERATURE" in firmware
+    assert "sensor_unavailable" in firmware
+
+
+class _PumpCommand:
+    channel = "pump_main"
+    payload = {"cmd": "set_relay", "params": {"state": True}}
+
+
+class _DurationMonitor:
+    def __init__(self) -> None:
+        self.solution_reads = 0
+
+    async def read_latest_irr_state(self, **_kwargs):
+        return {"snapshot": {"pump_main": True}}
+
+    async def read_solution_temp_window(self, **_kwargs):
+        self.solution_reads += 1
+        raise AssertionError("уже идущий полив не смотрит температуру раствора")
+
+
+@pytest.mark.asyncio
+async def test_hot_solution_does_not_cut_irrigation_before_recipe_duration() -> None:
+    """Порог раствора не обрывает текущий полив. Лимит длительности рецепта обрывает как обычно."""
+    entered = NOW - timedelta(seconds=30)
+    task = SimpleNamespace(
+        id=11,
+        zone_id=7,
+        irrigation_requested_duration_sec=60,
+        workflow=SimpleNamespace(
+            stage_entered_at=entered,
+            stage_deadline_at=entered + timedelta(seconds=60),
+        ),
+    )
+    runtime = SimpleNamespace(
+        irr_state_max_age_sec=30,
+        irrigation_execution=SimpleNamespace(duration_sec=60),
+    )
+    plan = SimpleNamespace(named_plans={"irrigation_start": (_PumpCommand(),)})
+    monitor = _DurationMonitor()
+    handler = IrrigationCheckHandler(
+        runtime_monitor=monitor,
+        command_gateway=object(),
+        task_repository=object(),
+    )
+    observed: list[str] = []
+
+    still_running = await handler._maybe_stop_continuous_pump_after_duration(
+        task=task,
+        plan=plan,
+        runtime=runtime,
+        now=NOW,
+        observe_duration=observed.append,
+    )
+    assert still_running is None
+    assert monitor.solution_reads == 0
+
+    overdue = NOW + timedelta(seconds=90)
+    stopped = await handler._maybe_stop_continuous_pump_after_duration(
+        task=task,
+        plan=plan,
+        runtime=runtime,
+        now=overdue,
+        observe_duration=observed.append,
+    )
+    assert stopped is not None
+    assert stopped.next_stage == "irrigation_pump_stop"
+    assert observed == ["duration_cap"]
+    assert monitor.solution_reads == 0

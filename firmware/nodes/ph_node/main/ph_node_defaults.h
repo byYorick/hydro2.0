@@ -31,6 +31,8 @@ extern "C" {
 #define PH_NODE_PH_SENSOR_PRECISION            2
 #define PH_NODE_SOLUTION_TEMP_POLL_INTERVAL_MS 5000
 #define PH_NODE_SOLUTION_TEMP_PRECISION        1
+/* DS18B20, 1-Wire. Нужна внешняя подтяжка 4.7 кОм к 3.3 В. Не делить с I2C и насосами. */
+#define PH_NODE_DS18B20_GPIO                   GPIO_NUM_27
 
 /**
  * Макс. возраст снимка trema_ph для MQTT/OLED без повторного I²C (чуть больше периода опроса).
