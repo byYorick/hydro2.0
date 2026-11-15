@@ -43,7 +43,7 @@
         </Badge>
       </div>
       <div
-        v-if="cropLabel || phaseLabel || daysLabel"
+        v-if="cropLabel || phaseLabel || daysLabel || solutionLabel"
         class="flex flex-wrap items-center gap-1.5 text-xs text-[color:var(--text-muted)]"
       >
         <span
@@ -66,65 +66,89 @@
           v-if="daysLabel"
           data-testid="zone-page-header-days"
         >{{ daysLabel }}</span>
+        <span
+          v-if="(cropLabel || phaseLabel || daysLabel) && solutionLabel"
+          class="text-[color:var(--border-strong)]"
+        >&middot;</span>
+        <span
+          v-if="solutionLabel"
+          data-testid="zone-solution-level"
+        >{{ solutionLabel }}</span>
       </div>
     </div>
     <div
-      v-if="hasActions || $slots['cycle-actions']"
-      class="flex flex-wrap items-center gap-1.5"
+      v-if="showEstopControl || hasActions || $slots['cycle-actions']"
+      class="flex flex-col items-stretch gap-2 lg:items-end"
     >
-      <slot name="cycle-actions"></slot>
-      <Button
-        v-if="showWater"
-        size="sm"
-        variant="primary"
-        type="button"
-        data-testid="zone-header-water"
-        @click="$emit('water')"
+      <ZoneEstopControl
+        v-if="showEstopControl"
+        :active="estopActive"
+        :busy="estopBusy"
+        :can-engage="canEngageEstop"
+        :can-release="canReleaseEstop"
+        @engage="$emit('estop-engage')"
+        @release="$emit('estop-release', $event)"
+      />
+      <div
+        v-if="hasActions || $slots['cycle-actions']"
+        class="flex flex-wrap items-center gap-1.5 lg:justify-end"
       >
-        Полить
-      </Button>
-      <Button
-        v-if="showPause && !$slots['cycle-actions']"
-        size="sm"
-        variant="outline"
-        type="button"
-        :disabled="pauseLoading"
-        data-testid="zone-header-pause"
-        @click="$emit('pause')"
-      >
-        Пауза
-      </Button>
-      <Button
-        v-if="showNextPhase && !$slots['cycle-actions']"
-        size="sm"
-        variant="outline"
-        type="button"
-        :disabled="nextPhaseLoading"
-        data-testid="zone-header-next-phase"
-        @click="$emit('next-phase')"
-      >
-        Следующая фаза
-      </Button>
-      <Button
-        v-if="showActions"
-        size="sm"
-        variant="secondary"
-        type="button"
-        data-testid="zone-header-actions"
-        @click="$emit('open-actions')"
-      >
-        Действия
-      </Button>
-      <Button
-        v-if="showDiagnose"
-        size="sm"
-        variant="outline"
-        type="button"
-        data-testid="zone-header-diagnose"
-        @click="$emit('diagnose')"
-      >
-        Диагностика
-      </Button>
+        <slot name="cycle-actions"></slot>
+        <Button
+          v-if="showWater"
+          size="sm"
+          variant="primary"
+          type="button"
+          data-testid="zone-header-water"
+          :disabled="estopActive"
+          :title="estopActive ? estopLockedText : undefined"
+          @click="$emit('water')"
+        >
+          Полить
+        </Button>
+        <Button
+          v-if="showPause && !$slots['cycle-actions']"
+          size="sm"
+          variant="outline"
+          type="button"
+          :disabled="pauseLoading"
+          data-testid="zone-header-pause"
+          @click="$emit('pause')"
+        >
+          Пауза
+        </Button>
+        <Button
+          v-if="showNextPhase && !$slots['cycle-actions']"
+          size="sm"
+          variant="outline"
+          type="button"
+          :disabled="nextPhaseLoading"
+          data-testid="zone-header-next-phase"
+          @click="$emit('next-phase')"
+        >
+          Следующая фаза
+        </Button>
+        <Button
+          v-if="showActions"
+          size="sm"
+          variant="secondary"
+          type="button"
+          data-testid="zone-header-actions"
+          @click="$emit('open-actions')"
+        >
+          Действия
+        </Button>
+        <Button
+          v-if="showDiagnose"
+          size="sm"
+          variant="outline"
+          type="button"
+          data-testid="zone-header-diagnose"
+          @click="$emit('diagnose')"
+        >
+          Диагностика
+        </Button>
+      </div>
     </div>
   </header>
 </template>
@@ -134,7 +158,9 @@ import { computed } from 'vue'
 import { Link, usePage } from '@inertiajs/vue3'
 import Badge from '@/Components/Badge.vue'
 import Button from '@/Components/Button.vue'
+import ZoneEstopControl from '@/Components/ZoneEstopControl.vue'
 import { useRole } from '@/composables/useRole'
+import { ESTOP_ACTIVE_BANNER } from '@/utils/zoneEstop'
 import type { BadgeVariant } from '@/Components/Badge.vue'
 import type { GrowCycleStatus } from '@/types/GrowCycle'
 
@@ -151,6 +177,9 @@ interface Props {
   canManageCycle: boolean
   pauseLoading?: boolean
   nextPhaseLoading?: boolean
+  estopActive?: boolean
+  estopBusy?: boolean
+  solutionLabel?: string | null
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -161,6 +190,9 @@ const props = withDefaults(defineProps<Props>(), {
   cycleStatus: null,
   pauseLoading: false,
   nextPhaseLoading: false,
+  estopActive: false,
+  estopBusy: false,
+  solutionLabel: null,
 })
 
 const page = usePage()
@@ -187,9 +219,13 @@ defineEmits<{
   'next-phase': []
   'open-actions': []
   diagnose: []
+  'estop-engage': []
+  'estop-release': [reason: string]
 }>()
 
-const { isOperator, isAgronomist, isEngineer, isAdmin, canOperateCycles } = useRole()
+const { isOperator, isAgronomist, isEngineer, isAdmin, canOperateCycles, canEngageEstop, canReleaseEstop } = useRole()
+const estopLockedText = ESTOP_ACTIVE_BANNER
+const showEstopControl = computed(() => canEngageEstop.value || canReleaseEstop.value)
 
 const daysLabel = computed(() => {
   if (props.phaseDaysElapsed == null && props.phaseDaysTotal == null) {

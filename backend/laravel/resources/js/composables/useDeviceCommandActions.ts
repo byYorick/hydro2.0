@@ -330,9 +330,13 @@ export function useDeviceCommandActions({
         showToast(`Не удалось отправить команду для ${channelLabel}`, 'error', TOAST_TIMEOUT.LONG)
       }
     } catch (err) {
-      const apiMessage = (err as { response?: { data?: { message?: string; error?: string } } })?.response?.data
+      const apiMessage = (err as {
+        response?: { data?: { message?: string; error?: string; code?: string; human_error_message?: string } }
+      })?.response?.data
       const detail = resolveHumanErrorMessage({
+        code: apiMessage?.code || null,
         message: apiMessage?.message || apiMessage?.error || null,
+        humanMessage: apiMessage?.human_error_message || null,
       })
       if (detail) {
         showToast(`Ошибка теста ${channelLabel}: ${detail}`, 'error', TOAST_TIMEOUT.LONG)
