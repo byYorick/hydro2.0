@@ -5,6 +5,7 @@
 """
 
 from __future__ import annotations
+from .dependencies import snapshot
 
 import asyncio
 import logging
@@ -38,14 +39,25 @@ REDIS_PUSH_MAX_RETRIES = 3
 REDIS_PUSH_RETRY_BACKOFF_BASE = 2
 
 
+def _dependencies():
+    return snapshot(
+        {
+            'REDIS_OPERATION_DURATION': REDIS_OPERATION_DURATION,
+            'TELEMETRY_DROPPED': TELEMETRY_DROPPED,
+            'TELEM_RECEIVED': TELEM_RECEIVED,
+            'logger': logger,
+            'push_with_retry': push_with_retry,
+        }
+    )
+
+
 def _telemetry_queue():
     return state.telemetry_queue
 
 
-async def push_with_retry(
-    queue_item: TelemetryQueueItem, max_retries: int = REDIS_PUSH_MAX_RETRIES
-) -> bool:
+async def push_with_retry(queue_item: TelemetryQueueItem, max_retries: int = REDIS_PUSH_MAX_RETRIES) -> bool:
     """Push в Redis queue с retry + exponential backoff."""
+    deps = _dependencies()
     if not _telemetry_queue():
         return False
 
@@ -54,13 +66,11 @@ async def push_with_retry(
             success = await _telemetry_queue().push(queue_item)
             if success:
                 if attempt > 0:
-                    logger.info(
-                        f"Successfully pushed to Redis queue after {attempt + 1} attempts"
-                    )
+                    deps.logger.info(f"Successfully pushed to Redis queue after {attempt + 1} attempts")
                 return True
 
             if attempt == 0:
-                logger.warning(
+                deps.logger.warning(
                     "Redis queue full, cannot push telemetry: "
                     f"node_uid={queue_item.node_uid}, metric_type={queue_item.metric_type}"
                 )
@@ -69,13 +79,13 @@ async def push_with_retry(
         except Exception as e:
             if attempt < max_retries - 1:
                 backoff_seconds = REDIS_PUSH_RETRY_BACKOFF_BASE**attempt
-                logger.warning(
+                deps.logger.warning(
                     "Failed to push to Redis queue "
                     f"(attempt {attempt + 1}/{max_retries}), retrying in {backoff_seconds}s: {e}"
                 )
                 await asyncio.sleep(backoff_seconds)
             else:
-                logger.error(
+                deps.logger.error(
                     f"Failed to push to Redis queue after {max_retries} attempts: {e}",
                     exc_info=True,
                 )
@@ -84,30 +94,31 @@ async def push_with_retry(
     return False
 
 
-async def handle_telemetry(topic: str, payload: bytes) -> None:
+async def handle_telemetry(topic: str, payload: bytes, *, durable: bool = False) -> None:
     """MQTT telemetry entry point: parse → validate → normalize ts → push в Redis."""
+    deps = _dependencies()
     try:
         data = _parse_json(payload)
         if not data:
-            logger.warning(f"[TELEMETRY] Failed to parse JSON from topic: {topic}")
-            TELEMETRY_DROPPED.labels(reason="invalid_json").inc()
+            deps.logger.warning(f"[TELEMETRY] Failed to parse JSON from topic: {topic}")
+            deps.TELEMETRY_DROPPED.labels(reason="invalid_json").inc()
             return
 
         if isinstance(data, dict):
             set_trace_id_from_payload(data, fallback_generate=False)
 
         if isinstance(data, dict) and "timestamp" in data and "ts" not in data:
-            logger.warning(
+            deps.logger.warning(
                 "Legacy telemetry format without ts field, dropping message",
                 extra={"topic": topic, "payload_keys": list(data.keys())},
             )
-            TELEMETRY_DROPPED.labels(reason="legacy_timestamp").inc()
+            deps.TELEMETRY_DROPPED.labels(reason="legacy_timestamp").inc()
             return
 
         try:
             validated_data = TelemetryPayloadModel(**data)
         except Exception as e:
-            logger.warning(
+            deps.logger.warning(
                 "Invalid telemetry payload",
                 extra={
                     "error": str(e),
@@ -116,10 +127,10 @@ async def handle_telemetry(topic: str, payload: bytes) -> None:
                     "payload_size": len(payload),
                 },
             )
-            TELEMETRY_DROPPED.labels(reason="validation_failed").inc()
+            deps.TELEMETRY_DROPPED.labels(reason="validation_failed").inc()
             return
 
-        TELEM_RECEIVED.inc()
+        deps.TELEM_RECEIVED.inc()
 
         gh_uid = _extract_gh_uid(topic)
         zone_uid = _extract_zone_uid(topic)
@@ -142,7 +153,7 @@ async def handle_telemetry(topic: str, payload: bytes) -> None:
 
         metric_type = validated_data.metric_type
         if not metric_type:
-            logger.warning(
+            deps.logger.warning(
                 "Missing metric_type in telemetry payload",
                 extra={
                     "topic": topic,
@@ -151,7 +162,7 @@ async def handle_telemetry(topic: str, payload: bytes) -> None:
                     "payload_keys": list(data.keys()) if isinstance(data, dict) else None,
                 },
             )
-            TELEMETRY_DROPPED.labels(reason="missing_metric_type").inc()
+            deps.TELEMETRY_DROPPED.labels(reason="missing_metric_type").inc()
             return
 
         channel_name = validated_data.channel or channel
@@ -170,22 +181,26 @@ async def handle_telemetry(topic: str, payload: bytes) -> None:
             enqueued_at=utcnow(),
         )
 
-        logger.info(
-            f"[TELEMETRY] Received: node={node_uid}, metric={metric_type}, value={validated_data.value}"
-        )
+        deps.logger.info(f"[TELEMETRY] Received: node={node_uid}, metric={metric_type}, value={validated_data.value}")
 
         if _telemetry_queue():
             start_time = time.time()
-            success = await push_with_retry(queue_item)
+            success = await deps.push_with_retry(queue_item)
+            # The durable MQTT subscription withholds PUBACK while this handler
+            # is pending. Broker inflight limits provide bounded backpressure;
+            # a process crash leaves the delivery in its persistent session.
+            while not success and durable:
+                if state.shutdown_event.is_set():
+                    raise asyncio.CancelledError
+                await asyncio.sleep(1)
+                success = await deps.push_with_retry(queue_item)
             redis_duration = time.time() - start_time
-            REDIS_OPERATION_DURATION.observe(redis_duration)
+            deps.REDIS_OPERATION_DURATION.observe(redis_duration)
 
             if not success:
-                logger.warning(
-                    f"[TELEMETRY] Failed to push to queue: node={node_uid}, metric={metric_type}"
-                )
-                TELEMETRY_DROPPED.labels(reason="queue_push_failed").inc()
-                logger.error(
+                deps.logger.warning(f"[TELEMETRY] Failed to push to queue: node={node_uid}, metric={metric_type}")
+                deps.TELEMETRY_DROPPED.labels(reason="queue_push_failed").inc()
+                deps.logger.error(
                     "Failed to push telemetry to queue after retries, dropping message",
                     extra={
                         "node_uid": node_uid,
@@ -195,11 +210,11 @@ async def handle_telemetry(topic: str, payload: bytes) -> None:
                     },
                 )
         else:
-            logger.error(
-                f"[TELEMETRY] Queue not initialized: node={node_uid}, metric={metric_type}"
-            )
-            TELEMETRY_DROPPED.labels(reason="queue_not_initialized").inc()
-            logger.error(
+            if durable:
+                raise RuntimeError("Durable telemetry ingress queue is not initialized")
+            deps.logger.error(f"[TELEMETRY] Queue not initialized: node={node_uid}, metric={metric_type}")
+            deps.TELEMETRY_DROPPED.labels(reason="queue_not_initialized").inc()
+            deps.logger.error(
                 "Telemetry queue not initialized, dropping message",
                 extra={
                     "node_uid": node_uid,
@@ -225,6 +240,7 @@ async def _normalize_device_timestamp(
 
     При skew / below-min-valid шлём throttled anomaly alert и fallback на server time.
     """
+    deps = _dependencies()
     MIN_VALID_TIMESTAMP = 1_000_000_000
     MAX_TIMESTAMP_DRIFT_SEC = 300
     server_timestamp = time.time()
@@ -248,7 +264,7 @@ async def _normalize_device_timestamp(
                 if ts_value >= MIN_VALID_TIMESTAMP:
                     drift = ts_value - server_timestamp
                     if drift > MAX_TIMESTAMP_DRIFT_SEC:
-                        logger.warning(
+                        deps.logger.warning(
                             "Timestamp from device is skewed (drift too large), using server time",
                             extra={
                                 "device_ts": ts_value,
@@ -279,7 +295,7 @@ async def _normalize_device_timestamp(
                         ts = server_time
                     else:
                         if drift < -MAX_TIMESTAMP_DRIFT_SEC:
-                            logger.warning(
+                            deps.logger.warning(
                                 "Timestamp from device is older than expected, preserving for freshness checks",
                                 extra={
                                     "device_ts": ts_value,
@@ -293,7 +309,7 @@ async def _normalize_device_timestamp(
                             )
                         ts = datetime.fromtimestamp(ts_value)
                 else:
-                    logger.warning(
+                    deps.logger.warning(
                         "Invalid timestamp from firmware (likely uptime), using server time",
                         extra={
                             "ts": ts_value,
@@ -320,7 +336,7 @@ async def _normalize_device_timestamp(
                 ts = datetime.fromisoformat(raw_ts.replace("Z", "+00:00"))
                 ts_timestamp = ts.timestamp()
                 if ts_timestamp < MIN_VALID_TIMESTAMP:
-                    logger.warning(
+                    deps.logger.warning(
                         "Invalid timestamp from firmware (likely uptime), using server time",
                         extra={
                             "ts": ts_timestamp,
@@ -347,7 +363,7 @@ async def _normalize_device_timestamp(
                 else:
                     drift = ts_timestamp - server_timestamp
                     if drift > MAX_TIMESTAMP_DRIFT_SEC:
-                        logger.warning(
+                        deps.logger.warning(
                             "Timestamp from device is skewed (drift too large), using server time",
                             extra={
                                 "device_ts": ts_timestamp,
@@ -377,7 +393,7 @@ async def _normalize_device_timestamp(
                         )
                         ts = None
                     elif drift < -MAX_TIMESTAMP_DRIFT_SEC:
-                        logger.warning(
+                        deps.logger.warning(
                             "Timestamp from device is older than expected (string), preserving for freshness checks",
                             extra={
                                 "device_ts": ts_timestamp,
@@ -390,7 +406,7 @@ async def _normalize_device_timestamp(
                             },
                         )
         except Exception as e:
-            logger.warning(
+            deps.logger.warning(
                 "Failed to parse timestamp, using server time",
                 extra={
                     "ts": raw_ts,

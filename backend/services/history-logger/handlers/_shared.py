@@ -6,6 +6,7 @@
 """
 
 from __future__ import annotations
+from .dependencies import snapshot
 
 import asyncio
 import hashlib
@@ -30,9 +31,12 @@ logger = logging.getLogger(__name__)
 PENDING_CONFIG_REPORT_TTL_SEC = int(os.getenv("CONFIG_REPORT_BUFFER_TTL_SEC", "120"))
 PENDING_CONFIG_REPORT_MAX = int(os.getenv("CONFIG_REPORT_BUFFER_MAX", "128"))
 TRANSIENT_WARNING_TTL_SEC = float(os.getenv("MQTT_HANDLER_TRANSIENT_WARNING_TTL_SEC", "30"))
-CONFIG_REPORT_DEFAULT_ALLOW_PRUNE = os.getenv(
-    "CONFIG_REPORT_PRUNE_MISSING_CHANNELS", "false"
-).strip().lower() in {"1", "true", "yes", "on"}
+CONFIG_REPORT_DEFAULT_ALLOW_PRUNE = os.getenv("CONFIG_REPORT_PRUNE_MISSING_CHANNELS", "false").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
 
 ZONE_EVENT_TYPE_MAX_LEN = 255
 ZONE_EVENT_TYPE_HASH_LEN = 10
@@ -106,6 +110,14 @@ _transient_warning_last_seen: dict[tuple[str, str], float] = {}
 # ---------------------------------------------------------------------------
 # Transient log helpers (rate-limited warning/info)
 # ---------------------------------------------------------------------------
+
+
+def _dependencies():
+    return snapshot(
+        {
+            'fetch': fetch,
+        }
+    )
 
 
 def log_transient_warning(kind: str, entity: str, message: str) -> None:
@@ -228,9 +240,7 @@ async def get_binding_completion_lock(node_id: int) -> asyncio.Lock:
 # ---------------------------------------------------------------------------
 
 
-def apply_trace_context(
-    payload_data: Dict[str, Any], *, fallback_keys: Optional[tuple[str, ...]] = None
-) -> None:
+def apply_trace_context(payload_data: Dict[str, Any], *, fallback_keys: Optional[tuple[str, ...]] = None) -> None:
     if fallback_keys:
         set_trace_id_from_payload(payload_data, keys=fallback_keys, fallback_generate=False)
     else:
@@ -288,9 +298,7 @@ def normalize_node_event_type(raw_event_code: Any) -> str:
     normalized = normalized or "NODE_EVENT"
     if len(normalized) <= ZONE_EVENT_TYPE_MAX_LEN:
         return normalized
-    hash_suffix = hashlib.sha1(normalized.encode("utf-8")).hexdigest()[
-        :ZONE_EVENT_TYPE_HASH_LEN
-    ].upper()
+    hash_suffix = hashlib.sha1(normalized.encode("utf-8")).hexdigest()[:ZONE_EVENT_TYPE_HASH_LEN].upper()
     trimmed_len = ZONE_EVENT_TYPE_MAX_LEN - ZONE_EVENT_TYPE_HASH_LEN - 1
     return f"{normalized[:trimmed_len]}_{hash_suffix}"
 
@@ -360,9 +368,7 @@ def build_node_event_notify_payload(
     return notify_payload
 
 
-async def resolve_zone_id_for_node_event(
-    zone_uid: Optional[str], node_uid: Optional[str]
-) -> Optional[int]:
+async def resolve_zone_id_for_node_event(zone_uid: Optional[str], node_uid: Optional[str]) -> Optional[int]:
     """Resolve zone PK for node events.
 
     Order (fail-closed):
@@ -373,10 +379,11 @@ async def resolve_zone_id_for_node_event(
     like ``zn-1411`` are not equal to PK ``1``, and a transient DB miss must not
     invent a non-existent FK target.
     """
+    deps = _dependencies()
     if zone_uid:
         zone_uid_str = str(zone_uid).strip()
         if zone_uid_str:
-            zone_rows = await fetch(
+            zone_rows = await deps.fetch(
                 """
                 SELECT id
                 FROM zones
@@ -389,7 +396,7 @@ async def resolve_zone_id_for_node_event(
                 return zone_rows[0].get("id")
 
     if node_uid:
-        node_rows = await fetch(
+        node_rows = await deps.fetch(
             """
             SELECT zone_id
             FROM nodes

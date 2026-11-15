@@ -18,6 +18,11 @@ from .constants import (
 )
 from .validation import normalize_command_status, normalize_params_for_idempotency
 
+from .dependencies import async_dependency
+
+fetch = async_dependency("fetch", fetch)
+execute = async_dependency("execute", execute)
+
 logger = logging.getLogger(__name__)
 
 
@@ -171,6 +176,9 @@ async def ensure_command_for_publish(
                 },
             }
 
+        from .lease_gate import is_fail_safe_off_command
+        if (cmd_status == "SEND_FAILED" or (isinstance(existing.get("params"), dict) and existing["params"].get("__hl_dispatch_started"))) and cmd_name not in {"state", "test_sensor"} and not is_fail_safe_off_command(cmd_name, params):
+            raise HTTPException(status_code=409, detail="Command outcome unknown; reconcile before issuing another command")
         return None
 
     if cmd_id and cmd_id.startswith("hl-"):

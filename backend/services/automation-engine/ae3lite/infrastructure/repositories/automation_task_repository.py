@@ -19,125 +19,135 @@ from ae3lite.infrastructure.metrics import (
 )
 from common.db import get_pool
 
-logger = logging.getLogger(__name__)
 
-
-class _ZoneLeaseNotAcquired(Exception):
-    """Lease не захвачена внутри транзакции claim. Транзакция откатывается."""
-
-ACTIVE_TASK_STATUSES = ("pending", "claimed", "running", "waiting_command")
-RUNNING_TASK_STATUSES = ("claimed", "running", "waiting_command")
-CORRECTION_OPTIONAL_FIELDS = (
-    "corr_step",
-    "attempt",
-    "max_attempts",
-    "ec_attempt",
-    "ec_max_attempts",
-    "ph_attempt",
-    "ph_max_attempts",
-    "activated_here",
-    "stabilization_sec",
-    "return_stage_success",
-    "return_stage_fail",
-    "outcome_success",
-    "needs_ec",
-    "ec_node_uid",
-    "ec_channel",
-    "ec_duration_ms",
-    "needs_ph_up",
-    "needs_ph_down",
-    "ph_node_uid",
-    "ph_channel",
-    "ph_duration_ms",
-    "wait_until",
-    "ec_component",
-    "ec_amount_ml",
-    "ec_dose_sequence_json",
-    "ec_current_seq_index",
-    "ph_amount_ml",
-    "snapshot_event_id",
-    "snapshot_created_at",
-    "snapshot_cmd_id",
-    "snapshot_source_event_type",
-    "pipeline_phase",
-    "active_component",
-    "water_ec",
-    "water_ph",
-    "nutrient_budget",
-    "component_targets_json",
-    "dilute_attempts",
-    "ec_pid_frozen",
-    "baseline_id",
+from ae3lite.infrastructure.repositories.task_persistence_shared import (
+    logger,
+    _ZoneLeaseNotAcquired,
+    ACTIVE_TASK_STATUSES,
+    RUNNING_TASK_STATUSES,
+    CORRECTION_OPTIONAL_FIELDS,
 )
+
+from ae3lite.infrastructure.repositories.task_persistence_mapping import (
+    TaskPersistenceMapping,
+    TaskPersistenceMappingPorts,
+)
+from ae3lite.infrastructure.repositories.task_persistence_connection import (
+    TaskPersistenceConnection,
+    TaskPersistenceConnectionPorts,
+)
+from ae3lite.infrastructure.repositories.task_persistence_queries import (
+    TaskPersistenceQueries,
+    TaskPersistenceQueriesPorts,
+)
+from ae3lite.infrastructure.repositories.task_persistence_creation import (
+    TaskPersistenceCreation,
+    TaskPersistenceCreationPorts,
+)
+from ae3lite.infrastructure.repositories.task_persistence_claim import TaskPersistenceClaim, TaskPersistenceClaimPorts
+from ae3lite.infrastructure.repositories.task_persistence_stage_transitions import (
+    TaskPersistenceStageTransitions,
+    TaskPersistenceStageTransitionsPorts,
+)
+from ae3lite.infrastructure.repositories.task_persistence_terminal_transitions import (
+    TaskPersistenceTerminalTransitions,
+    TaskPersistenceTerminalTransitionsPorts,
+)
+from ae3lite.infrastructure.repositories.task_persistence_metrics import (
+    TaskPersistenceMetrics,
+    TaskPersistenceMetricsPorts,
+)
+
 
 class PgAutomationTaskRepository:
     """Атомарный CRUD задач и переходы состояния для AE3-Lite v2."""
 
+    def __init__(self) -> None:
+        self._task_persistence_mapping = TaskPersistenceMapping(TaskPersistenceMappingPorts())
+        self._task_persistence_connection = TaskPersistenceConnection(
+            TaskPersistenceConnectionPorts(
+                global_get_pool=lambda *args, **kwargs: get_pool(*args, **kwargs),
+            )
+        )
+        self._task_persistence_queries = TaskPersistenceQueries(
+            TaskPersistenceQueriesPorts(
+                connection=lambda *args, **kwargs: self._connection(*args, **kwargs),
+                fetch=lambda *args, **kwargs: self._fetch(*args, **kwargs),
+                fetchrow=lambda *args, **kwargs: self._fetchrow(*args, **kwargs),
+                normalize_timestamp=lambda *args, **kwargs: self._normalize_timestamp(*args, **kwargs),
+                task_from_row=lambda *args, **kwargs: self._task_from_row(*args, **kwargs),
+            )
+        )
+        self._task_persistence_creation = TaskPersistenceCreation(
+            TaskPersistenceCreationPorts(
+                fetchrow=lambda *args, **kwargs: self._fetchrow(*args, **kwargs),
+                normalize_json_mapping=lambda *args, **kwargs: self._normalize_json_mapping(*args, **kwargs),
+                normalize_meta=lambda *args, **kwargs: self._normalize_meta(*args, **kwargs),
+                normalize_timestamp=lambda *args, **kwargs: self._normalize_timestamp(*args, **kwargs),
+                task_from_row=lambda *args, **kwargs: self._task_from_row(*args, **kwargs),
+            )
+        )
+        self._task_persistence_claim = TaskPersistenceClaim(
+            TaskPersistenceClaimPorts(
+                connection=lambda *args, **kwargs: self._connection(*args, **kwargs),
+                fetchrow=lambda *args, **kwargs: self._fetchrow(*args, **kwargs),
+                log_fsm_cas_miss=lambda *args, **kwargs: self._log_fsm_cas_miss(*args, **kwargs),
+                log_fsm_success=lambda *args, **kwargs: self._log_fsm_success(*args, **kwargs),
+                normalize_timestamp=lambda *args, **kwargs: self._normalize_timestamp(*args, **kwargs),
+                task_from_row=lambda *args, **kwargs: self._task_from_row(*args, **kwargs),
+            )
+        )
+        self._task_persistence_stage_transitions = TaskPersistenceStageTransitions(
+            TaskPersistenceStageTransitionsPorts(
+                correction_values=lambda *args, **kwargs: self._correction_values(*args, **kwargs),
+                execute=lambda *args, **kwargs: self._execute(*args, **kwargs),
+                fetchrow=lambda *args, **kwargs: self._fetchrow(*args, **kwargs),
+                log_fsm_cas_miss=lambda *args, **kwargs: self._log_fsm_cas_miss(*args, **kwargs),
+                log_fsm_success=lambda *args, **kwargs: self._log_fsm_success(*args, **kwargs),
+                normalize_meta=lambda *args, **kwargs: self._normalize_meta(*args, **kwargs),
+                normalize_timestamp=lambda *args, **kwargs: self._normalize_timestamp(*args, **kwargs),
+                task_from_row=lambda *args, **kwargs: self._task_from_row(*args, **kwargs),
+                update_task_status=lambda *args, **kwargs: self._update_task_status(*args, **kwargs),
+            )
+        )
+        self._task_persistence_terminal_transitions = TaskPersistenceTerminalTransitions(
+            TaskPersistenceTerminalTransitionsPorts(
+                fetchrow=lambda *args, **kwargs: self._fetchrow(*args, **kwargs),
+                log_fsm_cas_miss=lambda *args, **kwargs: self._log_fsm_cas_miss(*args, **kwargs),
+                log_fsm_success=lambda *args, **kwargs: self._log_fsm_success(*args, **kwargs),
+                normalize_timestamp=lambda *args, **kwargs: self._normalize_timestamp(*args, **kwargs),
+                observe_task_duration=lambda *args, **kwargs: self._observe_task_duration(*args, **kwargs),
+                task_from_row=lambda *args, **kwargs: self._task_from_row(*args, **kwargs),
+            )
+        )
+        self._task_persistence_metrics = TaskPersistenceMetrics(
+            TaskPersistenceMetricsPorts(
+                fetch=lambda *args, **kwargs: self._fetch(*args, **kwargs),
+                fetchrow=lambda *args, **kwargs: self._fetchrow(*args, **kwargs),
+                normalize_timestamp=lambda *args, **kwargs: self._normalize_timestamp(*args, **kwargs),
+                task_from_row=lambda *args, **kwargs: self._task_from_row(*args, **kwargs),
+            )
+        )
+
     def _normalize_timestamp(self, value: datetime) -> datetime:
-        normalized = value.astimezone(timezone.utc).replace(tzinfo=None) if value.tzinfo is not None else value
-        return normalized.replace(microsecond=0)
+        return self._task_persistence_mapping.normalize_timestamp(value=value)
 
     def _normalize_meta(self, value: Mapping[str, Any] | None) -> dict[str, Any]:
-        return dict(value) if isinstance(value, Mapping) else {}
+        return self._task_persistence_mapping.normalize_meta(value=value)
 
     def _normalize_json_mapping(self, value: Mapping[str, Any] | None) -> dict[str, Any] | None:
-        return dict(value) if isinstance(value, Mapping) else None
+        return self._task_persistence_mapping.normalize_json_mapping(value=value)
 
     def _task_from_row(self, row: asyncpg.Record | None) -> AutomationTask | None:
-        return AutomationTask.from_row(row) if row is not None else None
+        return self._task_persistence_mapping.task_from_row(row=row)
 
-    @staticmethod
-    def _db_axis_max_attempts(value: Any) -> int | None:
-        """Map domain max-attempts to DB CHECK (NULL OR >= 1).
-
-        Domain uses ``0`` for a disabled correction axis (irrigation pH-only →
-        ``ec_max_attempts=0``, fill Ca-only → ``ph_max_attempts=0``). PostgreSQL
-        rejects ``0`` via ``ae_tasks_corr_{ec,ph}_max_attempts_check``; persist
-        ``NULL`` instead. Readers map NULL → 0 via ``int(... or 0)``.
-        """
-        if value is None:
-            return None
-        try:
-            n = int(value)
-        except (TypeError, ValueError):
-            return None
-        return None if n <= 0 else n
+    _db_axis_max_attempts = staticmethod(TaskPersistenceMapping.db_axis_max_attempts)
 
     def _correction_values(self, correction: CorrectionState | None) -> tuple[Any, ...]:
-        if correction is None:
-            # Поддерживать согласованность NOT NULL колонок коррекции, когда коррекция неактивна.
-            # Некоторые поля БД, например `corr_ec_current_seq_index`, имеют NOT NULL и default.
-            values: list[Any] = [None] * len(CORRECTION_OPTIONAL_FIELDS)
-            for field_name, default in (
-                ("ec_current_seq_index", 0),
-                ("dilute_attempts", 0),
-                ("ec_pid_frozen", False),
-            ):
-                try:
-                    idx = CORRECTION_OPTIONAL_FIELDS.index(field_name)
-                    values[idx] = default
-                except ValueError:
-                    pass
-            return (*tuple(values), False)
+        return self._task_persistence_mapping.correction_values(correction=correction)
 
-        values_list: list[Any] = []
-        for field_name in CORRECTION_OPTIONAL_FIELDS:
-            raw = getattr(correction, field_name)
-            if field_name in {"ec_max_attempts", "ph_max_attempts"}:
-                values_list.append(self._db_axis_max_attempts(raw))
-            else:
-                values_list.append(raw)
-        return (*tuple(values_list), bool(correction.limit_policy_logged))
-
-    @asynccontextmanager
-    async def _connection(self, conn: asyncpg.Connection | None = None) -> AsyncIterator[asyncpg.Connection]:
-        if conn is not None:
-            yield conn
-            return
-
-        pool = await get_pool()
-        async with pool.acquire() as acquired_conn:
-            yield acquired_conn
+    def _connection(self, conn: asyncpg.Connection | None = None) -> AsyncIterator[asyncpg.Connection]:
+        return self._task_persistence_connection.connection(conn=conn)
 
     async def _fetchrow(
         self,
@@ -145,8 +155,7 @@ class PgAutomationTaskRepository:
         *args: Any,
         conn: asyncpg.Connection | None = None,
     ) -> asyncpg.Record | None:
-        async with self._connection(conn) as db_conn:
-            return await db_conn.fetchrow(query, *args)
+        return await self._task_persistence_connection.fetchrow(query, *args, conn=conn)
 
     async def _fetch(
         self,
@@ -154,8 +163,7 @@ class PgAutomationTaskRepository:
         *args: Any,
         conn: asyncpg.Connection | None = None,
     ) -> list[asyncpg.Record]:
-        async with self._connection(conn) as db_conn:
-            return await db_conn.fetch(query, *args)
+        return await self._task_persistence_connection.fetch(query, *args, conn=conn)
 
     async def _execute(
         self,
@@ -163,38 +171,20 @@ class PgAutomationTaskRepository:
         *args: Any,
         conn: asyncpg.Connection | None = None,
     ) -> str:
-        async with self._connection(conn) as db_conn:
-            return await db_conn.execute(query, *args)
+        return await self._task_persistence_connection.execute(query, *args, conn=conn)
 
-    @asynccontextmanager
-    async def transaction(self) -> AsyncIterator[asyncpg.Connection]:
-        """Open one repository-owned PostgreSQL transaction for multi-repository writes."""
-        async with self._connection() as conn:
-            async with conn.transaction():
-                yield conn
+    def transaction(self) -> AsyncIterator[asyncpg.Connection]:
+        return self._task_persistence_connection.transaction()
 
     # ── Reads ───────────────────────────────────────────────────────
 
     async def get_by_idempotency_key(self, *, zone_id: int, idempotency_key: str) -> AutomationTask | None:
-        normalized_key = str(idempotency_key or "").strip()
-        if normalized_key == "":
-            return None
-
-        row = await self._fetchrow(
-            """
-            SELECT *
-            FROM ae_tasks
-            WHERE zone_id = $1
-              AND idempotency_key = $2
-            LIMIT 1
-            """,
-            zone_id,
-            normalized_key,
+        return await self._task_persistence_queries.get_by_idempotency_key(
+            zone_id=zone_id, idempotency_key=idempotency_key
         )
-        return self._task_from_row(row)
 
     async def get_active_for_zone(self, *, zone_id: int) -> AutomationTask | None:
-        return await self.get_active_for_zone_with_conn(zone_id=zone_id)
+        return await self._task_persistence_queries.get_active_for_zone(zone_id=zone_id)
 
     async def get_active_for_zone_with_conn(
         self,
@@ -202,61 +192,16 @@ class PgAutomationTaskRepository:
         zone_id: int,
         conn: asyncpg.Connection | None = None,
     ) -> AutomationTask | None:
-        row = await self._fetchrow(
-            """
-            SELECT *
-            FROM ae_tasks
-            WHERE zone_id = $1
-              AND status = ANY($2::text[])
-            ORDER BY updated_at DESC, id DESC
-            LIMIT 1
-            """,
-            zone_id,
-            list(ACTIVE_TASK_STATUSES),
-            conn=conn,
-        )
-        return self._task_from_row(row)
+        return await self._task_persistence_queries.get_active_for_zone_with_conn(zone_id=zone_id, conn=conn)
 
     async def get_last_for_zone(self, *, zone_id: int) -> AutomationTask | None:
-        """Возвращает самую свежую задачу зоны независимо от статуса."""
-        row = await self._fetchrow(
-            """
-            SELECT *
-            FROM ae_tasks
-            WHERE zone_id = $1
-            ORDER BY updated_at DESC, id DESC
-            LIMIT 1
-            """,
-            zone_id,
-        )
-        return self._task_from_row(row)
+        return await self._task_persistence_queries.get_last_for_zone(zone_id=zone_id)
 
     async def get_last_irrigation_for_zone(self, *, zone_id: int) -> AutomationTask | None:
-        """Последняя задача полива зоны, независимо от статуса."""
-        row = await self._fetchrow(
-            """
-            SELECT *
-            FROM ae_tasks
-            WHERE zone_id = $1
-              AND task_type = 'irrigation_start'
-            ORDER BY updated_at DESC, id DESC
-            LIMIT 1
-            """,
-            zone_id,
-        )
-        return self._task_from_row(row)
+        return await self._task_persistence_queries.get_last_irrigation_for_zone(zone_id=zone_id)
 
     async def get_by_id(self, *, task_id: int) -> AutomationTask | None:
-        row = await self._fetchrow(
-            """
-            SELECT *
-            FROM ae_tasks
-            WHERE id = $1
-            LIMIT 1
-            """,
-            task_id,
-        )
-        return self._task_from_row(row)
+        return await self._task_persistence_queries.get_by_id(task_id=task_id)
 
     async def list_for_startup_recovery(
         self,
@@ -264,38 +209,10 @@ class PgAutomationTaskRepository:
         worker_owner: str | None = None,
         now: datetime | None = None,
     ) -> list[AutomationTask]:
-        """Возвращает in-flight задачи для startup recovery.
-
-        Чужой активный zone lease не фильтруется на уровне SQL — use case
-        решает skip vs bounded escalate (H6).
-        """
-        _ = worker_owner
-        _ = now
-        rows = await self._fetch(
-            """
-            SELECT *
-            FROM ae_tasks
-            WHERE status = ANY($1::text[])
-            ORDER BY updated_at ASC, id ASC
-            """,
-            list(RUNNING_TASK_STATUSES),
-        )
-        return [AutomationTask.from_row(row) for row in rows]
+        return await self._task_persistence_queries.list_for_startup_recovery(worker_owner=worker_owner, now=now)
 
     async def list_waiting_command_for_reconcile(self, *, limit: int = 32) -> list[AutomationTask]:
-        """Возвращает `waiting_command` задачи для фонового reconcile (oldest first)."""
-        bounded_limit = max(1, min(int(limit), 200))
-        rows = await self._fetch(
-            """
-            SELECT *
-            FROM ae_tasks
-            WHERE status = 'waiting_command'
-            ORDER BY updated_at ASC, id ASC
-            LIMIT $1
-            """,
-            bounded_limit,
-        )
-        return [AutomationTask.from_row(row) for row in rows]
+        return await self._task_persistence_queries.list_waiting_command_for_reconcile(limit=limit)
 
     async def list_stale_claimed_running_for_reconcile(
         self,
@@ -307,99 +224,23 @@ class PgAutomationTaskRepository:
         stale_unconfirmed_before: datetime | None = None,
         limit: int = 16,
     ) -> list[AutomationTask]:
-        """Stale claimed/running/waiting_command и running+unconfirmed для janitor."""
-        normalized_claimed_before = self._normalize_timestamp(stale_claimed_before)
-        normalized_running_before = self._normalize_timestamp(stale_running_before)
-        normalized_waiting_before = self._normalize_timestamp(
-            stale_waiting_command_before or stale_running_before
+        return await self._task_persistence_queries.list_stale_claimed_running_for_reconcile(
+            now=now,
+            stale_claimed_before=stale_claimed_before,
+            stale_running_before=stale_running_before,
+            stale_waiting_command_before=stale_waiting_command_before,
+            stale_unconfirmed_before=stale_unconfirmed_before,
+            limit=limit,
         )
-        normalized_unconfirmed_before = self._normalize_timestamp(
-            stale_unconfirmed_before or stale_claimed_before
-        )
-        bounded_limit = max(1, min(int(limit), 16))
-        async with self._connection() as conn:
-            async with conn.transaction():
-                rows = await conn.fetch(
-                    """
-                    WITH stale AS (
-                        SELECT id
-                        FROM ae_tasks AS tasks
-                        WHERE (
-                            tasks.status = 'claimed'
-                            AND tasks.claimed_at IS NOT NULL
-                            AND tasks.claimed_at < $1
-                        ) OR (
-                            tasks.status = 'running'
-                            AND tasks.updated_at < $2
-                        ) OR (
-                            tasks.status = 'waiting_command'
-                            AND tasks.updated_at < $3
-                        ) OR (
-                            tasks.status IN ('claimed', 'running')
-                            AND EXISTS (
-                                SELECT 1
-                                FROM ae_commands AS commands
-                                WHERE commands.task_id = tasks.id
-                                  AND commands.publish_status IN ('pending', 'published_unconfirmed')
-                                  AND commands.updated_at < $4
-                            )
-                        )
-                        ORDER BY tasks.updated_at ASC, tasks.id ASC
-                        FOR UPDATE SKIP LOCKED
-                        LIMIT $5
-                    )
-                    SELECT tasks.*
-                    FROM ae_tasks AS tasks
-                    INNER JOIN stale ON stale.id = tasks.id
-                    ORDER BY tasks.updated_at ASC, tasks.id ASC
-                    """,
-                    normalized_claimed_before,
-                    normalized_running_before,
-                    normalized_waiting_before,
-                    normalized_unconfirmed_before,
-                    bounded_limit,
-                )
-        return [AutomationTask.from_row(row) for row in rows]
 
     async def task_has_unconfirmed_ae_commands(self, *, task_id: int) -> bool:
-        row = await self._fetchrow(
-            """
-            SELECT EXISTS(
-                SELECT 1
-                FROM ae_commands
-                WHERE task_id = $1
-                  AND publish_status IN ('pending', 'published_unconfirmed')
-            ) AS has_unconfirmed
-            """,
-            task_id,
-        )
-        return bool(row["has_unconfirmed"]) if row is not None else False
+        return await self._task_persistence_queries.task_has_unconfirmed_ae_commands(task_id=task_id)
 
     async def task_has_ae_commands(self, *, task_id: int) -> bool:
-        row = await self._fetchrow(
-            """
-            SELECT EXISTS(
-                SELECT 1
-                FROM ae_commands
-                WHERE task_id = $1
-            ) AS has_commands
-            """,
-            task_id,
-        )
-        return bool(row["has_commands"]) if row is not None else False
+        return await self._task_persistence_queries.task_has_ae_commands(task_id=task_id)
 
     async def fetch_pending_with_idle_zone_workflow_rows(self) -> list[Any]:
-        """Pending-задачи при workflow_phase=idle (часто после терминального stop в payload)."""
-        return await self._fetch(
-            """
-            SELECT t.*, zws.payload->>'ae3_cycle_start_stage' AS snapshot_stage
-            FROM ae_tasks t
-            INNER JOIN zone_workflow_state zws ON zws.zone_id = t.zone_id
-            WHERE t.status = 'pending'
-              AND zws.workflow_phase = 'idle'
-            ORDER BY t.id ASC
-            """,
-        )
+        return await self._task_persistence_queries.fetch_pending_with_idle_zone_workflow_rows()
 
     # ── Создание ────────────────────────────────────────────────────
 
@@ -426,60 +267,27 @@ class PgAutomationTaskRepository:
         irrigation_bundle_revision: str | None = None,
         conn: asyncpg.Connection | None = None,
     ) -> AutomationTask | None:
-        normalized_scheduled_for = self._normalize_timestamp(scheduled_for)
-        normalized_due_at = self._normalize_timestamp(due_at)
-        normalized_now = self._normalize_timestamp(now)
-        normalized_meta = self._normalize_meta(intent_meta)
-        normalized_decision_config = self._normalize_json_mapping(irrigation_decision_config)
-
-        try:
-            row = await self._fetchrow(
-                """
-                INSERT INTO ae_tasks (
-                    zone_id, task_type, status, idempotency_key,
-                    topology, current_stage, workflow_phase,
-                    control_mode_snapshot,
-                    irrigation_mode, irrigation_requested_duration_sec,
-                    irrigation_decision_strategy, irrigation_decision_config, irrigation_bundle_revision,
-                    intent_source, intent_trigger, intent_id, intent_meta,
-                    scheduled_for, due_at, stage_entered_at,
-                    created_at, updated_at
-                )
-                VALUES (
-                    $1, $2, 'pending', $3,
-                    $4, $5, $6,
-                    (SELECT control_mode FROM zones WHERE id = $1),
-                    $7, $8, $9, $10::jsonb, $11,
-                    $12, $13, $14, $15::jsonb,
-                    $16, $17, $18,
-                    $18, $18
-                )
-                RETURNING *
-                """,
-                zone_id,
-                task_type,
-                idempotency_key,
-                topology,
-                current_stage,
-                workflow_phase,
-                irrigation_mode,
-                irrigation_requested_duration_sec,
-                irrigation_decision_strategy,
-                normalized_decision_config,
-                irrigation_bundle_revision,
-                intent_source,
-                intent_trigger,
-                intent_id,
-                normalized_meta,
-                normalized_scheduled_for,
-                normalized_due_at,
-                normalized_now,
-                conn=conn,
-            )
-        except asyncpg.UniqueViolationError:
-            return None
-
-        return self._task_from_row(row)
+        return await self._task_persistence_creation.create_pending(
+            zone_id=zone_id,
+            idempotency_key=idempotency_key,
+            task_type=task_type,
+            topology=topology,
+            current_stage=current_stage,
+            workflow_phase=workflow_phase,
+            intent_source=intent_source,
+            intent_trigger=intent_trigger,
+            intent_id=intent_id,
+            intent_meta=intent_meta,
+            scheduled_for=scheduled_for,
+            due_at=due_at,
+            now=now,
+            irrigation_mode=irrigation_mode,
+            irrigation_requested_duration_sec=irrigation_requested_duration_sec,
+            irrigation_decision_strategy=irrigation_decision_strategy,
+            irrigation_decision_config=irrigation_decision_config,
+            irrigation_bundle_revision=irrigation_bundle_revision,
+            conn=conn,
+        )
 
     async def update_irrigation_runtime(
         self,
@@ -500,65 +308,23 @@ class PgAutomationTaskRepository:
         irrigation_setup_deadline_at: datetime | None = None,
         claim_generation: int = 0,
     ) -> AutomationTask | None:
-        normalized_now = self._normalize_timestamp(now)
-        normalized_wait_ready_deadline_at = (
-            self._normalize_timestamp(irrigation_wait_ready_deadline_at)
-            if irrigation_wait_ready_deadline_at is not None
-            else None
+        return await self._task_persistence_creation.update_irrigation_runtime(
+            task_id=task_id,
+            owner=owner,
+            now=now,
+            irrigation_mode=irrigation_mode,
+            irrigation_requested_duration_sec=irrigation_requested_duration_sec,
+            irrigation_decision_strategy=irrigation_decision_strategy,
+            irrigation_decision_config=irrigation_decision_config,
+            irrigation_bundle_revision=irrigation_bundle_revision,
+            irrigation_decision_outcome=irrigation_decision_outcome,
+            irrigation_decision_reason_code=irrigation_decision_reason_code,
+            irrigation_decision_degraded=irrigation_decision_degraded,
+            irrigation_replay_count=irrigation_replay_count,
+            irrigation_wait_ready_deadline_at=irrigation_wait_ready_deadline_at,
+            irrigation_setup_deadline_at=irrigation_setup_deadline_at,
+            claim_generation=claim_generation,
         )
-        normalized_setup_deadline_at = (
-            self._normalize_timestamp(irrigation_setup_deadline_at)
-            if irrigation_setup_deadline_at is not None
-            else None
-        )
-        normalized_decision_config = self._normalize_json_mapping(irrigation_decision_config)
-        row = await self._fetchrow(
-            """
-            UPDATE ae_tasks
-            SET irrigation_mode = COALESCE($3, irrigation_mode),
-                irrigation_requested_duration_sec = COALESCE($4, irrigation_requested_duration_sec),
-                irrigation_decision_strategy = COALESCE($5, irrigation_decision_strategy),
-                irrigation_decision_config = COALESCE($6::jsonb, irrigation_decision_config),
-                irrigation_bundle_revision = COALESCE($7, irrigation_bundle_revision),
-                irrigation_decision_outcome = COALESCE($8, irrigation_decision_outcome),
-                irrigation_decision_reason_code = COALESCE($9, irrigation_decision_reason_code),
-                irrigation_decision_degraded = CASE
-                    WHEN $10::boolean IS NULL THEN irrigation_decision_degraded
-                    ELSE $10
-                END,
-                irrigation_replay_count = COALESCE($11, irrigation_replay_count),
-                irrigation_wait_ready_deadline_at = CASE
-                    WHEN $12::timestamptz IS NULL THEN irrigation_wait_ready_deadline_at
-                    ELSE $12
-                END,
-                irrigation_setup_deadline_at = CASE
-                    WHEN $13::timestamptz IS NULL THEN irrigation_setup_deadline_at
-                    ELSE $13
-                END,
-                updated_at = $14
-            WHERE id = $1
-              AND claimed_by = $2
-              AND claim_generation = $15
-              AND status IN ('claimed', 'running', 'waiting_command')
-            RETURNING *
-            """,
-            task_id,
-            owner,
-            irrigation_mode,
-            irrigation_requested_duration_sec,
-            irrigation_decision_strategy,
-            normalized_decision_config,
-            irrigation_bundle_revision,
-            irrigation_decision_outcome,
-            irrigation_decision_reason_code,
-            irrigation_decision_degraded,
-            irrigation_replay_count,
-            normalized_wait_ready_deadline_at,
-            normalized_setup_deadline_at,
-            normalized_now,
-            int(claim_generation),
-        )
-        return self._task_from_row(row)
 
     # ── Claim / release ─────────────────────────────────────────────
 
@@ -571,17 +337,12 @@ class PgAutomationTaskRepository:
         lease_ttl_sec: int,
         overall_deadline_sec: int = 604800,
     ) -> tuple[AutomationTask, ZoneLease] | None:
-        """Захватывает pending-задачу и zone lease в одной транзакции.
-
-        Если lease не получена, транзакция откатывается: задача не остаётся claimed.
-        """
-        return await self._claim_with_zone_lease(
+        return await self._task_persistence_claim.claim_next_with_zone_lease(
             owner=owner,
             process_run_id=process_run_id,
             now=now,
             lease_ttl_sec=lease_ttl_sec,
             overall_deadline_sec=overall_deadline_sec,
-            task_id=None,
         )
 
     async def claim_pending_task_with_zone_lease(
@@ -595,14 +356,13 @@ class PgAutomationTaskRepository:
         overall_deadline_sec: int = 604800,
         conn: asyncpg.Connection | None = None,
     ) -> tuple[AutomationTask, ZoneLease] | None:
-        """Тот же атомарный claim, но только для конкретной pending-задачи."""
-        return await self._claim_with_zone_lease(
+        return await self._task_persistence_claim.claim_pending_task_with_zone_lease(
+            task_id=task_id,
             owner=owner,
             process_run_id=process_run_id,
             now=now,
             lease_ttl_sec=lease_ttl_sec,
             overall_deadline_sec=overall_deadline_sec,
-            task_id=int(task_id),
             conn=conn,
         )
 
@@ -617,184 +377,24 @@ class PgAutomationTaskRepository:
         task_id: int | None,
         conn: asyncpg.Connection | None = None,
     ) -> tuple[AutomationTask, ZoneLease] | None:
-        normalized_owner = str(owner or "").strip()
-        normalized_run = str(process_run_id or "").strip()
-        if not normalized_owner or not normalized_run:
-            return None
-        normalized_now = self._normalize_timestamp(now)
-        leased_until = normalized_now + timedelta(seconds=max(1, int(lease_ttl_sec)))
-        first_claim_deadline = normalized_now + timedelta(seconds=max(60, int(overall_deadline_sec)))
-
-        async def _run(db: asyncpg.Connection) -> tuple[AutomationTask, ZoneLease] | None:
-            try:
-                async with db.transaction():
-                    if task_id is None:
-                        row = await db.fetchrow(
-                            """
-                            WITH candidate AS (
-                                SELECT id
-                                FROM ae_tasks
-                                WHERE status = 'pending'
-                                  AND (
-                                      due_at <= $1
-                                      OR (overall_deadline_at IS NOT NULL AND overall_deadline_at <= $1)
-                                  )
-                                ORDER BY LEAST(due_at, COALESCE(overall_deadline_at, due_at)) ASC,
-                                         created_at ASC,
-                                         id ASC
-                                FOR UPDATE SKIP LOCKED
-                                LIMIT 1
-                            )
-                            UPDATE ae_tasks tasks
-                            SET status = 'claimed',
-                                claimed_by = $2,
-                                claimed_at = $1,
-                                claim_generation = nextval('ae_claim_generation_seq'),
-                                process_run_id = $3,
-                                overall_deadline_at = COALESCE(tasks.overall_deadline_at, $4),
-                                updated_at = $1
-                            FROM candidate
-                            WHERE tasks.id = candidate.id
-                            RETURNING tasks.*
-                            """,
-                            normalized_now,
-                            normalized_owner,
-                            normalized_run,
-                            first_claim_deadline,
-                        )
-                    else:
-                        row = await db.fetchrow(
-                            """
-                            WITH candidate AS (
-                                SELECT id
-                                FROM ae_tasks
-                                WHERE id = $5
-                                  AND status = 'pending'
-                                  AND (
-                                      due_at <= $1
-                                      OR (overall_deadline_at IS NOT NULL AND overall_deadline_at <= $1)
-                                  )
-                                FOR UPDATE SKIP LOCKED
-                            )
-                            UPDATE ae_tasks tasks
-                            SET status = 'claimed',
-                                claimed_by = $2,
-                                claimed_at = $1,
-                                claim_generation = nextval('ae_claim_generation_seq'),
-                                process_run_id = $3,
-                                overall_deadline_at = COALESCE(tasks.overall_deadline_at, $4),
-                                updated_at = $1
-                            FROM candidate
-                            WHERE tasks.id = candidate.id
-                            RETURNING tasks.*
-                            """,
-                            normalized_now,
-                            normalized_owner,
-                            normalized_run,
-                            first_claim_deadline,
-                            int(task_id),
-                        )
-                    task = self._task_from_row(row)
-                    if task is None:
-                        return None
-                    lease_row = await db.fetchrow(
-                        """
-                        INSERT INTO ae_zone_leases (
-                            zone_id, owner, leased_until, updated_at, claim_generation, process_run_id
-                        )
-                        VALUES ($1, $2, $3, $4, $5, $6)
-                        ON CONFLICT (zone_id) DO UPDATE
-                        SET owner = EXCLUDED.owner,
-                            leased_until = EXCLUDED.leased_until,
-                            updated_at = EXCLUDED.updated_at,
-                            claim_generation = EXCLUDED.claim_generation,
-                            process_run_id = EXCLUDED.process_run_id
-                        WHERE ae_zone_leases.leased_until <= EXCLUDED.updated_at
-                           OR (
-                                ae_zone_leases.owner = EXCLUDED.owner
-                                AND ae_zone_leases.process_run_id IS NOT DISTINCT FROM EXCLUDED.process_run_id
-                           )
-                        RETURNING zone_id, owner, leased_until, updated_at, claim_generation, process_run_id
-                        """,
-                        int(task.zone_id),
-                        normalized_owner,
-                        leased_until,
-                        normalized_now,
-                        int(task.claim_generation),
-                        normalized_run,
-                    )
-                    if lease_row is None:
-                        raise _ZoneLeaseNotAcquired()
-                    return task, ZoneLease.from_row(lease_row)
-            except _ZoneLeaseNotAcquired:
-                return None
-
-        if conn is not None:
-            return await _run(conn)
-        async with self._connection() as owned:
-            return await _run(owned)
+        return await self._task_persistence_claim.claim_with_zone_lease(
+            owner=owner,
+            process_run_id=process_run_id,
+            now=now,
+            lease_ttl_sec=lease_ttl_sec,
+            overall_deadline_sec=overall_deadline_sec,
+            task_id=task_id,
+            conn=conn,
+        )
 
     async def refresh_pending_queue_metrics(self, *, now: datetime) -> None:
-        """Обновляет gauge метрики очереди pending одним SQL-запросом."""
-        normalized_now = self._normalize_timestamp(now)
-        row = await self._fetchrow(
-            """
-            SELECT
-                COUNT(*)::double precision AS pending_count,
-                COALESCE(
-                    EXTRACT(EPOCH FROM ($1 - MIN(created_at))),
-                    0
-                )::double precision AS oldest_age_sec
-            FROM ae_tasks
-            WHERE status = 'pending'
-            """,
-            normalized_now,
-        )
-        if row is None:
-            PENDING_TASKS.set(0)
-            OLDEST_PENDING_TASK_AGE_SECONDS.set(0)
-            return
-        PENDING_TASKS.set(float(row["pending_count"] or 0))
-        OLDEST_PENDING_TASK_AGE_SECONDS.set(max(0.0, float(row["oldest_age_sec"] or 0)))
+        return await self._task_persistence_metrics.refresh_pending_queue_metrics(now=now)
 
     async def refresh_active_task_age_metrics(self, *, now: datetime) -> None:
-        """Обновляет gauge возраста самой старой активной задачи по статусу."""
-        normalized_now = self._normalize_timestamp(now)
-        for status in ("claimed", "running", "waiting_command"):
-            OLDEST_ACTIVE_TASK_AGE_SECONDS.labels(status=status).set(0.0)
-        rows = await self._fetch(
-            """
-            SELECT
-                status,
-                COALESCE(
-                    EXTRACT(EPOCH FROM ($1 - MIN(updated_at))),
-                    0
-                )::double precision AS oldest_age_sec
-            FROM ae_tasks
-            WHERE status IN ('claimed', 'running', 'waiting_command')
-            GROUP BY status
-            """,
-            normalized_now,
-        )
-        for row in rows:
-            status = str(row["status"] or "").strip()
-            if not status:
-                continue
-            OLDEST_ACTIVE_TASK_AGE_SECONDS.labels(status=status).set(
-                max(0.0, float(row["oldest_age_sec"] or 0))
-            )
+        return await self._task_persistence_metrics.refresh_active_task_age_metrics(now=now)
 
     async def next_pending_due_at(self) -> datetime | None:
-        row = await self._fetchrow(
-            """
-            SELECT LEAST(due_at, COALESCE(overall_deadline_at, due_at)) AS effective_due_at
-            FROM ae_tasks
-            WHERE status = 'pending'
-            ORDER BY effective_due_at ASC, created_at ASC, id ASC
-            LIMIT 1
-            """
-        )
-        return None if row is None else row["effective_due_at"]
+        return await self._task_persistence_queries.next_pending_due_at()
 
     async def release_claim(
         self,
@@ -804,27 +404,9 @@ class PgAutomationTaskRepository:
         now: datetime,
         claim_generation: int = 0,
     ) -> bool:
-        normalized_now = self._normalize_timestamp(now)
-        row = await self._fetchrow(
-            """
-            UPDATE ae_tasks
-            SET status = 'pending',
-                claimed_by = NULL,
-                claimed_at = NULL,
-                process_run_id = NULL,
-                updated_at = $3
-            WHERE id = $1
-              AND status = 'claimed'
-              AND claimed_by = $2
-              AND claim_generation = $4
-            RETURNING id
-            """,
-            task_id,
-            owner,
-            normalized_now,
-            int(claim_generation),
+        return await self._task_persistence_claim.release_claim(
+            task_id=task_id, owner=owner, now=now, claim_generation=claim_generation
         )
-        return row is not None
 
     async def requeue_unpublished_execution(
         self,
@@ -834,118 +416,26 @@ class PgAutomationTaskRepository:
         now: datetime,
         claim_generation: int = 0,
     ) -> AutomationTask | None:
-        """Откатывает `claimed|running` без `ae_commands` в `pending` для graceful shutdown."""
-        normalized_now = self._normalize_timestamp(now)
-        row = await self._fetchrow(
-            """
-            UPDATE ae_tasks AS tasks
-            SET status = 'pending',
-                claimed_by = NULL,
-                claimed_at = NULL,
-                process_run_id = NULL,
-                updated_at = $3
-            WHERE tasks.id = $1
-              AND tasks.status IN ('claimed', 'running')
-              AND tasks.claimed_by = $2
-              AND tasks.claim_generation = $4
-              AND NOT EXISTS (
-                  SELECT 1
-                  FROM ae_commands AS commands
-                  WHERE commands.task_id = tasks.id
-              )
-            RETURNING tasks.*
-            """,
-            task_id,
-            owner,
-            normalized_now,
-            int(claim_generation),
+        return await self._task_persistence_claim.requeue_unpublished_execution(
+            task_id=task_id, owner=owner, now=now, claim_generation=claim_generation
         )
-        task = self._task_from_row(row)
-        if task is not None:
-            self._log_fsm_success(
-                action="requeue",
-                task=task,
-                from_status="claimed|running",
-                to_status="pending",
-                owner=owner,
-            )
-        else:
-            await self._log_fsm_cas_miss(
-                action="requeue",
-                task_id=task_id,
-                to_status="pending",
-                owner=owner,
-            )
-        return task
 
     async def list_claimed_by_owner(self, *, owner: str) -> list[AutomationTask]:
-        rows = await self._fetch(
-            """
-            SELECT *
-            FROM ae_tasks
-            WHERE status = 'claimed'
-              AND claimed_by = $1
-            ORDER BY claimed_at ASC NULLS LAST, id ASC
-            """,
-            owner,
-        )
-        return [self._task_from_row(row) for row in rows]
+        return await self._task_persistence_queries.list_claimed_by_owner(owner=owner)
 
     async def list_unpublished_execution_by_owner(self, *, owner: str) -> list[AutomationTask]:
-        rows = await self._fetch(
-            """
-            SELECT tasks.*
-            FROM ae_tasks AS tasks
-            WHERE tasks.claimed_by = $1
-              AND tasks.status IN ('claimed', 'running')
-              AND NOT EXISTS (
-                  SELECT 1
-                  FROM ae_commands AS commands
-                  WHERE commands.task_id = tasks.id
-              )
-            ORDER BY tasks.claimed_at ASC NULLS LAST, tasks.id ASC
-            """,
-            owner,
-        )
-        return [self._task_from_row(row) for row in rows]
+        return await self._task_persistence_queries.list_unpublished_execution_by_owner(owner=owner)
 
     # ── Status transitions ──────────────────────────────────────────
 
     async def mark_start_event_emitted(self, *, task_id: int) -> None:
-        """Помечает задачу как уже получившую AE_TASK_STARTED событие (идемпотентно)."""
-        await self._execute(
-            """
-            UPDATE ae_tasks
-            SET start_event_emitted = TRUE
-            WHERE id = $1
-            """,
-            task_id,
-        )
+        return await self._task_persistence_stage_transitions.mark_start_event_emitted(task_id=task_id)
 
     async def increment_irr_probe_failure_streak(self, *, task_id: int) -> int:
-        """Инкрементирует счётчик подряд идущих deferred probe IRR state и возвращает новое значение."""
-        row = await self._fetchrow(
-            """
-            UPDATE ae_tasks
-            SET irr_probe_failure_streak = irr_probe_failure_streak + 1
-            WHERE id = $1
-            RETURNING irr_probe_failure_streak
-            """,
-            task_id,
-        )
-        return int(row["irr_probe_failure_streak"]) if row is not None else 0
+        return await self._task_persistence_stage_transitions.increment_irr_probe_failure_streak(task_id=task_id)
 
     async def reset_irr_probe_failure_streak(self, *, task_id: int) -> None:
-        """Сбрасывает счётчик deferred probe после успешного probe или transition."""
-        await self._execute(
-            """
-            UPDATE ae_tasks
-            SET irr_probe_failure_streak = 0
-            WHERE id = $1
-              AND irr_probe_failure_streak <> 0
-            """,
-            task_id,
-        )
+        return await self._task_persistence_stage_transitions.reset_irr_probe_failure_streak(task_id=task_id)
 
     async def mark_running(
         self,
@@ -955,14 +445,8 @@ class PgAutomationTaskRepository:
         now: datetime,
         claim_generation: int = 0,
     ) -> AutomationTask | None:
-        return await self._update_task_status(
-            task_id=task_id,
-            owner=owner,
-            next_status="running",
-            allowed_statuses=("claimed", "running"),
-            now=now,
-            action="mark_running",
-            claim_generation=claim_generation,
+        return await self._task_persistence_stage_transitions.mark_running(
+            task_id=task_id, owner=owner, now=now, claim_generation=claim_generation
         )
 
     async def resume_after_waiting_command(
@@ -973,14 +457,8 @@ class PgAutomationTaskRepository:
         now: datetime,
         claim_generation: int = 0,
     ) -> AutomationTask | None:
-        return await self._update_task_status(
-            task_id=task_id,
-            owner=owner,
-            next_status="running",
-            allowed_statuses=("waiting_command",),
-            now=now,
-            action="resume_after_waiting_command",
-            claim_generation=claim_generation,
+        return await self._task_persistence_stage_transitions.resume_after_waiting_command(
+            task_id=task_id, owner=owner, now=now, claim_generation=claim_generation
         )
 
     async def mark_waiting_command(
@@ -991,14 +469,8 @@ class PgAutomationTaskRepository:
         now: datetime,
         claim_generation: int = 0,
     ) -> AutomationTask | None:
-        return await self._update_task_status(
-            task_id=task_id,
-            owner=owner,
-            next_status="waiting_command",
-            allowed_statuses=("claimed", "running", "waiting_command"),
-            now=now,
-            action="mark_waiting_command",
-            claim_generation=claim_generation,
+        return await self._task_persistence_stage_transitions.mark_waiting_command(
+            task_id=task_id, owner=owner, now=now, claim_generation=claim_generation
         )
 
     async def recover_waiting_command(
@@ -1009,32 +481,9 @@ class PgAutomationTaskRepository:
         owner: str,
         claim_generation: int = 0,
     ) -> AutomationTask | None:
-        """Переводит task в `waiting_command` после reconcile legacy-команды.
-
-        Требует ``owner`` и ``claim_generation`` исходного claim.
-        """
-        normalized_now = self._normalize_timestamp(now)
-        normalized_owner = str(owner or "").strip()
-        if not normalized_owner:
-            return None
-        row = await self._fetchrow(
-            """
-            UPDATE ae_tasks
-            SET status = 'waiting_command',
-                updated_at = $2
-            WHERE id = $1
-              AND status = ANY($3::text[])
-              AND claimed_by = $4
-              AND claim_generation = $5
-            RETURNING *
-            """,
-            task_id,
-            normalized_now,
-            list(RUNNING_TASK_STATUSES),
-            normalized_owner,
-            int(claim_generation),
+        return await self._task_persistence_stage_transitions.recover_waiting_command(
+            task_id=task_id, now=now, owner=owner, claim_generation=claim_generation
         )
-        return self._task_from_row(row)
 
     # ── Stage transition (replaces requeue_pending) ─────────────────
 
@@ -1051,118 +500,17 @@ class PgAutomationTaskRepository:
         claim_generation: int = 0,
         conn: asyncpg.Connection | None = None,
     ) -> AutomationTask | None:
-        """Atomically update workflow + correction state and re-enqueue as pending.
-
-        ``preserve_pending_manual_step=True`` keeps a concurrently injected
-        operator step (POST /manual-step) that may have landed in DB while this
-        tick was already in-flight with a stale in-memory workflow snapshot.
-        """
-        normalized_due_at = self._normalize_timestamp(due_at)
-        normalized_now = self._normalize_timestamp(now)
-
-        row = await self._fetchrow(
-            """
-            UPDATE ae_tasks
-            SET status = 'pending',
-                claimed_by            = NULL,
-                claimed_at            = NULL,
-                current_stage         = $3,
-                workflow_phase        = $4,
-                stage_deadline_at     = $5,
-                stage_retry_count     = $6,
-                stage_entered_at      = $7,
-                clean_fill_cycle      = $8,
-                pending_manual_step   = CASE
-                    WHEN $54::boolean THEN pending_manual_step
-                    ELSE $9
-                END,
-                control_mode_snapshot = $10,
-                corr_step                 = $11,
-                corr_attempt              = $12,
-                corr_max_attempts         = $13,
-                corr_ec_attempt           = $14,
-                corr_ec_max_attempts      = $15,
-                corr_ph_attempt           = $16,
-                corr_ph_max_attempts      = $17,
-                corr_activated_here       = $18,
-                corr_stabilization_sec    = $19,
-                corr_return_stage_success = $20,
-                corr_return_stage_fail    = $21,
-                corr_outcome_success      = $22,
-                corr_needs_ec             = $23,
-                corr_ec_node_uid          = $24,
-                corr_ec_channel           = $25,
-                corr_ec_duration_ms       = $26,
-                corr_needs_ph_up          = $27,
-                corr_needs_ph_down        = $28,
-                corr_ph_node_uid          = $29,
-                corr_ph_channel           = $30,
-                corr_ph_duration_ms       = $31,
-                corr_wait_until           = $32,
-                corr_ec_component         = $33,
-                corr_ec_amount_ml         = $34,
-                corr_ec_dose_sequence_json = $35,
-                corr_ec_current_seq_index  = $36,
-                corr_ph_amount_ml         = $37,
-                corr_snapshot_event_id    = $38,
-                corr_snapshot_created_at  = $39,
-                corr_snapshot_cmd_id      = $40,
-                corr_snapshot_source_event_type = $41,
-                corr_pipeline_phase       = $42,
-                corr_active_component     = $43,
-                corr_water_ec             = $44,
-                corr_water_ph             = $45,
-                corr_nutrient_budget      = $46,
-                corr_component_targets_json = $47,
-                corr_dilute_attempts      = $48,
-                corr_ec_pid_frozen        = $49,
-                corr_baseline_id          = $50,
-                corr_limit_policy_logged  = $51,
-                due_at     = $52,
-                process_run_id = NULL,
-                updated_at = $53
-            WHERE id = $1
-              AND claimed_by = $2
-              AND claim_generation = $55
-              AND status IN ('claimed', 'running', 'waiting_command')
-            RETURNING *
-            """,
-            task_id,
-            owner,
-            workflow.current_stage,
-            workflow.workflow_phase,
-            workflow.stage_deadline_at,
-            workflow.stage_retry_count,
-            workflow.stage_entered_at,
-            workflow.clean_fill_cycle,
-            workflow.pending_manual_step,
-            workflow.control_mode,
-            *self._correction_values(correction),
-            normalized_due_at,
-            normalized_now,
-            bool(preserve_pending_manual_step),
-            int(claim_generation),
+        return await self._task_persistence_stage_transitions.update_stage(
+            task_id=task_id,
+            owner=owner,
+            workflow=workflow,
+            correction=correction,
+            due_at=due_at,
+            now=now,
+            preserve_pending_manual_step=preserve_pending_manual_step,
+            claim_generation=claim_generation,
             conn=conn,
         )
-        task = self._task_from_row(row)
-        if task is not None:
-            self._log_fsm_success(
-                action="requeue",
-                task=task,
-                from_status="claimed|running|waiting_command",
-                to_status="pending",
-                owner=owner,
-            )
-            await self._sync_intent_after_task_requeue(task=task, now=normalized_now, conn=conn)
-        else:
-            await self._log_fsm_cas_miss(
-                action="update_stage",
-                task_id=task_id,
-                to_status="pending",
-                owner=owner,
-                conn=conn,
-            )
-        return task
 
     async def _sync_intent_after_task_requeue(
         self,
@@ -1171,32 +519,9 @@ class PgAutomationTaskRepository:
         now: datetime,
         conn: asyncpg.Connection | None = None,
     ) -> None:
-        """Обновляет intent.updated_at при штатном requeue ae_task → pending (multi-stage workflow)."""
-        intent_id = int(getattr(task, "intent_id", 0) or 0)
-        if intent_id <= 0:
-            return
-        try:
-            await self._execute(
-                """
-                UPDATE zone_automation_intents
-                SET updated_at = $2
-                WHERE id = $1
-                  AND status = 'running'
-                """,
-                intent_id,
-                now,
-                conn=conn,
-            )
-        except Exception:
-            if conn is not None:
-                # An error in the shared transaction must roll back task progress.
-                raise
-            logger.warning(
-                "AE3 не смог синхронизировать intent после requeue: intent_id=%s task_id=%s",
-                intent_id,
-                getattr(task, "id", None),
-                exc_info=True,
-            )
+        return await self._task_persistence_stage_transitions.sync_intent_after_task_requeue(
+            task=task, now=now, conn=conn
+        )
 
     async def set_pending_manual_step(
         self,
@@ -1205,23 +530,9 @@ class PgAutomationTaskRepository:
         manual_step: str,
         now: datetime,
     ) -> AutomationTask | None:
-        normalized_now = self._normalize_timestamp(now)
-        row = await self._fetchrow(
-            """
-            UPDATE ae_tasks
-            SET pending_manual_step = $2,
-                due_at = $3,
-                updated_at = $3
-            WHERE id = $1
-              AND status = ANY($4::text[])
-            RETURNING *
-            """,
-            task_id,
-            manual_step,
-            normalized_now,
-            list(ACTIVE_TASK_STATUSES),
+        return await self._task_persistence_stage_transitions.set_pending_manual_step(
+            task_id=task_id, manual_step=manual_step, now=now
         )
-        return self._task_from_row(row)
 
     async def update_control_mode_snapshot_for_zone(
         self,
@@ -1230,31 +541,9 @@ class PgAutomationTaskRepository:
         control_mode: str,
         now: datetime,
     ) -> AutomationTask | None:
-        normalized_now = self._normalize_timestamp(now)
-        row = await self._fetchrow(
-            """
-            WITH updated AS (
-                UPDATE ae_tasks
-                SET control_mode_snapshot = $2::varchar,
-                    pending_manual_step = CASE
-                        WHEN $2::text = 'auto' THEN NULL
-                        ELSE pending_manual_step
-                    END,
-                    updated_at = $3
-                WHERE zone_id = $1
-                  AND status IN ('pending', 'claimed', 'running', 'waiting_command')
-                RETURNING *
-            )
-            SELECT *
-            FROM updated
-            ORDER BY updated_at DESC, id DESC
-            LIMIT 1
-            """,
-            zone_id,
-            control_mode,
-            normalized_now,
+        return await self._task_persistence_stage_transitions.update_control_mode_snapshot_for_zone(
+            zone_id=zone_id, control_mode=control_mode, now=now
         )
-        return self._task_from_row(row)
 
     # ── Terminal transitions ────────────────────────────────────────
 
@@ -1267,46 +556,9 @@ class PgAutomationTaskRepository:
         claim_generation: int = 0,
         conn: asyncpg.Connection | None = None,
     ) -> AutomationTask | None:
-        normalized_now = self._normalize_timestamp(now)
-        row = await self._fetchrow(
-            """
-            UPDATE ae_tasks
-            SET status = 'completed',
-                updated_at = $3,
-                completed_at = $3,
-                error_code = NULL,
-                error_message = NULL
-            WHERE id = $1
-              AND claimed_by = $2
-              AND claim_generation = $4
-              AND status IN ('claimed', 'running', 'waiting_command')
-            RETURNING *
-            """,
-            task_id,
-            owner,
-            normalized_now,
-            int(claim_generation),
-            conn=conn,
+        return await self._task_persistence_terminal_transitions.mark_completed(
+            task_id=task_id, owner=owner, now=now, claim_generation=claim_generation, conn=conn
         )
-        task = self._task_from_row(row)
-        if task is not None:
-            self._observe_task_duration(row=row, outcome="completed")
-            self._log_fsm_success(
-                action="terminal",
-                task=task,
-                from_status="claimed|running|waiting_command",
-                to_status="completed",
-                owner=owner,
-            )
-        else:
-            await self._log_fsm_cas_miss(
-                action="terminal",
-                task_id=task_id,
-                to_status="completed",
-                owner=owner,
-                conn=conn,
-            )
-        return task
 
     async def mark_failed(
         self,
@@ -1318,13 +570,12 @@ class PgAutomationTaskRepository:
         now: datetime,
         claim_generation: int = 0,
     ) -> AutomationTask | None:
-        return await self._mark_failed_row(
+        return await self._task_persistence_terminal_transitions.mark_failed(
             task_id=task_id,
+            owner=owner,
             error_code=error_code,
             error_message=error_message,
             now=now,
-            owner=owner,
-            require_owner=True,
             claim_generation=claim_generation,
         )
 
@@ -1338,15 +589,13 @@ class PgAutomationTaskRepository:
         owner: str,
         claim_generation: int,
     ) -> AutomationTask | None:
-        """Fail только того claim, который вызвал recovery. Чужое поколение не трогает."""
-        return await self._mark_failed_row(
+        return await self._task_persistence_terminal_transitions.fail_for_recovery(
             task_id=task_id,
             error_code=error_code,
             error_message=error_message,
             now=now,
             owner=owner,
-            require_owner=True,
-            claim_generation=int(claim_generation),
+            claim_generation=claim_generation,
         )
 
     async def fail_pending_or_active_for_recovery(
@@ -1358,46 +607,18 @@ class PgAutomationTaskRepository:
         now: datetime,
         claim_generation: int,
     ) -> AutomationTask | None:
-        """Fail pending/active только наблюдаемого поколения claim."""
-        normalized_now = self._normalize_timestamp(now)
-        row = await self._fetchrow(
-            """
-            UPDATE ae_tasks
-            SET status = 'failed',
-                error_code = $2,
-                error_message = $3,
-                updated_at = $4,
-                completed_at = $4
-            WHERE id = $1
-              AND claim_generation = $6
-              AND status = ANY($5::text[])
-            RETURNING *
-            """,
-            task_id,
-            error_code,
-            error_message,
-            normalized_now,
-            list(ACTIVE_TASK_STATUSES),
-            int(claim_generation),
+        return await self._task_persistence_terminal_transitions.fail_pending_or_active_for_recovery(
+            task_id=task_id,
+            error_code=error_code,
+            error_message=error_message,
+            now=now,
+            claim_generation=claim_generation,
         )
-        return self._task_from_row(row)
 
     # ── Audit trail ─────────────────────────────────────────────────
 
     async def get_transitions_for_task(self, *, task_id: int, limit: int = 50) -> list[dict]:
-        """Return stage transitions for a task ordered chronologically."""
-        rows = await self._fetch(
-            """
-            SELECT from_stage, to_stage, workflow_phase, triggered_at, metadata
-            FROM ae_stage_transitions
-            WHERE task_id = $1
-            ORDER BY triggered_at ASC, id ASC
-            LIMIT $2
-            """,
-            task_id,
-            limit,
-        )
-        return [dict(row) for row in rows]
+        return await self._task_persistence_queries.get_transitions_for_task(task_id=task_id, limit=limit)
 
     async def record_transition(
         self,
@@ -1409,41 +630,14 @@ class PgAutomationTaskRepository:
         metadata: Mapping[str, Any] | None = None,
         now: datetime,
     ) -> None:
-        """INSERT into ae_stage_transitions (append-only audit log).
-
-        If the task was already removed by cleanup, skip the transition silently.
-        This keeps the audit trail best-effort and avoids FK races during teardown.
-        """
-        normalized_now = self._normalize_timestamp(now)
-        normalized_meta = self._normalize_meta(metadata)
-        result = await self._execute(
-            """
-            INSERT INTO ae_stage_transitions (
-                task_id, from_stage, to_stage, workflow_phase,
-                triggered_at, metadata
-            )
-            SELECT
-                $1, $2, $3, $4, $5, $6::jsonb
-            FROM ae_tasks
-            WHERE id = $1
-            """,
-            task_id,
-            from_stage,
-            to_stage,
-            workflow_phase,
-            normalized_now,
-            normalized_meta,
+        return await self._task_persistence_stage_transitions.record_transition(
+            task_id=task_id,
+            from_stage=from_stage,
+            to_stage=to_stage,
+            workflow_phase=workflow_phase,
+            metadata=metadata,
+            now=now,
         )
-        # asyncpg execute() возвращает PostgreSQL CommandStatus: "INSERT oid rows".
-        # rows == 0 означает, что task row был удалён cleanup-ом (FK guard).
-        status = str(result).strip()
-        if status.startswith("INSERT") and status.split()[-1] == "0":
-            logger.warning(
-                "AE3 record_transition skipped because task row was missing: task_id=%s from=%s to=%s",
-                task_id,
-                from_stage,
-                to_stage,
-            )
 
     async def _update_task_status(
         self,
@@ -1456,75 +650,19 @@ class PgAutomationTaskRepository:
         action: str,
         claim_generation: int = 0,
     ) -> AutomationTask | None:
-        normalized_now = self._normalize_timestamp(now)
-        row = await self._fetchrow(
-            """
-            UPDATE ae_tasks
-            SET status = $3,
-                updated_at = $4
-            WHERE id = $1
-              AND claimed_by = $2
-              AND claim_generation = $6
-              AND status = ANY($5::text[])
-            RETURNING *
-            """,
-            task_id,
-            owner,
-            next_status,
-            normalized_now,
-            list(allowed_statuses),
-            int(claim_generation),
-        )
-        task = self._task_from_row(row)
-        if task is not None:
-            self._log_fsm_success(
-                action=action,
-                task=task,
-                from_status="|".join(allowed_statuses),
-                to_status=next_status,
-                owner=owner,
-            )
-            return task
-        await self._log_fsm_cas_miss(
-            action=action,
+        return await self._task_persistence_terminal_transitions.update_task_status(
             task_id=task_id,
-            to_status=next_status,
             owner=owner,
+            next_status=next_status,
+            allowed_statuses=allowed_statuses,
+            now=now,
+            action=action,
+            claim_generation=claim_generation,
         )
-        return None
 
-    @staticmethod
-    def _observe_task_duration(*, row: asyncpg.Record | None, outcome: str) -> None:
-        if row is None:
-            return
-        created_at = row.get("created_at")
-        completed_at = row.get("completed_at") or row.get("updated_at")
-        if created_at is None or completed_at is None:
-            return
-        duration_sec = max(0.0, (completed_at - created_at).total_seconds())
-        topology = str(row.get("topology") or "unknown").strip() or "unknown"
-        TASK_DURATION_SECONDS.labels(topology=topology, outcome=outcome).observe(duration_sec)
+    _observe_task_duration = staticmethod(TaskPersistenceMetrics.observe_task_duration)
 
-    @staticmethod
-    def _log_fsm_success(
-        *,
-        action: str,
-        task: AutomationTask,
-        from_status: str,
-        to_status: str,
-        owner: str,
-    ) -> None:
-        logger.info(
-            "AE3 task FSM %s",
-            action,
-            extra={
-                "task_id": int(task.id),
-                "zone_id": int(task.zone_id),
-                "from_status": from_status,
-                "to_status": to_status,
-                "owner": owner,
-            },
-        )
+    _log_fsm_success = staticmethod(TaskPersistenceMetrics.log_fsm_success)
 
     async def _log_fsm_cas_miss(
         self,
@@ -1535,20 +673,8 @@ class PgAutomationTaskRepository:
         owner: str,
         conn: asyncpg.Connection | None = None,
     ) -> None:
-        row = await self._fetchrow("SELECT * FROM ae_tasks WHERE id = $1", task_id, conn=conn)
-        current = self._task_from_row(row)
-        from_status = str(current.status if current is not None else "missing")
-        zone_id = int(current.zone_id) if current is not None else None
-        logger.warning(
-            "AE3 task FSM CAS miss %s",
-            action,
-            extra={
-                "task_id": int(task_id),
-                "zone_id": zone_id,
-                "from_status": from_status,
-                "to_status": to_status,
-                "owner": owner,
-            },
+        return await self._task_persistence_metrics.log_fsm_cas_miss(
+            action=action, task_id=task_id, to_status=to_status, owner=owner, conn=conn
         )
 
     async def _mark_failed_row(
@@ -1562,49 +688,12 @@ class PgAutomationTaskRepository:
         require_owner: bool,
         claim_generation: int = 0,
     ) -> AutomationTask | None:
-        normalized_now = self._normalize_timestamp(now)
-        normalized_owner = str(owner or "").strip()
-        if not normalized_owner:
-            return None
-
-        row = await self._fetchrow(
-            """
-            UPDATE ae_tasks
-            SET status = 'failed',
-                error_code = $3,
-                error_message = $4,
-                updated_at = $5,
-                completed_at = $5
-            WHERE id = $1
-              AND claimed_by = $2
-              AND claim_generation = $7
-              AND status = ANY($6::text[])
-            RETURNING *
-            """,
-            task_id,
-            normalized_owner,
-            error_code,
-            error_message,
-            normalized_now,
-            list(RUNNING_TASK_STATUSES),
-            int(claim_generation),
+        return await self._task_persistence_terminal_transitions.mark_failed_row(
+            task_id=task_id,
+            error_code=error_code,
+            error_message=error_message,
+            now=now,
+            owner=owner,
+            require_owner=require_owner,
+            claim_generation=claim_generation,
         )
-
-        task = self._task_from_row(row)
-        if task is not None:
-            self._observe_task_duration(row=row, outcome="failed")
-            self._log_fsm_success(
-                action="terminal",
-                task=task,
-                from_status="claimed|running|waiting_command",
-                to_status="failed",
-                owner=str(owner or task.claimed_by or ""),
-            )
-        elif require_owner and owner is not None:
-            await self._log_fsm_cas_miss(
-                action="terminal",
-                task_id=task_id,
-                to_status="failed",
-                owner=owner,
-            )
-        return task

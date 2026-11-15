@@ -2,14 +2,17 @@
 
 namespace Tests\Feature\Broadcasting;
 
+use App\Http\Middleware\VerifyCsrfToken;
 use App\Models\User;
+use App\Models\Zone;
+use PHPUnit\Framework\Attributes\Group;
 use Tests\RefreshDatabase;
 use Tests\TestCase;
 
 /**
- * @group skip-in-ci
  * Broadcasting tests require Reverb server to be running
  */
+#[Group('skip-in-ci')]
 class BroadcastAuthTest extends TestCase
 {
     use RefreshDatabase;
@@ -17,7 +20,7 @@ class BroadcastAuthTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->withoutMiddleware([\App\Http\Middleware\VerifyCsrfToken::class]);
+        $this->withoutMiddleware([VerifyCsrfToken::class]);
         config(['broadcasting.default' => 'reverb']);
         require base_path('routes/channels.php');
     }
@@ -36,7 +39,7 @@ class BroadcastAuthTest extends TestCase
     public function test_authorizes_authenticated_users_for_zone_command_channels(): void
     {
         $user = User::factory()->create(['role' => 'operator']);
-        $zone = \App\Models\Zone::factory()->create();
+        $zone = Zone::factory()->create();
         $user->zones()->syncWithoutDetaching($zone->id);
 
         $response = $this->actingAs($user)->postJson('/broadcasting/auth', [

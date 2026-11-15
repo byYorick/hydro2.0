@@ -294,3 +294,10 @@ MQTT-namespace — это **хребет системы 2.0**, поэтому и
 - Зеркало для прошивки: `firmware/schemas`
 - Проверка паритета: `./tools/check_runtime_schema_parity.sh`
 - Синхронизация зеркала: `./tools/sync_runtime_schemas.sh`
+
+
+## Уточнения по результатам исправлений аудита
+
+Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0
+
+Исправления аудита 2026-11-14: production требует MQTT_PRODUCTION_ACL_FILE с явными user/topic правилами, сгенерированными tools/mqtt/generate_node_acl.py. Идентичность определяется username и отдельным паролем устройства, не client_id. Shared esp32_node ACL остаётся только для совместимости dev и не должен использоваться в production. Генератор ограничивает normal topics конкретным node_uid, pre-bind — конкретным hardware_id. Пароли должны быть добавлены в mounted Mosquitto password file, совпадать с NodeConfig mqtt.password и MQTT_NODE_PASSWORDS_FILE (JSON node_uid -> password для wrapping в HL).

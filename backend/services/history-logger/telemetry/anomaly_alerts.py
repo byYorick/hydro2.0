@@ -5,6 +5,7 @@ Module state (``_anomaly_alert_last_sent`` / ``_anomaly_resolved_last_sent``)
 """
 
 from __future__ import annotations
+from .dependencies import snapshot
 
 import os
 import time
@@ -16,9 +17,16 @@ from .helpers import build_anomaly_throttle_key, effective_anomaly_throttle_sec
 
 _anomaly_alert_last_sent: dict[str, float] = {}
 _anomaly_resolved_last_sent: dict[str, float] = {}
-_anomaly_resolved_throttle_sec = float(
-    os.getenv("TELEMETRY_ANOMALY_RESOLVED_THROTTLE_SEC", "300")
-)
+_anomaly_resolved_throttle_sec = float(os.getenv("TELEMETRY_ANOMALY_RESOLVED_THROTTLE_SEC", "300"))
+
+
+def _dependencies():
+    return snapshot(
+        {
+            'send_infra_alert': send_infra_alert,
+            'send_infra_resolved_alert': send_infra_resolved_alert,
+        }
+    )
 
 
 async def emit_telemetry_anomaly_alert(
@@ -33,6 +41,7 @@ async def emit_telemetry_anomaly_alert(
     metric_type: Optional[str] = None,
     details: Optional[dict] = None,
 ) -> None:
+    deps = _dependencies()
     throttle_key = build_anomaly_throttle_key(
         code=code,
         gh_uid=gh_uid,
@@ -60,7 +69,7 @@ async def emit_telemetry_anomaly_alert(
     )
     payload_details = {k: v for k, v in payload_details.items() if v is not None}
 
-    sent = await send_infra_alert(
+    sent = await deps.send_infra_alert(
         code=code,
         alert_type="Telemetry Anomaly",
         message=message,
@@ -87,6 +96,7 @@ async def emit_telemetry_anomaly_resolved_alert(
     channel: Optional[str] = None,
     metric_type: Optional[str] = None,
 ) -> None:
+    deps = _dependencies()
     throttle_key = "|".join(
         [
             "resolved",
@@ -111,7 +121,7 @@ async def emit_telemetry_anomaly_resolved_alert(
     }
     details = {k: v for k, v in details.items() if v is not None}
 
-    sent = await send_infra_resolved_alert(
+    sent = await deps.send_infra_resolved_alert(
         code=code,
         alert_type="Telemetry Anomaly",
         message=message,

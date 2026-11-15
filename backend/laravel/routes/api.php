@@ -127,7 +127,7 @@ if (app()->environment('testing', 'e2e')) {
 Route::middleware('throttle:120,1')->group(function () {
     // Используем middleware, который проверяет либо Sanctum токен, либо Python service token
     Route::get('system/config/full', [SystemController::class, 'configFull'])
-        ->middleware('verify.python.service');
+        ->middleware('verify.python.service:true');
 });
 
 // API routes for Inertia (using session authentication)
@@ -275,7 +275,7 @@ Route::middleware([
         Route::post('nodes', [NodeController::class, 'store']);
         Route::put('nodes/{node}', [NodeController::class, 'update']);
         Route::patch('nodes/{node}', [NodeController::class, 'update'])
-            ->middleware('verify.python.service');
+            ->middleware('verify.python.service:true');
         Route::delete('nodes/{node}', [NodeController::class, 'destroy']);
         Route::post('nodes/{node}/detach', [NodeController::class, 'detach']);
         Route::post('nodes/{node}/config/publish', [NodeController::class, 'publishConfig']);

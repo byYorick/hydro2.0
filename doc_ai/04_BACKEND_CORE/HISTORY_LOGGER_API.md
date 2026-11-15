@@ -771,3 +771,10 @@ $response = Http::timeout(5)->post('http://history-logger:9300/commands', [
 - `../03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md` — MQTT протокол
 - `../03_TRANSPORT_MQTT/BACKEND_NODE_CONTRACT_FULL.md` — контракт backend↔nodes
 - `REST_API_REFERENCE.md` — общий референс REST API
+
+
+## Уточнения по результатам исправлений аудита
+
+Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0
+
+Исправления аудита 2026-11-14: HTTP и restart drain используют одну PostgreSQL session advisory lock на cmd_id. Для изменяющих состояние команд до MQTT I/O сохраняется params.__hl_dispatch_started; поле служебное и исключено из сравнения пользовательских params. Повтор после SEND_FAILED или записанной попытки запрещён (409): результат требует reconciliation. Нельзя обойти защиту новым cmd_id без выяснения физического результата. Фоновый drain выполняет только state/test_sensor и fail-safe off, не старше 60 секунд; остальные записи переводятся в INVALID/DRAIN_ABANDON. Блокировка не обещает exactly-once физического действия. /health сохраняет диагностический ответ, /health/live проверяет процесс, /health/ready возвращает 503 при деградации зависимостей. NodeConfig с секретом без ключа wrapping отклоняется с 503.

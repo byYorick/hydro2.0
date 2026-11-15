@@ -33,7 +33,7 @@ class VerifyPythonServiceTokenTest extends TestCase
 
         $response = $this->middleware->handle($request, function ($req) {
             return response()->json(['status' => 'ok']);
-        });
+        }, 'true');
 
         $this->assertEquals(200, $response->getStatusCode());
         $this->assertEquals('ok', json_decode($response->getContent(), true)['status']);

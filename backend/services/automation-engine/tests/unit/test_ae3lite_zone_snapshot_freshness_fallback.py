@@ -55,7 +55,7 @@ def test_persistent_dead_min_60_seconds(monkeypatch: pytest.MonkeyPatch) -> None
 
 def test_actuator_query_includes_freshness_fallback_clause() -> None:
     """SQL-фильтр actuator-выборки содержит fallback по last_seen_at + параметр $2."""
-    from ae3lite.infrastructure.read_models import zone_snapshot_read_model as module
+    from ae3lite.infrastructure.read_models import zone_snapshot_loader as module
 
     source = module.__loader__.get_source(module.__name__)
     actuator_query_marker = "FROM nodes n\n                    JOIN node_channels nc"
@@ -69,7 +69,7 @@ def test_actuator_query_includes_freshness_fallback_clause() -> None:
 
 
 def test_diagnostics_query_groups_by_node() -> None:
-    from ae3lite.infrastructure.read_models import zone_snapshot_read_model as module
+    from ae3lite.infrastructure.read_models import zone_snapshot_loader as module
 
     source = module.__loader__.get_source(module.__name__)
     assert "active_actuator_count" in source

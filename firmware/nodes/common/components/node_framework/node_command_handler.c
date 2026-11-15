@@ -60,7 +60,7 @@ typedef struct {
 #define MAX_STATUS_LEN 16  // "DONE", "ERROR", "ACK"
 
 typedef struct {
-    char cmd_id[64];
+    char cmd_id[129];
     uint64_t timestamp_ms;
     char final_status[MAX_STATUS_LEN];  // Сохраненный финальный статус (DONE/ERROR)
     bool valid;
@@ -332,7 +332,7 @@ static void node_command_respond_invalid_json(
     int data_len,
     const char *reason
 ) {
-    char cmd_id[64] = {0};
+    char cmd_id[129] = {0};
     if (!try_extract_json_string_field(data, data_len, "cmd_id", cmd_id, sizeof(cmd_id))) {
         node_command_report_invalid_json(data, data_len);
         return;
@@ -1763,8 +1763,8 @@ const char *node_command_handler_get_cached_status(const char *cmd_id, const cha
 
         // Команда не найдена - добавляем в глобальный кеш (LRU: перезаписываем старую запись)
         size_t idx = s_global_cmd_cache.lru_index % CMD_ID_CACHE_SIZE;
-        strncpy(s_global_cmd_cache.global_cache[idx].cmd_id, cmd_id, 63);
-        s_global_cmd_cache.global_cache[idx].cmd_id[63] = '\0';
+        strncpy(s_global_cmd_cache.global_cache[idx].cmd_id, cmd_id, 128);
+        s_global_cmd_cache.global_cache[idx].cmd_id[128] = '\0';
         s_global_cmd_cache.global_cache[idx].timestamp_ms = current_time_ms;
         s_global_cmd_cache.global_cache[idx].valid = true;
         s_global_cmd_cache.global_cache[idx].has_final_status = false;

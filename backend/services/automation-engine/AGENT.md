@@ -1,7 +1,7 @@
 # AGENT.md (automation-engine / AE3-Lite v1)
 
 Краткие инструкции для ИИ-ассистента при работе в `backend/services/automation-engine`.
-Обновлено: 2026-09-30 (TopologyPack, handler_deps, `single_tank`; ранее 2026-08-17: E-STOP fail-closed без restore; dual-calib default fail-closed; operator cmds не обходят lease)
+Обновлено: 2026-11-15 (компонентная карта §11.2; ранее: TopologyPack, handler_deps, `single_tank`; ранее 2026-08-17: E-STOP fail-closed без restore; dual-calib default fail-closed; operator cmds не обходят lease)
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 
 ## 1. Главная цель
@@ -45,7 +45,8 @@ ae3lite/
   domain/
     entities/         # AutomationTask, ZoneWorkflow, ZoneLease, PlannedCommand
     errors.py         # ErrorCodes + domain exceptions
-    services/         # CycleStartPlanner, CorrectionPlanner, irrigation_decision_controller
+    services/         # CycleStartPlanner, CorrectionPlanner, correction_dose_routing, ec_batch_failure,
+                      # irrigation_decision_controller
     value_objects.py
   application/
     use_cases/        # create_task_from_intent, claim_next_task, execute_task,
@@ -54,7 +55,9 @@ ae3lite/
                       # prepare_recirc_*, await_ready, decision_gate,
                       # irrigation_*, correction, base (с _checkpoint hot-reload)
     services/         # workflow_topology (TopologyRegistry), topology_pack,
-                      # correction_transition_policy
+                      # correction_transition_policy, correction_observation_reader,
+                      # correction_dose_accounting, correction_observation_finalizer,
+                      # correction_ec_dose_executor
   hydraulics/         # flow solution/irrigation, hosted correction, tick lighting/climate
     adapters/         # intent mapping
   config/             # Pydantic schemas, runtime_plan_builder, loader
@@ -69,12 +72,24 @@ ae3lite/
     intent_status_listener.py   # LISTEN scheduler_intent_terminal → worker.kick()
     zone_event_listener.py      # LISTEN ae_zone_event → worker.kick()
   runtime/
-    worker.py         # Ae3RuntimeWorker (drain loop, lease heartbeat)
+    worker.py         # Ae3RuntimeWorker: drain, исполнение, cleanup/reconcile policies
+    lease_heartbeat.py # lease retry/budget и сигнал потери владения
+    intent_sync.py    # bounded retry running/terminal, alert/resolution
+    reconcile_loop.py # ordered callbacks, wake/poll/backoff
     bootstrap.py      # build_ae3_runtime_bundle()
     env.py            # Ae3RuntimeConfig.from_env()
     app.py            # create_app() / serve()
 main.py               # точка входа → ae3lite.main
 ```
+
+Компонентная карта реализации — `doc_ai/04_BACKEND_CORE/ae3lite.md`, §11.2
+(2026-11-15). `worker.py`, `app.py`, stage handlers, use cases, planners,
+read models и repositories сохраняют публичные фасады; логика находится в
+`worker_runtime_*`, `app_runtime_*`, `stage_*`, `correction_*`, `task_execution_*`,
+`workflow_routing_*`, `*_persistence_*`, `zone_snapshot_*`, `runtime_monitor_*`,
+`climate_tick_*`. Новые компоненты получают явные ports; не передавайте им
+handler/worker целиком. Mutable lifecycle state принадлежит экземпляру;
+`cached_property` в read/config adapters кеширует компоненты, не runtime данные.
 
 Канон автоматики — пакет `ae3lite/`. Top-level leftover `repositories/`, `services/`, `utils/`, `common/` удалены.
 

@@ -62,7 +62,7 @@ ACL (`backend/services/mqtt-bridge/acl`):
 - `history_logger` — `readwrite hydro/#` (единственная широкая учётка: команды, config, телеметрия).
 - `mqtt_bridge` — чтение status/lwt/heartbeat/telemetry.
 - `automation_engine`, `python_service` — без топиков (AE пишет команды через REST history-logger).
-- `esp32_node` — pattern по `%c` (client id = `node_uid`): запись telemetry/status/heartbeat/lwt/diagnostics/error/config_report/command_response/event, чтение `config` и `command`. Плюс `node_hello`, `time/request` (write), `time/response` (read) и тот же набор на pre-bind `gh-temp` (command/config там тоже только чтение).
+- Dev-only `esp32_node` — pattern по `%c` (client id = `node_uid`): запись telemetry/status/heartbeat/lwt/diagnostics/error/config_report/command_response/event, чтение `config` и `command`. Плюс `node_hello`, `time/request` (write), `time/response` (read) и тот же набор на pre-bind `gh-temp` (command/config там тоже только чтение).
 
 Старые прошивки с client id = MAC не попадут в зональные топики, пока их не перешьют этой версией `mqtt_manager`.
 
@@ -356,3 +356,8 @@ Target checks:
 ---
 
 # Конец файла SECURITY_ARCHITECTURE.md
+
+
+## Исправления аудита 2026-11-14
+
+Production MQTT требует индивидуальных username/password и явного ACL; см. [порядок миграции и ограничения проверки](AUDIT_FIXES_2026_11_14.md). Внутренний Laravel service middleware больше не принимает Sanctum по умолчанию. Config HMAC остаётся planned.

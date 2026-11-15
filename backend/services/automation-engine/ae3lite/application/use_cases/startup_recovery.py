@@ -39,12 +39,30 @@ from ae3lite.application.services.correction_interrupt_safety import (
 from common.db import create_zone_event
 from common.service_logs import send_service_log
 
-logger = logging.getLogger(__name__)
-
-_STARTUP_RECOVERY_OUTCOME_EVENT = "AE_STARTUP_RECOVERY_OUTCOME"
-
 
 from ae3lite.application.services.task_workflow_transition import TaskWorkflowTransition
+
+
+from ae3lite.application.services.startup_recovery_shared import logger, _STARTUP_RECOVERY_OUTCOME_EVENT
+from ae3lite.application.services.startup_recovery_state import StartupRecoveryState
+from ae3lite.application.services.startup_recovery_scan import StartupRecoveryScan, StartupRecoveryScanPorts
+from ae3lite.application.services.startup_recovery_terminal_repair import (
+    StartupRecoveryTerminalRepair,
+    StartupRecoveryTerminalRepairPorts,
+)
+from ae3lite.application.services.startup_recovery_command_recovery import (
+    StartupRecoveryCommandRecovery,
+    StartupRecoveryCommandRecoveryPorts,
+)
+from ae3lite.application.services.startup_recovery_stage_transition import (
+    StartupRecoveryStageTransition,
+    StartupRecoveryStageTransitionPorts,
+)
+from ae3lite.application.services.startup_recovery_failure import StartupRecoveryFailure, StartupRecoveryFailurePorts
+from ae3lite.application.services.startup_recovery_reporting import (
+    StartupRecoveryReporting,
+    StartupRecoveryReportingPorts,
+)
 
 
 class StartupRecoveryUseCase:
@@ -70,11 +88,14 @@ class StartupRecoveryUseCase:
         pid_state_repository: Any | None = None,
         terminal_command_reconcile_limit: int = 100,
     ) -> None:
+        self._startup_recovery_state = StartupRecoveryState()
         self._task_repository = task_repository
         self._lease_repository = lease_repository
         self._command_gateway = command_gateway
         self._workflow_repository = workflow_repository
-        self._transitions = TaskWorkflowTransition(task_repository=task_repository, workflow_repository=workflow_repository)
+        self._transitions = TaskWorkflowTransition(
+            task_repository=task_repository, workflow_repository=workflow_repository
+        )
         self._registry = topology_registry or TopologyRegistry()
         self._alert_repository = alert_repository
         self._use_startup_recovery_lock = bool(use_startup_recovery_lock)
@@ -91,50 +112,112 @@ class StartupRecoveryUseCase:
             min(1000, int(terminal_command_reconcile_limit)),
         )
         self._pending_correction_safety_checks: list[CorrectionInterruptPendingCheck] = []
+        self._startup_recovery_scan = StartupRecoveryScan(
+            StartupRecoveryScanPorts(
+                alert_repository=lambda: self._alert_repository,
+                lease_repository=lambda: self._lease_repository,
+                reconcile_pending_vs_terminal_idle_workflow=lambda *args, **kwargs: (
+                    self._reconcile_pending_vs_terminal_idle_workflow(*args, **kwargs)
+                ),
+                reconcile_terminal_task_commands=lambda *args, **kwargs: self._reconcile_terminal_task_commands(
+                    *args, **kwargs
+                ),
+                record_startup_recovery_outcome=lambda *args, **kwargs: self._record_startup_recovery_outcome(
+                    *args, **kwargs
+                ),
+                recover_task=lambda *args, **kwargs: self._recover_task(*args, **kwargs),
+                resolve_foreign_owned_task=lambda *args, **kwargs: self._resolve_foreign_owned_task(*args, **kwargs),
+                task_repository=lambda: self._task_repository,
+                use_startup_recovery_lock=lambda: self._use_startup_recovery_lock,
+                worker_owner=lambda: self._worker_owner,
+                global_load_open_pending_correction_interrupt_checks=lambda *args, **kwargs: (
+                    load_open_pending_correction_interrupt_checks(*args, **kwargs)
+                ),
+                global_try_session_advisory_lock=lambda *args, **kwargs: try_session_advisory_lock(*args, **kwargs),
+            ),
+            self._startup_recovery_state,
+        )
+        self._startup_recovery_terminal_repair = StartupRecoveryTerminalRepair(
+            StartupRecoveryTerminalRepairPorts(
+                alert_repository=lambda: self._alert_repository,
+                command_gateway=lambda: self._command_gateway,
+                command_repository=lambda: self._command_repository,
+                pid_state_repository=lambda: self._pid_state_repository,
+                task_repository=lambda: self._task_repository,
+                terminal_command_reconcile_limit=lambda: self._terminal_command_reconcile_limit,
+                use_startup_recovery_lock=lambda: self._use_startup_recovery_lock,
+                global_create_zone_event=lambda *args, **kwargs: create_zone_event(*args, **kwargs),
+                global_try_session_advisory_lock=lambda *args, **kwargs: try_session_advisory_lock(*args, **kwargs),
+            ),
+            self._startup_recovery_state,
+        )
+        self._startup_recovery_command_recovery = StartupRecoveryCommandRecovery(
+            StartupRecoveryCommandRecoveryPorts(
+                apply_topology_done_transition=lambda *args, **kwargs: self._apply_topology_done_transition(
+                    *args, **kwargs
+                ),
+                build_terminal_outcome=lambda *args, **kwargs: self._build_terminal_outcome(*args, **kwargs),
+                command_gateway=lambda: self._command_gateway,
+                correction_interrupt_verify_grace_sec=lambda: self._correction_interrupt_verify_grace_sec,
+                emit_failed_task_alert=lambda *args, **kwargs: self._emit_failed_task_alert(*args, **kwargs),
+                fail_task=lambda *args, **kwargs: self._fail_task(*args, **kwargs),
+                finalize_recovery_failure=lambda *args, **kwargs: self._finalize_recovery_failure(*args, **kwargs),
+                record_startup_recovery_outcome=lambda *args, **kwargs: self._record_startup_recovery_outcome(
+                    *args, **kwargs
+                ),
+                registry=lambda: self._registry,
+                release_lease_after_recovery_fail=lambda *args, **kwargs: self._release_lease_after_recovery_fail(
+                    *args, **kwargs
+                ),
+                task_repository=lambda: self._task_repository,
+                global_emit_correction_interrupt_pending_verify=lambda *args, **kwargs: (
+                    emit_correction_interrupt_pending_verify(*args, **kwargs)
+                ),
+            ),
+            self._startup_recovery_state,
+        )
+        self._startup_recovery_stage_transition = StartupRecoveryStageTransition(
+            StartupRecoveryStageTransitionPorts(
+                command_gateway=lambda: self._command_gateway,
+                emit_failed_task_alert=lambda *args, **kwargs: self._emit_failed_task_alert(*args, **kwargs),
+                fail_task=lambda *args, **kwargs: self._fail_task(*args, **kwargs),
+                registry=lambda: self._registry,
+                release_lease_after_recovery_fail=lambda *args, **kwargs: self._release_lease_after_recovery_fail(
+                    *args, **kwargs
+                ),
+                release_lease_after_recovery_success=lambda *args, **kwargs: self._release_lease_after_recovery_success(
+                    *args, **kwargs
+                ),
+                sync_workflow_failure_state=lambda *args, **kwargs: self._sync_workflow_failure_state(*args, **kwargs),
+                task_repository=lambda: self._task_repository,
+                transitions=lambda: self._transitions,
+                workflow_repository=lambda: self._workflow_repository,
+            ),
+            self._startup_recovery_state,
+        )
+        self._startup_recovery_failure = StartupRecoveryFailure(
+            StartupRecoveryFailurePorts(
+                alert_repository=lambda: self._alert_repository,
+                command_gateway=lambda: self._command_gateway,
+                foreign_lease_skip_escalate_sec=lambda: self._foreign_lease_skip_escalate_sec,
+                lease_repository=lambda: self._lease_repository,
+                sync_workflow_failure_state=lambda *args, **kwargs: self._sync_workflow_failure_state(*args, **kwargs),
+                task_repository=lambda: self._task_repository,
+                worker_owner=lambda: self._worker_owner,
+                workflow_repository=lambda: self._workflow_repository,
+            ),
+            self._startup_recovery_state,
+        )
+        self._startup_recovery_reporting = StartupRecoveryReporting(
+            StartupRecoveryReportingPorts(
+                global_create_zone_event=lambda *args, **kwargs: create_zone_event(*args, **kwargs),
+                global_send_service_log=lambda *args, **kwargs: send_service_log(*args, **kwargs),
+            ),
+            self._startup_recovery_state,
+        )
 
     async def run(self, *, now: datetime) -> StartupRecoveryResult:
-        STARTUP_RECOVERY_RUN.inc()
-        # release_expired выполняется каждой репликой без advisory lock (R7):
-        # просроченные lease не должны блокироваться, пока leader держит recovery lock.
-        released_expired_leases = await self._lease_repository.release_expired(now=now)
-        if not self._use_startup_recovery_lock:
-            return await self._run_scan_and_heal(
-                now=now,
-                released_expired_leases=released_expired_leases,
-            )
-        async with try_session_advisory_lock(AE3_STARTUP_RECOVERY_ADVISORY_LOCK_KEY) as acquired:
-            if acquired:
-                return await self._run_scan_and_heal(
-                    now=now,
-                    released_expired_leases=released_expired_leases,
-                )
-
-        STARTUP_RECOVERY_SKIPPED.labels(reason="lock_not_acquired").inc()
-        logger.info(
-            "Startup recovery: пропуск scan/heal — advisory lock удерживается другим экземпляром AE "
-            "(release_expired уже выполнен)",
-        )
-        # Fetch после выхода из advisory-lock context: соединение пула уже
-        # отпущено. Иначе pytest pool max_size=1 deadlocks на acquire.
-        restored: list[CorrectionInterruptPendingCheck] = []
-        try:
-            restored = list(await load_open_pending_correction_interrupt_checks(now=now))
-        except Exception:
-            logger.warning(
-                "Startup recovery: не удалось загрузить persisted correction-interrupt checks "
-                "(lock skipped)",
-                exc_info=True,
-            )
-        return StartupRecoveryResult(
-            released_expired_leases=released_expired_leases,
-            scanned_tasks=0,
-            completed_tasks=0,
-            failed_tasks=0,
-            waiting_command_tasks=0,
-            recovered_waiting_command_tasks=0,
-            skipped_due_to_lock=True,
-            pending_correction_safety_checks=tuple(restored),
-        )
+        return await self._startup_recovery_scan.run(now=now)
 
     async def _run_scan_and_heal(
         self,
@@ -142,238 +225,17 @@ class StartupRecoveryUseCase:
         now: datetime,
         released_expired_leases: int,
     ) -> StartupRecoveryResult:
-        list_for_recovery = self._task_repository.list_for_startup_recovery
-        if self._worker_owner:
-            tasks = await list_for_recovery(worker_owner=self._worker_owner, now=now)
-        else:
-            tasks = await list_for_recovery()
-
-        completed_tasks = 0
-        failed_tasks = 0
-        waiting_command_tasks = 0
-        recovered_waiting_command_tasks = 0
-        terminal_outcomes: list[StartupRecoveryTerminalOutcome] = []
-        self._pending_correction_safety_checks = []
-
-        for task in tasks:
-            foreign_action, foreign_ctx = await self._resolve_foreign_owned_task(
-                task=task,
-                now=now,
-            )
-            if foreign_action == ForeignLeaseAction.SKIP:
-                STARTUP_RECOVERY_SKIPPED.labels(reason="foreign_lease_task").inc()
-                record_foreign_lease_skip(recovery_source="startup_recovery")
-                logger.info(
-                    "Startup recovery: skip foreign-lease task task_id=%s zone_id=%s claimed_by=%s worker=%s",
-                    task.id,
-                    task.zone_id,
-                    task.claimed_by,
-                    self._worker_owner,
-                )
-                continue
-            if foreign_action == ForeignLeaseAction.ESCALATE:
-                failed = await escalate_foreign_lease_stale_task(
-                    task_repository=self._task_repository,
-                    alert_repository=self._alert_repository,
-                    task=task,
-                    now=now,
-                    recovery_source="startup_recovery",
-                    lease_context=foreign_ctx,
-                )
-                if failed is not None:
-                    failed_tasks += 1
-                    STARTUP_RECOVERY_TASK.labels(outcome="failed").inc()
-                    await self._record_startup_recovery_outcome(
-                        zone_id=int(failed.zone_id),
-                        task_id=int(failed.id),
-                        topology=str(failed.topology or ""),
-                        stage=str(failed.current_stage or ""),
-                        outcome="failed",
-                        terminal_outcome=None,
-                        recovery_source="startup_recovery",
-                    )
-                continue
-
-            outcome, terminal_outcome, observability_task = await self._recover_task(task=task, now=now)
-            STARTUP_RECOVERY_TASK.labels(outcome=outcome).inc()
-            if outcome == "completed":
-                completed_tasks += 1
-            elif outcome == "failed":
-                failed_tasks += 1
-            elif outcome == "waiting_command":
-                waiting_command_tasks += 1
-            elif outcome == "recovered_waiting_command":
-                waiting_command_tasks += 1
-                recovered_waiting_command_tasks += 1
-            else:
-                logger.error(
-                    "Startup recovery: неподдерживаемый outcome=%s task_id=%s zone_id=%s",
-                    outcome,
-                    getattr(task, "id", None),
-                    getattr(task, "zone_id", None),
-                )
-                raise StartupRecoveryError(f"Неподдерживаемый результат startup recovery={outcome}")
-            if terminal_outcome is not None:
-                terminal_outcomes.append(terminal_outcome)
-            report_task = observability_task or task
-            await self._record_startup_recovery_outcome(
-                zone_id=int(report_task.zone_id),
-                task_id=int(report_task.id),
-                topology=str(report_task.topology or ""),
-                stage=str(report_task.current_stage or ""),
-                outcome=outcome,
-                terminal_outcome=terminal_outcome,
-                recovery_source="startup_recovery",
-            )
-
-        rec_failed, rec_outcomes = await self._reconcile_pending_vs_terminal_idle_workflow(now=now)
-        failed_tasks += rec_failed
-        terminal_outcomes.extend(rec_outcomes)
-
-        reconciled_terminal_commands, unresolved_terminal_commands = (
-            await self._reconcile_terminal_task_commands(now=now)
-        )
-
-        await self._merge_persisted_pending_correction_checks(now=now)
-
-        return StartupRecoveryResult(
-            released_expired_leases=released_expired_leases,
-            scanned_tasks=len(tasks),
-            completed_tasks=completed_tasks,
-            failed_tasks=failed_tasks,
-            waiting_command_tasks=waiting_command_tasks,
-            recovered_waiting_command_tasks=recovered_waiting_command_tasks,
-            pending_correction_safety_checks=tuple(self._pending_correction_safety_checks),
-            terminal_outcomes=tuple(terminal_outcomes),
-            reconciled_terminal_commands=reconciled_terminal_commands,
-            unresolved_terminal_commands=unresolved_terminal_commands,
+        return await self._startup_recovery_scan.run_scan_and_heal(
+            now=now, released_expired_leases=released_expired_leases
         )
 
     async def reconcile_terminal_commands(self, *, now: datetime) -> tuple[int, int]:
-        """Periodic repair only; never repeat active-task startup recovery."""
-        if not self._use_startup_recovery_lock:
-            return await self._reconcile_terminal_task_commands(now=now)
-        async with try_session_advisory_lock(AE3_STARTUP_RECOVERY_ADVISORY_LOCK_KEY) as acquired:
-            if acquired:
-                return await self._reconcile_terminal_task_commands(now=now)
-        return 0, 0
+        return await self._startup_recovery_terminal_repair.reconcile_terminal_commands(now=now)
 
     async def _reconcile_terminal_task_commands(self, *, now: datetime) -> tuple[int, int]:
-        """Сверить хвост команд terminal-задач и учесть DONE dose в PID.
+        return await self._startup_recovery_terminal_repair.reconcile_terminal_task_commands(now=now)
 
-        Выборка шире accepted/NULL: туда же входят published_unconfirmed и
-        DONE dose без маркера учёта. Terminal status здесь не синтезируется.
-        Падение записи PID не ставит маркер, строка остаётся в следующей выборке.
-        """
-        list_rows = getattr(
-            self._command_repository,
-            "list_unreconciled_for_terminal_tasks",
-            None,
-        )
-        reconcile = getattr(self._command_gateway, "reconcile_terminal_task_command", None)
-        if not callable(list_rows) or not callable(reconcile):
-            return 0, 0
-
-        try:
-            rows = await list_rows(limit=self._terminal_command_reconcile_limit)
-        except Exception:
-            logger.warning("Startup recovery: terminal-command scan failed", exc_info=True)
-            return 0, 0
-
-        reconciled = 0
-        unresolved = 0
-        for ae_command in rows:
-            task_id = int(ae_command.get("task_id") or 0)
-            task = await self._task_repository.get_by_id(task_id=task_id)
-            if task is None:
-                unresolved += 1
-                continue
-            try:
-                result = await reconcile(task=task, ae_command=ae_command, now=now)
-            except Exception:
-                unresolved += 1
-                logger.warning(
-                    "Startup recovery: terminal-command reconcile failed task_id=%s ae_command_id=%s",
-                    task_id,
-                    ae_command.get("id"),
-                    exc_info=True,
-                )
-                await self._emit_terminal_command_alert(
-                    task=task,
-                    ae_command=ae_command,
-                    state="unknown",
-                    result=None,
-                    now=now,
-                )
-                continue
-
-            state = str(result.get("state") or "waiting_command").strip().lower()
-            if state == "waiting_command":
-                unresolved += 1
-                await self._emit_terminal_command_alert(
-                    task=task,
-                    ae_command=ae_command,
-                    state="unknown",
-                    result=result,
-                    now=now,
-                )
-                continue
-
-            reconciled += 1
-            if state == "done":
-                try:
-                    await self._reconcile_terminal_dose_pid_state(
-                        task=task,
-                        ae_command=ae_command,
-                        result=result,
-                        now=now,
-                    )
-                except Exception:
-                    reconciled -= 1
-                    unresolved += 1
-                    logger.warning(
-                        "Startup recovery: terminal dose PID accounting failed task_id=%s ae_command_id=%s",
-                        task_id,
-                        ae_command.get("id"),
-                        exc_info=True,
-                    )
-                    continue
-            await self._record_terminal_command_reconciled_event(
-                task=task,
-                ae_command=ae_command,
-                result=result,
-            )
-            await self._emit_terminal_command_alert(
-                task=task,
-                ae_command=ae_command,
-                state=state,
-                result=result,
-                now=now,
-            )
-        return reconciled, unresolved
-
-    @staticmethod
-    def _terminal_dose_pid_type(ae_command: Mapping[str, Any]) -> tuple[str, str] | None:
-        payload = ae_command.get("payload")
-        if not isinstance(payload, Mapping):
-            return None
-        if str(payload.get("cmd") or "").strip().lower() != "dose":
-            return None
-        context = payload.get("_ae3_dose_context")
-        if isinstance(context, Mapping):
-            pid_type = context.get("pid_type")
-            kind = context.get("last_correction_kind")
-            if (pid_type, kind) in {("ec", "ec"), ("ph", "ph_up"), ("ph", "ph_down")}:
-                return str(pid_type), str(kind)
-        planner_step = str(ae_command.get("planner_step") or "").strip().lower()
-        channel = str(ae_command.get("channel") or "").strip().lower()
-        if "corr_dose_ec" in planner_step or any(token in channel for token in ("ec", "npk", "calcium")):
-            return "ec", "ec"
-        if "corr_dose_ph_up" in planner_step or "ph_up" in channel or "alkali" in channel:
-            return "ph", "ph_up"
-        if "corr_dose_ph" in planner_step or "ph_down" in channel or "acid" in channel:
-            return "ph", "ph_down"
-        return None
+    _terminal_dose_pid_type = staticmethod(StartupRecoveryTerminalRepair.terminal_dose_pid_type)
 
     async def _reconcile_terminal_dose_pid_state(
         self,
@@ -383,38 +245,9 @@ class StartupRecoveryUseCase:
         result: Mapping[str, Any],
         now: datetime,
     ) -> None:
-        reconcile_pid = getattr(self._pid_state_repository, "reconcile_completed_dose", None)
-        dose_kind = self._terminal_dose_pid_type(ae_command)
-        terminal_at = result.get("terminal_at")
-        if not callable(reconcile_pid) or dose_kind is None or not isinstance(terminal_at, datetime):
-            return
-        payload = ae_command.get("payload") if isinstance(ae_command.get("payload"), Mapping) else {}
-        params = payload.get("params") if isinstance(payload.get("params"), Mapping) else {}
-        details = result.get("response_details") if isinstance(result.get("response_details"), Mapping) else {}
-        raw_duration = details.get("duration_ms", params.get("duration_ms", 0))
-        try:
-            duration_ms = max(0, int(raw_duration or 0))
-        except (TypeError, ValueError):
-            duration_ms = 0
-        pid_type, correction_kind = dose_kind
-        context = payload.get("_ae3_dose_context")
-        if isinstance(context, Mapping):
-            hold_sec = max(0, int(context["hold_sec"]))
-        else:
-            # Legacy commands did not persist their process timing. Preserve
-            # the task's available stabilization policy, without inventing it.
-            hold_sec = max(0, int(getattr(getattr(task, "correction", None), "stabilization_sec", 0) or 0))
-        await reconcile_pid(
-            zone_id=int(task.zone_id),
-            pid_type=pid_type,
-            last_output_ms=duration_ms,
-            last_dose_at=terminal_at,
-            hold_until=terminal_at + timedelta(seconds=hold_sec),
-            last_correction_kind=correction_kind,
-            ae_command_id=int(ae_command["id"]),
-            now=now,
+        return await self._startup_recovery_terminal_repair.reconcile_terminal_dose_pid_state(
+            task=task, ae_command=ae_command, result=result, now=now
         )
-        await self._mark_terminal_dose_accounted(ae_command=ae_command, now=now)
 
     async def _mark_terminal_dose_accounted(
         self,
@@ -422,12 +255,7 @@ class StartupRecoveryUseCase:
         ae_command: Mapping[str, Any],
         now: datetime,
     ) -> None:
-        """Закрыть учёт дозы только после успешного reconcile_completed_dose."""
-        mark = getattr(self._command_repository, "mark_dose_accounted", None)
-        command_id = ae_command.get("id")
-        if not callable(mark) or command_id is None:
-            return
-        await mark(ae_command_id=int(command_id), now=now)
+        return await self._startup_recovery_terminal_repair.mark_terminal_dose_accounted(ae_command=ae_command, now=now)
 
     async def _record_terminal_command_reconciled_event(
         self,
@@ -436,25 +264,9 @@ class StartupRecoveryUseCase:
         ae_command: Mapping[str, Any],
         result: Mapping[str, Any],
     ) -> None:
-        try:
-            await create_zone_event(
-                int(task.zone_id),
-                "AE_TERMINAL_TASK_COMMAND_RECONCILED",
-                {
-                    "task_id": int(task.id),
-                    "ae_command_id": int(ae_command["id"]),
-                    "cmd_id": result.get("cmd_id"),
-                    "terminal_status": result.get("legacy_status"),
-                    "stage": str(ae_command.get("stage_name") or ""),
-                },
-            )
-        except Exception:
-            logger.warning(
-                "Startup recovery: failed to emit terminal-command event task_id=%s ae_command_id=%s",
-                task.id,
-                ae_command.get("id"),
-                exc_info=True,
-            )
+        return await self._startup_recovery_terminal_repair.record_terminal_command_reconciled_event(
+            task=task, ae_command=ae_command, result=result
+        )
 
     async def _emit_terminal_command_alert(
         self,
@@ -465,69 +277,12 @@ class StartupRecoveryUseCase:
         result: Mapping[str, Any] | None,
         now: datetime,
     ) -> None:
-        raise_active = getattr(self._alert_repository, "raise_active", None)
-        if not callable(raise_active):
-            return
-        normalized_state = str(state or "unknown").strip().lower()
-        if normalized_state == "done":
-            code = "biz_ae3_terminal_task_command_reconciled"
-            severity = "warning"
-        elif normalized_state == "failed":
-            code = "biz_ae3_terminal_task_command_failed"
-            severity = "error"
-        else:
-            code = "biz_ae3_terminal_task_command_unknown"
-            severity = "error"
-        try:
-            await raise_active(
-                zone_id=int(task.zone_id),
-                code=code,
-                details={
-                    "task_id": int(task.id),
-                    "task_status": str(getattr(task, "status", "") or ""),
-                    "ae_command_id": int(ae_command["id"]),
-                    "cmd_id": (result or {}).get("cmd_id"),
-                    "terminal_status": (result or {}).get("legacy_status"),
-                    "reconciliation_state": normalized_state,
-                    "dedupe_key": f"{code}:{int(task.zone_id)}:{int(ae_command['id'])}",
-                },
-                now=now,
-                category="operations",
-                severity=severity,
-            )
-        except Exception:
-            logger.warning(
-                "Startup recovery: failed to emit terminal-command alert task_id=%s ae_command_id=%s",
-                task.id,
-                ae_command.get("id"),
-                exc_info=True,
-            )
+        return await self._startup_recovery_terminal_repair.emit_terminal_command_alert(
+            task=task, ae_command=ae_command, state=state, result=result, now=now
+        )
 
     async def _merge_persisted_pending_correction_checks(self, *, now: datetime) -> None:
-        """Подмешивает незакрытые PENDING_VERIFY из zone_events (после рестарта AE)."""
-        try:
-            persisted = await load_open_pending_correction_interrupt_checks(now=now)
-        except Exception:
-            logger.warning(
-                "Startup recovery: не удалось загрузить persisted correction-interrupt checks",
-                exc_info=True,
-            )
-            return
-        if not persisted:
-            return
-        known = {int(check.task_id) for check in self._pending_correction_safety_checks}
-        added = 0
-        for check in persisted:
-            if int(check.task_id) in known:
-                continue
-            self._pending_correction_safety_checks.append(check)
-            known.add(int(check.task_id))
-            added += 1
-        if added:
-            logger.info(
-                "Startup recovery: restored %s persisted correction-interrupt safety checks",
-                added,
-            )
+        return await self._startup_recovery_scan.merge_persisted_pending_correction_checks(now=now)
 
     async def reconcile_waiting_command_task(
         self,
@@ -536,31 +291,9 @@ class StartupRecoveryUseCase:
         now: datetime,
         recovery_source: str = "waiting_command_reconcile",
     ) -> tuple[str, StartupRecoveryTerminalOutcome | None, AutomationTask | None]:
-        """Фоновый reconcile одной `waiting_command` задачи без republish."""
-        if str(task.status or "").strip().lower() != "waiting_command":
-            logger.debug(
-                "Waiting command reconcile: skip non-waiting task_id=%s status=%s",
-                task.id,
-                task.status,
-            )
-            return "skipped", None, None
-
-        outcome, terminal_outcome, observability_task = await self._reconcile_command_task(
-            task=task,
-            now=now,
-            recovery_source=recovery_source,
+        return await self._startup_recovery_command_recovery.reconcile_waiting_command_task(
+            task=task, now=now, recovery_source=recovery_source
         )
-        report_task = observability_task or task
-        await self._record_startup_recovery_outcome(
-            zone_id=int(report_task.zone_id),
-            task_id=int(report_task.id),
-            topology=str(report_task.topology or ""),
-            stage=str(report_task.current_stage or ""),
-            outcome=outcome,
-            terminal_outcome=terminal_outcome,
-            recovery_source=recovery_source,
-        )
-        return outcome, terminal_outcome, observability_task
 
     async def reconcile_command_task(
         self,
@@ -569,89 +302,16 @@ class StartupRecoveryUseCase:
         now: datetime,
         recovery_source: str = "stale_task_reconcile",
     ) -> tuple[str, StartupRecoveryTerminalOutcome | None, AutomationTask | None]:
-        """Reconcile command state для active задачи (running/claimed/waiting_command)."""
-        outcome, terminal_outcome, observability_task = await self._reconcile_command_task(
-            task=task,
-            now=now,
-            recovery_source=recovery_source,
+        return await self._startup_recovery_command_recovery.reconcile_command_task(
+            task=task, now=now, recovery_source=recovery_source
         )
-        report_task = observability_task or task
-        await self._record_startup_recovery_outcome(
-            zone_id=int(report_task.zone_id),
-            task_id=int(report_task.id),
-            topology=str(report_task.topology or ""),
-            stage=str(report_task.current_stage or ""),
-            outcome=outcome,
-            terminal_outcome=terminal_outcome,
-            recovery_source=recovery_source,
-        )
-        return outcome, terminal_outcome, observability_task
 
     async def _reconcile_pending_vs_terminal_idle_workflow(
         self,
         *,
         now: datetime,
     ) -> tuple[int, list[StartupRecoveryTerminalOutcome]]:
-        """Снимает «осиротевшие» pending-задачи при idle workflow с терминальным *_stop stage в payload."""
-        rows = await self._task_repository.fetch_pending_with_idle_zone_workflow_rows()
-        failed_count = 0
-        outcomes: list[StartupRecoveryTerminalOutcome] = []
-        for row in rows:
-            row_map = dict(row)
-            snap = row_map.pop("snapshot_stage", None)
-            snapshot_stage = str(snap).strip() if snap else ""
-            if not snapshot_stage:
-                continue
-            task = AutomationTask.from_row(row_map)
-            topo = str(task.topology or "two_tank").strip()
-            if not self._registry.has_topology(topo):
-                topo = "two_tank"
-            try:
-                st = self._registry.get(topo, snapshot_stage)
-            except KeyError:
-                continue
-            if st.terminal_error is None:
-                continue
-            failed = await self._task_repository.fail_pending_or_active_for_recovery(
-                task_id=task.id,
-                error_code="startup_recovery_pending_vs_terminal_workflow",
-                error_message=(
-                    f"Отмена pending {task.task_type}: zone_workflow в терминальном stage "
-                    f"{snapshot_stage} после остановки цикла"
-                ),
-                now=now,
-                claim_generation=int(getattr(task, "claim_generation", 0) or 0),
-            )
-            if failed is None:
-                logger.warning(
-                    "Startup recovery: reconcile fail_pending noop task_id=%s zone_id=%s",
-                    task.id,
-                    task.zone_id,
-                )
-                continue
-            failed_count += 1
-            STARTUP_RECOVERY_TASK.labels(outcome="failed").inc()
-            await self._emit_failed_task_alert(
-                task=failed,
-                error_code="startup_recovery_pending_vs_terminal_workflow",
-                error_message=str(failed.error_message or ""),
-                now=now,
-                recovery_source="startup_recovery",
-            )
-            await self._release_lease_after_recovery_fail(task=task, now=now)
-            terminal_outcome = self._build_terminal_outcome(task=failed)
-            if terminal_outcome is not None:
-                outcomes.append(terminal_outcome)
-            await self._record_startup_recovery_outcome(
-                zone_id=int(failed.zone_id),
-                task_id=int(failed.id),
-                topology=str(failed.topology or ""),
-                stage=str(failed.current_stage or ""),
-                outcome="failed",
-                terminal_outcome=terminal_outcome,
-                recovery_source="startup_recovery",
-            )
-        return failed_count, outcomes
+        return await self._startup_recovery_command_recovery.reconcile_pending_vs_terminal_idle_workflow(now=now)
 
     async def _recover_task(
         self,
@@ -659,17 +319,7 @@ class StartupRecoveryUseCase:
         task: AutomationTask,
         now: datetime,
     ) -> tuple[str, StartupRecoveryTerminalOutcome | None, AutomationTask | None]:
-        if not task.claimed_by:
-            failed_task = await self._fail_task(
-                task=task,
-                error_code="startup_recovery_missing_owner",
-                error_message=f"У задачи {task.id} отсутствует claimed_by во время startup recovery",
-                now=now,
-                recovery_source="startup_recovery",
-            )
-            return "failed", self._build_terminal_outcome(task=failed_task), failed_task
-
-        return await self._recover_native_two_tank_task(task=task, now=now)
+        return await self._startup_recovery_command_recovery.recover_task(task=task, now=now)
 
     async def _recover_native_two_tank_task(
         self,
@@ -677,11 +327,7 @@ class StartupRecoveryUseCase:
         task: AutomationTask,
         now: datetime,
     ) -> tuple[str, StartupRecoveryTerminalOutcome | None, AutomationTask | None]:
-        return await self._reconcile_command_task(
-            task=task,
-            now=now,
-            recovery_source="startup_recovery",
-        )
+        return await self._startup_recovery_command_recovery.recover_native_two_tank_task(task=task, now=now)
 
     async def _reconcile_command_task(
         self,
@@ -692,49 +338,8 @@ class StartupRecoveryUseCase:
     ) -> tuple[str, StartupRecoveryTerminalOutcome | None, AutomationTask | None]:
         # Коррекцию mid-dose не resume'им (fail-closed), но critical по железу
         # откладываем: после power-loss узлы часто ещё offline, актуаторы уже OFF.
-        if task.correction is not None:
-            pending_check = None
-            if is_dose_correction_step(getattr(task.correction, "corr_step", None)):
-                pending_check = build_pending_check_from_task(
-                    task=task,
-                    now=now,
-                    recovery_source=recovery_source,
-                    verify_grace_sec=self._correction_interrupt_verify_grace_sec,
-                )
-            failed_task = await self._fail_task(
-                task=task,
-                error_code="startup_recovery_correction_interrupted",
-                error_message=(
-                    f"Коррекция задачи {task.id} была прервана на шаге {task.correction.corr_step}"
-                ),
-                now=now,
-                recovery_source=recovery_source,
-            )
-            if pending_check is not None:
-                await emit_correction_interrupt_pending_verify(check=pending_check, now=now)
-                self._pending_correction_safety_checks.append(pending_check)
-            return "failed", self._build_terminal_outcome(task=failed_task), failed_task
-
-        try:
-            result = await self._command_gateway.recover_waiting_command(task=task, now=now)
-        except TaskExecutionError as exc:
-            error_code = exc.code
-            if task.status in {"claimed", "running"} and exc.code == "ae3_missing_ae_command":
-                error_code = "startup_recovery_unconfirmed_command"
-            failed_task = await self._fail_task(
-                task=task,
-                error_code=error_code,
-                error_message=str(exc),
-                now=now,
-                recovery_source=recovery_source,
-            )
-            return "failed", self._build_terminal_outcome(task=failed_task), failed_task
-
-        return await self._handle_recovery_gateway_result(
-            task=task,
-            result=result,
-            now=now,
-            recovery_source=recovery_source,
+        return await self._startup_recovery_command_recovery.reconcile_command_task(
+            task=task, now=now, recovery_source=recovery_source
         )
 
     async def _handle_recovery_gateway_result(
@@ -745,66 +350,9 @@ class StartupRecoveryUseCase:
         now: datetime,
         recovery_source: str,
     ) -> tuple[str, StartupRecoveryTerminalOutcome | None, AutomationTask | None]:
-        if result["state"] == "waiting_command":
-            poll_deadline_exceeded = getattr(
-                self._command_gateway,
-                "waiting_command_poll_deadline_exceeded",
-                None,
-            )
-            if callable(poll_deadline_exceeded) and await poll_deadline_exceeded(task=task, now=now):
-                failed_task = await self._fail_task(
-                    task=task,
-                    error_code="ae3_command_poll_deadline_exceeded",
-                    error_message=(
-                        f"Опрос команды превысил дедлайн для задачи {task.id} "
-                        f"stage={task.current_stage}"
-                    ),
-                    now=now,
-                    recovery_source=recovery_source,
-                )
-                return "failed", self._build_terminal_outcome(task=failed_task), failed_task
-            if task.status in {"claimed", "running"}:
-                await self._persist_waiting_command_status(task=task, now=now)
-            return "waiting_command", None, None
-        if result["state"] == "failed":
-            failed_task = result["task"]
-            error_code = str(
-                result.get("error_code")
-                or getattr(failed_task, "error_code", None)
-                or "startup_recovery_command_failed"
-            )
-            error_message = str(
-                result.get("error_message")
-                or getattr(failed_task, "error_message", None)
-                or f"Команда задачи {task.id} завершилась ошибкой во время startup recovery"
-            )
-            await self._finalize_recovery_failure(
-                task=failed_task,
-                error_code=error_code,
-                error_message=error_message,
-                now=now,
-                recovery_source=recovery_source,
-            )
-            return "failed", self._build_terminal_outcome(task=failed_task), failed_task
-        if result["state"] != "done":
-            logger.error(
-                "Startup recovery: неподдерживаемое native recovery state=%s task_id=%s zone_id=%s",
-                result["state"],
-                task.id,
-                task.zone_id,
-            )
-            raise StartupRecoveryError(f"Неподдерживаемое состояние native recovery={result['state']}")
-
-        progressed_task = await self._apply_topology_done_transition(
-            task=result["task"],
-            now=now,
-            recovery_source=recovery_source,
+        return await self._startup_recovery_command_recovery.handle_recovery_gateway_result(
+            task=task, result=result, now=now, recovery_source=recovery_source
         )
-        if progressed_task.status == "completed":
-            return "completed", self._build_terminal_outcome(task=progressed_task), progressed_task
-        if progressed_task.status == "failed":
-            return "failed", self._build_terminal_outcome(task=progressed_task), progressed_task
-        return "recovered_waiting_command", None, progressed_task
 
     async def _persist_waiting_command_status(
         self,
@@ -812,30 +360,7 @@ class StartupRecoveryUseCase:
         task: AutomationTask,
         now: datetime,
     ) -> AutomationTask | None:
-        """Фиксирует `waiting_command` для in-flight задачи после reconcile legacy-команды."""
-        if task.status == "waiting_command":
-            return task
-        recover_waiting_command = getattr(self._task_repository, "recover_waiting_command", None)
-        if not callable(recover_waiting_command):
-            return None
-        owner = str(task.claimed_by or "").strip()
-        if not owner:
-            return None
-        try:
-            return await recover_waiting_command(
-                task_id=task.id,
-                now=now,
-                owner=owner,
-                claim_generation=int(getattr(task, "claim_generation", 0) or 0),
-            )
-        except Exception:
-            logger.warning(
-                "Startup recovery: failed to persist waiting_command task_id=%s zone_id=%s",
-                task.id,
-                task.zone_id,
-                exc_info=True,
-            )
-            return None
+        return await self._startup_recovery_command_recovery.persist_waiting_command_status(task=task, now=now)
 
     async def _apply_topology_done_transition(
         self,
@@ -844,208 +369,9 @@ class StartupRecoveryUseCase:
         now: datetime,
         recovery_source: str = "startup_recovery",
     ) -> AutomationTask:
-        """Маршрутизирует DONE без принятия одного command step за весь stage.
-
-        Command-stage всегда requeue'ится на тот же stage для сверки полного
-        RuntimePlan batch. Остальные handler'ы продолжают registry-driven
-        recovery по своей topology семантике.
-        """
-        topology = task.topology
-        current_stage = task.current_stage
-
-        try:
-            stage_def = self._registry.get(topology, current_stage)
-        except KeyError:
-            if self._workflow_repository is not None:
-                await self._sync_workflow_failure_state(task=task, now=now)
-            failed = await self._task_repository.fail_for_recovery(
-                task_id=task.id,
-                error_code="startup_recovery_unknown_stage",
-                error_message=f"Неизвестный stage {current_stage} в topology {topology}",
-                now=now,
-                owner=str(task.claimed_by or ""),
-                claim_generation=int(getattr(task, "claim_generation", 0) or 0),
-            )
-            if failed is None:
-                logger.error(
-                    "Startup recovery: fail_for_recovery returned None for unknown stage task_id=%s zone_id=%s stage=%s topology=%s",
-                    task.id,
-                    task.zone_id,
-                    current_stage,
-                    topology,
-                )
-                raise StartupRecoveryError(
-                    f"Не удалось перевести task_id={task.id} в failed для неизвестного stage",
-                )
-            await self._emit_failed_task_alert(
-                task=failed,
-                error_code="startup_recovery_unknown_stage",
-                error_message=f"Неизвестный stage {current_stage} в topology {topology}",
-                now=now,
-                recovery_source=recovery_source,
-            )
-            await self._release_lease_after_recovery_fail(task=task, now=now)
-            return failed
-
-        # DONE подтверждает только одну команду, а не весь command batch stage.
-        # Возвращаем stage в pending: обычный handler восстановит полный
-        # RuntimePlan, gateway пропустит persisted DONE planner_step'ы и
-        # выполнит оставшиеся команды до topology transition.
-        if stage_def.handler == "command":
-            mark_batch_resume = getattr(
-                self._command_gateway,
-                "mark_recovery_batch_resume",
-                None,
-            )
-            if callable(mark_batch_resume):
-                marked = await mark_batch_resume(task=task, now=now)
-                if not marked:
-                    return await self._fail_task(
-                        task=task,
-                        error_code="startup_recovery_unconfirmed_command",
-                        error_message=(
-                            f"Нельзя безопасно возобновить command batch задачи {task.id}: "
-                            f"отсутствует persisted planner_step для stage={task.current_stage}"
-                        ),
-                        now=now,
-                        recovery_source=recovery_source,
-                    )
-            return await self._requeue_recovered_command_stage(
-                task=task,
-                stage_def=stage_def,
-                now=now,
-            )
-
-        # Terminal error stage
-        if stage_def.terminal_error is not None:
-            error_code, error_message = stage_def.terminal_error
-            await self._sync_workflow_failure_state(task=task, now=now)
-            failed = await self._task_repository.fail_for_recovery(
-                task_id=task.id,
-                error_code=error_code,
-                error_message=error_message,
-                now=now,
-                owner=str(task.claimed_by or ""),
-                claim_generation=int(getattr(task, "claim_generation", 0) or 0),
-            )
-            if failed is None:
-                logger.error(
-                    "Startup recovery: fail_for_recovery returned None on terminal_error stage task_id=%s zone_id=%s stage=%s error_code=%s",
-                    task.id,
-                    task.zone_id,
-                    current_stage,
-                    error_code,
-                )
-                raise StartupRecoveryError(
-                    f"Не удалось перевести task_id={task.id} в failed после recovery DONE",
-                )
-            await self._emit_failed_task_alert(
-                task=failed,
-                error_code=error_code,
-                error_message=error_message,
-                now=now,
-                recovery_source=recovery_source,
-            )
-            await self._release_lease_after_recovery_fail(task=task, now=now)
-            return failed
-
-        # Has next_stage — transition
-        if stage_def.next_stage is not None:
-            next_stage = stage_def.next_stage
-            try:
-                next_def = self._registry.get(topology, next_stage)
-            except KeyError:
-                next_def = None
-
-            next_phase = next_def.workflow_phase if next_def else "idle"
-
-
-            new_workflow = WorkflowState(
-                current_stage=next_stage,
-                workflow_phase=next_phase,
-                stage_deadline_at=None,  # Will be computed on next handler run
-                stage_retry_count=0,
-                stage_entered_at=now,
-                clean_fill_cycle=task.workflow.clean_fill_cycle,
-            )
-
-            requeued = await self._task_repo_update_stage(
-                task=task, workflow=new_workflow, now=now,
-            )
-            if requeued is None:
-                logger.error(
-                    "Startup recovery: update_stage returned None on requeue task_id=%s zone_id=%s stage=%s next_stage=%s",
-                    task.id,
-                    task.zone_id,
-                    current_stage,
-                    next_stage,
-                )
-                raise StartupRecoveryError(
-                    f"Не удалось повторно поставить task_id={task.id} в очередь после recovery DONE",
-                )
-            # Record transition in audit trail
-            await self._task_repository.record_transition(
-                task_id=task.id,
-                from_stage=current_stage,
-                to_stage=next_stage,
-                workflow_phase=next_phase,
-                metadata={"recovery": True},
-                now=now,
-            )
-
-            await self._release_lease_after_recovery_success(task=task, now=now)
-            return requeued
-
-        # Poll/handler stages (handler != "command" and != "ready") have no static
-        # next_stage — transitions are decided by the handler at runtime. A stale
-        # DONE from the previous command batch must not terminal-complete the task.
-        if stage_def.handler != "ready":
-            continued_workflow = WorkflowState(
-                current_stage=current_stage,
-                workflow_phase=stage_def.workflow_phase,
-                stage_deadline_at=task.workflow.stage_deadline_at,
-                stage_retry_count=task.workflow.stage_retry_count,
-                stage_entered_at=task.workflow.stage_entered_at,
-                clean_fill_cycle=task.workflow.clean_fill_cycle,
-            )
-            requeued = await self._task_repo_update_stage(
-                task=task,
-                workflow=continued_workflow,
-                now=now,
-            )
-            if requeued is None:
-                logger.error(
-                    "Startup recovery: update_stage returned None on poll-stage requeue task_id=%s zone_id=%s stage=%s",
-                    task.id,
-                    task.zone_id,
-                    current_stage,
-                )
-                raise StartupRecoveryError(
-                    f"Не удалось повторно поставить task_id={task.id} в очередь после recovery DONE на poll-stage",
-                )
-            await self._release_lease_after_recovery_success(task=task, now=now)
-            return requeued
-
-        # Terminal success stages (complete_ready, completed_run, completed_skip)
-        completed = await self._transitions.complete(
-            task=task,
-            workflow_phase=stage_def.workflow_phase,
-            owner=str(task.claimed_by or ""),
-            now=now,
-            claim_generation=int(getattr(task, "claim_generation", 0) or 0),
+        return await self._startup_recovery_stage_transition.apply_topology_done_transition(
+            task=task, now=now, recovery_source=recovery_source
         )
-        if completed is None:
-            logger.error(
-                "Startup recovery: mark_completed returned None task_id=%s zone_id=%s stage=%s",
-                task.id,
-                task.zone_id,
-                current_stage,
-            )
-            raise StartupRecoveryError(
-                f"Не удалось завершить task_id={task.id} после recovery DONE",
-            )
-        await self._release_lease_after_recovery_success(task=task, now=now)
-        return completed
 
     async def _requeue_recovered_command_stage(
         self,
@@ -1054,45 +380,19 @@ class StartupRecoveryUseCase:
         stage_def: Any,
         now: datetime,
     ) -> AutomationTask:
-        current_stage = str(task.current_stage or "")
-        continued_workflow = WorkflowState(
-            current_stage=current_stage,
-            workflow_phase=stage_def.workflow_phase,
-            stage_deadline_at=task.workflow.stage_deadline_at,
-            stage_retry_count=task.workflow.stage_retry_count,
-            stage_entered_at=task.workflow.stage_entered_at,
-            clean_fill_cycle=task.workflow.clean_fill_cycle,
+        return await self._startup_recovery_stage_transition.requeue_recovered_command_stage(
+            task=task, stage_def=stage_def, now=now
         )
-        requeued = await self._task_repo_update_stage(
-            task=task,
-            workflow=continued_workflow,
-            now=now,
-        )
-        if requeued is None:
-            logger.error(
-                "Startup recovery: update_stage returned None on command-stage batch resume "
-                "task_id=%s zone_id=%s stage=%s",
-                task.id,
-                task.zone_id,
-                current_stage,
-            )
-            raise StartupRecoveryError(
-                f"Не удалось повторно поставить task_id={task.id} в очередь "
-                f"для продолжения command batch stage={current_stage}",
-            )
-        await self._release_lease_after_recovery_success(task=task, now=now)
-        return requeued
 
     async def _task_repo_update_stage(
-        self, *, task: AutomationTask, workflow: WorkflowState, now: datetime,
+        self,
+        *,
+        task: AutomationTask,
+        workflow: WorkflowState,
+        now: datetime,
     ) -> Any:
-        """Wrapper for update_stage during recovery."""
-        return await self._transitions.requeue(
-            task=task, owner=str(task.claimed_by or ""),
-            claim_generation=int(getattr(task, "claim_generation", 0) or 0),
-            workflow=workflow, correction=None, due_at=now, now=now,
-            workflow_phase=None if workflow.current_stage == "await_ready" else workflow.workflow_phase,
-            preserve_pending_manual_step=True,
+        return await self._startup_recovery_stage_transition.task_repo_update_stage(
+            task=task, workflow=workflow, now=now
         )
 
     async def _fail_task(
@@ -1104,36 +404,9 @@ class StartupRecoveryUseCase:
         now: datetime,
         recovery_source: str = "startup_recovery",
     ) -> AutomationTask:
-        await self._maybe_fail_safe_shutdown_before_fail(task=task, now=now)
-        if self._workflow_repository is not None:
-            await self._sync_workflow_failure_state(task=task, now=now)
-        failed_task = await self._task_repository.fail_for_recovery(
-            task_id=task.id,
-            error_code=error_code,
-            error_message=error_message,
-            now=now,
-            owner=str(task.claimed_by or ""),
-            claim_generation=int(getattr(task, "claim_generation", 0) or 0),
+        return await self._startup_recovery_failure.fail_task(
+            task=task, error_code=error_code, error_message=error_message, now=now, recovery_source=recovery_source
         )
-        if failed_task is None:
-            logger.error(
-                "Startup recovery: fail_for_recovery returned None task_id=%s zone_id=%s error_code=%s",
-                task.id,
-                task.zone_id,
-                error_code,
-            )
-            raise StartupRecoveryError(
-                f"Не удалось перевести task_id={task.id} в failed во время startup recovery с error_code={error_code}"
-            )
-        await self._emit_failed_task_alert(
-            task=failed_task,
-            error_code=error_code,
-            error_message=error_message,
-            now=now,
-            recovery_source=recovery_source,
-        )
-        await self._release_lease_after_recovery_fail(task=task, now=now)
-        return failed_task
 
     async def _finalize_recovery_failure(
         self,
@@ -1144,18 +417,9 @@ class StartupRecoveryUseCase:
         now: datetime,
         recovery_source: str = "startup_recovery",
     ) -> None:
-        """Синхронизирует workflow/alert/lease для уже переведённой в failed задачи."""
-        await self._maybe_fail_safe_shutdown_before_fail(task=task, now=now)
-        if self._workflow_repository is not None:
-            await self._sync_workflow_failure_state(task=task, now=now)
-        await self._emit_failed_task_alert(
-            task=task,
-            error_code=error_code,
-            error_message=error_message,
-            now=now,
-            recovery_source=recovery_source,
+        return await self._startup_recovery_failure.finalize_recovery_failure(
+            task=task, error_code=error_code, error_message=error_message, now=now, recovery_source=recovery_source
         )
-        await self._release_lease_after_recovery_fail(task=task, now=now)
 
     async def _maybe_fail_safe_shutdown_before_fail(
         self,
@@ -1163,36 +427,7 @@ class StartupRecoveryUseCase:
         task: AutomationTask,
         now: datetime,
     ) -> None:
-        from ae3lite.application.handlers.flow_path_guard import (
-            should_fail_safe_shutdown_on_task_fail,
-        )
-        from ae3lite.application.services.correction_interrupt_safety import (
-            attempt_task_fail_safe_shutdown,
-        )
-
-        if not should_fail_safe_shutdown_on_task_fail(task):
-            return
-        try:
-            result = await attempt_task_fail_safe_shutdown(
-                task=task,
-                now=now,
-                command_gateway=self._command_gateway,
-                planner_step_prefix="startup_recovery_fail_safe",
-            )
-        except Exception:
-            logger.warning(
-                "Startup recovery: fail-safe shutdown exception task_id=%s zone_id=%s",
-                task.id,
-                task.zone_id,
-                exc_info=True,
-            )
-            return
-        if result.attempted and not result.success:
-            logger.warning(
-                "Startup recovery: fail-safe shutdown non-success task_id=%s reason=%s",
-                task.id,
-                result.reason,
-            )
+        return await self._startup_recovery_failure.maybe_fail_safe_shutdown_before_fail(task=task, now=now)
 
     async def _release_lease_after_recovery_success(
         self,
@@ -1200,7 +435,7 @@ class StartupRecoveryUseCase:
         task: AutomationTask,
         now: datetime,
     ) -> None:
-        await self._release_lease_after_recovery_fail(task=task, now=now)
+        return await self._startup_recovery_failure.release_lease_after_recovery_success(task=task, now=now)
 
     async def _release_lease_after_recovery_fail(
         self,
@@ -1208,46 +443,7 @@ class StartupRecoveryUseCase:
         task: AutomationTask,
         now: datetime,
     ) -> None:
-        owner = str(task.claimed_by or "").strip()
-        if not owner:
-            return
-        try:
-            release_if_owner_or_expired = getattr(
-                self._lease_repository,
-                "release_if_owner_or_expired",
-                None,
-            )
-            if callable(release_if_owner_or_expired):
-                released = await release_if_owner_or_expired(
-                    zone_id=int(task.zone_id),
-                    owner=owner,
-                    now=now,
-                    claim_generation=int(getattr(task, "claim_generation", 0) or 0),
-                )
-            else:
-                release = getattr(self._lease_repository, "release", None)
-                if not callable(release):
-                    return
-                released = await release(
-                    zone_id=int(task.zone_id),
-                    owner=owner,
-                    claim_generation=int(getattr(task, "claim_generation", 0) or 0),
-                )
-            if not released:
-                logger.debug(
-                    "Startup recovery: lease not released zone_id=%s owner=%s task_id=%s",
-                    task.zone_id,
-                    owner,
-                    task.id,
-                )
-        except Exception:
-            logger.warning(
-                "Startup recovery: failed to release lease zone_id=%s owner=%s task_id=%s",
-                task.zone_id,
-                owner,
-                task.id,
-                exc_info=True,
-            )
+        return await self._startup_recovery_failure.release_lease_after_recovery_fail(task=task, now=now)
 
     async def _record_startup_recovery_outcome(
         self,
@@ -1260,46 +456,15 @@ class StartupRecoveryUseCase:
         terminal_outcome: StartupRecoveryTerminalOutcome | None,
         recovery_source: str = "startup_recovery",
     ) -> None:
-        payload: dict[str, Any] = {
-            "task_id": task_id,
-            "outcome": outcome,
-            "topology": topology,
-            "stage": stage,
-            "recovery_source": recovery_source,
-        }
-        if terminal_outcome is not None:
-            payload["intent_id"] = int(terminal_outcome.intent_id)
-            payload["success"] = bool(terminal_outcome.success)
-            if terminal_outcome.error_code:
-                payload["error_code"] = str(terminal_outcome.error_code)
-            if terminal_outcome.error_message:
-                payload["error_message"] = str(terminal_outcome.error_message)
-        log_level = "warning" if outcome == "failed" else "info"
-        try:
-            await create_zone_event(zone_id, _STARTUP_RECOVERY_OUTCOME_EVENT, payload)
-        except Exception:
-            logger.warning(
-                "Startup recovery: failed to write zone_event zone_id=%s task_id=%s outcome=%s",
-                zone_id,
-                task_id,
-                outcome,
-                exc_info=True,
-            )
-        try:
-            send_service_log(
-                service="automation-engine",
-                level=log_level,
-                message="AE3 startup recovery outcome",
-                context={"zone_id": zone_id, **payload},
-            )
-        except Exception:
-            logger.warning(
-                "Startup recovery: failed to write service log zone_id=%s task_id=%s outcome=%s",
-                zone_id,
-                task_id,
-                outcome,
-                exc_info=True,
-            )
+        return await self._startup_recovery_reporting.record_startup_recovery_outcome(
+            zone_id=zone_id,
+            task_id=task_id,
+            topology=topology,
+            stage=stage,
+            outcome=outcome,
+            terminal_outcome=terminal_outcome,
+            recovery_source=recovery_source,
+        )
 
     async def _emit_failed_task_alert(
         self,
@@ -1310,39 +475,12 @@ class StartupRecoveryUseCase:
         now: datetime,
         recovery_source: str = "startup_recovery",
     ) -> None:
-        await emit_task_failed_alert(
-            alert_repository=self._alert_repository,
-            task=task,
-            error_code=error_code,
-            error_message=error_message,
-            now=now,
-            extra_details={"recovery_source": recovery_source},
+        return await self._startup_recovery_failure.emit_failed_task_alert(
+            task=task, error_code=error_code, error_message=error_message, now=now, recovery_source=recovery_source
         )
 
     async def _sync_workflow_failure_state(self, *, task: AutomationTask, now: datetime) -> None:
-        from ae3lite.domain.services.workflow_failure_rollback import (
-            resolve_workflow_phase_after_task_failure,
-        )
-
-        rollback_phase = resolve_workflow_phase_after_task_failure(task)
-        # irrig_recirc: legacy compat only for old tasks.
-        scheduler_task_id = (
-            None
-            if rollback_phase in {"ready", "irrig_recirc"}
-            else str(task.id)
-        )
-        payload = {
-            "ae3_cycle_start_stage": str(getattr(task, "current_stage", "") or ""),
-            "ae3_failure_rollback": True,
-            "ae3_failed_task_id": int(getattr(task, "id", 0) or 0) or None,
-        }
-        await self._safe_upsert_workflow_phase(
-            zone_id=task.zone_id,
-            workflow_phase=rollback_phase,
-            payload=payload,
-            scheduler_task_id=scheduler_task_id,
-            now=now,
-        )
+        return await self._startup_recovery_stage_transition.sync_workflow_failure_state(task=task, now=now)
 
     async def _safe_upsert_workflow_phase(
         self,
@@ -1353,24 +491,13 @@ class StartupRecoveryUseCase:
         scheduler_task_id: str,
         now: datetime,
     ) -> None:
-        if self._workflow_repository is None:
-            return
-        try:
-            await self._workflow_repository.upsert_phase(
-                zone_id=zone_id,
-                workflow_phase=workflow_phase,
-                payload=payload,
-                scheduler_task_id=scheduler_task_id,
-                now=now,
-            )
-        except Exception:
-            logger.warning(
-                "Startup recovery: failed to sync zone_workflow_state zone_id=%s task_id=%s phase=%s",
-                zone_id,
-                scheduler_task_id,
-                workflow_phase,
-                exc_info=True,
-            )
+        return await self._startup_recovery_stage_transition.safe_upsert_workflow_phase(
+            zone_id=zone_id,
+            workflow_phase=workflow_phase,
+            payload=payload,
+            scheduler_task_id=scheduler_task_id,
+            now=now,
+        )
 
     async def _resolve_foreign_owned_task(
         self,
@@ -1378,31 +505,15 @@ class StartupRecoveryUseCase:
         task: AutomationTask,
         now: datetime,
     ) -> tuple[ForeignLeaseAction, ForeignLeaseContext | None]:
-        worker_owner = self._worker_owner
-        if not worker_owner:
-            return ForeignLeaseAction.ALLOW, None
-
-        task_owner = str(task.claimed_by or "").strip()
-        if not task_owner or task_owner == worker_owner:
-            return ForeignLeaseAction.ALLOW, None
-
-        return await resolve_foreign_active_lease(
-            lease_repository=self._lease_repository,
-            zone_id=int(task.zone_id),
-            worker_owner=worker_owner,
-            task=task,
-            now=now,
-            escalate_sec=self._foreign_lease_skip_escalate_sec,
-        )
+        return await self._startup_recovery_failure.resolve_foreign_owned_task(task=task, now=now)
 
     def _build_terminal_outcome(self, *, task: AutomationTask) -> StartupRecoveryTerminalOutcome | None:
-        intent_id = task.intent_id or 0
-        if intent_id <= 0:
-            return None
-        return StartupRecoveryTerminalOutcome(
-            task_id=task.id,
-            intent_id=intent_id,
-            success=task.status == "completed",
-            error_code=task.error_code,
-            error_message=task.error_message,
-        )
+        return self._startup_recovery_reporting.build_terminal_outcome(task=task)
+
+    @property
+    def _pending_correction_safety_checks(self):
+        return self._startup_recovery_state.pending_correction_safety_checks
+
+    @_pending_correction_safety_checks.setter
+    def _pending_correction_safety_checks(self, value):
+        self._startup_recovery_state.pending_correction_safety_checks = value

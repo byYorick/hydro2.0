@@ -63,17 +63,71 @@ class PipelineRunner(E2ERunner):
                                 canonical_json_payload(signed).encode(), hashlib.sha256).hexdigest()
             if not hmac.compare_digest(signature, expected):
                 raise AssertionError('Device rejected an invalid command HMAC')
-            self.mqtt.publish_json(message['topic'].removesuffix('/command') + '/command_response',
+            recovery_dir = os.environ.get('CI_PIPELINE_RECOVERY_DIR')
+            if recovery_dir:
+                control = Path(recovery_dir)
+                deadline = time.monotonic() + 120
+                while True:
+                    task = self.db.query('SELECT status FROM ae_tasks WHERE id = :id',
+                                         {'id': int(self.context['task_id'])})
+                    if task and task[0]['status'] == 'waiting_command':
+                        break
+                    if time.monotonic() > deadline:
+                        raise AssertionError('Task never reached waiting_command before restart')
+                    await asyncio.sleep(.1)
+                (control / 'waiting.json').write_text(json.dumps({
+                    'task_id': str(self.context['task_id']), 'zone_id': int(self.context['zone_id']),
+                    'cmd_id': row['cmd_id'], 'phase': 'waiting_command_before_restart',
+                }))
+                while not (control / 'resume').exists() or not self.mqtt.connected:
+                    if time.monotonic() > deadline:
+                        raise AssertionError('Full-stack recovery did not resume before deadline')
+                    await asyncio.sleep(.1)
+                # The DB socket belongs to the old server process. Reconnect
+                # explicitly at this known restart boundary; never replay DML.
+                self.db.disconnect()
+                self.db.connect()
+            info = self.mqtt.publish_json(message['topic'].removesuffix('/command') + '/command_response',
                 {'cmd_id': row['cmd_id'], 'status': 'DONE', 'ts': int(time.time())})
+            await asyncio.to_thread(info.wait_for_publish, 10)
+            return
+        if step_type == 'ci_recovery_check':
+            task_id = int(self.context['task_id'])
+            cmd_id = self.context['ae_command_row'][0]['cmd_id']
+            rows = self.db.query(
+                "SELECT status, (SELECT COUNT(*) FROM ae_commands WHERE task_id=:id) AS command_count "
+                "FROM ae_tasks WHERE id=:id", {'id': task_id})
+            publishes = sum(1 for message in self.mqtt._message_queue
+                            if message['topic'].endswith('/command') and
+                            isinstance(message['payload'], dict) and
+                            message['payload'].get('cmd_id') == cmd_id)
+            if not rows or rows[0]['status'] != 'completed' or rows[0]['command_count'] != 1 or publishes != 1:
+                raise AssertionError('Recovery must finish the same task without republishing its command')
+            (Path(os.environ['CI_PIPELINE_RECOVERY_DIR']) / 'completed.json').write_text(json.dumps({
+                'success': True, 'task_id': str(task_id), 'status': 'completed',
+                'ae_commands': 1, 'observed_command_publishes': publishes,
+            }))
             return
         return await super()._execute_action_step(step_type, cfg, raw)
 
 
 async def main():
+    recovery_dir = os.environ.get('CI_PIPELINE_RECOVERY_DIR')
+    if recovery_dir:
+        if (os.environ.get('HYDRO_RESILIENCE_TEST') != '1' or
+                os.environ.get('DB_DATABASE') not in ('hydro_test', 'hydro_e2e')):
+            raise RuntimeError('Restart handshake requires an explicitly isolated test database')
+        Path(recovery_dir).mkdir(parents=True, exist_ok=False)
     scenario = yaml.safe_load((ROOT / 'tests/e2e/scenarios/ae3lite/E95_ae3_start_cycle_done_completed.yaml').read_text())
     actions = []
     for action in scenario['actions']:
         name = action['step']
+        if recovery_dir and name == 'create_profile':
+            profile = action['payload']['payload']['profiles']['working']
+            profile['subsystems']['diagnostics']['execution']['steps'][0]['timeout_sec'] = 120
+            profile['command_plans']['plans']['diagnostics']['steps'][0]['timeout_sec'] = 120
+        if recovery_dir and action.get('type') == 'db.wait':
+            action['timeout'] = 150
         if name == 'insert_scheduler_like_intent':
             actions.append({'step': 'dispatch_real_laravel_schedule', 'type': 'ci_laravel_dispatch'})
         elif name == 'mark_legacy_command_done':
@@ -81,10 +135,15 @@ async def main():
         elif name not in ('start_cycle_http', 'set_task_id'):
             actions.append(action)
     scenario['actions'] = actions
+    if recovery_dir:
+        scenario['actions'].append({'step': 'verify_recovery_without_republish', 'type': 'ci_recovery_check'})
     # The PHP driver validates the real dispatch result; no synthetic HTTP response.
     scenario['assertions'] = [a for a in scenario['assertions']
                               if a['name'] not in ('start_cycle_http_200', 'start_cycle_response_active')]
     runner = PipelineRunner({'api_token': os.environ['CI_PIPELINE_API_TOKEN']})
+    if os.environ.get('CI_PIPELINE_REPORT_DIR'):
+        runner.reporter.output_dir = Path(os.environ['CI_PIPELINE_REPORT_DIR'])
+        runner.reporter.output_dir.mkdir(parents=True, exist_ok=True)
     try:
         await runner.setup()
         now_s = int(time.time())

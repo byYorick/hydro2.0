@@ -407,3 +407,110 @@ docker compose -f backend/docker-compose.dev.yml exec db psql -U hydro -c "SHOW 
 3. Проверить бэкапы: `docker compose -f backend/docker-compose.dev.yml exec -T laravel php artisan backup:list`
 4. При необходимости — восстановление из бэкапа
 5. Эскалация при невозможности восстановления
+
+
+## 18. Изолированная проверка телеметрии под нагрузкой
+
+Используйте отдельный Docker test project с собственной PostgreSQL/TimescaleDB, Redis и MQTT без устройств и без опубликованных портов. Примените Laravel migrations к свежей `hydro_test` или `hydro_resilience_test*`; для hypertable path выполните migrations с `APP_ENV=e2e`, затем верните testing environment для fixture. Общая папка отчётов монтируется в Laravel и Python container, репозиторий — в `/repo`. Production images должны быть пересобраны с текущими requirements (Paho 2.1.0).
+
+В Laravel test container с подготовленными тестовыми DB credentials:
+
+```bash
+HYDRO_RESILIENCE_TEST=1 php /repo/tools/ci/telemetry_resilience_fixture.php /reports/resilience-fixture.json
+```
+
+В Python service test container того же изолированного проекта, с PG_HOST/PG_DB/PG_USER/PG_PASS и MQTT_HOST/REDIS_HOST из его окружения:
+
+```bash
+HYDRO_RESILIENCE_TEST=1 python /repo/tools/ci/telemetry_resilience_probe.py \
+  --fixtures /reports/resilience-fixture.json \
+  --output /reports/resilience-result.json --hl-url http://history-logger:9300 \
+  --duration 180 --rate 40
+```
+
+Укажите новый путь отчёта: существующие evidence probe не перезаписывает. Probe ждёт readiness перед первым publish. Во время прогона внешний оператор тестового проекта может принудительно остановить PostgreSQL/HL и перезапустить брокер. Для проверки admission остановите Redis штатно, затем завершите HL, запустите HL до Redis и восстановите Redis. Записывайте точное время и тип каждого воздействия отдельно от JSON probe. Не запускайте несколько publisher probes одновременно на одной fixture. После fault run отдельно выполните burst `--duration 20 --rate 1000` и сравните unique/published, queue+processing, DLQ, eviction и projection. Изменение rate не требует изменения protocol payload.
+
+`success=true` означает, что все уникальные samples дошли до SQL до deadline, publisher получил PUBACK, очередь опустела и проверенные инварианты выполнены. `duplicate_rows` учитывается отдельно: at-least-once допускает повтор после crash. `latency_observation_ms` включает задержку SQL polling и не равна точной commit latency. Сохраняйте JSON, логи контейнеров и список fault events; выдержка в несколько минут не доказывает production SLO/RTO/RPO. Для длительной проверки используйте тот же отдельный контур с заранее рассчитанной ёмкостью MQTT/Redis/БД.
+
+
+### 18.1. Restart незавершённой команды в software pipeline
+
+В отдельном test project можно запустить `tools/ci/pipeline_smoke.py` с `HYDRO_RESILIENCE_TEST=1`, `CI_PIPELINE_RECOVERY_DIR=/reports/new-control` и `CI_PIPELINE_REPORT_DIR=/reports/new-reports`. По-прежнему нужны подготовленные `CI_PIPELINE_API_TOKEN`, `CI_LARAVEL_CONTAINER`, test DB и MQTT env. Каталог control должен быть новым. Токены не записываются в отчёты.
+
+Runner использует fixture E95, реальный Laravel dispatcher, HL и программный MQTT-ответчик. Он создаёт `waiting.json` только после получения подписанной команды и состояния waiting_command. Внешний контроллер перезапускает **свой изолированный core project**, дожидается DB/Redis/MQTT и application readiness, затем создаёт файл `resume`. Runner переподключает DB, отправляет поздний DONE, проверяет завершение той же task без дополнительной команды и сохраняет `completed.json`. Для произвольного crash без quiesce/barriers измеряйте фактический RPO отдельно; coordinated test не доказывает RPO=0.
+
+Если для теста используется PHP built-in server с Laravel `server.php`, запускайте его из каталога `public`. HTTP 200 недостаточен: проверяйте JSON и состояние приложения/БД. В этой квалификации Reverb и async Laravel queue-worker отдельно не проверялись.
+
+
+## Пакет после F15: образы, ввод в эксплуатацию и откат
+
+Изменения RecipeEditor, HL и AE3 подготовлены без push/deploy и без обращения к
+физическим узлам. Программные результаты и их ограничения —
+[AUDIT_FIXES_2026_11_14.md](AUDIT_FIXES_2026_11_14.md). Аппаратная приёмка остаётся
+отложенной по запросу пользователя; source-runtime smoke не подтверждает её.
+
+Для отдельной проверки production Dockerfiles предусмотрены
+`tools/ci/qualify_release_images.py` и ручной workflow
+`.github/workflows/release-qualification.yml`. Сначала можно получить план:
+
+```bash
+python tools/ci/qualify_release_images.py --plan
+```
+
+На Docker-capable CI runner сборка выполняется так (каталог вывода новый,
+за пределами application build contexts):
+
+```bash
+python tools/ci/qualify_release_images.py \
+  --output /tmp/hydro-image-qualification \
+  --export-images
+```
+
+Пять application images используют production Dockerfiles, три infra images —
+те же версии, что production Compose. Manifest содержит Git revision, fingerprint
+tracked/untracked исходников, image IDs/digests, platform и при экспорте SHA256
+архива. При ошибке status=`failed`, exit ненулевой; публикации registry и deployment
+нет. Проверочный frontend использует `qualification.invalid` и публичный test key:
+эти артефакты не являются готовой конфигурацией production. Для рабочего ввода нужны
+реальные `PUBLIC_HOST`, WS параметры и `REVERB_APP_KEY` из целевого окружения и
+повторная сборка по `backend/docker-compose.prod.yml`.
+
+Для окончательного ввода требуются имя/адрес стенда, доступный deployment channel,
+действующий private env, inventory узлов и окно остановки автоматики. Они не
+выводятся из локальных testing credentials. До их получения не создавать новую
+production `.env`, не менять `APP_KEY`, MQTT credentials или DB memberships.
+
+Порядок на согласованном целевом стенде:
+
+1. Сохранить текущие image IDs/config references, private env/credential bundle и
+   проверенный backup. Зафиксировать active intent/task/command и неизвестные
+   физические исходы; остановить новые scheduler dispatch согласованным механизмом
+   стенда. Не повторять дозу/пуск с неизвестным результатом.
+2. Выполнить существующие проверки без вывода секретов:
+
+   ```bash
+   make prod-check
+   docker compose --env-file backend/.env.prod \
+     -f backend/docker-compose.prod.yml config --quiet
+   ```
+
+3. MQTT migration bundle готовить из **реального** inventory через
+   `tools/mqtt/prepare_node_credentials.py`, с предыдущим private bundle и
+   `--rotate-node` только для явно выбранных node_uids. Secret JSON — mode 0600,
+   output — новый каталог. Восстановление/ротация credentials узлов относится к
+   согласованному rollout парка; синтетический inventory тестов сюда не подходит.
+4. Laravel migrations выполняет migrator. Проверить capability grants командой
+   `php artisan hydro:db-runtime-roles --check`. `--apply` допустим для восстановления
+   управляемых grants после restore; он не создаёт login users/memberships.
+   Индивидуальные login credentials назначаются отдельно; runtime получает
+   `HL_PG_USER/PASS`, `AE_PG_USER/PASS`, `BRIDGE_PG_USER/PASS`,
+   `AGGREGATOR_PG_USER/PASS`. Не использовать имя NOLOGIN role как PG_USER.
+5. Обновить согласованный набор образов, проверить HL/AE readiness и recovery,
+   отсутствие повторной mutating publication, статусы intent/task и приём данных.
+   Возобновлять автоматическое управление физическими узлами только в пределах
+   согласованной аппаратной приёмки. Тест E95 с software responder не заменяет её.
+6. При откате вернуть зафиксированные image/config references и согласованную пару
+   MQTT ACL/password bundle; сохранить task/command execution log. Не выполнять
+   `down -v`, schema reset или автоматический replay неизвестных команд как откат.
+   Если требуется DB restore, использовать проверенный runbook восстановления и
+   прежний APP_KEY; сначала учесть физический результат уже отправленных команд.

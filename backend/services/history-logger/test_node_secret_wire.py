@@ -50,10 +50,8 @@ def test_prepare_strips_plaintext_and_sets_enc(monkeypatch):
 def test_prepare_omits_enc_without_passphrase(monkeypatch):
     monkeypatch.delenv("NODE_SECRET_WRAP_PASSPHRASE", raising=False)
     monkeypatch.delenv("MQTT_ESP32_NODE_PASS", raising=False)
-    config = prepare_node_config_for_mqtt(
-        {"node_secret": "plain-secret"},
-        node_uid="nd-1",
-        node_secret="plain-secret",
-    )
-    assert "node_secret" not in config
-    assert "node_secret_enc" not in config
+    import pytest
+    from fastapi import HTTPException
+    with pytest.raises(HTTPException) as exc:
+        prepare_node_config_for_mqtt({"node_secret": "plain-secret"}, node_uid="nd-1")
+    assert exc.value.status_code == 503

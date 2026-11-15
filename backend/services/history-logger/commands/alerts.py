@@ -8,6 +8,11 @@ from typing import Any
 from common.db import create_zone_event
 from common.infra_alerts import send_infra_alert
 
+from .dependencies import async_dependency
+
+send_infra_alert = async_dependency("send_infra_alert", send_infra_alert)
+create_zone_event = async_dependency("create_zone_event", create_zone_event)
+
 logger = logging.getLogger(__name__)
 
 

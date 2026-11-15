@@ -57,6 +57,15 @@ Breaking-change: обратная совместимость со старыми
 
 ---
 
+### Внутренняя структура AE3 (2026-11-15)
+
+AE3 разделён на компоненты планирования, выполнения стадий, recovery, SQL,
+command gateway, HTTP и greenhouse climate. Существующие публичные фасады
+собирают зависимости через явные ports. Mutable lifecycle state принадлежит
+экземпляру worker/recovery; read/config adapters кешируют только компоненты.
+FSM, intent/lease lifecycle и защищённый command pipeline сохраняются.
+Подробная карта модулей — [ae3lite.md, §11.2](04_BACKEND_CORE/ae3lite.md#112-компоненты-ae3-после-декомпозиции-2026-11-15).
+
 ## 3. Логическая модель (Теплица → Зоны → Ноды → Каналы)
 
 Подробно описано в `01_SYSTEM/LOGIC_ARCH.md`, здесь только суть:

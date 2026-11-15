@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import time
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from common.utils.time import utcnow
@@ -136,6 +136,7 @@ async def test_telemetry_dead_list_size_on_move_to_dead():
     queue = TelemetryQueue()
     raw = TelemetryQueueItem(node_uid="n1", metric_type="PH", value=1.0).to_json()
     queue._client = AsyncMock()
+    queue._client.register_script = MagicMock(return_value=AsyncMock())
     queue._move_processing_to_dead_script = AsyncMock(return_value=1)
     queue.prune_expired_dead = AsyncMock(return_value=0)
     queue._client.llen = AsyncMock(return_value=3)
@@ -154,6 +155,7 @@ async def test_telemetry_dead_list_size_method():
 
     queue = TelemetryQueue()
     queue._client = AsyncMock()
+    queue._client.register_script = MagicMock(return_value=AsyncMock())
     queue._client.llen = AsyncMock(return_value=7)
 
     size = await queue.dead_list_size()

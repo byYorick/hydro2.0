@@ -46,6 +46,7 @@ class TestRedisQueueEnvelope:
 async def test_reclaim_processing_on_startup():
     queue = TelemetryQueue()
     queue._client = AsyncMock()
+    queue._client.register_script = MagicMock(return_value=AsyncMock())
     queue._reclaim_script = AsyncMock(return_value=3)
     reclaimed = await queue.reclaim_processing()
     assert reclaimed == 3
@@ -57,6 +58,7 @@ async def test_pop_batch_deserialize_failure_moves_to_dead():
     queue = TelemetryQueue()
     bad_raw = b"not-json"
     queue._client = AsyncMock()
+    queue._client.register_script = MagicMock(return_value=AsyncMock())
     queue._pop_script = AsyncMock(return_value=[bad_raw])
     queue._move_raw_to_dead = AsyncMock(return_value=True)
 
@@ -72,6 +74,7 @@ async def test_requeue_batch_uses_atomic_move_script():
     raw = TelemetryQueueItem(node_uid="n1", metric_type="PH", value=1.0).to_json()
     entry = QueueEntry(raw=raw, item=TelemetryQueueItem.from_json(raw), retry_count=1)
     queue._client = AsyncMock()
+    queue._client.register_script = MagicMock(return_value=AsyncMock())
     queue._move_processing_to_queue_script = AsyncMock(return_value=1)
 
     with patch.object(queue, "_max_pg_retries", return_value=3):
@@ -88,6 +91,7 @@ async def test_move_raw_to_dead_uses_atomic_script():
     queue = TelemetryQueue()
     raw = TelemetryQueueItem(node_uid="n1", metric_type="PH", value=1.0).to_json()
     queue._client = AsyncMock()
+    queue._client.register_script = MagicMock(return_value=AsyncMock())
     queue._move_processing_to_dead_script = AsyncMock(return_value=1)
     queue.prune_expired_dead = AsyncMock(return_value=0)
     queue._client.llen = AsyncMock(return_value=1)
@@ -106,6 +110,7 @@ async def test_requeue_batch_increments_retry_and_dead_after_max():
     raw = TelemetryQueueItem(node_uid="n1", metric_type="PH", value=1.0).to_json()
     entry = QueueEntry(raw=raw, item=TelemetryQueueItem.from_json(raw), retry_count=3)
     queue._client = AsyncMock()
+    queue._client.register_script = MagicMock(return_value=AsyncMock())
     queue._max_pg_retries = MagicMock(return_value=3)
     queue._move_raw_to_dead = AsyncMock(return_value=True)
 
