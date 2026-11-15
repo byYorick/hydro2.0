@@ -6,6 +6,10 @@ from typing import Any, Mapping
 
 from ae3lite.config.runtime_plan_values_policy import _optional_float, _to_mapping
 from ae3lite.domain.errors import ErrorCodes, PlannerConfigurationError
+from ae3lite.domain.services.greenhouse_clock import (
+    InvalidGreenhouseTimezone,
+    canonical_timezone_name,
+)
 
 
 def _compute_prepare_ec_share(
@@ -84,8 +88,7 @@ def _build_day_night_config(snapshot: Any) -> dict[str, Any]:
             "night_max": _optional_float(section.get("night_max")),
         }
 
-    timezone_raw = phase_targets.get("greenhouse_timezone")
-    timezone = str(timezone_raw).strip() if isinstance(timezone_raw, str) and timezone_raw.strip() else None
+    timezone = _require_greenhouse_timezone(snapshot)
 
     return {
         "enabled": enabled,
@@ -163,10 +166,26 @@ def _build_soil_moisture_target(snapshot: Any) -> dict[str, Any] | None:
             "night": night,
             "day_start_time": day_start_time,
             "day_hours": day_hours,
+            "timezone": _require_greenhouse_timezone(snapshot),
         }
     return {
         "unit": str(soil.get("unit") or "pct").strip().lower() or "pct",
         "min": _optional_float(soil.get("min")),
         "max": _optional_float(soil.get("max")),
         "target": _optional_float(soil.get("target")),
+        "timezone": _require_greenhouse_timezone(snapshot),
     }
+
+
+def _require_greenhouse_timezone(snapshot: Any) -> str:
+    phase_targets = _to_mapping(getattr(snapshot, "phase_targets", None))
+    targets = _to_mapping(getattr(snapshot, "targets", None))
+    raw = phase_targets.get("greenhouse_timezone")
+    if not isinstance(raw, str) or not raw.strip():
+        raw = targets.get("greenhouse_timezone")
+    try:
+        return canonical_timezone_name(raw if isinstance(raw, str) else None)
+    except InvalidGreenhouseTimezone as exc:
+        raise PlannerConfigurationError(
+            f"Некорректный timezone теплицы {raw!r}: конфиг отклонён, команды не публикуются"
+        ) from exc

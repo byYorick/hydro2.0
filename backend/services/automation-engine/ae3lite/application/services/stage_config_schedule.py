@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any, Callable, Mapping
 
 from ae3lite.config.schema import RuntimePlan
+from ae3lite.domain.services.greenhouse_clock import zoneinfo_for
 
 
 @dataclass(frozen=True)
@@ -85,8 +86,9 @@ class StageConfigSchedule:
         дневной интервал.
 
         Использует day_start_time (HH:MM) + day_hours + timezone (IANA-имя,
-        например "Europe/Moscow") из config. Если timezone не задан — fallback
-        на UTC. Если day_start_time/day_hours невалидны — возвращает True.
+        например "Europe/Moscow") из config. Пустой timezone — Europe/Simferopol.
+        Невалидное имя отклоняет конфиг. Если day_start_time/day_hours невалидны —
+        возвращает True.
         """
 
         # Поддерживаем и Pydantic-like объекты (runtime plan), и dict-конфиги
@@ -126,15 +128,7 @@ class StageConfigSchedule:
         # том же TZ. Иначе при UTC-контейнере и TZ=МСК night-targets смещаются
         # на часы разницы.
         tz_raw = _pick(lighting, "timezone")
-        tz_name = tz_raw if isinstance(tz_raw, str) else None
-        tz: Any = timezone.utc
-        if tz_name:
-            try:
-                from zoneinfo import ZoneInfo
-
-                tz = ZoneInfo(tz_name)
-            except Exception:
-                tz = timezone.utc
+        tz = zoneinfo_for(tz_raw if isinstance(tz_raw, str) else None)
         now_local = (now_fn or datetime.now)(tz)
 
         start_min = start_h * 60 + start_m

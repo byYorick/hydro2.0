@@ -5,7 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Callable, Mapping
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+from ae3lite.domain.services.greenhouse_clock import canonical_timezone_name, greenhouse_local
 
 
 @dataclass(frozen=True)
@@ -24,17 +25,18 @@ class ClimateTickTargets:
             "SELECT timezone FROM greenhouses WHERE id = $1 LIMIT 1",
             greenhouse_id,
         )
-        if not rows:
-            return "UTC"
-        tz = str(rows[0].get("timezone") or "UTC").strip()
-        return tz or "UTC"
+        raw = rows[0].get("timezone") if rows else None
+        return canonical_timezone_name(raw if isinstance(raw, str) else None)
 
-    def schedule_day_for_greenhouse(self, *, greenhouse_tz: str, execution: Mapping[str, Any]) -> bool:
-        try:
-            zone = ZoneInfo(greenhouse_tz)
-        except ZoneInfoNotFoundError:
-            zone = timezone.utc
-        now_local = datetime.now(zone)
+    def schedule_day_for_greenhouse(
+        self,
+        *,
+        greenhouse_tz: str,
+        execution: Mapping[str, Any],
+        now: datetime | None = None,
+    ) -> bool:
+        moment = now if now is not None else datetime.now(timezone.utc)
+        now_local = greenhouse_local(moment, greenhouse_tz)
 
         def _parse_hhmm(value: Any, default: str) -> tuple[int, int]:
             raw = str(value or default).strip()
