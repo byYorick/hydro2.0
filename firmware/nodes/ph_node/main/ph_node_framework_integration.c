@@ -18,6 +18,7 @@
 #include "correction_node_contract.h"
 #include "pump_driver.h"
 #include "actuator_failsafe.h"
+#include "dose_limit_node.h"
 #include "trema_ph.h"
 #include "ds18b20.h"
 #include "mqtt_manager.h"
@@ -524,6 +525,19 @@ static esp_err_t handle_dose(
         return ESP_ERR_INVALID_STATE;
     }
 
+    int64_t now_sec = node_utils_get_timestamp_seconds();
+    dose_limit_result_t dose_limit;
+    esp_err_t dose_limit_err = dose_limit_node_reserve(
+        channel,
+        ml,
+        node_utils_is_time_synced(),
+        now_sec,
+        &dose_limit
+    );
+    if (dose_limit_err != ESP_OK || !dose_limit.pump_allowed) {
+        return dose_limit_node_write_refusal(cmd_id, &dose_limit, response);
+    }
+
     double raw_duration_ms = ceil((ml / (double)actuator->ml_per_second) * 1000.0);
     if (raw_duration_ms < 1.0) {
         raw_duration_ms = 1.0;
@@ -541,13 +555,17 @@ static esp_err_t handle_dose(
         }
     }
 
-    return ph_node_enqueue_pump_command(
+    esp_err_t enqueue_err = ph_node_enqueue_pump_command(
         actuator,
         cmd_id,
         duration_ms,
         extra,
         response
     );
+    if (enqueue_err != ESP_OK) {
+        (void)dose_limit_node_rollback(channel, ml, now_sec);
+    }
+    return enqueue_err;
 }
 
 static esp_err_t handle_sensor_mode_command(
@@ -997,6 +1015,16 @@ static esp_err_t ph_node_publish_telemetry_callback(void *user_ctx) {
     return err;
 }
 
+static esp_err_t ph_node_apply_dose_limits(
+    const cJSON *config,
+    const cJSON *previous_config,
+    void *user_ctx
+) {
+    (void)previous_config;
+    (void)user_ctx;
+    return dose_limit_node_apply_config(config);
+}
+
 // Инициализация node_framework для ph_node
 esp_err_t ph_node_framework_init(void) {
     ESP_LOGI(TAG, "Initializing node_framework for ph_node...");
@@ -1099,6 +1127,7 @@ esp_err_t ph_node_framework_init(void) {
     }
 
     node_config_handler_set_channels_callback(ph_node_channels_callback, NULL);
+    node_config_handler_set_post_apply_callback(ph_node_apply_dose_limits, NULL);
 
     ESP_LOGI(TAG, "node_framework initialized for ph_node");
     return ESP_OK;

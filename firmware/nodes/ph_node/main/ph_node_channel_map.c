@@ -1,5 +1,6 @@
 #include "ph_node_channel_map.h"
 #include "ph_node_defaults.h"
+#include "dose_limit.h"
 #include "cJSON.h"
 #include <string.h>
 
@@ -29,7 +30,9 @@ const ph_node_actuator_channel_t PH_NODE_ACTUATOR_CHANNELS[] = {
         .fail_safe_nc = PH_NODE_PH_DOSER_FAIL_SAFE_NC,
         .max_duration_ms = PH_NODE_PH_DOSER_MAX_DURATION_MS,
         .min_off_ms = PH_NODE_PH_DOSER_MIN_OFF_MS,
-        .ml_per_second = PH_NODE_PH_DOSER_ML_PER_SECOND
+        .ml_per_second = PH_NODE_PH_DOSER_ML_PER_SECOND,
+        .max_dose_ml = DOSE_LIMIT_PH_DEFAULT_PER_DOSE_ML,
+        .max_daily_ml = DOSE_LIMIT_PH_DEFAULT_DAILY_ML
     },
     {
         .name = "pump_acid",
@@ -37,7 +40,9 @@ const ph_node_actuator_channel_t PH_NODE_ACTUATOR_CHANNELS[] = {
         .fail_safe_nc = PH_NODE_PH_DOSER_FAIL_SAFE_NC,
         .max_duration_ms = PH_NODE_PH_DOSER_MAX_DURATION_MS,
         .min_off_ms = PH_NODE_PH_DOSER_MIN_OFF_MS,
-        .ml_per_second = PH_NODE_PH_DOSER_ML_PER_SECOND
+        .ml_per_second = PH_NODE_PH_DOSER_ML_PER_SECOND,
+        .max_dose_ml = DOSE_LIMIT_PH_DEFAULT_PER_DOSE_ML,
+        .max_daily_ml = DOSE_LIMIT_PH_DEFAULT_DAILY_ML
     }
 };
 
@@ -140,6 +145,8 @@ static cJSON *ph_node_build_actuator_entry(const ph_node_actuator_channel_t *act
 
     cJSON_AddNumberToObject(safe_limits, "max_duration_ms", actuator->max_duration_ms);
     cJSON_AddNumberToObject(safe_limits, "min_off_ms", actuator->min_off_ms);
+    cJSON_AddNumberToObject(safe_limits, "max_dose_ml", actuator->max_dose_ml);
+    cJSON_AddNumberToObject(safe_limits, "max_daily_ml", actuator->max_daily_ml);
     cJSON_AddStringToObject(safe_limits, "fail_safe_mode", actuator->fail_safe_nc ? "NC" : "NO");
     cJSON_AddItemToObject(entry, "safe_limits", safe_limits);
     cJSON_AddNumberToObject(entry, "ml_per_second", actuator->ml_per_second);

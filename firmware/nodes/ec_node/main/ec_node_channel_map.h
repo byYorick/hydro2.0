@@ -30,6 +30,8 @@ typedef struct {
     uint32_t max_duration_ms;
     uint32_t min_off_ms;
     float ml_per_second;
+    float max_dose_ml;
+    float max_daily_ml;
 } ec_node_actuator_channel_t;
 
 extern const ec_node_sensor_channel_t EC_NODE_SENSOR_CHANNELS[];

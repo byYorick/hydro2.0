@@ -91,6 +91,8 @@ EC-нода для измерения электропроводности и у
 
 `ml` → `duration_ms` по `ml_per_second`. Только при активном sensor mode. Ответ: `ACK` → `DONE`/`ERROR`.
 
+Лимиты канала из `safe_limits`. Нет полей — **80 мл** на дозу и **500 мл** за скользящие 24 ч, отдельно на `pump_a`…`pump_d`. Превышение — `ERROR` `dose_limit_per_dose` или `dose_limit_daily`, насос не включается, частичной дозы нет. `details`: `requested_ml`, `limit_ml`, `used_ml`, `remaining_ml`, `window_hours`. Без синхронного времени — `dose_limit_time_unsynced`. Журнал в NVS не обнуляется на ребуте. `0`, отрицательное и значение выше 500 / 2000 мл отклоняют весь конфиг.
+
 ### calibrate / calibrate_ec
 
 Калибровка EC (только канал **`ec_sensor`**):

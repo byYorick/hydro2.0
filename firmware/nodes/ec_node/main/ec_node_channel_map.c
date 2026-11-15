@@ -1,5 +1,6 @@
 #include "ec_node_channel_map.h"
 #include "ec_node_defaults.h"
+#include "dose_limit.h"
 #include "cJSON.h"
 #include <string.h>
 
@@ -22,7 +23,9 @@ const ec_node_actuator_channel_t EC_NODE_ACTUATOR_CHANNELS[] = {
         .fail_safe_nc = EC_NODE_PUMP_FAIL_SAFE_NC,
         .max_duration_ms = EC_NODE_PUMP_MAX_DURATION_MS,
         .min_off_ms = EC_NODE_PUMP_MIN_OFF_MS,
-        .ml_per_second = EC_NODE_PUMP_ML_PER_SECOND
+        .ml_per_second = EC_NODE_PUMP_ML_PER_SECOND,
+        .max_dose_ml = DOSE_LIMIT_EC_DEFAULT_PER_DOSE_ML,
+        .max_daily_ml = DOSE_LIMIT_EC_DEFAULT_DAILY_ML
     },
     {
         .name = "pump_b",
@@ -30,7 +33,9 @@ const ec_node_actuator_channel_t EC_NODE_ACTUATOR_CHANNELS[] = {
         .fail_safe_nc = EC_NODE_PUMP_FAIL_SAFE_NC,
         .max_duration_ms = EC_NODE_PUMP_MAX_DURATION_MS,
         .min_off_ms = EC_NODE_PUMP_MIN_OFF_MS,
-        .ml_per_second = EC_NODE_PUMP_ML_PER_SECOND
+        .ml_per_second = EC_NODE_PUMP_ML_PER_SECOND,
+        .max_dose_ml = DOSE_LIMIT_EC_DEFAULT_PER_DOSE_ML,
+        .max_daily_ml = DOSE_LIMIT_EC_DEFAULT_DAILY_ML
     },
     {
         .name = "pump_c",
@@ -38,7 +43,9 @@ const ec_node_actuator_channel_t EC_NODE_ACTUATOR_CHANNELS[] = {
         .fail_safe_nc = EC_NODE_PUMP_FAIL_SAFE_NC,
         .max_duration_ms = EC_NODE_PUMP_MAX_DURATION_MS,
         .min_off_ms = EC_NODE_PUMP_MIN_OFF_MS,
-        .ml_per_second = EC_NODE_PUMP_ML_PER_SECOND
+        .ml_per_second = EC_NODE_PUMP_ML_PER_SECOND,
+        .max_dose_ml = DOSE_LIMIT_EC_DEFAULT_PER_DOSE_ML,
+        .max_daily_ml = DOSE_LIMIT_EC_DEFAULT_DAILY_ML
     },
     {
         .name = "pump_d",
@@ -46,7 +53,9 @@ const ec_node_actuator_channel_t EC_NODE_ACTUATOR_CHANNELS[] = {
         .fail_safe_nc = EC_NODE_PUMP_FAIL_SAFE_NC,
         .max_duration_ms = EC_NODE_PUMP_MAX_DURATION_MS,
         .min_off_ms = EC_NODE_PUMP_MIN_OFF_MS,
-        .ml_per_second = EC_NODE_PUMP_ML_PER_SECOND
+        .ml_per_second = EC_NODE_PUMP_ML_PER_SECOND,
+        .max_dose_ml = DOSE_LIMIT_EC_DEFAULT_PER_DOSE_ML,
+        .max_daily_ml = DOSE_LIMIT_EC_DEFAULT_DAILY_ML
     }
 };
 
@@ -132,6 +141,8 @@ static cJSON *ec_node_build_actuator_entry(const ec_node_actuator_channel_t *act
 
     cJSON_AddNumberToObject(safe_limits, "max_duration_ms", actuator->max_duration_ms);
     cJSON_AddNumberToObject(safe_limits, "min_off_ms", actuator->min_off_ms);
+    cJSON_AddNumberToObject(safe_limits, "max_dose_ml", actuator->max_dose_ml);
+    cJSON_AddNumberToObject(safe_limits, "max_daily_ml", actuator->max_daily_ml);
     cJSON_AddStringToObject(safe_limits, "fail_safe_mode", actuator->fail_safe_nc ? "NC" : "NO");
     cJSON_AddItemToObject(entry, "safe_limits", safe_limits);
     cJSON_AddNumberToObject(entry, "ml_per_second", actuator->ml_per_second);

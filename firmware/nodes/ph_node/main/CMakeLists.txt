@@ -27,6 +27,8 @@ idf_component_register(
         connection_status
         pump_driver
         actuator_failsafe
+        dose_limit
+        dose_limit_node
         factory_reset_button
         driver
         esp_wifi

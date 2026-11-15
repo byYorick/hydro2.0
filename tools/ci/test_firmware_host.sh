@@ -43,3 +43,9 @@ gcc -std=c11 -Wall -Wextra -Werror -fsanitize=undefined \
   firmware/nodes/storage_irrigation_node/main/storage_irrigation_link_loss_logic.c \
   -o "$out/storage-irr-link-loss"
 "$out/storage-irr-link-loss"
+gcc -std=c11 -Wall -Wextra -Werror -fsanitize=undefined \
+  -I firmware/nodes/common/components/dose_limit/include \
+  firmware/tests/host/test_dose_limit.c \
+  firmware/nodes/common/components/dose_limit/dose_limit.c \
+  -lm -o "$out/dose-limit"
+"$out/dose-limit"
