@@ -62,11 +62,14 @@ async def publish_command_with_retry(
     publish_success = False
     last_error: Any = None
 
+    async def admit() -> None:
+        await reject_if_operator_estop_active(
+            zone_id=zone_id, cmd=cmd_name, params=payload.get("params"), fetch_fn=fetch,
+        )
+
     for attempt in range(max_retries):
         try:
-            await reject_if_operator_estop_active(
-                zone_id=zone_id, cmd=cmd_name, params=payload.get("params"), fetch_fn=fetch,
-            )
+            await admit()
             await publish_command_mqtt(
                 mqtt,
                 effective_gh_uid,
@@ -75,6 +78,7 @@ async def publish_command_with_retry(
                 channel,
                 payload,
                 zone_uid=zone_uid,
+                before_publish=admit,
             )
             publish_success = True
             logger.info(

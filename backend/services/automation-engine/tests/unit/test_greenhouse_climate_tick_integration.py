@@ -1188,10 +1188,14 @@ async def test_exhaust_failure_persists_unknown_and_next_tick_reconciles() -> No
             (greenhouse_id, intent_type, task_type, intent_source, idempotency_key, status, created_at, updated_at)
             VALUES ($1, 'GREENHOUSE_CLIMATE_TICK', 'greenhouse_climate_tick', 'pytest', $2, 'pending', NOW(), NOW())""",
             gh_id, retry_key)
+        # A later scheduled tick is outside command throttling. Avoid racing
+        # timestamp(0), which can round the first command time into the future.
+        await execute("UPDATE greenhouse_automation_state SET last_command_at=NOW() - interval '1 minute' WHERE greenhouse_id=$1", gh_id)
         client.fail_fan = False
         second = await run_greenhouse_climate_tick(greenhouse_id=gh_id, idempotency_key=retry_key,
             history_logger_client=client, alert_publisher=_FakeAlertPublisher())
         assert second['status'] == 'ok'
+        assert second['suppress'] is False
         assert client.fan_attempts == 2
         factors = (await fetch('SELECT decision_factors FROM greenhouse_automation_state WHERE greenhouse_id=$1', gh_id))[0]['decision_factors']
         if isinstance(factors, str):

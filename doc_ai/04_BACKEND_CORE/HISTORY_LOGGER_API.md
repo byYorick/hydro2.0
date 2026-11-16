@@ -793,3 +793,7 @@ exit_safe_mode независимо от authenticated principal, включая
 terminal DONE от поддерживающей команду firmware.
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
+
+Admission операторского E-STOP повторяется после MQTT reconnect непосредственно
+перед помещением команды в клиентскую очередь. Активация во время асинхронного
+переподключения не разрешает отложенный ON; retry также читает свежую защёлку.

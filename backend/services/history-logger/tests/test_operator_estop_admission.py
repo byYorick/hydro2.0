@@ -45,3 +45,33 @@ async def test_stop_activated_between_transport_retries_prevents_second_publish(
     assert exc.value.status_code == 409
     assert publish.await_count == 1
     failed.assert_awaited_once_with('test-stop-retry', 'operator_estop_admission_refused')
+
+
+@pytest.mark.asyncio
+async def test_stop_during_mqtt_reconnect_is_rechecked_before_wire_enqueue(monkeypatch):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+    from command_service import publish_command_mqtt
+    from commands import publisher
+    wire_publish = Mock()
+    stopped = False
+
+    async def reconnect():
+        nonlocal stopped
+        stopped = True
+
+    async def read_latch(*args):
+        return [{"type": "EMERGENCY_STOP_ACTIVATED"}] if stopped else []
+
+    client = SimpleNamespace(is_connected=lambda: stopped, start=AsyncMock(side_effect=reconnect),
+        _client=SimpleNamespace(_client=SimpleNamespace(publish=wire_publish)))
+    monkeypatch.setattr(publisher, 'fetch', AsyncMock(side_effect=read_latch))
+    monkeypatch.setattr(publisher, 'get_mqtt_client', AsyncMock(return_value=client))
+    monkeypatch.setattr(publisher, 'publish_command_mqtt', publish_command_mqtt)
+    monkeypatch.setattr(publisher, 'mark_command_send_failed', AsyncMock())
+    with pytest.raises(HTTPException) as exc:
+        await publisher.publish_command_with_retry(payload={"params": {"state": True}}, cmd_id='reconnect-stop',
+            cmd_name='set_relay', zone_id=7, node_uid='nd-1', channel='fan_A', effective_gh_uid='gh-1', zone_uid='zn-1')
+    assert exc.value.status_code == 409
+    client.start.assert_awaited_once()
+    wire_publish.assert_not_called()
