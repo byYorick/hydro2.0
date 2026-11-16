@@ -105,10 +105,53 @@ static void test_vent_travel_limits(void)
     expect_true("position forgotten after driver fault", !drive.known);
 }
 
+static void test_vent_origin_departure(void)
+{
+    vent_drive_t drive;
+    vent_drive_init(&drive, 10000u, 1000u);
+    drive.known = true;
+    drive.position_pct = 0;
+    expect_eq_int("opening from closed accepted", vent_drive_command(&drive, 100, 0), CLIMATE_CMD_OK);
+    expect_eq_int("motor can leave closed switch", vent_drive_step(&drive, 100u, true, false, false), VENT_OPEN);
+    expect_true("origin departure is not fault", !drive.fault);
+    expect_eq_int("origin released", vent_drive_step(&drive, 100u, false, false, false), VENT_OPEN);
+    expect_eq_int("origin reactivation faults", vent_drive_step(&drive, 100u, true, false, false), VENT_STOP);
+    expect_true("reactivation latched", drive.fault);
+
+    vent_drive_init(&drive, 10000u, 1000u);
+    (void)vent_drive_command(&drive, 100, 0);
+    expect_eq_int("stuck origin first tick", vent_drive_step(&drive, 100u, true, false, false), VENT_OPEN);
+    expect_eq_int("stuck origin deadline", vent_drive_step(&drive, VENT_ORIGIN_DEPARTURE_TIMEOUT_MS - 100u,
+                  true, false, false), VENT_STOP);
+    expect_true("stuck switch fault", drive.fault && !drive.known);
+
+    vent_drive_init(&drive, 10000u, 1000u);
+    drive.known = true;
+    drive.position_pct = 100;
+    (void)vent_drive_command(&drive, 0, 0);
+    expect_eq_int("motor can leave open switch", vent_drive_step(&drive, 100u, false, true, false), VENT_CLOSE);
+    expect_eq_int("close continues", vent_drive_step(&drive, 100u, false, false, false), VENT_CLOSE);
+    expect_eq_int("closed target reached", vent_drive_step(&drive, 100u, true, false, false), VENT_STOP);
+    expect_true("successful close", drive.known && !drive.fault && drive.position_pct == 0);
+
+    vent_drive_init(&drive, 10000u, 0u);
+    drive.known = true;
+    drive.position_pct = 0;
+    (void)vent_drive_command(&drive, 1, 0);
+    expect_eq_int("small move cannot confirm with active origin", vent_drive_step(&drive, 100u, true, false, false), VENT_STOP);
+    expect_true("small move stuck fault", drive.fault);
+
+    vent_drive_init(&drive, 10000u, 1000u);
+    (void)vent_drive_command(&drive, 100, 0);
+    expect_eq_int("both switches fault before target success", vent_drive_step(&drive, 100u, true, true, false), VENT_STOP);
+    expect_true("contradictory limits fault", drive.fault && !drive.known);
+}
+
 int main(void)
 {
     test_set_position_validation();
     test_vent_travel_limits();
+    test_vent_origin_departure();
     if (g_failures != 0) {
         fprintf(stderr, "%d assertion(s) failed\n", g_failures);
         return EXIT_FAILURE;

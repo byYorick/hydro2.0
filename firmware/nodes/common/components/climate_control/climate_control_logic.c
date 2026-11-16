@@ -43,6 +43,7 @@ static void vent_arm(vent_drive_t *drive, int target_pct, vent_motor_t motor, ui
     drive->motor = motor;
     drive->moving = motor != VENT_STOP;
     drive->elapsed_ms = 0;
+    drive->origin_limit_released = false;
     drive->fault = false;
     drive->budget_ms = travel_budget(drive, delta_pct == 0 ? 100u : delta_pct);
     if (motor == VENT_STOP) {
@@ -168,7 +169,7 @@ vent_motor_t vent_drive_step(
     if (drive == NULL) {
         return VENT_STOP;
     }
-    if (driver_fault) {
+    if (driver_fault || (closed_limit && open_limit)) {
         drive->fault = true;
         drive->known = false;
         drive->moving = false;
@@ -195,24 +196,30 @@ vent_motor_t vent_drive_step(
         drive->motor = VENT_STOP;
         return VENT_STOP;
     }
-    if ((drive->motor == VENT_OPEN && closed_limit) || (drive->motor == VENT_CLOSE && open_limit)) {
+    next = drive->elapsed_ms + dt_ms;
+    if (next < drive->elapsed_ms) {
+        next = UINT32_MAX;
+    }
+    // The first step precedes the GPIO write: allow the drive to leave its
+    // origin switch, but only once and for a bounded amount of motor time.
+    bool origin_limit = (drive->motor == VENT_OPEN && closed_limit) ||
+                        (drive->motor == VENT_CLOSE && open_limit);
+    if (origin_limit && (drive->origin_limit_released || next >= VENT_ORIGIN_DEPARTURE_TIMEOUT_MS)) {
         drive->fault = true;
         drive->known = false;
         drive->moving = false;
         drive->motor = VENT_STOP;
         return VENT_STOP;
     }
-
-    next = drive->elapsed_ms + dt_ms;
-    if (next < drive->elapsed_ms) {
-        next = UINT32_MAX;
+    if (!origin_limit) {
+        drive->origin_limit_released = true;
     }
     drive->elapsed_ms = next;
     if (drive->elapsed_ms < drive->budget_ms) {
         return drive->motor;
     }
 
-    if (drive->target_pct == 0) {
+    if (drive->target_pct == 0 || origin_limit) {
         drive->fault = true;
         drive->known = false;
         drive->moving = false;
