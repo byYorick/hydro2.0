@@ -192,6 +192,7 @@ class ClimateTickCommands:
             idempotency_key=idempotency_key,
             history_logger_client=history_logger_client,
             stop_ordinary_commands=stop_ordinary_commands,
+            lease_renew=_climate_lease_renew, execution=execution, command_failures=command_failures,
         )
         return ClimateCommandResult(left_cmd_id, right_cmd_id, left_done, right_done, command_failures)
 
@@ -204,6 +205,9 @@ class ClimateTickCommands:
         idempotency_key: str,
         history_logger_client: HistoryLoggerClient,
         stop_ordinary_commands: bool,
+        lease_renew: Callable[..., Any],
+        execution: Mapping[str, Any],
+        command_failures: list[str],
     ) -> None:
         control_mode = str(state.get("control_mode") or "auto").strip().lower()
         desired = bool((decision.factors or {}).get("exhaust_on"))
@@ -244,7 +248,13 @@ class ClimateTickCommands:
             if not channel or not node_uid or zone_id <= 0:
                 continue
             try:
-                await history_logger_client.publish(
+                if await lease_renew() is not True and await lease_renew() is not True:
+                    raise _GreenhouseLeaseStop()
+            except _GreenhouseLeaseStop:
+                command_failures.append(f"{channel}:{self._ports.lease_lost_status()}")
+                break
+            try:
+                hl_id = await history_logger_client.publish(
                     greenhouse_uid=str(row.get("greenhouse_uid") or ""),
                     zone_id=zone_id,
                     node_uid=node_uid,
@@ -253,6 +263,19 @@ class ClimateTickCommands:
                     params={"state": desired, "reason": "exhaust_hysteresis"},
                     cmd_id=f"ghc-{greenhouse_id}-{idempotency_key}-fan-{channel}-{int(desired)}",
                 )
+                terminal = await self._ports.wait_command_terminal(
+                    hl_id,
+                    timeout_sec=float(execution.get("command_terminal_timeout_sec") or 120),
+                    poll_sec=float(execution.get("command_poll_sec") or 1),
+                    lease_renew=lease_renew,
+                    renew_interval_sec=execution.get("lease_renew_interval_sec"),
+                )
+                self._ports.greenhouse_climate_command_total().labels(side="fan", status=terminal).inc()
+                if terminal != self._ports.success_status():
+                    command_failures.append(f"{channel}:{terminal}")
+                    self._ports.greenhouse_climate_command_failed_total().labels(side="fan", failure=terminal).inc()
+                if terminal == self._ports.lease_lost_status():
+                    break
             except asyncio.CancelledError:
                 raise
             except Exception:
