@@ -65,3 +65,82 @@ async def test_fan_ids_are_bounded_stable_and_distinct_across_nodes():
     publish.reset_mock()
     await component.execute_vent_commands(**kwargs)
     assert [call.kwargs["cmd_id"] for call in publish.await_args_list] == first
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("outcome", ["ERROR", "TIMEOUT", "SEND_FAILED", "WAIT_FAILED"])
+async def test_failed_fan_state_is_unknown_and_retried_next_tick(outcome):
+    from dataclasses import replace
+    component, kwargs, publish, _, terminal, _ = fan_tick()
+    if outcome == "SEND_FAILED":
+        publish.side_effect = ConnectionError("publish timeout")
+    elif outcome == "WAIT_FAILED":
+        terminal.side_effect = ConnectionError("DB down")
+    else:
+        terminal.return_value = outcome
+    result = await component.execute_vent_commands(**kwargs)
+    assert result.command_failures == [f"fan_A:{outcome}"]
+    factors = dict(kwargs["decision"].factors)
+    assert factors["exhaust_on"] is None
+    assert list(factors["exhaust_confirmed"].values()) == [None]
+    kwargs["state"] = {"control_mode": "auto", "decision_factors": factors}
+    kwargs["decision"] = replace(kwargs["decision"], factors={"exhaust_on": True})
+    kwargs["idempotency_key"] = "tick-2"
+    publish.side_effect = None
+    terminal.side_effect = None
+    terminal.return_value = "DONE"
+    result = await component.execute_vent_commands(**kwargs)
+    assert not result.command_failures
+    assert publish.await_count == 2
+    assert kwargs["decision"].factors["exhaust_on"] is True
+
+
+@pytest.mark.asyncio
+async def test_partial_success_retries_only_unconfirmed_actuator_and_new_binding():
+    from dataclasses import replace
+    component, kwargs, publish, _, terminal, fetch = fan_tick()
+    fetch.return_value.append(dict(fetch.return_value[0], node_uid="nd-two"))
+    terminal.side_effect = ["DONE", "ERROR"]
+    await component.execute_vent_commands(**kwargs)
+    assert kwargs["decision"].factors["exhaust_on"] is None
+    kwargs["state"]["decision_factors"] = dict(kwargs["decision"].factors)
+    kwargs["decision"] = replace(kwargs["decision"], factors={"exhaust_on": True})
+    kwargs["idempotency_key"] = "tick-2"
+    terminal.side_effect = None
+    terminal.return_value = "DONE"
+    fetch.return_value.append(dict(fetch.return_value[0], node_uid="nd-three"))
+    publish.reset_mock()
+    result = await component.execute_vent_commands(**kwargs)
+    assert not result.command_failures
+    assert [call.kwargs["node_uid"] for call in publish.await_args_list] == ["nd-two", "nd-three"]
+    assert kwargs["decision"].factors["exhaust_on"] is True
+
+
+@pytest.mark.asyncio
+async def test_failed_off_does_not_get_reported_as_off_and_is_retried():
+    from dataclasses import replace
+    component, kwargs, publish, _, terminal, _ = fan_tick()
+    await component.execute_vent_commands(**kwargs)
+    kwargs["state"]["decision_factors"] = dict(kwargs["decision"].factors)
+    kwargs["decision"] = replace(kwargs["decision"], factors={"exhaust_on": False})
+    terminal.return_value = "ERROR"
+    result = await component.execute_vent_commands(**kwargs)
+    assert result.command_failures == ["fan_A:ERROR"]
+    assert kwargs["decision"].factors["exhaust_on"] is None
+    kwargs["state"]["decision_factors"] = dict(kwargs["decision"].factors)
+    kwargs["decision"] = replace(kwargs["decision"], factors={"exhaust_on": False})
+    terminal.return_value = "DONE"
+    publish.reset_mock()
+    await component.execute_vent_commands(**kwargs)
+    publish.assert_awaited_once()
+    assert publish.await_args.kwargs["params"]["state"] is False
+    assert kwargs["decision"].factors["exhaust_on"] is False
+
+
+@pytest.mark.asyncio
+async def test_bindings_lookup_failure_is_not_success():
+    component, kwargs, publish, _, _, fetch = fan_tick()
+    fetch.side_effect = ConnectionError("bindings unavailable")
+    result = await component.execute_vent_commands(**kwargs)
+    assert result.command_failures == ["exhaust:BINDINGS_UNAVAILABLE"]
+    publish.assert_not_awaited()

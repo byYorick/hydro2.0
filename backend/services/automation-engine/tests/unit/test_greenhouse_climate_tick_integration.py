@@ -1144,3 +1144,59 @@ async def test_climate_renew_transport_budget_keeps_current_command_and_skips_se
             zone_id=seeded["zone_id"],
             sensor_ids=seeded["sensor_ids"],
         )
+
+
+@pytest.mark.asyncio
+async def test_exhaust_failure_persists_unknown_and_next_tick_reconciles() -> None:
+    seeded = await _seed_hot_two_vent_tick()
+    gh_id, zone_id = seeded['greenhouse_id'], seeded['zone_id']
+    try:
+        node = (await fetch('SELECT id FROM nodes WHERE zone_id=$1 ORDER BY id LIMIT 1', zone_id))[0]
+        channel = (await fetch("""INSERT INTO node_channels (node_id, channel, type, is_active, created_at, updated_at)
+            VALUES ($1, 'fan_A', 'ACTUATOR', true, NOW(), NOW()) RETURNING id""", node['id']))[0]
+        instance = (await fetch("""INSERT INTO infrastructure_instances
+            (owner_type, owner_id, asset_type, label, required, created_at, updated_at)
+            VALUES ('greenhouse', $1, 'FAN', 'exhaust test', false, NOW(), NOW()) RETURNING id""", gh_id))[0]
+        await execute("""INSERT INTO channel_bindings
+            (infrastructure_instance_id, node_channel_id, direction, role, created_at, updated_at)
+            VALUES ($1, $2, 'actuator', 'fan_actuator', NOW(), NOW())""", instance['id'], channel['id'])
+
+        class FailingFanClient(_FakeHistoryLoggerClient):
+            fail_fan = True
+            fan_attempts = 0
+
+            async def publish(self, **kwargs):
+                if kwargs['cmd'] == 'set_relay':
+                    self.fan_attempts += 1
+                    if self.fail_fan:
+                        raise ConnectionError('simulated lost publication response')
+                return await super().publish(**kwargs)
+
+        client = FailingFanClient()
+        first = await run_greenhouse_climate_tick(greenhouse_id=gh_id, idempotency_key=seeded['idem'],
+            history_logger_client=client, alert_publisher=_FakeAlertPublisher())
+        assert first['status'] == 'failed'
+        state = (await fetch('SELECT decision_factors FROM greenhouse_automation_state WHERE greenhouse_id=$1', gh_id))[0]
+        factors = state['decision_factors']
+        if isinstance(factors, str):
+            factors = json.loads(factors)
+        assert factors['exhaust_on'] is None
+        assert list(factors['exhaust_confirmed'].values()) == [None]
+        assert factors['exhaust_desired_on'] is True
+        retry_key = f'fan-retry-{uuid.uuid4().hex}'
+        await execute("""INSERT INTO greenhouse_automation_intents
+            (greenhouse_id, intent_type, task_type, intent_source, idempotency_key, status, created_at, updated_at)
+            VALUES ($1, 'GREENHOUSE_CLIMATE_TICK', 'greenhouse_climate_tick', 'pytest', $2, 'pending', NOW(), NOW())""",
+            gh_id, retry_key)
+        client.fail_fan = False
+        second = await run_greenhouse_climate_tick(greenhouse_id=gh_id, idempotency_key=retry_key,
+            history_logger_client=client, alert_publisher=_FakeAlertPublisher())
+        assert second['status'] == 'ok'
+        assert client.fan_attempts == 2
+        factors = (await fetch('SELECT decision_factors FROM greenhouse_automation_state WHERE greenhouse_id=$1', gh_id))[0]['decision_factors']
+        if isinstance(factors, str):
+            factors = json.loads(factors)
+        assert factors['exhaust_on'] is True
+        assert list(factors['exhaust_confirmed'].values()) == [True]
+    finally:
+        await _cleanup_greenhouse(greenhouse_id=gh_id, zone_id=zone_id, sensor_ids=seeded['sensor_ids'])

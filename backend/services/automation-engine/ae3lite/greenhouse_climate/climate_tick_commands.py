@@ -211,9 +211,16 @@ class ClimateTickCommands:
         command_failures: list[str],
     ) -> None:
         control_mode = str(state.get("control_mode") or "auto").strip().lower()
-        desired = bool((decision.factors or {}).get("exhaust_on"))
-        previous = _previous_exhaust_on(state)
-        if control_mode != "auto" or decision.suppress_commands or stop_ordinary_commands or desired == previous:
+        desired = bool(decision.factors.get("exhaust_desired_on", decision.factors.get("exhaust_on")))
+        previous_factors = _previous_factors(state)
+        previous_confirmed = previous_factors.get("exhaust_confirmed")
+        confirmed = dict(previous_confirmed) if isinstance(previous_confirmed, dict) else {}
+        # Planning supplies the desired hysteresis state; completion persists
+        # these separate confirmed facts only after DONE for each actuator.
+        decision.factors["exhaust_desired_on"] = desired
+        decision.factors["exhaust_confirmed"] = confirmed
+        decision.factors["exhaust_on"] = _confirmed_exhaust_on(confirmed)
+        if control_mode != "auto" or decision.suppress_commands or stop_ordinary_commands:
             return
         try:
             rows = await self._ports.fetch(
@@ -241,12 +248,25 @@ class ClimateTickCommands:
             self._ports.logger().warning(
                 "greenhouse_climate_tick exhaust bindings failed gh=%s", greenhouse_id, exc_info=True
             )
+            command_failures.append("exhaust:BINDINGS_UNAVAILABLE")
+            decision.factors["exhaust_on"] = None
             return
+        bindings = {}
         for row in rows or []:
+            node_uid = str(row.get("node_uid") or "")
+            channel = str(row.get("channel") or "")
+            key = json.dumps([node_uid, channel], separators=(",", ":"))
+            bindings[key] = row
+        confirmed = {key: confirmed.get(key) if isinstance(confirmed.get(key), bool) else None for key in bindings}
+        decision.factors["exhaust_confirmed"] = confirmed
+        for key, row in bindings.items():
             channel = str(row.get("channel") or "")
             node_uid = str(row.get("node_uid") or "")
             zone_id = int(row.get("zone_id") or 0)
             if not channel or not node_uid or zone_id <= 0:
+                command_failures.append("exhaust:INVALID_BINDING")
+                continue
+            if confirmed[key] is desired:
                 continue
             try:
                 if await lease_renew() is not True and await lease_renew() is not True:
@@ -254,6 +274,7 @@ class ClimateTickCommands:
             except _GreenhouseLeaseStop:
                 command_failures.append(f"{channel}:{self._ports.lease_lost_status()}")
                 break
+            confirmed[key] = None
             try:
                 hl_id = await history_logger_client.publish(
                     greenhouse_uid=str(row.get("greenhouse_uid") or ""),
@@ -264,6 +285,17 @@ class ClimateTickCommands:
                     params={"state": desired, "reason": "exhaust_hysteresis"},
                     cmd_id=_fan_command_id(greenhouse_id, idempotency_key, node_uid, channel, desired),
                 )
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                self._ports.logger().warning(
+                    "greenhouse_climate_tick exhaust publish failed gh=%s node=%s channel=%s",
+                    greenhouse_id, node_uid, channel, exc_info=True,
+                )
+                command_failures.append(f"{channel}:SEND_FAILED")
+                self._ports.greenhouse_climate_command_failed_total().labels(side="fan", failure="SEND_FAILED").inc()
+                continue
+            try:
                 terminal = await self._ports.wait_command_terminal(
                     hl_id,
                     timeout_sec=float(execution.get("command_terminal_timeout_sec") or 120),
@@ -271,33 +303,40 @@ class ClimateTickCommands:
                     lease_renew=lease_renew,
                     renew_interval_sec=execution.get("lease_renew_interval_sec"),
                 )
-                self._ports.greenhouse_climate_command_total().labels(side="fan", status=terminal).inc()
-                if terminal != self._ports.success_status():
-                    command_failures.append(f"{channel}:{terminal}")
-                    self._ports.greenhouse_climate_command_failed_total().labels(side="fan", failure=terminal).inc()
-                if terminal == self._ports.lease_lost_status():
-                    break
             except asyncio.CancelledError:
                 raise
             except Exception:
+                terminal = "WAIT_FAILED"
                 self._ports.logger().warning(
-                    "greenhouse_climate_tick exhaust command failed gh=%s channel=%s",
-                    greenhouse_id,
-                    channel,
-                    exc_info=True,
+                    "greenhouse_climate_tick exhaust terminal wait failed gh=%s node=%s channel=%s",
+                    greenhouse_id, node_uid, channel, exc_info=True,
                 )
+            self._ports.greenhouse_climate_command_total().labels(side="fan", status=terminal).inc()
+            if terminal == self._ports.success_status():
+                confirmed[key] = desired
+            else:
+                command_failures.append(f"{channel}:{terminal}")
+                self._ports.greenhouse_climate_command_failed_total().labels(side="fan", failure=terminal).inc()
+            if terminal == self._ports.lease_lost_status():
+                break
+        decision.factors["exhaust_on"] = _confirmed_exhaust_on(confirmed)
 
 
-def _previous_exhaust_on(state: Mapping[str, Any]) -> bool:
+def _previous_factors(state: Mapping[str, Any]) -> dict[str, Any]:
     raw = state.get("decision_factors")
     if isinstance(raw, str):
         try:
             raw = json.loads(raw)
         except json.JSONDecodeError:
-            return False
-    if isinstance(raw, dict):
-        return bool(raw.get("exhaust_on"))
-    return False
+            return {}
+    return raw if isinstance(raw, dict) else {}
+
+
+def _confirmed_exhaust_on(confirmed: Mapping[str, Any]) -> bool | None:
+    values = list(confirmed.values())
+    if values and all(isinstance(value, bool) and value is values[0] for value in values):
+        return values[0]
+    return None
 
 
 def _fan_command_id(greenhouse_id: int, tick_key: str, node_uid: str, channel: str, desired: bool) -> str:

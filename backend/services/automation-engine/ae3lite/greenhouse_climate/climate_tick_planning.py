@@ -45,7 +45,7 @@ def _previous_exhaust_on(state: Mapping[str, Any]) -> bool:
         except json.JSONDecodeError:
             return False
     if isinstance(raw, dict):
-        return bool(raw.get("exhaust_on"))
+        return bool(raw.get("exhaust_desired_on", raw.get("exhaust_on")))
     return False
 
 

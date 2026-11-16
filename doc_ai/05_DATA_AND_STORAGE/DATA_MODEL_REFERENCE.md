@@ -2850,3 +2850,23 @@ are required before physical guarantees. Release requires no active AE task/leas
 and never restores outputs. See AE3_IRR_FAILSAFE_AND_ESTOP_CONTRACT.md.
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0
+
+
+### Exhaust command reconciliation
+
+Greenhouse climate ticks renew the greenhouse lease before every fan command
+and await terminal DONE with the same lease-aware wait as roof vents. Lost
+ownership stops further fan commands. Command IDs include the node/channel/tick
+identity in a bounded deterministic digest (<=128 bytes).
+Existing `greenhouse_automation_state.decision_factors` JSONB stores optional
+`exhaust_desired_on` (hysteresis intent), `exhaust_confirmed` (map keyed by JSON
+`[node_uid,channel]`, values boolean or null for unknown), and `exhaust_on`
+(boolean only when all current bindings confirm the same state; otherwise null).
+Legacy `exhaust_on` without per-actuator confirmation is reconciled once. Only
+DONE updates a confirmed entry. Publication errors, terminal errors/timeouts and
+binding read failures fail the tick; unknown/failed entries are retried on the
+next tick, including OFF. Partial success preserves successful entries. New
+bindings are reconciled even when the desired global state has not changed.
+No schema, task type or ingress changes.
+
+Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0
