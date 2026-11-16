@@ -379,3 +379,14 @@ COMMAND_ERROR
 ---
 
 # Конец файла COMMAND_VALIDATION_ENGINE.md
+
+
+### Source tank level sanity
+
+Pump dry-run admission requires a fresh source WATER_LEVEL reading that converts
+to a finite number in [0,1]. Missing, boolean, NaN, infinity and out-of-domain
+values fail closed. The minimum threshold must be finite and in (0,1]; corrupt
+thresholds also fail closed. Alert numeric details serialize nonfinite readings
+as null; invalid raw readings never authorize an actuator or enter JSON as NaN.
+
+Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0

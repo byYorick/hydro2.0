@@ -4,6 +4,7 @@ Pump Safety Engine - проверки безопасности насосов.
 Контракт sanity caps: doc_ai/03_TRANSPORT_MQTT/COMMAND_VALIDATION_ENGINE.md.
 """
 import logging
+import math
 from typing import Optional, Dict, Any, List
 from datetime import datetime, timedelta, timezone
 from .db import fetch, execute
@@ -29,11 +30,12 @@ MCU_OFFLINE_TIMEOUT_SEC = 300  # 5 минут - время без телемет
 
 
 def _json_float(value: Any) -> float | None:
-    if value is None:
+    if value is None or isinstance(value, bool):
         return None
     try:
-        return float(value)
-    except (TypeError, ValueError):
+        number = float(value)
+        return number if math.isfinite(number) else None
+    except (TypeError, ValueError, OverflowError):
         return None
 
 
@@ -126,7 +128,7 @@ async def check_dry_run(
     Полив и дозирование смотрят бак раствора (или датчик канала дозы),
     не бак чистой воды.
     """
-    min_level = MIN_WATER_LEVEL if min_water_level is None else float(min_water_level)
+    min_level = _json_float(MIN_WATER_LEVEL if min_water_level is None else min_water_level)
     moment = _to_naive_utc(now) or utcnow().replace(tzinfo=None)
     details: Dict[str, Any] = {
         "zone_id": zone_id,
@@ -135,6 +137,10 @@ async def check_dry_run(
         "min_level": min_level,
         "max_age_sec": int(max_age_sec),
     }
+    if min_level is None or not 0 < min_level <= 1:
+        details["reason"] = "invalid_min_water_level"
+        await _alert_dry_run(zone_id, details)
+        return False, "Source tank level threshold is invalid"
     try:
         rows = await fetch(
             """
@@ -183,12 +189,11 @@ async def check_dry_run(
         await _alert_dry_run(zone_id, details)
         return False, "Source tank level is stale"
 
-    try:
-        level = float(chosen.get("value"))
-    except (TypeError, ValueError):
-        details["reason"] = "source_level_missing"
+    level = _json_float(chosen.get("value"))
+    if level is None or not 0 <= level <= 1:
+        details["reason"] = "source_level_invalid"
         await _alert_dry_run(zone_id, details)
-        return False, "Source tank level is unavailable"
+        return False, "Source tank level is invalid"
 
     if level < min_level:
         details["reason"] = "source_level_low"
