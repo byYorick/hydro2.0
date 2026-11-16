@@ -10,8 +10,15 @@
     >!</span>
     <div class="min-w-0 space-y-1">
       <h2 class="text-sm font-semibold text-[color:var(--status-critical)]">
-        {{ banner }}
+        {{ status?.active === false ? 'Снятие аварийной остановки' : banner }}
       </h2>
+      <p
+        v-if="deliveryMessage"
+        class="text-sm"
+        data-testid="zone-estop-delivery"
+      >
+        {{ deliveryMessage }}
+      </p>
       <p
         v-if="sinceLabel"
         class="text-xs text-[color:var(--text-secondary)]"
@@ -31,9 +38,11 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { ESTOP_ACTIVE_BANNER } from '@/utils/zoneEstop'
+import type { ZoneEstopStatus } from '@/types/ZoneEstop'
+import { estopDeliveryMessage, ESTOP_ACTIVE_BANNER } from '@/utils/zoneEstop'
 
 interface Props {
+  status?: ZoneEstopStatus | null
   since?: string | null
   solutionLabel?: string | null
 }
@@ -44,6 +53,7 @@ const props = withDefaults(defineProps<Props>(), {
 })
 
 const banner = ESTOP_ACTIVE_BANNER
+const deliveryMessage = computed(() => estopDeliveryMessage(props.status))
 
 const sinceLabel = computed(() => {
   if (!props.since) return null

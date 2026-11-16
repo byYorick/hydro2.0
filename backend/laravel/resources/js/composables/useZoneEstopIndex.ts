@@ -19,9 +19,9 @@ export function useZoneEstopIndex(zoneIds: Ref<number[]>) {
   async function refresh(): Promise<void> {
     const ids = [...new Set(zoneIds.value.filter((id) => Number.isFinite(id) && id > 0))]
     const getter = api.zones?.getEstop
-    if (ids.length === 0 || typeof getter !== 'function') return
-
     const seq = ++requestSeq
+    if (ids.length === 0) { estopByZoneId.value = {}; return }
+    if (typeof getter !== 'function') return
     const entries = await Promise.all(ids.map(async (id) => {
       try {
         const payload = await getter(id)
@@ -34,6 +34,10 @@ export function useZoneEstopIndex(zoneIds: Ref<number[]>) {
     if (seq !== requestSeq) return
 
     const next: Record<number, ZoneEstopStatus> = {}
+    for (const id of ids) {
+      const previous = estopByZoneId.value[id]
+      if (previous) next[id] = previous
+    }
     for (const entry of entries) {
       if (!entry) continue
       next[entry[0]] = entry[1]

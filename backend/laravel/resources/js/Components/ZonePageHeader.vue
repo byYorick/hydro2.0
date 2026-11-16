@@ -84,6 +84,8 @@
         v-if="showEstopControl"
         :active="estopActive"
         :busy="estopBusy"
+        :stop-status="estopStopStatus"
+        :release-status="estopReleaseStatus"
         :can-engage="canEngageEstop"
         :can-release="canReleaseEstop"
         @engage="$emit('estop-engage')"
@@ -162,6 +164,7 @@ import ZoneEstopControl from '@/Components/ZoneEstopControl.vue'
 import { useRole } from '@/composables/useRole'
 import { ESTOP_ACTIVE_BANNER } from '@/utils/zoneEstop'
 import type { BadgeVariant } from '@/Components/Badge.vue'
+import type { EstopDeliveryStatus } from '@/types/ZoneEstop'
 import type { GrowCycleStatus } from '@/types/GrowCycle'
 
 interface Props {
@@ -178,6 +181,8 @@ interface Props {
   pauseLoading?: boolean
   nextPhaseLoading?: boolean
   estopActive?: boolean
+  estopStopStatus?: EstopDeliveryStatus
+  estopReleaseStatus?: EstopDeliveryStatus
   estopBusy?: boolean
   solutionLabel?: string | null
 }

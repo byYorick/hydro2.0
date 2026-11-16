@@ -14,7 +14,7 @@
       :disabled="busy"
       @click="confirmOpen = true"
     >
-      Аварийная остановка
+      {{ active ? 'Повторить остановку' : 'Аварийная остановка' }}
     </Button>
     <Button
       v-if="showRelease"
@@ -43,7 +43,7 @@
       @close="confirmOpen = false"
     >
       <p class="text-sm text-[color:var(--text-primary)]">
-        Включающие команды зоны будут заблокированы. Насосы и реле останутся выключенными, пока остановку не снимут.
+        Включающие команды зоны будут заблокированы. Узлам будет отправлена команда отключения выходов. Подтверждение остановки появится после их ответов.
       </p>
       <template #footer>
         <Button
@@ -107,9 +107,12 @@
 import { computed, ref } from 'vue'
 import Button from '@/Components/Button.vue'
 import Modal from '@/Components/Modal.vue'
+import type { EstopDeliveryStatus } from '@/types/ZoneEstop'
 
 interface Props {
   active: boolean
+  stopStatus?: EstopDeliveryStatus
+  releaseStatus?: EstopDeliveryStatus
   busy?: boolean
   canEngage: boolean
   canRelease: boolean
@@ -131,8 +134,8 @@ const releaseOpen = ref(false)
 const reason = ref('')
 const reasonTouched = ref(false)
 
-const showEngage = computed(() => props.canEngage && !props.active)
-const showRelease = computed(() => props.canRelease && props.active)
+const showEngage = computed(() => props.canEngage && (!props.active || props.stopStatus === 'failed'))
+const showRelease = computed(() => props.canRelease && (props.active || props.releaseStatus === 'failed'))
 const reasonValid = computed(() => reason.value.trim().length >= 3)
 
 function confirmEngage(): void {

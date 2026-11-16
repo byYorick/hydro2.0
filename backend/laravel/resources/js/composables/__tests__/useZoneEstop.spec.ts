@@ -1,14 +1,16 @@
 import { flushPromises } from '@vue/test-utils'
-import { ref } from 'vue'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { effectScope, ref } from 'vue'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useZoneEstop } from '@/composables/useZoneEstop'
 
+const getEstop = vi.hoisted(() => vi.fn())
 const getSnapshot = vi.hoisted(() => vi.fn())
 const applyEstop = vi.hoisted(() => vi.fn())
 
 vi.mock('@/services/api', () => ({
   api: {
     zones: {
+      getEstop: (...args: unknown[]) => getEstop(...args),
       getSnapshot: (...args: unknown[]) => getSnapshot(...args),
       applyEstop: (...args: unknown[]) => applyEstop(...args),
     },
@@ -16,7 +18,10 @@ vi.mock('@/services/api', () => ({
 }))
 
 describe('useZoneEstop', () => {
+  afterEach(() => vi.useRealTimers())
   beforeEach(() => {
+    getEstop.mockReset()
+    getEstop.mockImplementation((...args: unknown[]) => getSnapshot(...args))
     getSnapshot.mockReset()
     applyEstop.mockReset()
   })
@@ -69,4 +74,38 @@ describe('useZoneEstop', () => {
     expect(released.result).toBe('released')
     expect(estop.active.value).toBe(false)
   })
+  it('не применяет задержанный ответ предыдущей зоны', async () => {
+    let finishOld!: (value: unknown) => void
+    getEstop.mockImplementation((id: number) => id === 1
+      ? new Promise((resolve) => { finishOld = resolve })
+      : Promise.resolve({ estop: { active: false } }))
+    getSnapshot.mockResolvedValue({})
+    const id = ref(1)
+    const estop = useZoneEstop(id)
+    id.value = 2
+    await flushPromises()
+    finishOld({ estop: { active: true } })
+    await flushPromises()
+    expect(estop.active.value).toBe(false)
+  })
+
+  it('обновляет pending до confirmed и сохраняет блокировку при ошибке API', async () => {
+    vi.useFakeTimers()
+    getSnapshot.mockResolvedValue({})
+    getEstop.mockResolvedValue({ estop: { active: true, stop_status: 'pending' } })
+    const scope = effectScope()
+    const estop = scope.run(() => useZoneEstop(ref(3)))!
+    await flushPromises()
+    expect(estop.status.value?.stop_status).toBe('pending')
+    getEstop.mockResolvedValue({ estop: { active: true, stop_status: 'confirmed' } })
+    await vi.advanceTimersByTimeAsync(3000)
+    await flushPromises()
+    expect(estop.status.value?.stop_status).toBe('confirmed')
+    getEstop.mockRejectedValue(new Error('network'))
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(estop.active.value).toBe(true)
+    scope.stop()
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
 })

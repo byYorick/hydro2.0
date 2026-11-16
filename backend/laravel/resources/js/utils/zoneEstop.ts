@@ -1,4 +1,4 @@
-import type { ZoneEstopStatus } from '@/types/ZoneEstop'
+import type { EstopDeliveryStatus, ZoneEstopStatus } from '@/types/ZoneEstop'
 
 export const ESTOP_ACTIVE_BANNER = 'Аварийная остановка активна, ручные команды заблокированы'
 
@@ -15,14 +15,28 @@ export function isEstopSafeManualStep(step: string): boolean {
   return STOP_SAFE_MANUAL_STEPS.has(step)
 }
 
-export function estopResultMessage(result: string): string {
+export function estopDeliveryMessage(status: ZoneEstopStatus | null | undefined): string {
+  if (!status) return ''
+  if (status.active) {
+    if (status.stop_status === 'confirmed') return 'Отключение выходов подтверждено всеми узлами.'
+    if (status.stop_status === 'failed') return 'Отключение выходов не подтверждено: ошибка команды. Повторите остановку.'
+    return 'Ожидается подтверждение отключения выходов от узлов.'
+  }
+  if (status.release_status === 'pending') return 'Ожидается подтверждение снятия блокировки от узлов.'
+  if (status.release_status === 'failed') return 'Узлы не подтвердили снятие блокировки. Повторите снятие.'
+  return ''
+}
+
+export function estopResultMessage(result: string, status?: ZoneEstopStatus): string {
+  const delivery = estopDeliveryMessage(status)
+  if (delivery) return delivery
   switch (result) {
     case 'engaged':
       return 'Аварийная остановка включена. Ручные команды заблокированы.'
     case 'already_active':
       return 'Аварийная остановка уже включена.'
     case 'released':
-      return 'Аварийная остановка снята. Насосы и реле остаются выключенными.'
+      return 'Блокировка снята. Автоматическое восстановление выходов не выполняется.'
     case 'already_released':
       return 'Аварийная остановка уже снята.'
     default:
@@ -50,6 +64,8 @@ export function readEstopStatus(payload: unknown): ZoneEstopStatus | null {
   if (!estop || typeof estop.active !== 'boolean') return null
   return {
     active: estop.active,
+    stop_status: readDeliveryStatus(estop.stop_status),
+    release_status: readDeliveryStatus(estop.release_status),
     source: typeof estop.source === 'string' ? estop.source : null,
     since: typeof estop.since === 'string' ? estop.since : null,
     node_uid: typeof estop.node_uid === 'string' ? estop.node_uid : null,
@@ -69,4 +85,8 @@ export function readSolutionPercent(payload: unknown): number | null | undefined
   const value = levels.solution_percent
   if (typeof value === 'number' && Number.isFinite(value)) return value
   return null
+}
+
+function readDeliveryStatus(value: unknown): EstopDeliveryStatus | undefined {
+  return value === 'not_requested' || value === 'pending' || value === 'confirmed' || value === 'failed' ? value : undefined
 }

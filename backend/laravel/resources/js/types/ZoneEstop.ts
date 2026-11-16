@@ -1,4 +1,8 @@
+export type EstopDeliveryStatus = 'not_requested' | 'pending' | 'confirmed' | 'failed'
+
 export interface ZoneEstopStatus {
+  stop_status?: EstopDeliveryStatus
+  release_status?: EstopDeliveryStatus
   active: boolean
   source: string | null
   since: string | null

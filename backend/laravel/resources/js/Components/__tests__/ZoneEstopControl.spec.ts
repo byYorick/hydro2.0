@@ -95,4 +95,16 @@ describe('ZoneEstopControl', () => {
     expect(wrapper.find('[data-testid="zone-estop-control"]').exists()).toBe(false)
     wrapper.unmount()
   })
+  it('позволяет повторить неподтверждённую остановку', () => {
+    const wrapper = mountControl({ active: true, stopStatus: 'failed' })
+    expect(wrapper.get('[data-testid="zone-estop-engage"]').text()).toBe('Повторить остановку')
+    wrapper.unmount()
+  })
+
+  it('позволяет повторить ошибку снятия при уже снятой серверной защёлке', () => {
+    const wrapper = mountControl({ active: false, releaseStatus: 'failed' })
+    expect(wrapper.find('[data-testid="zone-estop-release"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
 })

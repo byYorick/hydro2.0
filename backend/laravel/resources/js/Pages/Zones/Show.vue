@@ -13,7 +13,8 @@
         @unblock="onOperatorUnblock"
       />
       <ZoneEstopBanner
-        v-if="estopActive"
+        v-if="estopActive || estopStatus?.release_status === 'pending' || estopStatus?.release_status === 'failed'"
+        :status="estopStatus"
         :since="estopStatus?.since ?? null"
         :solution-label="solutionLabel"
       />
@@ -32,6 +33,8 @@
         :next-phase-loading="loading.nextPhase"
         :estop-active="estopActive"
         :estop-busy="estopBusy"
+        :estop-stop-status="estopStatus?.stop_status"
+        :estop-release-status="estopStatus?.release_status"
         :solution-label="solutionLabel"
         @water="onManualIrrigation('START_IRRIGATION')"
         @pause="onCyclePause"
@@ -381,8 +384,8 @@ function onManualIrrigation(action: 'START_IRRIGATION' | 'FORCE_IRRIGATION'): vo
 async function onEstopEngage(): Promise<void> {
     try {
         const result = await engageEstop();
-        const variant = result.result === 'engaged' ? 'success' : 'warning';
-        showToast(estopResultMessage(result.result), variant, TOAST_TIMEOUT.LONG);
+        const variant = result.estop.stop_status === 'failed' ? 'error' : result.estop.stop_status === 'confirmed' ? 'success' : 'warning';
+        showToast(estopResultMessage(result.result, result.estop), variant, TOAST_TIMEOUT.LONG);
     } catch (err) {
         showToast(extractHumanErrorMessage(err, 'Не удалось включить аварийную остановку'), 'error', TOAST_TIMEOUT.LONG);
     }
@@ -391,8 +394,8 @@ async function onEstopEngage(): Promise<void> {
 async function onEstopRelease(reason: string): Promise<void> {
     try {
         const result = await releaseEstop(reason);
-        const variant = result.result === 'released' ? 'success' : 'warning';
-        showToast(estopResultMessage(result.result), variant, TOAST_TIMEOUT.LONG);
+        const variant = result.estop.release_status === 'failed' ? 'error' : result.estop.release_status === 'pending' ? 'warning' : 'success';
+        showToast(estopResultMessage(result.result, result.estop), variant, TOAST_TIMEOUT.LONG);
     } catch (err) {
         showToast(extractHumanErrorMessage(err, 'Не удалось снять аварийную остановку'), 'error', TOAST_TIMEOUT.LONG);
     }
