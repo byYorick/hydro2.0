@@ -93,6 +93,7 @@
           :pending-control-mode-value="pendingControlModeValue"
           :automation-state-meta-label="automationStateMetaLabel"
           :irrigation-action-loading="props.irrigationActionLoading ?? false"
+          :commands-locked="props.commandsLocked ?? false"
           :diagnostics-action-loading="diagnosticsLoading"
           :solution-change-action-loading="solutionChangeLoading"
           :current-stage="automationCurrentStage"

@@ -13,6 +13,7 @@
 #define NODE_COMMAND_HANDLER_H
 
 #include "esp_err.h"
+#include "node_command_id.h"
 #include "cJSON.h"
 #include <stdbool.h>
 

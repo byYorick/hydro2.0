@@ -717,12 +717,14 @@ esp_err_t climate_node_framework_init_integration(void) {
 // Callback для отключения актуаторов в safe_mode
 static esp_err_t climate_node_disable_actuators_in_safe_mode(void *user_ctx) {
     (void)user_ctx;
+    climate_node_control_apply_now();
     ESP_LOGW(TAG, "Disabling all actuators in safe mode");
     
     // Отключаем все реле и PWM через конфиг
     // КРИТИЧНО: Используем статический буфер вместо стека для предотвращения переполнения
     static char config_json[CONFIG_STORAGE_MAX_JSON_SIZE];
     esp_err_t err = config_storage_get_json(config_json, sizeof(config_json));
+    esp_err_t stop_err = err;
     if (err == ESP_OK) {
         cJSON *config = cJSON_Parse(config_json);
         if (config) {
@@ -753,23 +755,27 @@ static esp_err_t climate_node_disable_actuators_in_safe_mode(void *user_ctx) {
                                  strcasecmp(kind, "FAN") == 0 ||
                                  strcasecmp(kind, "HEATER") == 0 ||
                                  strcasecmp(kind, "LED") == 0)) {
-                                relay_driver_set_state(channel_name, RELAY_STATE_OPEN);
+                                esp_err_t off_err = relay_driver_set_state(channel_name, RELAY_STATE_OPEN);
+                                if (off_err != ESP_OK) stop_err = off_err;
                             }
                             
                             // Отключаем PWM (устанавливаем duty в 0%)
                             if (kind && strcasecmp(kind, "PWM") == 0) {
-                                pwm_driver_set_duty_percent(channel_name, 0.0f);
+                                esp_err_t off_err = pwm_driver_set_duty_percent(channel_name, 0.0f);
+                                if (off_err != ESP_OK) stop_err = off_err;
                             }
                         }
                     }
                 }
             }
             cJSON_Delete(config);
+        } else {
+            stop_err = ESP_ERR_INVALID_ARG;
         }
     }
 
     climate_node_control_apply_now();
-    return ESP_OK;
+    return stop_err;
 }
 
 static bool climate_node_has_pwm_channels(const cJSON *config) {

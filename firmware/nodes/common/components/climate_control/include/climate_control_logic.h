@@ -26,7 +26,10 @@ typedef enum {
     VENT_CLOSE = 2
 } vent_motor_t;
 
+#define VENT_ORIGIN_DEPARTURE_TIMEOUT_MS 1000u
+
 typedef struct {
+    bool origin_limit_released;
     bool known;
     int position_pct;
     int target_pct;
@@ -62,6 +65,8 @@ void vent_drive_halt(vent_drive_t *drive);
 
 /* closed_limit / open_limit — концевик сработал.
    target 0 без концевика закрытия к концу бюджета — fault, мотор стоп.
+   Origin switch may stay active only during the first bounded departure;
+   simultaneous limits or reactivation of the origin switch are faults.
    Промежуточная цель считается по времени хода. */
 vent_motor_t vent_drive_step(
     vent_drive_t *drive,

@@ -4,6 +4,7 @@
  */
 
 #include "node_command_handler.h"
+#include "node_safe_mode_policy.h"
 #include "node_framework.h"
 #include "mqtt_manager.h"
 #include "node_utils.h"
@@ -60,7 +61,7 @@ typedef struct {
 #define MAX_STATUS_LEN 16  // "DONE", "ERROR", "ACK"
 
 typedef struct {
-    char cmd_id[129];
+    node_command_id_t cmd_id;
     uint64_t timestamp_ms;
     char final_status[MAX_STATUS_LEN];  // Сохраненный финальный статус (DONE/ERROR)
     bool valid;
@@ -332,7 +333,7 @@ static void node_command_respond_invalid_json(
     int data_len,
     const char *reason
 ) {
-    char cmd_id[129] = {0};
+    node_command_id_t cmd_id = {0};
     if (!try_extract_json_string_field(data, data_len, "cmd_id", cmd_id, sizeof(cmd_id))) {
         node_command_report_invalid_json(data, data_len);
         return;
@@ -1207,7 +1208,13 @@ void node_command_handler_process(
     ESP_LOGI(TAG, "Processing command: %s (id: %s) on channel: %s", cmd, cmd_id, channel ? channel : "default");
 
     // Проверка safe_mode: блокируем все команды кроме exit_safe_mode
-    if (node_framework_is_safe_mode() && strcmp(cmd, "exit_safe_mode") != 0) {
+    const cJSON *safe_params = cJSON_GetObjectItem(json, "params");
+    const cJSON *safe_state = cJSON_GetObjectItem(safe_params, "state");
+    const cJSON *safe_pwm = cJSON_GetObjectItem(safe_params, "duty");
+    if (safe_pwm == NULL) safe_pwm = cJSON_GetObjectItem(safe_params, "value");
+    bool relay_off = cJSON_IsFalse(safe_state) || (cJSON_IsNumber(safe_state) && cJSON_GetNumberValue(safe_state) == 0.0);
+    bool pwm_off = cJSON_IsNumber(safe_pwm) && cJSON_GetNumberValue(safe_pwm) == 0.0;
+    if (node_framework_is_safe_mode() && !node_safe_mode_command_allowed(cmd, relay_off, pwm_off)) {
         ESP_LOGW(TAG, "Command %s rejected: node is in safe_mode", cmd);
         cJSON *response = node_command_handler_create_response(
             cmd_id,
@@ -1763,8 +1770,7 @@ const char *node_command_handler_get_cached_status(const char *cmd_id, const cha
 
         // Команда не найдена - добавляем в глобальный кеш (LRU: перезаписываем старую запись)
         size_t idx = s_global_cmd_cache.lru_index % CMD_ID_CACHE_SIZE;
-        strncpy(s_global_cmd_cache.global_cache[idx].cmd_id, cmd_id, 128);
-        s_global_cmd_cache.global_cache[idx].cmd_id[128] = '\0';
+        (void)node_command_id_copy(s_global_cmd_cache.global_cache[idx].cmd_id, cmd_id);
         s_global_cmd_cache.global_cache[idx].timestamp_ms = current_time_ms;
         s_global_cmd_cache.global_cache[idx].valid = true;
         s_global_cmd_cache.global_cache[idx].has_final_status = false;

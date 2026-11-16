@@ -645,3 +645,41 @@ async def test_can_run_pump_passes_telemetry_grace_params():
         assert args == (1, None)
         assert kwargs["telemetry_grace_sec"] == 120
         assert kwargs["grace_node_types"] == ["ph", "ec"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("level", [float("nan"), float("inf"), float("-inf"), "NaN", "Infinity", -0.01, 1.01, None, "bad", True])
+async def test_dry_run_rejects_invalid_levels_and_emits_finite_alert_json(level):
+    import json
+    with patch("common.pump_safety.fetch", new_callable=AsyncMock) as query, \
+         patch("common.pump_safety.create_alert", new_callable=AsyncMock) as alert:
+        query.return_value = [_level_row("level_solution_min", level)]
+        allowed, error = await check_dry_run(1)
+        assert allowed is False
+        assert error == "Source tank level is invalid"
+        details = alert.call_args.kwargs["details"]
+        assert details["reason"] == "source_level_invalid"
+        json.dumps(details, allow_nan=False)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("threshold", [float("nan"), float("inf"), float("-inf"), "NaN", -0.1, 0, 1.1, "bad", True])
+async def test_dry_run_rejects_invalid_threshold_before_reading_or_authorizing(threshold):
+    import json
+    with patch("common.pump_safety.fetch", new_callable=AsyncMock) as query, \
+         patch("common.pump_safety.create_alert", new_callable=AsyncMock) as alert:
+        allowed, error = await check_dry_run(1, threshold)
+        assert allowed is False
+        assert error == "Source tank level threshold is invalid"
+        query.assert_not_awaited()
+        json.dumps(alert.call_args.kwargs["details"], allow_nan=False)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("level,allowed", [(0, False), (0.15, True), (1, True)])
+async def test_dry_run_accepts_only_normalized_level_domain_and_enforces_threshold(level, allowed):
+    with patch("common.pump_safety.fetch", new_callable=AsyncMock) as query, \
+         patch("common.pump_safety.create_alert", new_callable=AsyncMock):
+        query.return_value = [_level_row("level_solution_min", level)]
+        result, _ = await check_dry_run(1)
+        assert result is allowed

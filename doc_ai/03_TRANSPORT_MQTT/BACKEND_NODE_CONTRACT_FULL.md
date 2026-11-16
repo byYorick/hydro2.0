@@ -707,3 +707,22 @@ Backend обязан:
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0
 
 Исправления аудита 2026-11-14: production MQTT использует отдельный username/password на устройство и явные ACL для node_uid/hardware_id. Генератор: tools/mqtt/generate_node_acl.py. Общие credentials и client_id не являются идентичностью. При migration нужно установить индивидуальные mqtt.username/password в NodeConfig/NVS, добавить password hash на брокере и node_uid -> MQTT password в secret mount HL. Во время изменения credentials остановить автоматизацию и проверить config_report/подписи до возобновления. Форматы MQTT не изменены.
+
+
+### Operator E-STOP: latch and delivery confirmation
+
+Operator E-STOP is an independent zone latch stored in existing `zone_events`
+(`EMERGENCY_STOP_ACTIVATED` / `EMERGENCY_STOP_RELEASED`, `payload_json.source=operator`,
+`channel=storage_state`). Optional `payload_json.dispatch` contains `action` and
+`commands[]` (`node_uid`, `cmd_id`, optional `error`). No schema change.
+Laravel dispatches signed Protocol 2.0 `enter_safe_mode` / existing `exit_safe_mode`
+on the existing `system` channel via HL. Stop confirms only after all targeted
+actuator nodes report terminal DONE; missing replies stay pending, errors fail.
+Status API adds `stop_status` and `release_status` (`not_requested`, `pending`,
+`confirmed`, `failed`) without removing existing fields. `active` is the admission
+latch, not proof of physical OFF. Old firmware rejecting `enter_safe_mode` must
+remain visibly unconfirmed; updated firmware and deferred hardware acceptance
+are required before physical guarantees. Release requires no active AE task/lease
+and never restores outputs. See AE3_IRR_FAILSAFE_AND_ESTOP_CONTRACT.md.
+
+Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0

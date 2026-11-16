@@ -49,3 +49,9 @@ gcc -std=c11 -Wall -Wextra -Werror -fsanitize=undefined \
   firmware/nodes/common/components/dose_limit/dose_limit.c \
   -lm -o "$out/dose-limit"
 "$out/dose-limit"
+cc -std=c11 -Wall -Wextra -Werror \
+  -Ifirmware/nodes/common/components/node_framework/include \
+  firmware/tests/host/test_node_safe_mode_policy.c \
+  firmware/nodes/common/components/node_framework/node_safe_mode_policy.c \
+  -o "$out/test_node_safe_mode_policy"
+"$out/test_node_safe_mode_policy"

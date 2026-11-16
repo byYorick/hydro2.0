@@ -56,6 +56,7 @@ class ClimateTickLease:
                 updated_at = $4
             WHERE greenhouse_id = $1
               AND owner = $2
+              AND leased_until > $4
             RETURNING greenhouse_id
             """,
             greenhouse_id,

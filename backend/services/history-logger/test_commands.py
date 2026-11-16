@@ -904,7 +904,9 @@ async def test_lease_gate_allows_fail_safe_off_when_lease_held():
 async def test_lease_gate_allows_set_fault_mode_when_lease_held():
     from commands.lease_gate import reject_if_zone_lease_held
 
-    async def _fetch(*_args, **_kwargs):
+    async def _fetch(query, *_args, **_kwargs):
+        if "FROM zone_events" in query:
+            return []
         raise AssertionError("lease lookup must be skipped for set_fault_mode")
 
     await reject_if_zone_lease_held(
@@ -924,6 +926,8 @@ async def test_lease_gate_allows_set_fault_mode_for_type_test_node_when_lease_he
 
     async def _fetch(query, *_args, **_kwargs):
         normalized = " ".join(str(query).split()).lower()
+        if "from zone_events" in normalized:
+            return []
         if "from nodes" in normalized:
             return [{"uid": "nd-sim-ph-1", "type": "test_node"}]
         raise AssertionError("lease lookup must be skipped for test_node set_fault_mode")
@@ -973,6 +977,8 @@ async def test_lease_gate_rejects_set_fault_mode_without_node_identity_when_leas
 
     async def _fetch(query, *_args, **_kwargs):
         normalized = " ".join(str(query).split()).lower()
+        if "from zone_events" in normalized:
+            return []
         if "from ae_zone_leases" in normalized:
             return [{"ok": 1}]
         raise AssertionError("nodes lookup must not run without node identity")

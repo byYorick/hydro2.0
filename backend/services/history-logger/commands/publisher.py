@@ -17,16 +17,19 @@ import chain_webhook
 from command_service import publish_command_mqtt
 from common.command_status_queue import send_status_to_laravel
 from common.commands import mark_command_send_failed, mark_command_sent
+from common.db import fetch
 from common.mqtt import get_mqtt_client
 from common.utils.time import utcnow
 from metrics import COMMANDS_SENT, MQTT_PUBLISH_ERRORS
 
 from .alerts import emit_command_send_failed_alert
+from .lease_gate import reject_if_operator_estop_active
 from .constants import MAX_PUBLISH_RETRIES, MQTT_PUBLISH_RETRY_DELAYS_SEC
 from .lifecycle import ensure_post_publish_status_persisted
 
 from .dependencies import async_dependency
 
+fetch = async_dependency("fetch", fetch)
 get_mqtt_client = async_dependency("get_mqtt_client", get_mqtt_client)
 publish_command_mqtt = async_dependency("publish_command_mqtt", publish_command_mqtt)
 mark_command_sent = async_dependency("mark_command_sent", mark_command_sent)
@@ -59,8 +62,14 @@ async def publish_command_with_retry(
     publish_success = False
     last_error: Any = None
 
+    async def admit() -> None:
+        await reject_if_operator_estop_active(
+            zone_id=zone_id, cmd=cmd_name, params=payload.get("params"), fetch_fn=fetch,
+        )
+
     for attempt in range(max_retries):
         try:
+            await admit()
             await publish_command_mqtt(
                 mqtt,
                 effective_gh_uid,
@@ -69,6 +78,7 @@ async def publish_command_with_retry(
                 channel,
                 payload,
                 zone_uid=zone_uid,
+                before_publish=admit,
             )
             publish_success = True
             logger.info(
@@ -81,6 +91,11 @@ async def publish_command_with_retry(
                 cmd_id,
             )
             break
+        except HTTPException:
+            # Refusal is pre-publish, not a transport retry. Never revive a
+            # queued ON/exit_safe_mode after a concurrent operator activation.
+            await mark_command_send_failed(cmd_id, "operator_estop_admission_refused")
+            raise
         except Exception as e:
             last_error = e
             if attempt < max_retries - 1:

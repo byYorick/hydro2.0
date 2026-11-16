@@ -6,7 +6,7 @@ import os
 import time
 import uuid
 from contextlib import asynccontextmanager
-from typing import Any, Dict, Optional
+from typing import Any, Awaitable, Callable, Dict, Optional
 
 from fastapi import HTTPException
 
@@ -350,6 +350,7 @@ async def publish_command_mqtt(
     channel: str,
     payload: Dict[str, Any],
     zone_uid: Optional[str] = None,
+    before_publish: Callable[[], Awaitable[None]] | None = None,
 ) -> None:
     """
     Публиковать команду в MQTT.
@@ -378,6 +379,10 @@ async def publish_command_mqtt(
         import json as json_lib
 
         command_json = json_lib.dumps(payload, separators=(",", ":"))
+        # Reconnection may have awaited long enough for an operator stop.
+        # Check admission after it, immediately before enqueueing the wire command.
+        if before_publish is not None:
+            await before_publish()
         result = base_client._client.publish(topic, command_json, qos=1, retain=False)
         if result.rc != 0:
             logger.error(

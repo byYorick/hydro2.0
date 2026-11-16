@@ -782,3 +782,18 @@ $response = Http::timeout(5)->post('http://history-logger:9300/commands', [
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0
 
 Исправления аудита 2026-11-14: HTTP и restart drain используют одну PostgreSQL session advisory lock на cmd_id. Для изменяющих состояние команд до MQTT I/O сохраняется params.__hl_dispatch_started; поле служебное и исключено из сравнения пользовательских params. Повтор после SEND_FAILED или записанной попытки запрещён (409): результат требует reconciliation. Нельзя обойти защиту новым cmd_id без выяснения физического результата. Фоновый drain выполняет только state/test_sensor и fail-safe off, не старше 60 секунд; остальные записи переводятся в INVALID/DRAIN_ABANDON. Блокировка не обещает exactly-once физического действия. /health сохраняет диагностический ответ, /health/live проверяет процесс, /health/ready возвращает 503 при деградации зависимостей. NodeConfig с секретом без ключа wrapping отклоняется с 503.
+
+### Operator E-STOP admission (2026-11-16)
+
+`enter_safe_mode` на system — node-wide OFF и разрешён при active AE lease.
+Операторская защёлка из zone_events (`source=operator`) блокирует все ON и
+exit_safe_mode независимо от authenticated principal, включая AE. Проверка
+повторяется перед MQTT attempt; ошибки чтения блокируют ON. OFF/state доступны.
+Успешный HTTP publish — admission/доставка, физический стоп подтверждает только
+terminal DONE от поддерживающей команду firmware.
+
+Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
+
+Admission операторского E-STOP повторяется после MQTT reconnect непосредственно
+перед помещением команды в клиентскую очередь. Активация во время асинхронного
+переподключения не разрешает отложенный ON; retry также читает свежую защёлку.

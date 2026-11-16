@@ -42,6 +42,8 @@ static struct {
 } s_framework = {0};
 
 // Forward declarations
+static esp_err_t handle_enter_safe_mode(
+    const char *channel, const cJSON *params, cJSON **response, void *user_ctx);
 static esp_err_t handle_exit_safe_mode(
     const char *channel,
     const cJSON *params,
@@ -237,6 +239,10 @@ esp_err_t node_framework_init(const node_framework_config_t *config) {
     );
     extern esp_err_t node_state_manager_exit_safe_mode(void);
     
+    err = node_command_handler_register("enter_safe_mode", handle_enter_safe_mode, NULL);
+    if (err != ESP_OK) {
+        return err;
+    }
     err = node_command_handler_register("exit_safe_mode", handle_exit_safe_mode, NULL);
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "Failed to register exit_safe_mode command: %s", esp_err_to_name(err));
@@ -351,6 +357,24 @@ bool node_framework_is_safe_mode(void) {
 
 const char *node_framework_get_node_type(void) {
     return s_framework.config.node_type;
+}
+
+/* Signed operator stop: latch before disabling outputs; DONE only on success. */
+static esp_err_t handle_enter_safe_mode(
+    const char *channel, const cJSON *params, cJSON **response, void *user_ctx)
+{
+    (void)channel;
+    (void)user_ctx;
+    bool supported = node_state_manager_has_actuator_failsafe();
+    esp_err_t err = node_state_manager_enter_safe_mode("operator_estop");
+    if (!supported && err == ESP_OK) {
+        err = ESP_ERR_NOT_SUPPORTED;
+    }
+    *response = node_command_handler_create_response(
+        node_command_handler_get_cmd_id(params), err == ESP_OK ? "DONE" : "ERROR",
+        err == ESP_OK ? NULL : "actuator_stop_unconfirmed",
+        err == ESP_OK ? NULL : "Safe mode latched, but actuator OFF was not confirmed", NULL);
+    return err;
 }
 
 // Обработчик команды exit_safe_mode

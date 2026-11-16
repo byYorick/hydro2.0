@@ -6,6 +6,7 @@ import axios, { type AxiosInstance, type AxiosRequestConfig, type AxiosRequestHe
 import { logger } from './logger'
 import { ERROR_MESSAGES } from '@/constants/messages'
 import type { ToastAction, ToastVariant } from '@/composables/useToast'
+import { describeManualCommandRejection } from '@/utils/manualCommandErrors'
 
 // Тип функции для показа Toast
 export type ToastHandler = (
@@ -116,11 +117,23 @@ apiClient.interceptors.response.use(
       return Promise.reject(error)
     }
 
-    const message = error.response?.data?.message || error.message || ERROR_MESSAGES.UNKNOWN
+    const data = error.response?.data
+    const payload = data && typeof data === 'object' ? data as Record<string, unknown> : null
+    const rawMessage = payload && typeof payload.message === 'string'
+      ? payload.message
+      : (error.message || ERROR_MESSAGES.UNKNOWN)
+    const humanPayload = payload && typeof payload.human_error_message === 'string'
+      ? payload.human_error_message.trim()
+      : ''
+    const safetyMessage = describeManualCommandRejection(
+      payload && typeof payload.code === 'string' ? payload.code : null,
+    ) ?? describeManualCommandRejection(rawMessage)
+    const message = /[А-Яа-яЁё]/u.test(humanPayload)
+      ? humanPayload
+      : (/[А-Яа-яЁё]/u.test(rawMessage) ? rawMessage : (safetyMessage || rawMessage))
     const status = error.response?.status
     const url = error.config?.url || '(unknown url)'
     const method = (error.config?.method || 'GET').toUpperCase()
-    const data = error.response?.data
     
     // 401 - не показываем Toast и не логируем постоянно, обычно это обрабатывается на уровне auth
     // 422 с "Not enough data" - это не ошибка, а нормальное состояние (недостаточно данных для прогноза)

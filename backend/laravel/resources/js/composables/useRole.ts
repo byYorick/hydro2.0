@@ -37,6 +37,10 @@ export function useRole() {
   const canCreateCommands = computed(() => 
     isAdmin.value || isAgronomist.value || isEngineer.value || isOperator.value
   )
+
+  // ZonePolicy::engageEstop / releaseEstop — те же роли, что и отправка команд.
+  const canEngageEstop = computed(() => canCreateCommands.value)
+  const canReleaseEstop = computed(() => canCreateCommands.value)
   
   const canEditRecipes = computed(() =>
     isAdmin.value || isAgronomist.value
@@ -117,6 +121,8 @@ export function useRole() {
     canManageSystem,
     canDiagnose,
     canCreateCommands,
+    canEngageEstop,
+    canReleaseEstop,
     canEditRecipes,
     canConfigureDevices,
     canSubscribeUnassignedDevices,

@@ -2,12 +2,17 @@
 
 namespace Tests\Feature;
 
+use App\Models\Command;
 use App\Models\DeviceNode;
+use App\Models\Greenhouse;
 use App\Models\User;
 use App\Models\Zone;
+use App\Models\ZoneEvent;
 use App\Services\PythonBridgeService;
+use App\Services\ZoneEstopService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Str;
 use Tests\RefreshDatabase;
 use Tests\TestCase;
 
@@ -19,6 +24,10 @@ class ZoneEstopEndpointTest extends TestCase
     {
         $zone = Zone::factory()->create();
         $user = User::factory()->create(['role' => 'operator']);
+
+        $this->mock(PythonBridgeService::class, function ($mock): void {
+            $mock->shouldReceive('sendNodeCommand')->once()->withArgs(fn ($node, $payload) => $payload['cmd'] === 'exit_safe_mode' && $payload['channel'] === 'system')->andReturn((string) Str::uuid());
+        });
 
         $engaged = $this->actingAs($user)->postJson("/api/zones/{$zone->id}/estop", [
             'action' => 'engage',
@@ -42,9 +51,6 @@ class ZoneEstopEndpointTest extends TestCase
             'status' => 'online',
             'type' => 'ph',
         ]);
-        $this->mock(PythonBridgeService::class, function ($mock): void {
-            $mock->shouldNotReceive('sendNodeCommand');
-        });
         $this->actingAs($user)->postJson("/api/nodes/{$node->id}/commands", [
             'cmd' => 'dose',
             'channel' => 'pump_acid',
@@ -97,6 +103,110 @@ class ZoneEstopEndpointTest extends TestCase
         $this->actingAs($stranger)->postJson("/api/zones/{$zone->id}/estop", [
             'action' => 'engage',
         ])->assertStatus(403);
+    }
+
+    public function test_stop_reaches_online_and_offline_nodes_and_requires_terminal_done(): void
+    {
+        $zone = Zone::factory()->create();
+        $user = User::factory()->create(['role' => 'operator']);
+        $nodes = collect(['online', 'offline'])->map(fn ($status) => DeviceNode::factory()->create([
+            'zone_id' => $zone->id, 'status' => $status, 'type' => 'ph',
+        ]));
+        $this->mock(PythonBridgeService::class, function ($mock) use ($zone): void {
+            $mock->shouldReceive('sendNodeCommand')->twice()->withArgs(function ($node, $payload) use ($zone): bool {
+                // The global admission latch is committed before dispatch.
+                $this->assertTrue(app(ZoneEstopService::class)->status($zone)['active']);
+
+                return $payload['cmd'] === 'enter_safe_mode' && $payload['channel'] === 'system';
+            })->andReturnUsing(function ($node, $payload): string {
+                $id = (string) Str::uuid();
+                Command::create(['zone_id' => $node->zone_id, 'node_id' => $node->id,
+                    'cmd_id' => $id, 'cmd' => $payload['cmd'], 'channel' => 'system', 'status' => 'SENT']);
+
+                return $id;
+            });
+        });
+        $this->actingAs($user)->postJson("/api/zones/{$zone->id}/estop", ['action' => 'engage'])
+            ->assertOk()->assertJsonPath('data.estop.stop_status', 'pending');
+        Command::query()->update(['status' => 'ACK']);
+        $this->getJson("/api/zones/{$zone->id}/estop")->assertJsonPath('data.estop.stop_status', 'pending');
+        Command::query()->update(['status' => 'DONE']);
+        $this->getJson("/api/zones/{$zone->id}/estop")->assertJsonPath('data.estop.stop_status', 'confirmed');
+        ZoneEvent::create(['zone_id' => $zone->id, 'type' => 'EMERGENCY_STOP_RELEASED',
+            'payload_json' => ['source' => 'node_event'], 'created_at' => now()->addSecond()]);
+        $this->getJson("/api/zones/{$zone->id}/estop")->assertJsonPath('data.estop.active', true);
+        Command::query()->update(['status' => 'ERROR']);
+        $this->getJson("/api/zones/{$zone->id}/estop")
+            ->assertJsonPath('data.estop.active', true)->assertJsonPath('data.estop.stop_status', 'failed');
+    }
+
+    public function test_stop_delivery_failure_keeps_latch_and_is_visible(): void
+    {
+        $zone = Zone::factory()->create();
+        DeviceNode::factory()->create(['zone_id' => $zone->id, 'type' => 'climate']);
+        $this->mock(PythonBridgeService::class, function ($mock): void {
+            $mock->shouldReceive('sendNodeCommand')->once()->andThrow(new \RuntimeException('HL unavailable'));
+        });
+        $this->actingAs(User::factory()->create(['role' => 'operator']))
+            ->postJson("/api/zones/{$zone->id}/estop", ['action' => 'engage'])
+            ->assertOk()->assertJsonPath('data.estop.active', true)->assertJsonPath('data.estop.stop_status', 'failed');
+    }
+
+    public function test_release_is_blocked_while_ae_task_is_running(): void
+    {
+        $zone = Zone::factory()->create();
+        DB::table('ae_zone_leases')->insert(['zone_id' => $zone->id, 'owner' => 'test-worker',
+            'leased_until' => now()->addMinute(), 'updated_at' => now()]);
+        $this->mock(PythonBridgeService::class, fn ($mock) => $mock->shouldNotReceive('sendNodeCommand'));
+        $this->actingAs(User::factory()->create(['role' => 'operator']))
+            ->postJson("/api/zones/{$zone->id}/estop", ['action' => 'release', 'reason' => 'опасность устранена'])
+            ->assertStatus(409)->assertJsonPath('code', 'ae3_zone_lease_held');
+    }
+
+    public function test_release_cannot_resume_in_flight_greenhouse_climate_commands(): void
+    {
+        $zone = Zone::factory()->create(['greenhouse_id' => Greenhouse::factory()->create()->id]);
+        DB::table('greenhouse_automation_leases')->insert(['greenhouse_id' => $zone->greenhouse_id,
+            'owner' => 'climate-worker', 'leased_until' => now()->addMinute(), 'updated_at' => now()]);
+        $this->actingAs(User::factory()->create(['role' => 'operator']))
+            ->postJson("/api/zones/{$zone->id}/estop", ['action' => 'release', 'reason' => 'опасность устранена'])
+            ->assertStatus(409)->assertJsonPath('code', 'ae3_zone_lease_held');
+    }
+
+    public function test_operator_release_does_not_mask_a_physical_estop(): void
+    {
+        $zone = Zone::factory()->create();
+        ZoneEvent::create(['zone_id' => $zone->id, 'type' => 'EMERGENCY_STOP_ACTIVATED',
+            'payload_json' => ['source' => 'node_event', 'node_uid' => 'nd-peer']]);
+        $this->actingAs(User::factory()->create(['role' => 'operator']))
+            ->postJson("/api/zones/{$zone->id}/estop", ['action' => 'engage'])->assertOk();
+        $this->postJson("/api/zones/{$zone->id}/estop", ['action' => 'release', 'reason' => 'операторский стоп снят'])
+            ->assertOk()->assertJsonPath('data.estop.active', true)->assertJsonPath('data.estop.node_uid', 'nd-peer');
+        ZoneEvent::create(['zone_id' => $zone->id, 'type' => 'EMERGENCY_STOP_RELEASED',
+            'payload_json' => ['source' => 'node_event', 'node_uid' => 'nd-other']]);
+        $this->getJson("/api/zones/{$zone->id}/estop")->assertJsonPath('data.estop.active', true);
+        ZoneEvent::create(['zone_id' => $zone->id, 'type' => 'EMERGENCY_STOP_RELEASED',
+            'payload_json' => ['source' => 'node_event', 'node_uid' => 'nd-peer']]);
+        $this->getJson("/api/zones/{$zone->id}/estop")->assertJsonPath('data.estop.active', false);
+    }
+
+    public function test_operator_stop_notifies_existing_ae_zone_event_channel(): void
+    {
+        $notifications = [];
+        DB::listen(function ($query) use (&$notifications): void {
+            if (str_contains($query->sql, 'pg_notify')) {
+                $notifications[] = $query->bindings;
+            }
+        });
+        $zone = Zone::factory()->create();
+        $this->actingAs(User::factory()->create(['role' => 'operator']))
+            ->postJson("/api/zones/{$zone->id}/estop", ['action' => 'engage'])->assertOk();
+        $this->assertCount(1, $notifications);
+        $this->assertSame('ae_zone_event', $notifications[0][0]);
+        $payload = json_decode($notifications[0][1], true);
+        $this->assertSame('operator', $payload['source']);
+        $this->assertSame('storage_state', $payload['channel']);
+        $this->assertSame('EMERGENCY_STOP_ACTIVATED', $payload['event_type']);
     }
 
     private function assertAudit(int $zoneId, int $userId, string $action, string $result): void
