@@ -4,6 +4,7 @@
  */
 
 #include "node_command_handler.h"
+#include "node_safe_mode_policy.h"
 #include "node_framework.h"
 #include "mqtt_manager.h"
 #include "node_utils.h"
@@ -1207,7 +1208,13 @@ void node_command_handler_process(
     ESP_LOGI(TAG, "Processing command: %s (id: %s) on channel: %s", cmd, cmd_id, channel ? channel : "default");
 
     // Проверка safe_mode: блокируем все команды кроме exit_safe_mode
-    if (node_framework_is_safe_mode() && strcmp(cmd, "exit_safe_mode") != 0) {
+    const cJSON *safe_params = cJSON_GetObjectItem(json, "params");
+    const cJSON *safe_state = cJSON_GetObjectItem(safe_params, "state");
+    const cJSON *safe_pwm = cJSON_GetObjectItem(safe_params, "duty");
+    if (safe_pwm == NULL) safe_pwm = cJSON_GetObjectItem(safe_params, "value");
+    bool relay_off = cJSON_IsFalse(safe_state) || (cJSON_IsNumber(safe_state) && cJSON_GetNumberValue(safe_state) == 0.0);
+    bool pwm_off = cJSON_IsNumber(safe_pwm) && cJSON_GetNumberValue(safe_pwm) == 0.0;
+    if (node_framework_is_safe_mode() && !node_safe_mode_command_allowed(cmd, relay_off, pwm_off)) {
         ESP_LOGW(TAG, "Command %s rejected: node is in safe_mode", cmd);
         cJSON *response = node_command_handler_create_response(
             cmd_id,

@@ -13,6 +13,7 @@ from typing import Any
 from fastapi import HTTPException
 
 from common.db import fetch as default_fetch
+from common.zone_estop import operator_estop_active
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +46,8 @@ def _truthy_off(value: Any) -> bool:
 def is_fail_safe_off_command(cmd: str, params: Mapping[str, Any] | None) -> bool:
     name = str(cmd or "").strip().lower()
     payload = params if isinstance(params, Mapping) else {}
+    if name == "enter_safe_mode":
+        return True
     if name in {"set_relay", "set_state"}:
         return _truthy_off(payload.get("state"))
     if name == "set_pwm":
@@ -130,6 +133,7 @@ async def reject_if_zone_lease_held(
 ) -> None:
     name = str(cmd or "").strip().lower()
     query_fetch = fetch_fn or default_fetch
+    await reject_if_operator_estop_active(zone_id=zone_id, cmd=name, params=params, fetch_fn=query_fetch)
     if (
         _is_ae_source(source)
         or name in _READ_ONLY_CMDS
@@ -168,3 +172,16 @@ async def reject_if_zone_lease_held(
         status_code=409,
         detail={"error": "ae3_zone_lease_held", "zone_id": int(zone_id)},
     )
+
+
+async def reject_if_operator_estop_active(*, zone_id: int, cmd: str, params: Mapping[str, Any] | None,
+                                        fetch_fn: FetchFn | None = None) -> None:
+    """Independent from AE lease/principal; called again immediately before publish."""
+    if cmd in _READ_ONLY_CMDS or is_fail_safe_off_command(cmd, params):
+        return
+    try:
+        stopped = await operator_estop_active(zone_id, fetch_fn=fetch_fn or default_fetch)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail={"error": "estop_state_unavailable"}) from exc
+    if stopped:
+        raise HTTPException(status_code=409, detail={"error": "estop_active", "zone_id": int(zone_id)})

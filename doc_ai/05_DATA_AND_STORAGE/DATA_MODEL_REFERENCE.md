@@ -2831,3 +2831,22 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0
 
 Laravel migration 2026_11_14_100000 создаёт database-scoped NOLOGIN роли hl/ae/bridge/aggregator. Явная матрица прав находится в App\Support\Database\RuntimeRoleGrants; проверка — php artisan hydro:db-runtime-roles --check. Схема таблиц и владелец миграций не меняются. Имена ролей выводятся read-only командой; явный `--apply` транзакционно повторяет выдачу управляемых grants после restore и выполняет проверку. Login-учётки подключаются отдельно и наследуют capability role. Мигратор требует CREATEROLE. Rollback отзывает права без удаления данных/NOLOGIN ролей. Не выдавать runtime users владение объектами, SUPERUSER или административные memberships. Порядок перехода и результаты проверки: [исправления аудита](../08_SECURITY_AND_OPS/AUDIT_FIXES_2026_11_14.md).
+
+
+### Operator E-STOP: latch and delivery confirmation
+
+Operator E-STOP is an independent zone latch stored in existing `zone_events`
+(`EMERGENCY_STOP_ACTIVATED` / `EMERGENCY_STOP_RELEASED`, `payload_json.source=operator`,
+`channel=storage_state`). Optional `payload_json.dispatch` contains `action` and
+`commands[]` (`node_uid`, `cmd_id`, optional `error`). No schema change.
+Laravel dispatches signed Protocol 2.0 `enter_safe_mode` / existing `exit_safe_mode`
+on the existing `system` channel via HL. Stop confirms only after all targeted
+actuator nodes report terminal DONE; missing replies stay pending, errors fail.
+Status API adds `stop_status` and `release_status` (`not_requested`, `pending`,
+`confirmed`, `failed`) without removing existing fields. `active` is the admission
+latch, not proof of physical OFF. Old firmware rejecting `enter_safe_mode` must
+remain visibly unconfirmed; updated firmware and deferred hardware acceptance
+are required before physical guarantees. Release requires no active AE task/lease
+and never restores outputs. See AE3_IRR_FAILSAFE_AND_ESTOP_CONTRACT.md.
+
+Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0

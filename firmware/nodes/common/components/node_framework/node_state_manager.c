@@ -100,18 +100,17 @@ esp_err_t node_state_manager_enter_safe_mode(const char *reason) {
 
     ESP_LOGW(TAG, "Entering safe mode: %s", reason ? reason : "Unknown reason");
 
-    // Отключаем все актуаторы через callback (если зарегистрирован)
-    if (s_state_manager.safe_mode_callback) {
-        esp_err_t callback_err = s_state_manager.safe_mode_callback(s_state_manager.safe_mode_user_ctx);
-        if (callback_err != ESP_OK) {
-            ESP_LOGW(TAG, "Failed to disable actuators in safe mode: %s", esp_err_to_name(callback_err));
-        }
-    }
-
-    // Устанавливаем состояние через фреймворк
+    /* Gate subsequent commands before stopping queued/current actuators. */
     esp_err_t err = node_framework_set_state(NODE_STATE_SAFE_MODE);
     if (err != ESP_OK) {
         return err;
+    }
+    esp_err_t callback_err = ESP_OK;
+    if (s_state_manager.safe_mode_callback) {
+        callback_err = s_state_manager.safe_mode_callback(s_state_manager.safe_mode_user_ctx);
+        if (callback_err != ESP_OK) {
+            ESP_LOGE(TAG, "Actuator OFF unconfirmed: %s", esp_err_to_name(callback_err));
+        }
     }
 
     // Публикуем статус через MQTT (если подключен)
@@ -131,7 +130,7 @@ esp_err_t node_state_manager_enter_safe_mode(const char *reason) {
         }
     }
 
-    return ESP_OK;
+    return callback_err;
 }
 
 esp_err_t node_state_manager_exit_safe_mode(void) {
@@ -440,4 +439,9 @@ esp_err_t node_state_manager_invoke_actuator_failsafe(const char *reason) {
     }
 
     return s_state_manager.safe_mode_callback(s_state_manager.safe_mode_user_ctx);
+}
+
+
+bool node_state_manager_has_actuator_failsafe(void) {
+    return s_state_manager.initialized && s_state_manager.safe_mode_callback != NULL;
 }

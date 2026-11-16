@@ -1434,3 +1434,17 @@ HL использует постоянную MQTT-сессию (`MQTT_CLEAN_SESS
 Это доставка «как минимум один раз», не exactly-once: завершение записи до ACK и последующий crash могут дать повтор sample. Publisher PUBACK означает приём брокером, а не commit в PostgreSQL. Сохранность при отказе самого Redis/брокера ограничена их persistence/RPO и ёмкостью буферов; enqueue в Redis не означает синхронный fsync AOF. Форматы topic/payload, HMAC и lifecycle команд не меняются. После изменения requirements нужно пересобрать Python images.
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0
+
+### Операторская остановка узла (2026-11-16)
+
+Подписанная `enter_safe_mode` с `params={}` на существующем канале `system`
+переводит node_framework в safe_mode до вызова actuator-OFF callback. `DONE`
+разрешён только после успешного callback; отсутствие callback/ошибка дают ERROR
+`actuator_stop_unconfirmed`. Пока safe_mode активен, накопленные и новые ON
+отклоняются; state, повторный enter, OFF и существующий exit_safe_mode доступны.
+Exit не включает выходы. Старые firmware без enter_safe_mode отвечают unsupported;
+HTTP acceptance / ACK / SEND_FAILED не подтверждают остановку. Обновление всех
+actuator-прошивок и аппаратная приёмка обязательны до заявления о physical E-STOP.
+Схема топика, HMAC и envelope Protocol2.0 сохраняются.
+
+Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.

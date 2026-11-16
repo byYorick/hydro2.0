@@ -146,6 +146,9 @@ esp_err_t node_state_manager_register_safe_mode_callback(
  */
 esp_err_t node_state_manager_invoke_actuator_failsafe(const char *reason);
 
+/** True when an actuator OFF callback is registered (not an OFF confirmation). */
+bool node_state_manager_has_actuator_failsafe(void);
+
 #ifdef __cplusplus
 }
 #endif

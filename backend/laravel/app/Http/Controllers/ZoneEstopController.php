@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\PresentsLocalizedApiErrors;
 use App\Http\Requests\StoreZoneEstopRequest;
 use App\Models\Zone;
 use App\Services\ZoneEstopService;
@@ -10,6 +11,8 @@ use Illuminate\Http\Request;
 
 class ZoneEstopController extends Controller
 {
+    use PresentsLocalizedApiErrors;
+
     public function __construct(
         private readonly ZoneEstopService $estop,
     ) {}
@@ -31,6 +34,11 @@ class ZoneEstopController extends Controller
     {
         $action = (string) $request->validated('action');
         $this->authorize($action === 'release' ? 'releaseEstop' : 'engageEstop', $zone);
+
+        if ($action === 'release' && ! $this->estop->canRelease($zone)) {
+            return $this->localizedError('ae3_zone_lease_held',
+                'Снятие E-STOP разрешено после завершения/разблокировки задачи AE3 и освобождения lease.', 409);
+        }
 
         $result = $this->estop->apply(
             $zone,

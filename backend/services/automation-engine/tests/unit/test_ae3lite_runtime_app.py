@@ -7,7 +7,7 @@ import os
 from contextlib import suppress
 from datetime import datetime, timezone
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from fastapi import HTTPException
@@ -475,3 +475,17 @@ async def test_health_ready_returns_503_when_history_logger_unreachable(
     assert payload["ready"] is False
     assert payload["checks"]["history_logger"]["ok"] is False
     assert payload["checks"]["history_logger"]["reason"] == "history_logger_unreachable"
+
+
+@pytest.mark.asyncio
+async def test_operator_estop_event_kicks_worker(monkeypatch):
+    worker = SimpleNamespace(kick=Mock())
+    monkeypatch.setattr(runtime_app_module, "send_service_log", lambda **kwargs: None)
+    callback = runtime_app_module._build_zone_event_listener_callback(
+        worker=worker, logger=logging.getLogger("estop-test"),
+        solution_tank_startup_guard_use_case=None, now_fn=lambda: NOW,
+    )
+    await callback({"source": "operator", "zone_id": 22, "event_type": "EMERGENCY_STOP_ACTIVATED"})
+    worker.kick.assert_called_once()
+    await callback({"source": "operator", "zone_id": 22, "event_type": "EMERGENCY_STOP_RELEASED"})
+    assert worker.kick.call_count == 1

@@ -483,3 +483,29 @@ Detection **не подавляет** последующий fail-closed — э�
    (см. §7a). `irr_state_unavailable` / `irr_state_stale` в polling-стейджах
    допускают отложенный retry до `_IRR_PROBE_FAILURE_STREAK_LIMIT`, после
    чего обязательно эскалируются (recovery transition или fail-closed).
+
+
+## Операторский E-STOP (исправление 2026-11-16)
+
+`POST /api/zones/{id}/estop` сначала фиксирует независимую операторскую защёлку
+в `zone_events` (`source=operator`, `channel=storage_state`), затем через HL
+посылает `enter_safe_mode` на `system` каждого actuator-узла зоны. Новая команда
+добавляет вход в уже существующий firmware safe_mode; HMAC, ts, cmd_id и топики
+Protocol2.0 прежние. Firmware ставит gate до вызова зарегистрированного actuator
+OFF callback и отмены очередей. Повторный stop и OFF разрешены; ON блокируется.
+Нет callback/ошибка OFF — ERROR, не DONE. Старые прошивки вернут unsupported:
+такой узел нельзя считать остановленным без обновления прошивки/аппаратной проверки.
+
+HL отвергает ON при операторской защёлке для всех principals, включая AE.
+На DB-error admission — fail-closed; OFF/enter_safe_mode доступны. AE listener
+принимает operator activation и будит обычный reconcile; flow handlers видят
+storage_state event. Нода не исполняет накопленные ON в safe_mode.
+
+`data.estop.active` подтверждает защёлку, не физический OFF. `stop_status`:
+`pending` до terminal DONE от всех узлов, `confirmed` только при всех DONE,
+`failed` при отправке/terminal error. HTTP200 подтверждает принятие запроса.
+Release требует причины и отсутствия активных AE tasks/lease; он посылает
+существующий `exit_safe_mode`, не восстанавливает выходы, оставляет физический
+E-STOP независимым. `release_status` отдельно показывает подтверждение команды.
+
+Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.

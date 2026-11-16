@@ -4,6 +4,7 @@
 #include "climate_node_defaults.h"
 #include "actuator_failsafe.h"
 #include "node_command_handler.h"
+#include "node_framework.h"
 #include "relay_driver.h"
 #include "mqtt_manager.h"
 #include "config_storage.h"
@@ -176,7 +177,7 @@ static void control_tick(void *arg)
     }
     estop = actuator_failsafe_is_latched();
     link_up = mqtt_manager_is_connected();
-    stop_all = estop || !link_up;
+    stop_all = estop || !link_up || node_framework_is_safe_mode();
     {
         bool closed[2] = {limit_closed(&s_vents[0]), limit_closed(&s_vents[1])};
         vent_motor_t motors[2] = {VENT_STOP, VENT_STOP};

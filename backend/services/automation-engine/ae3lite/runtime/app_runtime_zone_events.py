@@ -40,7 +40,10 @@ class AppRuntimeZoneEvents:
         return None
 
     def is_runtime_zone_event_relevant(self, data: Mapping[str, Any]) -> bool:
-        if str(data.get("source") or "").strip().lower() != "node_event":
+        source = str(data.get("source") or "").strip().lower()
+        if source == "operator":
+            return str(data.get("event_type") or "").strip().upper() == "EMERGENCY_STOP_ACTIVATED"
+        if source != "node_event":
             return False
         event_type = str(data.get("event_type") or "").strip().upper()
         channel = str(data.get("channel") or "").strip().lower()
