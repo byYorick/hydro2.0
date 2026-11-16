@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Callable, Mapping
 
-from ae3lite.domain.services.metric_window_validator import is_stub_telemetry
-from ae3lite.domain.services.solution_temp_irrigation_guard import SOLUTION_TEMP_CHANNEL_LABELS
+from ae3lite.domain.services.metric_window_validator import usable_decision_quality, sensor_value_in_bounds
+from ae3lite.domain.services.solution_temp_irrigation_guard import (
+    SOLUTION_TEMP_CHANNEL_LABELS,
+    DEFAULT_SOLUTION_TEMP_STALE_SEC,
+)
 
 
 @dataclass(frozen=True)
@@ -73,45 +76,61 @@ class RuntimeMonitorTemperature:
                 return empty
 
             telemetry_last = None
-            if not is_stub_telemetry(quality=sensor_row.get("last_quality")):
+            if usable_decision_quality(quality=sensor_row.get("last_quality")):
                 try:
                     last_value = float(sensor_row.get("value")) if sensor_row.get("value") is not None else None
                 except (TypeError, ValueError):
                     last_value = None
                 last_ts = sensor_row.get("sample_ts")
-                if last_value is not None and isinstance(last_ts, datetime):
+                if (
+                    last_value is not None
+                    and sensor_value_in_bounds(sensor_type="TEMPERATURE", value=last_value)
+                    and isinstance(last_ts, datetime)
+                ):
                     telemetry_last = {"ts": last_ts, "value": last_value}
 
             rows = await conn.fetch(
                 """
-                SELECT ts, value
-                FROM (
-                    SELECT ts, value, id
-                    FROM telemetry_samples
-                    WHERE sensor_id = $1
-                      AND ts >= $2
-                      AND ts <= $3
-                      AND COALESCE(quality, 'GOOD') <> 'STUB'
-                      AND COALESCE(metadata->>'stub', 'false') NOT IN ('true', '1')
-                    ORDER BY ts DESC, id DESC
-                    LIMIT $4
-                ) recent
-                ORDER BY ts ASC, id ASC
+                SELECT ts, value, quality, metadata FROM (
+                    (SELECT ts, value, quality, metadata, id
+                     FROM telemetry_samples
+                     WHERE sensor_id=$1 AND ts < $2
+                       AND ts >= $2 - $5::interval
+                       AND COALESCE(quality, 'GOOD') = 'GOOD'
+                       AND COALESCE(metadata->>'stub', 'false') NOT IN ('true', '1')
+                     ORDER BY ts DESC, id DESC LIMIT 1)
+                    UNION ALL
+                    (SELECT ts, value, quality, metadata, id
+                     FROM telemetry_samples
+                     WHERE sensor_id=$1 AND ts >= $2 AND ts <= $3
+                     ORDER BY ts DESC, id DESC LIMIT ($4 + 1))
+                ) observed ORDER BY ts ASC, id ASC
                 """,
                 int(sensor_row["sensor_id"]),
                 since,
                 until,
                 max(1, int(limit)),
+                timedelta(seconds=DEFAULT_SOLUTION_TEMP_STALE_SEC),
             )
 
         samples: list[dict[str, Any]] = []
+        invalid_samples = 0
+        window_count = sum(1 for row in rows if isinstance(row.get("ts"), datetime) and row["ts"] >= since)
         for row in rows:
+            if not usable_decision_quality(quality=row.get("quality"), metadata=row.get("metadata")):
+                invalid_samples += 1
+                continue
             try:
                 value = float(row.get("value")) if row.get("value") is not None else None
             except (TypeError, ValueError):
                 value = None
             ts = row.get("ts")
-            if value is None or not isinstance(ts, datetime):
+            if (
+                value is None
+                or not sensor_value_in_bounds(sensor_type="TEMPERATURE", value=value)
+                or not isinstance(ts, datetime)
+            ):
+                invalid_samples += 1
                 continue
             samples.append({"ts": ts, "value": value})
 
@@ -121,4 +140,6 @@ class RuntimeMonitorTemperature:
             "sensor_label": sensor_row.get("sensor_label"),
             "telemetry_last": telemetry_last,
             "samples": tuple(samples),
+            "invalid_samples": invalid_samples,
+            "history_truncated": window_count > max(1, int(limit)),
         }

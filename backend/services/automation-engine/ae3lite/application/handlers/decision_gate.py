@@ -29,6 +29,7 @@ from ae3lite.infrastructure.metrics import (
 )
 from ae3lite.hydraulics.failure_report import note_upward_report
 from common.db import create_zone_event
+from common.error_catalog import present_error
 
 
 _logger = logging.getLogger(__name__)
@@ -40,13 +41,15 @@ def _irrigation_decision_alert_dedupe_key(*, outcome: str, zone_id: int, reason_
     return f"ae3_irrigation_decision|{outcome}|z{int(zone_id)}|{rc}"
 
 
-_QUIET_SUCCESS_SKIP_REASONS = frozenset({
-    "smart_soil_target_missing",
-    "smart_soil_telemetry_missing_or_stale",
-    "solution_temp_unavailable",
-    "solution_temp_out_of_band",
-    "solution_temp_hot_stop",
-})
+_QUIET_SUCCESS_SKIP_REASONS = frozenset(
+    {
+        "smart_soil_target_missing",
+        "smart_soil_telemetry_missing_or_stale",
+        "solution_temp_unavailable",
+        "solution_temp_out_of_band",
+        "solution_temp_hot_stop",
+    }
+)
 
 
 def _task_already_blocking_skip(task: Any) -> bool:
@@ -67,8 +70,12 @@ def _record_blocking_irrigation_skip(*, task: Any, decision: Any) -> None:
 
 class DecisionGateHandler(BaseStageHandler):
     def __init__(
-        self, *,
-        runtime_monitor: Any, command_gateway: Any, task_repository: Any, decision_controller: Any,
+        self,
+        *,
+        runtime_monitor: Any,
+        command_gateway: Any,
+        task_repository: Any,
+        decision_controller: Any,
         live_reload_enabled: bool = False,
     ) -> None:
         super().__init__(
@@ -97,6 +104,12 @@ class DecisionGateHandler(BaseStageHandler):
             requested_duration_sec=getattr(task, "irrigation_requested_duration_sec", None),
             now=now,
         )
+        if str(getattr(decision, "outcome", "")) not in {"run", "degraded_run", "skip", "fail"}:
+            decision = IrrigationDecision(
+                outcome="fail",
+                reason_code="irrigation_decision_invalid_outcome",
+                details={"received_outcome": str(getattr(decision, "outcome", ""))},
+            )
         decision = await self._apply_solution_temp_gate(
             decision=decision,
             task=task,
@@ -131,7 +144,7 @@ class DecisionGateHandler(BaseStageHandler):
 
         try:
             reason_code = str(getattr(decision, "reason_code", "") or "")
-            if decision.outcome == "skip" and reason_code not in _QUIET_SUCCESS_SKIP_REASONS:
+            if decision.outcome == "skip" and not decision.degraded and reason_code not in _QUIET_SUCCESS_SKIP_REASONS:
                 await note_upward_report(
                     code="biz_irrigation_decision_skip",
                     alert_type="AE3 Irrigation Decision Skip",
@@ -154,15 +167,15 @@ class DecisionGateHandler(BaseStageHandler):
                     },
                     scope_parts=("stage:decision_gate",),
                 )
-            if decision.outcome == "degraded_run":
+            if decision.outcome == "degraded_run" or (decision.outcome in {"run", "skip"} and decision.degraded):
                 await note_upward_report(
                     code="biz_irrigation_decision_degraded",
                     alert_type="AE3 Irrigation Decision Degraded",
-                    message="Decision-controller полива разрешил деградированный запуск.",
+                    message="Решение по поливу принято с пониженной достоверностью данных.",
                     severity="warning",
                     zone_id=int(task.zone_id),
                     dedupe_key=_irrigation_decision_alert_dedupe_key(
-                        outcome="degraded_run",
+                        outcome="degraded_skip" if decision.outcome == "skip" else "degraded_run",
                         zone_id=int(task.zone_id),
                         reason_code=str(getattr(decision, "reason_code", "") or ""),
                     ),
@@ -174,6 +187,8 @@ class DecisionGateHandler(BaseStageHandler):
                         "bundle_revision": str(runtime.bundle_revision or ""),
                         "reason_code": str(getattr(decision, "reason_code", "") or ""),
                         "degraded": True,
+                        "outcome": str(decision.outcome),
+                        "decision_details": dict(getattr(decision, "details", None) or {}),
                     },
                     scope_parts=("stage:decision_gate",),
                 )
@@ -217,7 +232,16 @@ class DecisionGateHandler(BaseStageHandler):
             return StageOutcome(
                 kind="fail",
                 error_code=decision.reason_code,
-                error_message="Decision-controller полива вернул отказ",
+                error_message=(
+                    present_error(decision.reason_code)["message"]
+                    if decision.reason_code
+                    in {
+                        "smart_soil_target_invalid",
+                        "irrigation_decision_invalid_outcome",
+                        "irrigation_decision_strategy_unknown",
+                    }
+                    else "Decision-controller полива вернул отказ"
+                ),
             )
         return StageOutcome(kind="transition", next_stage="irrigation_start")
 
@@ -247,7 +271,9 @@ class DecisionGateHandler(BaseStageHandler):
         ):
             return decision
 
-        hold_sec = int(getattr(health, "breach_hold_sec", DEFAULT_SOLUTION_TEMP_STALE_SEC) or DEFAULT_SOLUTION_TEMP_STALE_SEC)
+        hold_sec = int(
+            getattr(health, "breach_hold_sec", DEFAULT_SOLUTION_TEMP_STALE_SEC) or DEFAULT_SOLUTION_TEMP_STALE_SEC
+        )
         try:
             reading = await self._runtime_monitor.read_solution_temp_window(
                 zone_id=int(task.zone_id),
@@ -412,12 +438,19 @@ class DecisionGateHandler(BaseStageHandler):
             "stage": str(getattr(task, "current_stage", "") or ""),
             "workflow_phase": str(getattr(task, "workflow_phase", "") or ""),
             "topology": str(getattr(task, "topology", "") or ""),
-            "strategy": str(runtime.irrigation_decision.strategy or getattr(task, "irrigation_decision_strategy", "") or ""),
-            "bundle_revision": str((runtime.bundle_revision or getattr(task, "irrigation_bundle_revision", "") or "")).strip() or None,
+            "strategy": str(
+                runtime.irrigation_decision.strategy or getattr(task, "irrigation_decision_strategy", "") or ""
+            ),
+            "bundle_revision": str(
+                (runtime.bundle_revision or getattr(task, "irrigation_bundle_revision", "") or "")
+            ).strip()
+            or None,
             "outcome": str(getattr(decision, "outcome", "") or ""),
             "reason_code": str(getattr(decision, "reason_code", "") or ""),
             "degraded": bool(getattr(decision, "degraded", False)),
-            "details": dict(getattr(decision, "details", {}) or {}) if isinstance(getattr(decision, "details", None), Mapping) else None,
+            "details": dict(getattr(decision, "details", {}) or {})
+            if isinstance(getattr(decision, "details", None), Mapping)
+            else None,
         }
         payload = {key: value for key, value in details.items() if value is not None and value != ""}
 

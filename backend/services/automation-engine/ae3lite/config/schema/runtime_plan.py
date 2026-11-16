@@ -321,7 +321,7 @@ class SolutionHealth(BaseModel):
     без подстановки target. Пустой предел выключает gate.
     """
 
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config = ConfigDict(extra="forbid", frozen=True, allow_inf_nan=False)
 
     required: bool = False
     min_c: float | None = None
@@ -335,6 +335,8 @@ class SolutionHealth(BaseModel):
     def warn_below_stop(self) -> "SolutionHealth":
         if self.warn_c is not None and self.stop_c is not None and float(self.warn_c) >= float(self.stop_c):
             raise ValueError("solution_health warn_c must be lower than stop_c")
+        if self.min_c is not None and self.max_c is not None and self.min_c > self.max_c:
+            raise ValueError("solution_health min_c must not exceed max_c")
         return self
 
 

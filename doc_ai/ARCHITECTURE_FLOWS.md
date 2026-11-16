@@ -169,3 +169,31 @@ AE3 timeout invariants:
 - whole-task execution ограничен `AE_MAX_TASK_EXECUTION_SEC` (default `900s`);
 - timeout-path обязан пройти через fail-safe shutdown и terminal `failed`, а не оставлять `ae_tasks`/`zone_automation_intents` в active state;
 - scheduler default timing chain: `expires_after_sec = 600s`, effective `hard_stale_after_sec = max(900, expires_after_sec * 2)`; при дефолтном `expires_after_sec` это даёт `1200s`.
+
+
+## 9. Решение о поливе AE3
+
+```mermaid
+flowchart TD
+    intent["Scheduler / operator intent"] --> pinned["Task: strategy + полный config snapshot"]
+    pinned --> ready["await_ready"]
+    ready --> strategy{"task / smart_soil_v1 / force"}
+    strategy -->|smart_soil_v1| evidence["GOOD, проценты 0..100, свежесть всех активных датчиков"]
+    strategy -->|task / force| decision
+    evidence --> decision["run / skip / fail + reason + diagnostics"]
+    decision --> temperature["Температурный guard: опорная точка и полный hold"]
+    temperature --> gate{"Итог"}
+    gate -->|run| start["irrigation_start: прежние lease, E-STOP и safety gates"]
+    gate -->|skip| skip["completed_skip: насос не запускается"]
+    gate -->|fail| fail["failed: понятный error_code"]
+    start --> hl["HL → MQTT → bounded run_pump → подтверждение / stop"]
+```
+
+`force` и `task` проходят свой выбор стратегии без почвенного предиката; чтение
+soil evidence относится к `smart_soil_v1`. Температурный guard и ограничения
+исполнения общие. Неизвестный outcome не ведёт в запуск. Outcome, reason и
+достоверность пишутся отдельно: degraded-предупреждение может относиться к
+`run` или `skip` и не является подтверждением подачи воды. Read-model почвы
+выполняет два запроса на любое число датчиков.
+
+Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0

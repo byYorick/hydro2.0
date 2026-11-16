@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "updated_at": "2026-11-09T15:51:28Z",
+  "updated_at": "2026-11-16T00:00:00Z",
   "codes": [
     {
       "code": "actuator_apply_failed",
@@ -719,6 +719,11 @@
       "message": "Снимок состояния IRR-ноды недоступен."
     },
     {
+      "code": "irrigation_decision_invalid_outcome",
+      "title": "Некорректное решение о поливе",
+      "message": "Контроллер вернул неизвестный результат. Полив не запущен. Проверьте журнал AE3."
+    },
+    {
       "code": "irrigation_decision_strategy_unknown",
       "title": "Неизвестная стратегия полива",
       "message": "Для зоны указана неизвестная стратегия decision-controller полива. Проверьте automation profile и logic profile зоны."
@@ -1000,6 +1005,11 @@
       "title": "Не удалось установить время",
       "message": "Нода не смогла применить новое системное время.",
       "source_layer": "firmware_mqtt"
+    },
+    {
+      "code": "smart_soil_target_invalid",
+      "title": "Некорректная цель влажности",
+      "message": "Полив не запущен: цель влажности должна быть в процентах от 0 до 100, минимум не должен превышать максимум."
     },
     {
       "code": "smart_soil_target_missing",

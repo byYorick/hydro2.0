@@ -279,6 +279,8 @@ Stage-terminal коды используются `WorkflowRouter._fail_task` д�
 | `ae3_water_baseline_invalid` | `solution_fill` / `prepare_recirc_*` | Нет замера чистой воды **текущего** цикла подготовки; baseline чужого цикла использовать нельзя. |
 | `recirc_dilute_blocked_solution_max` | `prepare_recirc_*` (dilute) | Бак раствора уже полный (`solution_max`) — разбавление невозможно, AE3 остановил рециркуляцию fail-closed. |
 | `irrigation_decision_strategy_unknown` | `decision_gate` | Неизвестная irrigation strategy в конфиге. |
+| `irrigation_decision_invalid_outcome` | `decision_gate` | Неизвестный результат контроллера; полив не запущен. |
+| `smart_soil_target_invalid` | `decision_gate` | Цель вне 0..100%, нечисловая/нефинитная, с неизвестными единицами или min > max. Полив не запущен. |
 
 ## Таблица кодов solution_change
 
@@ -330,7 +332,7 @@ Stage-terminal коды используются `WorkflowRouter._fail_task` д�
 | `smart_soil_target_missing` | Нет цели влажности | `irrigation_sensor_blocked` |
 | `smart_soil_telemetry_missing_or_stale` | Нет свежего измерения влажности | `irrigation_sensor_blocked` |
 | `solution_temp_out_of_band` | Температура раствора дольше допустимого вне пределов фазы | `solution_temp_blocked` |
-| `solution_temp_unavailable` | Обязательный датчик температуры раствора недоступен | `solution_temp_blocked` |
+| `solution_temp_unavailable` | Диагностический verdict датчика раствора: предупреждение, решение основной стратегии сохраняется; причина не становится температурным skip | `biz_solution_temp_unavailable` |
 
 Biz-коды `dli_sensor_unavailable` и `solution_refresh_recommended` — отдельные алерты планировщика, не коды сбоя задачи. У обоих русский заголовок и действие в `backend/alert_codes.json`.
 

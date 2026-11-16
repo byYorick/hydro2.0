@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from statistics import mean
 from typing import Any, Mapping, Protocol, Sequence
 
 from ae3lite.config.schema import RuntimePlan
+from ae3lite.domain.services.irrigation_soil_observation import (
+    observe_soil_windows,
+    soil_percentage,
+    soil_percentage_unit,
+)
 from ae3lite.domain.services.greenhouse_clock import (
     DEFAULT_GREENHOUSE_TIMEZONE,
     InvalidGreenhouseTimezone,
@@ -32,8 +38,7 @@ class IrrigationDecisionStrategy(Protocol):
         runtime: RuntimePlan,
         requested_duration_sec: int | None,
         now: datetime,
-    ) -> IrrigationDecision:
-        ...
+    ) -> IrrigationDecision: ...
 
 
 class TaskDecisionStrategy:
@@ -88,6 +93,8 @@ class SmartSoilDecisionStrategy:
         except (TypeError, ValueError):
             return False, True
 
+        if not math.isfinite(hours):
+            return False, True
         if hours <= 0:
             return False, False
         if hours >= 24:
@@ -110,6 +117,12 @@ class SmartSoilDecisionStrategy:
         now: datetime,
         timezone_name: str | None,
     ) -> tuple[float | None, float | None, dict[str, Any]]:
+        numeric_fields = ("min", "max", "target", "day", "night")
+        if any(
+            getattr(soil_target, key, None) is not None and soil_percentage(getattr(soil_target, key)) is None
+            for key in numeric_fields
+        ):
+            return None, None, {"mode": "invalid", "invalid": True}
         target_min = _to_float(getattr(soil_target, "min", None))
         target_max = _to_float(getattr(soil_target, "max", None))
         if target_min is not None and target_max is not None:
@@ -125,7 +138,7 @@ class SmartSoilDecisionStrategy:
         is_day, invalid_schedule = SmartSoilDecisionStrategy._resolve_day_profile(
             now=now,
             day_start_time=day_start_time,
-            day_hours=day_hours,
+            day_hours=getattr(soil_target, "day_hours", None),
             timezone_name=timezone_name,
         )
         active_profile = "day" if is_day else "night"
@@ -176,6 +189,25 @@ class SmartSoilDecisionStrategy:
                 details={"timezone": exc.name},
             )
 
+        unit = str(getattr(soil_target, "unit", None) or "pct").strip().lower()
+        if (
+            target_meta.get("invalid")
+            or not soil_percentage_unit(unit)
+            or (
+                target_min is not None
+                and target_max is not None
+                and (
+                    soil_percentage(target_min) is None
+                    or soil_percentage(target_max) is None
+                    or target_min > target_max
+                )
+            )
+        ):
+            return IrrigationDecision(
+                outcome="fail",
+                reason_code="smart_soil_target_invalid",
+                details={"target_mode": target_meta.get("mode"), "unit": unit},
+            )
         if target_min is None or target_max is None:
             return IrrigationDecision(
                 outcome="skip",
@@ -188,45 +220,37 @@ class SmartSoilDecisionStrategy:
             sensor_type="SOIL_MOISTURE",
             since_ts=now - timedelta(seconds=max(1, lookback_sec)),
             telemetry_max_age_sec=stale_after_sec,
+            until_ts=now,
         )
-        sensor_windows = sensor_data.get("sensor_windows") if isinstance(sensor_data.get("sensor_windows"), Sequence) else ()
-        per_sensor_values: list[float] = []
-        total_samples = 0
-        stale = bool(sensor_data.get("is_stale"))
-        for sensor in sensor_windows:
-            if not isinstance(sensor, Mapping):
-                continue
-            stale = stale or bool(sensor.get("is_stale"))
-            samples = sensor.get("samples") if isinstance(sensor.get("samples"), Sequence) else ()
-            values = [_to_float(sample.get("value")) for sample in samples if isinstance(sample, Mapping)]
-            values = [value for value in values if value is not None]
-            total_samples += len(values)
-            if values:
-                per_sensor_values.append(float(mean(values)))
-
-        if not per_sensor_values or stale:
+        observation = observe_soil_windows(sensor_data)
+        if not observation.available:
             return IrrigationDecision(
                 outcome="skip",
                 reason_code="smart_soil_telemetry_missing_or_stale",
-                degraded=False,
-                details={"samples": total_samples, "sensor_count": len(per_sensor_values)},
+                details=observation.details(),
             )
 
-        zone_average = float(mean(per_sensor_values))
-        spread_pct = max(per_sensor_values) - min(per_sensor_values) if len(per_sensor_values) > 1 else 0.0
-        degraded = bool(total_samples < min_samples or target_meta.get("schedule_invalid"))
+        zone_average = float(mean(observation.means))
+        spread_pct = max(observation.means) - min(observation.means)
+        insufficient = observation.samples < min_samples
+        spread_alert = spread_pct > spread_threshold_pct
+        degraded = bool(
+            insufficient or target_meta.get("schedule_invalid") or spread_alert or observation.rejected_samples
+        )
         details = {
+            **observation.details(),
             "zone_average_pct": zone_average,
-            "sensor_count": len(per_sensor_values),
-            "samples": total_samples,
             "spread_pct": spread_pct,
-            "spread_alert": spread_pct > spread_threshold_pct,
+            "spread_alert": spread_alert,
             "requested_duration_sec": requested_duration_sec,
             "target_mode": target_meta.get("mode"),
             "target_profile": target_meta.get("active_profile"),
             "timezone": target_meta.get("timezone"),
+            "target_min_pct": target_min,
+            "target_max_pct": target_max,
+            "run_below_pct": target_min - hysteresis_pct,
             "min_samples_required": min_samples,
-            "insufficient_samples": degraded,
+            "insufficient_samples": insufficient,
             "schedule_invalid": bool(target_meta.get("schedule_invalid")),
         }
 
@@ -312,6 +336,7 @@ def _window_timezone_name(*, runtime: RuntimePlan, soil_target: Any) -> str | No
 
 def _to_float(raw_value: Any) -> float | None:
     try:
-        return float(raw_value) if raw_value is not None else None
-    except (TypeError, ValueError):
+        value = float(raw_value) if raw_value is not None and not isinstance(raw_value, bool) else None
+        return value if value is not None and math.isfinite(value) else None
+    except (TypeError, ValueError, OverflowError):
         return None

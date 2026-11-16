@@ -2870,3 +2870,18 @@ bindings are reconciled even when the desired global state has not changed.
 No schema, task type or ingress changes.
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0
+
+
+### Irrigation decision snapshot and evidence
+
+`ae_tasks.irrigation_decision_config` новых irrigation tasks хранит полные
+`lookback_sec`, `min_samples`, `stale_after_sec`, `hysteresis_pct`,
+`spread_alert_threshold_pct` с defaults на момент создания. Legacy частичные
+записи разрешаются теми же defaults, без наследования live-конфига. Структура
+таблиц не меняется. `IRRIGATION_DECISION_EVALUATED.payload_json.details` содержит
+число принятых/отброшенных образцов, активных/отсутствующих датчиков, среднее,
+разброс и процентные границы/порог запуска. Для температурного итога доступны
+`hold_covered`, `observed_span_sec`, `invalid_samples`, `history_truncated`.
+Нефинитные исходные значения в decision JSON не попадают.
+
+Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0

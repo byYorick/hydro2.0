@@ -66,3 +66,9 @@ def test_enrich_error_payload_command_response_error_code() -> None:
     assert enriched["error_code"] == "pump_in_cooldown"
     assert enriched["human_error_message"]
     assert any("\u0400" <= ch <= "\u04FF" for ch in str(enriched["human_error_message"]))
+
+
+def test_irrigation_decision_failures_have_actionable_messages():
+    for code in ("smart_soil_target_invalid", "irrigation_decision_invalid_outcome"):
+        result = present_error(code)
+        assert "Полив не запущен" in result["message"]
