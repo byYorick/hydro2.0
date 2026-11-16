@@ -173,6 +173,42 @@ class ZoneEstopEndpointTest extends TestCase
             ->assertStatus(409)->assertJsonPath('code', 'ae3_zone_lease_held');
     }
 
+    public function test_operator_release_does_not_mask_a_physical_estop(): void
+    {
+        $zone = Zone::factory()->create();
+        ZoneEvent::create(['zone_id' => $zone->id, 'type' => 'EMERGENCY_STOP_ACTIVATED',
+            'payload_json' => ['source' => 'node_event', 'node_uid' => 'nd-peer']]);
+        $this->actingAs(User::factory()->create(['role' => 'operator']))
+            ->postJson("/api/zones/{$zone->id}/estop", ['action' => 'engage'])->assertOk();
+        $this->postJson("/api/zones/{$zone->id}/estop", ['action' => 'release', 'reason' => 'операторский стоп снят'])
+            ->assertOk()->assertJsonPath('data.estop.active', true)->assertJsonPath('data.estop.node_uid', 'nd-peer');
+        ZoneEvent::create(['zone_id' => $zone->id, 'type' => 'EMERGENCY_STOP_RELEASED',
+            'payload_json' => ['source' => 'node_event', 'node_uid' => 'nd-other']]);
+        $this->getJson("/api/zones/{$zone->id}/estop")->assertJsonPath('data.estop.active', true);
+        ZoneEvent::create(['zone_id' => $zone->id, 'type' => 'EMERGENCY_STOP_RELEASED',
+            'payload_json' => ['source' => 'node_event', 'node_uid' => 'nd-peer']]);
+        $this->getJson("/api/zones/{$zone->id}/estop")->assertJsonPath('data.estop.active', false);
+    }
+
+    public function test_operator_stop_notifies_existing_ae_zone_event_channel(): void
+    {
+        $notifications = [];
+        DB::listen(function ($query) use (&$notifications): void {
+            if (str_contains($query->sql, 'pg_notify')) {
+                $notifications[] = $query->bindings;
+            }
+        });
+        $zone = Zone::factory()->create();
+        $this->actingAs(User::factory()->create(['role' => 'operator']))
+            ->postJson("/api/zones/{$zone->id}/estop", ['action' => 'engage'])->assertOk();
+        $this->assertCount(1, $notifications);
+        $this->assertSame('ae_zone_event', $notifications[0][0]);
+        $payload = json_decode($notifications[0][1], true);
+        $this->assertSame('operator', $payload['source']);
+        $this->assertSame('storage_state', $payload['channel']);
+        $this->assertSame('EMERGENCY_STOP_ACTIVATED', $payload['event_type']);
+    }
+
     private function assertAudit(int $zoneId, int $userId, string $action, string $result): void
     {
         $log = DB::table('system_logs')

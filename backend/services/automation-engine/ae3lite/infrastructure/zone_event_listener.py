@@ -111,7 +111,8 @@ class ZoneEventListener:
             FROM zone_events
             WHERE type = ANY($1::text[])
               AND created_at >= NOW() - $2::interval
-              AND COALESCE(payload_json->>'source', 'node_event') = 'node_event'
+              AND (COALESCE(payload_json->>'source', 'node_event') = 'node_event'
+                   OR (payload_json->>'source' = 'operator' AND type = 'EMERGENCY_STOP_ACTIVATED'))
             ORDER BY created_at ASC
             """,
             list(_REPLAY_EVENT_TYPES),
@@ -131,6 +132,11 @@ class ZoneEventListener:
         )
         for row in rows:
             payload_json = row.get("payload_json")
+            if isinstance(payload_json, str):
+                try:
+                    payload_json = json.loads(payload_json)
+                except json.JSONDecodeError:
+                    payload_json = None
             details = dict(payload_json) if isinstance(payload_json, dict) else {}
             data = {
                 "zone_id": int(row["zone_id"]),

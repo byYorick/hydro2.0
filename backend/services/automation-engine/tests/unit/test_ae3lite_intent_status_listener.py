@@ -166,3 +166,20 @@ def test_zone_event_listener_invalid_json_increments_metric() -> None:
     listener._notify_handler(MagicMock(), 1, "ae_zone_event", "not-json")
     after = LISTENER_INVALID_PAYLOAD.labels(listener="zone_event")._value.get()
     assert after == before + 1
+
+
+@pytest.mark.asyncio
+async def test_zone_event_replay_includes_operator_estop_and_decodes_asyncpg_json():
+    import json
+    from ae3lite.infrastructure.zone_event_listener import ZoneEventListener
+    callback = AsyncMock()
+    listener = ZoneEventListener(dsn="postgresql://unused", on_zone_event=callback)
+    conn = AsyncMock()
+    conn.fetch.return_value = [{"zone_id": 3, "type": "EMERGENCY_STOP_ACTIVATED",
+        "payload_json": json.dumps({"source": "operator", "channel": "storage_state"}), "created_at": None}]
+    await listener._replay_missed_zone_events(conn)
+    assert "payload_json->>'source' = 'operator'" in conn.fetch.await_args.args[0]
+    event = callback.await_args.args[0]
+    assert event['source'] == 'operator'
+    assert event['channel'] == 'storage_state'
+    assert event['replayed'] is True

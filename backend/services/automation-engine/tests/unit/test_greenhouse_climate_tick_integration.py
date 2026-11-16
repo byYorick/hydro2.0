@@ -1200,3 +1200,36 @@ async def test_exhaust_failure_persists_unknown_and_next_tick_reconciles() -> No
         assert list(factors['exhaust_confirmed'].values()) == [True]
     finally:
         await _cleanup_greenhouse(greenhouse_id=gh_id, zone_id=zone_id, sensor_ids=seeded['sensor_ids'])
+
+
+@pytest.mark.asyncio
+async def test_expired_climate_lease_cannot_be_resurrected_by_previous_owner():
+    from ae3lite.greenhouse_climate.run_tick import _renew_greenhouse_lease
+    seeded = await _seed_hot_two_vent_tick()
+    try:
+        await execute("""INSERT INTO greenhouse_automation_leases (greenhouse_id, owner, leased_until, updated_at)
+            VALUES ($1, 'expired-worker', NOW() - interval '1 minute', NOW())""", seeded['greenhouse_id'])
+        assert await _renew_greenhouse_lease(seeded['greenhouse_id'], owner='expired-worker', ttl_sec=300) is False
+        row = (await fetch('SELECT leased_until < NOW() AS expired FROM greenhouse_automation_leases WHERE greenhouse_id=$1',
+                           seeded['greenhouse_id']))[0]
+        assert row['expired'] is True
+    finally:
+        await _cleanup_greenhouse(greenhouse_id=seeded['greenhouse_id'], zone_id=seeded['zone_id'], sensor_ids=seeded['sensor_ids'])
+
+
+@pytest.mark.asyncio
+async def test_operator_latch_read_model_ignores_peer_release_until_operator_release():
+    from common.db import create_zone_event
+    from common.zone_estop import operator_estop_active
+    seeded = await _seed_hot_two_vent_tick()
+    zone_id = seeded['zone_id']
+    try:
+        assert await operator_estop_active(zone_id) is False
+        await create_zone_event(zone_id, 'EMERGENCY_STOP_ACTIVATED', {'source': 'operator', 'channel': 'storage_state'})
+        assert await operator_estop_active(zone_id) is True
+        await create_zone_event(zone_id, 'EMERGENCY_STOP_RELEASED', {'source': 'node_event', 'node_uid': 'nd-peer'})
+        assert await operator_estop_active(zone_id) is True
+        await create_zone_event(zone_id, 'EMERGENCY_STOP_RELEASED', {'source': 'operator'})
+        assert await operator_estop_active(zone_id) is False
+    finally:
+        await _cleanup_greenhouse(greenhouse_id=seeded['greenhouse_id'], zone_id=zone_id, sensor_ids=seeded['sensor_ids'])

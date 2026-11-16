@@ -509,3 +509,11 @@ Release требует причины и отсутствия активных A
 E-STOP независимым. `release_status` отдельно показывает подтверждение команды.
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
+
+Операторская активация публикует `ae_zone_event` через PostgreSQL NOTIFY в той
+же транзакции, что и защёлка; доставка происходит после commit. Reconnect replay
+AE3 включает operator `EMERGENCY_STOP_ACTIVATED`. Защёлки физических узлов
+учитываются независимо по `node_uid`: отпускание одного узла или операторского
+стопа не скрывает активный стоп другого узла. Release также блокируется активным
+climate tick/lease теплицы. Истёкший greenhouse lease нельзя продлить прежнему
+владельцу: требуется новое получение lease в очередном tick.

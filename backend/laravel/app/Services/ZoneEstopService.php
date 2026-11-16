@@ -27,20 +27,24 @@ class ZoneEstopService
             ->whereIn('type', ['EMERGENCY_STOP_ACTIVATED', 'EMERGENCY_STOP_RELEASED']);
         $operator = (clone $events)->where('payload_json->source', 'operator')
             ->orderByDesc('created_at')->orderByDesc('id')->first();
-        // A node event cannot clear the independent operator latch.
-        $event = $operator?->type === 'EMERGENCY_STOP_ACTIVATED' ? $operator
-            : $events->orderByDesc('created_at')->orderByDesc('id')->first();
+        // Node and operator latches have independent owners. A release from
+        // either cannot mask an active latch belonging to the other.
+        $physical = (clone $events)
+            ->selectRaw("DISTINCT ON (COALESCE(payload_json->>'node_uid', 'unknown')) zone_events.*")
+            ->whereRaw("COALESCE(payload_json->>'source', '') <> 'operator'")
+            ->orderByRaw("COALESCE(payload_json->>'node_uid', 'unknown')")
+            ->orderByDesc('created_at')->orderByDesc('id')->get()
+            ->firstWhere('type', 'EMERGENCY_STOP_ACTIVATED');
+        if ($operator?->type === 'EMERGENCY_STOP_RELEASED') {
+            $operatorPayload = $operator->payload_json ?? [];
+            $idle['release_status'] = $this->dispatch->outcome($operatorPayload['dispatch'] ?? null);
+        }
+        $event = $operator?->type === 'EMERGENCY_STOP_ACTIVATED' ? $operator : $physical;
         if ($event === null) {
             return $idle;
         }
         $payload = is_array($event->payload_json) ? $event->payload_json : [];
-        $active = $event->type === 'EMERGENCY_STOP_ACTIVATED';
         $outcome = $this->dispatch->outcome(is_array($payload['dispatch'] ?? null) ? $payload['dispatch'] : null);
-        if (! $active) {
-            $idle['release_status'] = ($payload['source'] ?? null) === 'operator' ? $outcome : 'not_requested';
-
-            return $idle;
-        }
 
         return [
             'active' => true,
@@ -49,7 +53,7 @@ class ZoneEstopService
             'node_uid' => is_string($payload['node_uid'] ?? null) ? $payload['node_uid'] : null,
             'event_id' => (int) $event->id,
             'stop_status' => ($payload['source'] ?? null) === 'operator' ? $outcome : 'not_requested',
-            'release_status' => 'not_requested',
+            'release_status' => $idle['release_status'],
         ];
     }
 
@@ -103,6 +107,14 @@ class ZoneEstopService
                 ],
                 'created_at' => now(),
             ]);
+
+            if ($action === 'engage') {
+                // PostgreSQL delivers NOTIFY only after this latch commits.
+                DB::select('SELECT pg_notify(?, ?)', ['ae_zone_event', json_encode([
+                    'zone_id' => (int) $zone->id, 'event_type' => $event->type,
+                    'source' => 'operator', 'channel' => 'storage_state',
+                ], JSON_THROW_ON_ERROR)]);
+            }
 
             return [$event, $result];
         });
