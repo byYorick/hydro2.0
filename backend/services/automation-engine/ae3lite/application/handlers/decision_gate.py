@@ -187,6 +187,7 @@ class DecisionGateHandler(BaseStageHandler):
                         "bundle_revision": str(runtime.bundle_revision or ""),
                         "reason_code": str(getattr(decision, "reason_code", "") or ""),
                         "degraded": True,
+                        "outcome": str(decision.outcome),
                         "decision_details": dict(getattr(decision, "details", None) or {}),
                     },
                     scope_parts=("stage:decision_gate",),

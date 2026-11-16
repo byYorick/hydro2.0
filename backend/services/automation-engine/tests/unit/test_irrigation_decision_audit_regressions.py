@@ -187,3 +187,14 @@ def test_two_hot_points_in_one_second_do_not_prove_a_ten_minute_hold():
     )
     assert result.reason_code == 'solution_temp_hot_warn'
     assert result.blocks_irrigation is False
+
+
+@pytest.mark.asyncio
+async def test_degraded_skip_warning_does_not_claim_that_irrigation_started(monkeypatch):
+    result, reports, _ = await _run_gate(
+        _GateDecision(outcome="skip", reason_code="smart_soil_degraded_within_band", degraded=True), monkeypatch
+    )
+    assert result.next_stage == "completed_skip"
+    assert [report.code for report in reports] == ["biz_irrigation_decision_degraded"]
+    assert reports[0].details["outcome"] == "skip"
+    assert "разрешил" not in reports[0].message
