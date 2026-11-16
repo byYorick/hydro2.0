@@ -57,6 +57,12 @@ describe('errorCatalog', () => {
     })).toBe('Для зоны указана неизвестная стратегия decision-controller полива. Проверьте automation profile и logic profile зоны.')
   })
 
+  it.each(['smart_soil_target_invalid', 'irrigation_decision_invalid_outcome'])('объясняет отказ полива %s', (code) => {
+    const message = resolveHumanErrorMessage({ code, message: code })
+    expect(message).toContain('Полив не запущен')
+    expect(message).not.toContain(code)
+  })
+
   it('локализует потерю lease зоны во время выполнения задачи', () => {
     expect(resolveHumanErrorMessage({
       message: 'Zone lease was lost during task execution',

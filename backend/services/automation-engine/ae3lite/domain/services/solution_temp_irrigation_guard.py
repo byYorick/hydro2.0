@@ -7,9 +7,12 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Mapping, Sequence
+
+from ae3lite.domain.services.metric_window_validator import usable_decision_quality
 
 REASON_SOLUTION_TEMP_UNAVAILABLE = "solution_temp_unavailable"
 REASON_SOLUTION_TEMP_OUT_OF_BAND = "solution_temp_out_of_band"
@@ -22,10 +25,12 @@ DEFAULT_SOLUTION_TEMP_WARN_C = 26.0
 DEFAULT_SOLUTION_TEMP_STOP_C = 32.0
 DEFAULT_MAX_TEMP_SKIP_PAUSE_SEC = 90 * 60
 
-TEMPERATURE_BLOCK_REASONS = frozenset({
-    REASON_SOLUTION_TEMP_HOT_STOP,
-    REASON_SOLUTION_TEMP_OUT_OF_BAND,
-})
+TEMPERATURE_BLOCK_REASONS = frozenset(
+    {
+        REASON_SOLUTION_TEMP_HOT_STOP,
+        REASON_SOLUTION_TEMP_OUT_OF_BAND,
+    }
+)
 
 # Канал history-logger: solution_temp_c и уже принятые алиасы.
 SOLUTION_TEMP_CHANNEL_LABELS: tuple[str, ...] = (
@@ -89,8 +94,15 @@ def evaluate_solution_temp_hold(
     stale = max(0, int(stale_sec))
     window_start = now_naive - timedelta(seconds=hold)
     last_point = _parse_point(_mapping_or_none(None if reading is None else reading.get("telemetry_last")))
-    samples = _parse_samples(None if reading is None else reading.get("samples"))
-    window_samples = [
+    if last_point is not None and last_point[0] > now_naive + timedelta(seconds=2):
+        last_point = None
+    raw_samples = None if reading is None else reading.get("samples")
+    samples = _parse_samples(raw_samples)
+    input_count = len(raw_samples) if isinstance(raw_samples, (list, tuple)) else 0
+    invalid_samples = input_count - len(samples) + int((reading or {}).get("invalid_samples") or 0)
+    history_truncated = bool((reading or {}).get("history_truncated"))
+    anchors = [point for point in samples if point[0] < window_start]
+    window_samples = ([anchors[-1]] if anchors else []) + [
         point for point in samples if window_start <= point[0] <= now_naive
     ]
 
@@ -132,6 +144,8 @@ def evaluate_solution_temp_hold(
         window_start=window_start,
         window_samples=window_samples,
         latest_c=latest_c,
+        invalid_samples=invalid_samples,
+        history_truncated=history_truncated,
     )
 
 
@@ -147,16 +161,22 @@ def _evaluate_hot_thresholds(
     window_start: datetime,
     window_samples: Sequence[tuple[datetime, float]],
     latest_c: float | None,
+    invalid_samples: int = 0,
+    history_truncated: bool = False,
 ) -> SolutionTempSkip | None:
     stop_edge = None if stop_c is None else float(stop_c)
     warn_edge = None if warn_c is None else float(warn_c)
     if warn_edge is not None and stop_edge is not None and warn_edge >= stop_edge:
         warn_edge = None
-    covered = _window_covered(
-        window_samples,
-        window_start=window_start,
-        now=now,
-        stale_sec=stale,
+    covered = (
+        not invalid_samples
+        and not history_truncated
+        and _window_covered(
+            window_samples,
+            window_start=window_start,
+            now=now,
+            stale_sec=stale,
+        )
     )
     values = [value for _, value in window_samples]
     details = _details(
@@ -166,6 +186,16 @@ def _evaluate_hot_thresholds(
         stale_sec=stale,
         samples=len(window_samples),
         latest_c=latest_c,
+    )
+    details.update(
+        {
+            "hold_covered": bool(covered),
+            "invalid_samples": invalid_samples,
+            "history_truncated": history_truncated,
+            "observed_span_sec": (window_samples[-1][0] - window_samples[0][0]).total_seconds()
+            if window_samples
+            else 0,
+        }
     )
     if warn_edge is not None:
         details["warn_c"] = warn_edge
@@ -280,10 +310,10 @@ def _window_covered(
         return False
     first_ts = samples[0][0]
     last_ts = samples[-1][0]
-    if last_ts <= first_ts:
+    if last_ts <= first_ts or (last_ts - first_ts) < (now - window_start):
         return False
     stale = float(stale_sec)
-    if (first_ts - window_start).total_seconds() > stale:
+    if first_ts > window_start or (window_start - first_ts).total_seconds() > stale:
         return False
     if (now - last_ts).total_seconds() > stale:
         return False
@@ -346,16 +376,21 @@ def _parse_samples(raw_samples: Any) -> list[tuple[datetime, float]]:
 
 
 def _parse_point(raw_point: Mapping[str, Any] | None) -> tuple[datetime, float] | None:
-    if raw_point is None:
+    if raw_point is None or not usable_decision_quality(
+        quality=raw_point.get("quality"), metadata=raw_point.get("metadata")
+    ):
         return None
     ts = _as_naive_utc(raw_point.get("ts"))
     if ts is None:
         return None
-    try:
-        value = float(raw_point.get("value"))
-    except (TypeError, ValueError):
+    raw = raw_point.get("value")
+    if isinstance(raw, bool):
         return None
-    return ts, value
+    try:
+        value = float(raw)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return (ts, value) if math.isfinite(value) else None
 
 
 def _mapping_or_none(raw_value: Any) -> Mapping[str, Any] | None:

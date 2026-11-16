@@ -44,15 +44,10 @@ class TaskExecutionDecisionSnapshot:
             getattr(task, "irrigation_decision_strategy", "") or ""
         ).strip() != "" and isinstance(getattr(task, "irrigation_decision_config", None), Mapping)
         if has_persisted_snapshot:
-            # Emit only when the task is still in its initial irrigation_start stage —
-            # i.e., snapshot was set at task-creation time and this is the very first
-            # claim, before any transition to irrigation_check or subsequent poll
-            # re-enqueues.  After each poll, update_stage() resets status to 'pending'
-            # and then the task is re-claimed (status='claimed'), making first_run=True
-            # on every cycle.  Guarding by current_stage prevents duplicate events on
-            # every subsequent re-claim in irrigation_check.
-            is_initial_stage = str(getattr(task, "current_stage", "") or "").strip().lower() == "irrigation_start"
-            if emit_observability and is_initial_stage:
+            # The caller uses persisted start_event_emitted, so await_ready
+            # polls/reclaims cannot duplicate the first-run snapshot event.
+            # Emitting only at irrigation_start misses the actual first run.
+            if emit_observability:
                 await self.emit_irrigation_decision_snapshot_locked(
                     task=task,
                     snapshot=snapshot,

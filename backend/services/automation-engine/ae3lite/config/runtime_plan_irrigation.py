@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import math
 from typing import Any, Mapping
+
+from ae3lite.domain.errors import PlannerConfigurationError
 
 from ae3lite.config.runtime_plan_values_policy import (
     _irrigation_subsystem,
@@ -87,26 +90,34 @@ def _build_irrigation_execution(snapshot: Any) -> dict[str, Any]:
     }
 
 
+def resolve_irrigation_decision_config(raw: Mapping[str, Any] | None) -> dict[str, Any]:
+    """Materialize all defaults once so an active task never borrows new values."""
+    config = _to_mapping(raw)
+    keys = ("lookback_sec", "min_samples", "stale_after_sec", "hysteresis_pct", "spread_alert_threshold_pct")
+    for key in keys:
+        value = config.get(key)
+        if value is None:
+            continue
+        try:
+            valid = not isinstance(value, bool) and math.isfinite(float(value))
+        except (TypeError, ValueError, OverflowError):
+            valid = False
+        if not valid:
+            raise PlannerConfigurationError(f"irrigation.decision.config.{key} must be a finite number")
+    return {
+        "lookback_sec": _resolve_bounded_int(config.get("lookback_sec"), 1800, 60, 86400),
+        "min_samples": _resolve_bounded_int(config.get("min_samples"), 3, 1, 100),
+        "stale_after_sec": _resolve_bounded_int(config.get("stale_after_sec"), 600, 30, 86400),
+        "hysteresis_pct": _resolve_float(config.get("hysteresis_pct"), 2.0, 0.0, 100.0),
+        "spread_alert_threshold_pct": _resolve_float(config.get("spread_alert_threshold_pct"), 12.0, 0.0, 100.0),
+    }
+
+
 def _build_irrigation_decision(snapshot: Any) -> dict[str, Any]:
     subsystem = _irrigation_subsystem(snapshot)
     decision = _to_mapping(subsystem.get("decision"))
     strategy = str(decision.get("strategy") or "task").strip().lower() or "task"
-    config = _to_mapping(decision.get("config"))
-    return {
-        "strategy": strategy,
-        "config": {
-            "lookback_sec": _resolve_bounded_int(config.get("lookback_sec"), 1800, 60, 86400),
-            "min_samples": _resolve_bounded_int(config.get("min_samples"), 3, 1, 100),
-            "stale_after_sec": _resolve_bounded_int(config.get("stale_after_sec"), 600, 30, 86400),
-            "hysteresis_pct": _resolve_float(config.get("hysteresis_pct"), 2.0, 0.0, 100.0),
-            "spread_alert_threshold_pct": _resolve_float(
-                config.get("spread_alert_threshold_pct"),
-                12.0,
-                0.0,
-                100.0,
-            ),
-        },
-    }
+    return {"strategy": strategy, "config": resolve_irrigation_decision_config(_to_mapping(decision.get("config")))}
 
 
 def _build_irrigation_recovery(snapshot: Any) -> dict[str, Any]:

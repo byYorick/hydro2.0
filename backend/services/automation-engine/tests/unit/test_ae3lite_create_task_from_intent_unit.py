@@ -286,7 +286,8 @@ async def test_create_task_from_intent_locks_irrigation_decision_snapshot_before
     assert result.created is True
     create_pending_call = next(call for call in task_repo.calls if call[0] == "create_pending")
     assert create_pending_call[2] == "smart_soil_v1"
-    assert create_pending_call[3] == {"lookback_sec": 1800, "min_samples": 3}
+    assert create_pending_call[3] == {"lookback_sec": 1800, "min_samples": 3, "stale_after_sec": 600,
+                                      "hysteresis_pct": 2.0, "spread_alert_threshold_pct": 12.0}
     assert create_pending_call[4] == "bundle-1"
 
 

@@ -6,7 +6,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Mapping
 
-from ae3lite.domain.errors import ErrorCodes, TaskCreateError
+from ae3lite.domain.errors import ErrorCodes, TaskCreateError, PlannerConfigurationError
+from ae3lite.config.runtime_plan_irrigation import resolve_irrigation_decision_config
 from ae3lite.infrastructure.read_models.active_grow_cycle_order_sql import SQL_ACTIVE_GROW_CYCLE_ORDER_BY
 
 
@@ -107,11 +108,14 @@ class IntentTaskIrrigationDecision:
 
         decision = irrigation.get("decision")
         if not isinstance(decision, Mapping):
-            return {}
+            decision = {}
 
         strategy = str(decision.get("strategy") or "task").strip().lower() or "task"
         config = decision.get("config")
-        config_mapping = dict(config) if isinstance(config, Mapping) else {}
+        try:
+            config_mapping = resolve_irrigation_decision_config(config if isinstance(config, Mapping) else {})
+        except PlannerConfigurationError as exc:
+            raise TaskCreateError(ErrorCodes.AE3_SNAPSHOT_BUNDLE_INVALID, str(exc)) from exc
         return {
             "irrigation_decision_strategy": strategy,
             "irrigation_decision_config": config_mapping or None,

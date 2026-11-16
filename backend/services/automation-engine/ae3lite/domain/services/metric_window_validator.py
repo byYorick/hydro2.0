@@ -19,13 +19,17 @@ def sensor_value_in_bounds(*, sensor_type: str, value: Any) -> bool:
     Bounds are absolute sanity limits (not recipe targets). They filter explicit
     sensor error codes such as pH=-1 on disconnect or EC=999 on short-circuit.
     """
+    if isinstance(value, bool):
+        return False
     try:
         numeric = float(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return False
     if not math.isfinite(numeric):
         return False
     key = (sensor_type or "").strip().upper()
+    if key == "SOIL_MOISTURE":
+        return 0.0 <= numeric <= 100.0
     if key == "PH":
         return PH_MIN <= numeric <= PH_MAX
     if key == "EC":
@@ -53,3 +57,8 @@ def decision_window_bounds_reason(*, sensor_type: str, value: Any) -> str | None
     if sensor_value_in_bounds(sensor_type=sensor_type, value=value):
         return None
     return SENSOR_OUT_OF_BOUNDS_REASON
+
+
+def usable_decision_quality(*, quality: Any = None, metadata: Any = None) -> bool:
+    """Legacy NULL quality means GOOD; explicit BAD/STUB never authorize decisions."""
+    return str(quality or "GOOD").strip().upper() == "GOOD" and not is_stub_telemetry(quality=quality, metadata=metadata)

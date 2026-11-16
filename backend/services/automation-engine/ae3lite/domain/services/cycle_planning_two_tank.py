@@ -11,6 +11,7 @@ from ae3lite.config.runtime_plan_builder import (
     HL_RUN_PUMP_MAX_DURATION_MS,
 )
 from ae3lite.domain.entities import AutomationTask, PlannedCommand
+from ae3lite.config.runtime_plan_irrigation import resolve_irrigation_decision_config
 from ae3lite.domain.errors import PlannerConfigurationError
 
 
@@ -167,7 +168,7 @@ class CyclePlanningTwoTank:
         config = decision_mapping.get("config")
         config_mapping = dict(config) if isinstance(config, Mapping) else {}
         if isinstance(locked_config, Mapping):
-            config_mapping.update(dict(locked_config))
+            config_mapping = resolve_irrigation_decision_config(locked_config)
         if locked_strategy != "":
             decision_mapping["strategy"] = locked_strategy
         decision_mapping["config"] = config_mapping

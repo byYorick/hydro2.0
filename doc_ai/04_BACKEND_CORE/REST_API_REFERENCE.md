@@ -865,3 +865,13 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - требует активный grow cycle зоны;
 - создаёт `zone_event` типа `RELAY_AUTOTUNE_STARTED`;
 - проксирует запрос в automation-engine endpoint `/zones/{id}/start-relay-autotune`.
+
+
+Дополнительные причины отказа существующего `start-irrigation` workflow:
+`smart_soil_target_invalid` (цель влажности/единицы/границы) и
+`irrigation_decision_invalid_outcome` (неизвестный результат контроллера).
+Они сохраняются как error_code задачи и имеют русские сообщения в общем каталоге.
+HTTP ingress и поля запроса не меняются; force обходит выбор стратегии, а
+проверки исполнения и температурный guard остаются в canonical workflow.
+
+Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0

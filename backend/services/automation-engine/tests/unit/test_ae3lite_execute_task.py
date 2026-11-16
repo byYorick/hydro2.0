@@ -1157,12 +1157,8 @@ async def test_execute_task_irrigation_first_run_locks_decision_snapshot_and_emi
 
 @pytest.mark.asyncio
 async def test_execute_task_irrigation_first_run_emits_lock_event_for_prelocked_snapshot(monkeypatch) -> None:
-    # The IRRIGATION_DECISION_SNAPSHOT_LOCKED event must fire exactly once per task
-    # lifetime: when the task is at the irrigation_start stage (commands about to be
-    # sent).  All irrigation_start tasks begin at await_ready; the event must NOT
-    # fire there (await_ready polls N times before the zone becomes ready, which
-    # would produce N duplicates).  Similarly, it must NOT fire on subsequent
-    # re-claims in irrigation_check.
+    # The actual first stage is await_ready; the persisted start-event flag
+    # prevents duplicate snapshot events on later reclaims.
     recorded_events: list[tuple[int, str, dict]] = []
 
     async def _record_zone_event(zone_id: int, event_type: str, payload: dict) -> None:
@@ -1175,7 +1171,7 @@ async def test_execute_task_irrigation_first_run_emits_lock_event_for_prelocked_
 
     claimed_task = replace(
         _make_task(
-            stage="irrigation_start",
+            stage="await_ready",
             topology="two_tank",
             task_type="irrigation_start",
             irrigation_decision_strategy="smart_soil_v1",
@@ -1214,11 +1210,7 @@ async def test_execute_task_irrigation_first_run_emits_lock_event_for_prelocked_
 
 @pytest.mark.asyncio
 async def test_execute_task_irrigation_prelocked_snapshot_no_duplicate_events_on_poll_reclaim(monkeypatch) -> None:
-    # Regression: IRRIGATION_DECISION_SNAPSHOT_LOCKED was emitted on every re-claim
-    # after a poll because update_stage() resets status to 'pending' and re-claim
-    # sets status back to 'claimed' (first_run=True).  Verify that stages OTHER
-    # than irrigation_start (specifically await_ready and irrigation_check) do NOT
-    # emit the event even on the first claimed pick-up.
+    # These reclaims have already emitted their start/snapshot observability.
     for poll_stage in ("await_ready", "irrigation_check"):
         recorded_events: list[tuple[int, str, dict]] = []
 
@@ -1240,6 +1232,7 @@ async def test_execute_task_irrigation_prelocked_snapshot_no_duplicate_events_on
                 irrigation_bundle_revision="bundle-locked-123456",
             ),
             status="claimed",
+            start_event_emitted=True,
         )
         task_repo = _TaskRepoRunning(running_task=claimed_task)
         use_case = ExecuteTaskUseCase(

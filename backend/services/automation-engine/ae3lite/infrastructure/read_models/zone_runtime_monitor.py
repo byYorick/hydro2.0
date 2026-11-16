@@ -192,6 +192,7 @@ class PgZoneRuntimeMonitor:
         since_ts: datetime,
         telemetry_max_age_sec: int,
         limit_per_sensor: int = 64,
+        until_ts: datetime | None = None,
     ) -> Mapping[str, Any]:
         return await self._runtime_monitor_metric_windows.read_metric_windows(
             zone_id=zone_id,
@@ -199,6 +200,7 @@ class PgZoneRuntimeMonitor:
             since_ts=since_ts,
             telemetry_max_age_sec=telemetry_max_age_sec,
             limit_per_sensor=limit_per_sensor,
+            until_ts=until_ts,
         )
 
     async def read_solution_temp_window(

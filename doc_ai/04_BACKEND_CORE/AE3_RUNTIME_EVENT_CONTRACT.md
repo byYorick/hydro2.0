@@ -112,6 +112,16 @@ task rows; в live topology и обязательный causal contract не в�
 3. `grow_cycle_id`
 4. `phase_name`
 
+Событие фиксации decision snapshot эмитится при первом runtime pass, включая
+`await_ready` и задачи с snapshot, записанным на create-path. Повторные poll/claim
+используют персистентный `start_event_emitted`; ожидание и успешный skip не лишают
+задачу события provenance. `config` новых задач содержит все пять разрешённых
+параметров, включая defaults. `IRRIGATION_DECISION_EVALUATED.details` дополнительно
+содержит статистику принятых/отброшенных измерений, границы/порог решения и статус
+покрытия температурного hold, если эта проверка определила итог.
+
+Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0
+
 ### 4.2 `IRRIGATION_CORRECTION_STARTED`
 
 Назначение:
