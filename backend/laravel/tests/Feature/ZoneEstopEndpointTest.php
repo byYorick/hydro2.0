@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Command;
 use App\Models\DeviceNode;
+use App\Models\Greenhouse;
 use App\Models\User;
 use App\Models\Zone;
 use App\Models\ZoneEvent;
@@ -157,6 +158,16 @@ class ZoneEstopEndpointTest extends TestCase
         DB::table('ae_zone_leases')->insert(['zone_id' => $zone->id, 'owner' => 'test-worker',
             'leased_until' => now()->addMinute(), 'updated_at' => now()]);
         $this->mock(PythonBridgeService::class, fn ($mock) => $mock->shouldNotReceive('sendNodeCommand'));
+        $this->actingAs(User::factory()->create(['role' => 'operator']))
+            ->postJson("/api/zones/{$zone->id}/estop", ['action' => 'release', 'reason' => 'опасность устранена'])
+            ->assertStatus(409)->assertJsonPath('code', 'ae3_zone_lease_held');
+    }
+
+    public function test_release_cannot_resume_in_flight_greenhouse_climate_commands(): void
+    {
+        $zone = Zone::factory()->create(['greenhouse_id' => Greenhouse::factory()->create()->id]);
+        DB::table('greenhouse_automation_leases')->insert(['greenhouse_id' => $zone->greenhouse_id,
+            'owner' => 'climate-worker', 'leased_until' => now()->addMinute(), 'updated_at' => now()]);
         $this->actingAs(User::factory()->create(['role' => 'operator']))
             ->postJson("/api/zones/{$zone->id}/estop", ['action' => 'release', 'reason' => 'опасность устранена'])
             ->assertStatus(409)->assertJsonPath('code', 'ae3_zone_lease_held');

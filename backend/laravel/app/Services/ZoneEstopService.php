@@ -57,7 +57,11 @@ class ZoneEstopService
     {
         return ! DB::table('ae_zone_leases')->where('zone_id', $zone->id)->where('leased_until', '>', now())->exists()
             && ! DB::table('ae_tasks')->where('zone_id', $zone->id)
-                ->whereIn('status', ['pending', 'claimed', 'running', 'waiting_command'])->exists();
+                ->whereIn('status', ['pending', 'claimed', 'running', 'waiting_command'])->exists()
+            && (! $zone->greenhouse_id || (! DB::table('greenhouse_automation_leases')
+                ->where('greenhouse_id', $zone->greenhouse_id)->where('leased_until', '>', now())->exists()
+                && ! DB::table('greenhouse_automation_tasks')->where('greenhouse_id', $zone->greenhouse_id)
+                    ->whereIn('status', ['pending', 'claimed', 'running', 'waiting_command'])->exists()));
     }
 
     public function apply(Zone $zone, string $action, ?User $user, ?string $reason): array
