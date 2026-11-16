@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 from dataclasses import dataclass
 from datetime import datetime
@@ -261,7 +262,7 @@ class ClimateTickCommands:
                     channel=channel,
                     cmd="set_relay",
                     params={"state": desired, "reason": "exhaust_hysteresis"},
-                    cmd_id=f"ghc-{greenhouse_id}-{idempotency_key}-fan-{channel}-{int(desired)}",
+                    cmd_id=_fan_command_id(greenhouse_id, idempotency_key, node_uid, channel, desired),
                 )
                 terminal = await self._ports.wait_command_terminal(
                     hl_id,
@@ -297,3 +298,8 @@ def _previous_exhaust_on(state: Mapping[str, Any]) -> bool:
     if isinstance(raw, dict):
         return bool(raw.get("exhaust_on"))
     return False
+
+
+def _fan_command_id(greenhouse_id: int, tick_key: str, node_uid: str, channel: str, desired: bool) -> str:
+    identity = json.dumps([greenhouse_id, tick_key, node_uid, channel, desired], separators=(",", ":"))
+    return f"ghc-{greenhouse_id}-fan-{hashlib.sha256(identity.encode()).hexdigest()}"

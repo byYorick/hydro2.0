@@ -51,3 +51,17 @@ async def test_unconfirmed_renewal_never_starts_fan():
     result = await component.execute_vent_commands(**kwargs)
     publish.assert_not_awaited()
     assert result.command_failures == ["fan_A:LEASE_LOST"]
+
+
+@pytest.mark.asyncio
+async def test_fan_ids_are_bounded_stable_and_distinct_across_nodes():
+    component, kwargs, publish, _, _, fetch = fan_tick()
+    fetch.return_value.append(dict(fetch.return_value[0], node_uid="nd-two", zone_id=2))
+    kwargs["idempotency_key"] = "scheduler-tick-" * 100
+    await component.execute_vent_commands(**kwargs)
+    first = [call.kwargs["cmd_id"] for call in publish.await_args_list]
+    assert len(first) == len(set(first)) == 2
+    assert all(len(value.encode()) <= 128 for value in first)
+    publish.reset_mock()
+    await component.execute_vent_commands(**kwargs)
+    assert [call.kwargs["cmd_id"] for call in publish.await_args_list] == first
