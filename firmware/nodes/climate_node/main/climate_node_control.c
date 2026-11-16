@@ -30,7 +30,7 @@ typedef struct {
     gpio_num_t close_gpio;
     gpio_num_t closed_limit_gpio;
     char channel[24];
-    char cmd_id[40];
+    node_command_id_t cmd_id;
     bool response_pending;
     bool failed;
 } vent_hw_t;
@@ -210,15 +210,14 @@ static void control_tick(void *arg)
     for (i = 0; i < 2; i++) {
         bool publish = false;
         bool failed = false;
-        char cmd_id[40];
+        node_command_id_t cmd_id;
         char channel[24];
 
         taskENTER_CRITICAL(&s_mux);
         if (s_vents[i].response_pending && !s_vents[i].drive.moving) {
             publish = true;
             failed = s_vents[i].failed || s_vents[i].drive.fault;
-            strncpy(cmd_id, s_vents[i].cmd_id, sizeof(cmd_id) - 1);
-            cmd_id[sizeof(cmd_id) - 1] = '\0';
+            (void)node_command_id_copy(cmd_id, s_vents[i].cmd_id);
             strncpy(channel, s_vents[i].channel, sizeof(channel) - 1);
             channel[sizeof(channel) - 1] = '\0';
             if (mqtt_manager_is_connected()) {
@@ -302,7 +301,7 @@ static esp_err_t handle_set_position(
     }
     started = vent_drive_command(&s_vents[index].drive, target, 0);
     if (started == CLIMATE_CMD_OK) {
-        snprintf(s_vents[index].cmd_id, sizeof(s_vents[index].cmd_id), "%s", cmd_id != NULL ? cmd_id : "");
+        (void)node_command_id_copy(s_vents[index].cmd_id, cmd_id);
         snprintf(s_vents[index].channel, sizeof(s_vents[index].channel), "%s", channel);
         s_vents[index].response_pending = s_vents[index].cmd_id[0] != '\0';
         s_vents[index].failed = false;
