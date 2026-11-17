@@ -74,6 +74,7 @@ function makeDocument(namespace: string, payload: Record<string, unknown>) {
 
 describe('SystemSettings.vue', () => {
   beforeEach(() => {
+    vi.spyOn(window, 'confirm').mockReset().mockReturnValue(true)
     getDocumentMock.mockReset()
     updateDocumentMock.mockReset()
     resetDocumentMock.mockReset()
@@ -143,10 +144,44 @@ describe('SystemSettings.vue', () => {
       },
     )
 
-    const resetButton = wrapper.findAll('button').find((button) => button.text() === 'Сбросить к дефолтам')
+    const resetButton = wrapper.findAll('button').find((button) => button.text() === 'Восстановить значения по умолчанию')
     await resetButton?.trigger('click')
     await flushPromises()
 
     expect(resetDocumentMock).toHaveBeenCalledWith('system', 0, 'system.pump_calibration_policy')
   })
+  it('does not turn an empty numeric field into zero on save', async () => {
+    const wrapper = mount(SystemSettings)
+    await flushPromises()
+    await wrapper.findAll('input')[0].setValue('')
+    expect(wrapper.text()).toContain('Введите число.')
+    expect(wrapper.get('[data-testid="system-settings-save"]').attributes('disabled')).toBeDefined()
+    await wrapper.get('[data-testid="system-settings-save"]').trigger('click')
+    expect(updateDocumentMock).not.toHaveBeenCalled()
+  })
+
+  it('keeps the draft when the user cancels switching sections and can discard explicitly', async () => {
+    const wrapper = mount(SystemSettings)
+    await flushPromises()
+    await wrapper.get('[data-testid="system-settings-tab-pump_calibration"]').trigger('click')
+    await flushPromises()
+    await wrapper.findAll('input')[0].setValue('0.25')
+    vi.mocked(window.confirm).mockReturnValue(false)
+    await wrapper.get('[data-testid="system-settings-tab-automation_defaults"]').trigger('click')
+    expect(window.confirm).toHaveBeenCalled()
+    expect(wrapper.findAll('input')[0].element.value).toBe('0.25')
+    expect(wrapper.get('[data-testid="system-settings-dirty-count"]').text()).toContain('1')
+    await wrapper.get('[data-testid="system-settings-discard"]').trigger('click')
+    expect(wrapper.findAll('input')[0].element.value).toBe('0.01')
+    expect(wrapper.find('[data-testid="system-settings-dirty-count"]').exists()).toBe(false)
+  })
+
+  it('shows a persistent loading failure rather than an empty settings screen', async () => {
+    getDocumentMock.mockRejectedValue(new Error('Не удалось получить настройки'))
+    const wrapper = mount(SystemSettings)
+    await flushPromises()
+    expect(wrapper.text()).toContain('Настройки не загружены')
+    expect(wrapper.text()).toContain('Повторить загрузку')
+  })
+
 })

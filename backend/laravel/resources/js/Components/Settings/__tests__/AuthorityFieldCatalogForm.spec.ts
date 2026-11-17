@@ -62,6 +62,9 @@ describe('AuthorityFieldCatalogForm', () => {
     expect(wrapper.get('[data-testid="authority-field-waiting_command_warn_sec"]').exists()).toBe(true)
     expect(wrapper.get('[data-testid="authority-field-help-waiting_command_warn_sec"]').exists()).toBe(true)
     expect(wrapper.get('[data-testid="authority-section-help-observability_commands"]').exists()).toBe(true)
+    const toggle = wrapper.get('[data-testid="authority-section-toggle-observability_commands"]')
+    expect(toggle.attributes('aria-expanded')).toBe('true')
+    expect(toggle.find('button').exists()).toBe(false)
 
     await wrapper.get('[data-testid="authority-section-help-observability_commands"]').trigger('click')
     expect(wrapper.text()).toContain('Пороги команд AE3.')
@@ -83,5 +86,18 @@ describe('AuthorityFieldCatalogForm', () => {
 
     expect(wrapper.find('[data-testid="authority-field-waiting_command_warn_sec"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="authority-field-snapshot_stale_sec"]').exists()).toBe(false)
+  })
+
+  it('shows readable options and preserves the selected machine value on update', async () => {
+    const wrapper = mount(AuthorityFieldCatalogForm, {
+      props: {
+        sections: [{ ...sections[0], fields: [{ path: 'mode', label: 'Коррекция раствора', description: 'Выберите состав коррекции.', type: 'string', options: ['none', 'calcium'], option_labels: { none: 'Только pH', calcium: 'pH и кальций' } }] }],
+        modelValue: { mode: 'none' },
+      },
+    })
+    expect(wrapper.get('select').element.value).toBe('none')
+    expect(wrapper.get('select').text()).toContain('Только pH')
+    await wrapper.get('select').setValue('calcium')
+    expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual([{ mode: 'calcium' }])
   })
 })

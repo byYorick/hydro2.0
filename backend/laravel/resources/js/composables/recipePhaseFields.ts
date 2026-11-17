@@ -2,6 +2,14 @@
 import type { RecipePhaseFormState, EcBreakdown } from './recipeEditorShared'
 import { computeEcBreakdown, nullableDraftNumber } from './recipeEditorShared'
 
+function parseDuration(value: string, base: number): number {
+  if (value.trim() === '') return 0
+  const match = value.trim().match(/^(\d+)\s*:\s*(\d{1,2})$/)
+  if (!match || Number(match[2]) >= base) return Number.NaN
+  const result = Number(match[1]) * base + Number(match[2])
+  return Number.isSafeInteger(result) ? result : Number.NaN
+}
+
 // ── Длительность фазы (ДД:ЧЧ) ──
 function durationDays(phase: RecipePhaseFormState): number {
   return Math.floor((phase.duration_hours ?? 0) / 24)
@@ -10,43 +18,37 @@ function durationHoursPart(phase: RecipePhaseFormState): number {
   return (phase.duration_hours ?? 0) % 24
 }
 export function durationDisplay(phase: RecipePhaseFormState): string {
+  if (phase.duration_hours != null && !Number.isFinite(phase.duration_hours)) return ''
   const d = durationDays(phase)
   const h = durationHoursPart(phase)
   return `${d} : ${String(h).padStart(2, '0')}`
 }
 export function setDurationFromString(phase: RecipePhaseFormState, value: string): void {
-  const parts = value.split(':').map(s => s.trim())
-  const d = Math.max(0, Number(parts[0]) || 0)
-  const h = parts.length > 1 ? Math.max(0, Math.min(23, Number(parts[1]) || 0)) : 0
-  phase.duration_hours = d * 24 + h
+  phase.duration_hours = parseDuration(value, 24)
 }
 
 // ── Интервал полива (ЧЧ:ММ) ──
 export function intervalDisplay(phase: RecipePhaseFormState): string {
+  if (phase.irrigation_interval_sec != null && !Number.isFinite(phase.irrigation_interval_sec)) return ''
   const sec = phase.irrigation_interval_sec ?? 0
   const h = Math.floor(sec / 3600)
   const m = Math.floor((sec % 3600) / 60)
   return `${String(h).padStart(2, '0')} : ${String(m).padStart(2, '0')}`
 }
 export function setIntervalFromString(phase: RecipePhaseFormState, value: string): void {
-  const parts = value.split(':').map(s => s.trim())
-  const h = Math.max(0, Number(parts[0]) || 0)
-  const m = parts.length > 1 ? Math.max(0, Math.min(59, Number(parts[1]) || 0)) : 0
-  phase.irrigation_interval_sec = h * 3600 + m * 60
+  phase.irrigation_interval_sec = parseDuration(value, 60) * 60
 }
 
 // ── Длительность полива (ММ:СС) ──
 export function durationIrrigDisplay(phase: RecipePhaseFormState): string {
+  if (phase.irrigation_duration_sec != null && !Number.isFinite(phase.irrigation_duration_sec)) return ''
   const sec = phase.irrigation_duration_sec ?? 0
   const m = Math.floor(sec / 60)
   const s = sec % 60
   return `${String(m).padStart(2, '0')} : ${String(s).padStart(2, '0')}`
 }
 export function setDurationIrrigFromString(phase: RecipePhaseFormState, value: string): void {
-  const parts = value.split(':').map(s => s.trim())
-  const m = Math.max(0, Number(parts[0]) || 0)
-  const s = parts.length > 1 ? Math.max(0, Math.min(59, Number(parts[1]) || 0)) : 0
-  phase.irrigation_duration_sec = m * 60 + s
+  phase.irrigation_duration_sec = parseDuration(value, 60)
 }
 
 export type CropDayNumberKey =

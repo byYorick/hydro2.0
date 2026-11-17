@@ -8,6 +8,8 @@ export interface SystemSettingsField {
   max?: number
   step?: number
   unit?: string
+  options?: string[]
+  option_labels?: Record<string, string>
 }
 
 export interface SystemSettingsSection {

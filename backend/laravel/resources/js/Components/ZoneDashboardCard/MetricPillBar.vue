@@ -78,7 +78,7 @@ const props = withDefaults(defineProps<Props>(), {
 })
 
 const formattedValue = computed(() => {
-  if (props.value === null || Number.isNaN(props.value)) return '—'
+  if (props.value === null || !Number.isFinite(props.value)) return '—'
   return props.value.toFixed(props.decimals)
 })
 
@@ -113,14 +113,14 @@ const targetZoneStyle = computed(() => {
 })
 
 const markerStyle = computed(() => {
-  if (props.offline || props.value === null || Number.isNaN(props.value)) return null
+  if (props.offline || props.value === null || !Number.isFinite(props.value)) return null
   const pos = normalize(props.value) * 100
   return { left: `${pos}%` }
 })
 
 const state = computed<'ok' | 'warn' | 'danger' | 'unknown' | 'offline'>(() => {
   if (props.offline) return 'offline'
-  if (props.value === null || Number.isNaN(props.value)) return 'unknown'
+  if (props.value === null || !Number.isFinite(props.value)) return 'unknown'
   if (props.targetMin === null || props.targetMax === null) return 'unknown'
   if (props.value >= props.targetMin && props.value <= props.targetMax) return 'ok'
   const span = Math.max(0.1, props.targetMax - props.targetMin)

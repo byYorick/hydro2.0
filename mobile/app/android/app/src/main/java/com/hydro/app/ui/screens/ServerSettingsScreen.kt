@@ -57,11 +57,14 @@ fun ServerSettingsScreen(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text("Адрес Laravel в локальной сети. Для эмулятора оставьте 10.0.2.2 и порт 8080. Для телефона укажите LAN IP компьютера, где запущен make up.")
+            Text("Укажите адрес сервера Hydro, доступный с этого устройства. Имя сервера, порт и HTTPS задаются отдельно. Изменения применяются кнопкой «Сохранить». Сохранение адреса не проверяет доступность сервера.")
             OutlinedTextField(
                 value = state.host,
                 onValueChange = vm::onHost,
-                label = { Text("IP или хост") },
+                label = { Text("Имя сервера или IPv4-адрес") },
+                supportingText = { Text(state.hostError ?: "Например: hydro.local или 192.168.1.20") },
+                isError = state.hostError != null,
+                enabled = !state.saving,
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -69,28 +72,31 @@ fun ServerSettingsScreen(
                 value = state.port,
                 onValueChange = vm::onPort,
                 label = { Text("Порт") },
+                supportingText = { Text(state.portError ?: "Номер порта сервера, например 8080 или 443") },
+                isError = state.portError != null,
+                enabled = !state.saving,
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 modifier = Modifier.fillMaxWidth(),
             )
             Column {
                 Text("HTTPS")
-                Switch(checked = state.useHttps, onCheckedChange = vm::onHttps)
+                Switch(checked = state.useHttps, onCheckedChange = vm::onHttps, enabled = state.cleartextAllowed && !state.saving)
                 Text(
                     if (state.cleartextAllowed) {
-                        "Debug-сборка: HTTP для локальной сети разрешён."
+                        "В этой сборке разрешено подключение по HTTP."
                     } else {
-                        "Release: нужен HTTPS. HTTP только с флагом сборки hydro.allowCleartext=true."
+                        "В этой сборке требуется защищённое подключение HTTPS."
                     },
                 )
             }
             Text(
-                "Токен Sanctum пишется в DataStore только как AES-256-GCM (Android Keystore), как в SEC-03. Открытый токен с прошлых версий перешифровывается при чтении.",
+                "Данные входа сохраняются в защищённом хранилище устройства. Изменение адреса сервера не меняет настройки полива.",
             )
             state.message?.let { Text(it) }
             Spacer(Modifier.height(8.dp))
-            Button(onClick = vm::save, modifier = Modifier.fillMaxWidth()) {
-                Text("Сохранить")
+            Button(onClick = vm::save, enabled = !state.saving && !state.saved && state.hostError == null && state.portError == null, modifier = Modifier.fillMaxWidth()) {
+                Text(if (state.saving) "Сохранение…" else if (state.saved) "Сохранено" else "Сохранить")
             }
         }
     }

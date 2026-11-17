@@ -11,8 +11,8 @@
         v-model="search"
         type="search"
         class="w-full sm:w-64"
-        placeholder="Поиск параметра"
-        aria-label="Поиск параметра"
+        placeholder="Поиск параметра в этом разделе"
+        aria-label="Поиск параметра в этом разделе"
         data-testid="authority-field-search"
       />
       <span class="text-xs text-[color:var(--text-dim)]">
@@ -33,37 +33,42 @@
       :key="section.key"
       class="settings-group-card"
     >
-      <button
-        type="button"
-        class="settings-group-card__toggle"
-        :data-testid="`authority-section-toggle-${section.key}`"
-        @click="toggleSection(section.key)"
-      >
-        <div class="flex items-center gap-2">
-          <span
-            class="inline-block text-[color:var(--text-muted)] transition-transform"
-            :class="isOpen(section.key) ? 'rotate-90' : ''"
-          >
-            ▸
-          </span>
-          <span class="text-sm font-semibold text-[color:var(--text-primary)]">
-            {{ section.label }}
-          </span>
-          <span class="text-xs text-[color:var(--text-dim)]">
-            {{ section.fields.length }}
-          </span>
-          <SettingsFieldHelp
-            v-if="section.description || section.help"
-            :title="section.label"
-            :summary="section.description"
-            :help="section.help"
-            :test-id="`authority-section-help-${section.key}`"
-          />
-        </div>
-      </button>
+      <div class="settings-group-card__toggle">
+        <button
+          type="button"
+          class="flex-1 text-left"
+          :data-testid="`authority-section-toggle-${section.key}`"
+          :aria-expanded="isOpen(section.key)"
+          :aria-controls="`authority-section-body-${section.key}`"
+          @click="toggleSection(section.key)"
+        >
+          <div class="flex items-center gap-2">
+            <span
+              class="inline-block text-[color:var(--text-muted)] transition-transform"
+              :class="isOpen(section.key) ? 'rotate-90' : ''"
+            >
+              ▸
+            </span>
+            <span class="text-sm font-semibold text-[color:var(--text-primary)]">
+              {{ section.label }}
+            </span>
+            <span class="text-xs text-[color:var(--text-dim)]">
+              {{ section.fields.length }}
+            </span>
+          </div>
+        </button>
+        <SettingsFieldHelp
+          v-if="section.description || section.help"
+          :title="section.label"
+          :summary="section.description"
+          :help="section.help"
+          :test-id="`authority-section-help-${section.key}`"
+        />
+      </div>
 
       <div
         v-if="isOpen(section.key)"
+        :id="`authority-section-body-${section.key}`"
         class="settings-group-card__body"
       >
         <div class="settings-rows settings-rows--split">
@@ -87,6 +92,7 @@
                 :id="fieldInputId(field.path)"
                 v-model="draft[field.path]"
                 type="checkbox"
+                :aria-describedby="`${fieldInputId(field.path)}-description`"
                 :data-testid="`authority-field-${field.path}`"
               />
               <span class="text-xs text-[color:var(--text-muted)]">
@@ -99,21 +105,49 @@
               :id="fieldInputId(field.path)"
               v-model="draft[field.path]"
               multiline
+              :error="errors?.[field.path]"
               rows="6"
               :data-testid="`authority-field-${field.path}`"
+              :aria-describedby="`${fieldInputId(field.path)}-description`"
               input-class="settings-control--wide font-mono text-xs"
             />
+
+            <SelectField
+              v-else-if="field.options?.length"
+              :id="fieldInputId(field.path)"
+              :model-value="String(draft[field.path] ?? '')"
+              :error="errors?.[field.path]"
+              :data-testid="`authority-field-${field.path}`"
+              :aria-describedby="`${fieldInputId(field.path)}-description`"
+              @update:model-value="draft[field.path] = String($event ?? '')"
+            >
+              <option
+                v-if="!field.options.includes(String(draft[field.path] ?? ''))"
+                :value="String(draft[field.path] ?? '')"
+              >
+                Выберите значение (сохранено: {{ draft[field.path] ?? 'пусто' }})
+              </option>
+              <option
+                v-for="option in field.options"
+                :key="option"
+                :value="option"
+              >
+                {{ field.option_labels?.[option] ?? option }}
+              </option>
+            </SelectField>
 
             <TextField
               v-else
               :id="fieldInputId(field.path)"
               v-model="draft[field.path]"
+              :error="errors?.[field.path]"
               :type="field.type === 'string' ? 'text' : 'number'"
               :step="field.step ?? (field.type === 'integer' ? 1 : 'any')"
               :min="field.min"
               :max="field.max"
               :class="field.type === 'string' ? 'settings-control--text' : 'settings-control--num text-right'"
               :data-testid="`authority-field-${field.path}`"
+              :aria-describedby="`${fieldInputId(field.path)}-description`"
             />
           </SettingsFieldRow>
         </div>
@@ -124,6 +158,7 @@
 
 <script setup lang="ts">
 import TextField from '@/Components/TextField.vue'
+import SelectField from '@/Components/SelectField.vue'
 
 import { computed, ref, watch } from 'vue'
 import SettingsFieldRow from '@/Components/Settings/SettingsFieldRow.vue'
@@ -137,6 +172,7 @@ const SEARCH_THRESHOLD = 12
 const props = defineProps<{
   sections: SystemSettingsSection[]
   modelValue: Record<string, string | number | boolean | undefined>
+  errors?: Record<string, string>
 }>()
 
 const emit = defineEmits<{
@@ -156,7 +192,9 @@ const visibleSections = computed<SystemSettingsSection[]>(() => {
   }
 
   return props.sections
-    .map((section) => ({ ...section, fields: section.fields.filter((field) => matches(field, query)) }))
+    .map((section) => ({ ...section, fields: section.fields.filter((field) =>
+      [section.label, section.description].some(text => text.toLowerCase().includes(query)) || matches(field, query),
+    ) }))
     .filter((section) => section.fields.length > 0)
 })
 

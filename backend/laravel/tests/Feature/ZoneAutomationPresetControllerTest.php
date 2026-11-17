@@ -406,4 +406,39 @@ class ZoneAutomationPresetControllerTest extends TestCase
             $this->assertNotNull($preset['correction_profile'], "Preset {$preset['slug']} has null correction_profile");
         }
     }
+    public function test_presets_accept_runtime_compatible_irrigation_boundaries(): void
+    {
+        $user = User::factory()->create(['role' => 'admin']);
+        $payload = $this->validPayload();
+        $payload['config']['irrigation']['duration_sec'] = 1;
+        $payload['config']['irrigation']['irrigation_ec_component'] = 'none';
+        $payload['config']['irrigation_decision'] = [
+            'strategy' => 'smart_soil_v1',
+            'config' => ['stale_after_sec' => 30, 'hysteresis_pct' => 80, 'min_samples' => 1],
+        ];
+        $this->actingAs($user)->postJson('/api/zone-automation-presets', $payload)
+            ->assertCreated()
+            ->assertJsonPath('data.config.irrigation.irrigation_ec_component', 'none')
+            ->assertJsonPath('data.config.irrigation_decision.config.stale_after_sec', 30);
+    }
+
+    public function test_invalid_partial_preset_update_does_not_corrupt_saved_configuration(): void
+    {
+        $user = User::factory()->create(['role' => 'admin']);
+        $config = $this->validPayload()['config'];
+        $preset = ZoneAutomationPreset::query()->create([
+            'name' => 'Validation fixture', 'slug' => 'validation-fixture', 'scope' => 'custom',
+            'tanks_count' => 2, 'irrigation_system_type' => 'dwc', 'config' => $config, 'created_by' => $user->id,
+        ]);
+        foreach ([['min_samples' => 0], ['min_samples' => 1.5], ['stale_after_sec' => 29], ['hysteresis_pct' => 101]] as $invalid) {
+            $this->actingAs($user)->putJson("/api/zone-automation-presets/{$preset->id}", [
+                'config' => ['irrigation_decision' => ['config' => $invalid]],
+            ])->assertUnprocessable();
+            $this->assertEquals($config, $preset->fresh()->config);
+        }
+        $this->actingAs($user)->putJson("/api/zone-automation-presets/{$preset->id}", [
+            'config' => ['irrigation' => ['duration_sec' => 3601]],
+        ])->assertUnprocessable();
+    }
+
 }

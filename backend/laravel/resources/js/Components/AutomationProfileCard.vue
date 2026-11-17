@@ -50,20 +50,19 @@
           {{ waterForm.tanksCount }} бака · {{ systemTypeLabel }}
         </div>
         <div class="ui-kpi-hint">
-          {{ waterTopologyLabel }} · Проверка каждые {{ waterForm.diagnosticsIntervalMinutes }} мин
+          {{ waterTopologyLabel }} · {{ waterForm.diagnosticsEnabled ? `Диагностика каждые ${waterForm.diagnosticsIntervalMinutes} мин` : 'Диагностика выключена' }}
         </div>
       </article>
 
       <article class="ui-kpi-card">
         <div class="ui-kpi-label">
-          pH и EC воды
+          Цели активной фазы рецепта
         </div>
         <div class="ui-kpi-value !text-lg">
-          pH {{ waterForm.targetPh.toFixed(2) }} · EC {{ waterForm.targetEc.toFixed(1) }}
+          pH {{ phaseTargets?.ph?.toFixed(2) ?? '—' }} · EC {{ phaseTargets?.ec?.toFixed(2) ?? '—' }}
         </div>
         <div class="ui-kpi-hint">
-          Значения профиля: pH ±{{ phToleranceAbs.toFixed(2) }} ({{ phPct }}%), EC ±{{ ecToleranceAbs.toFixed(2) }} ({{ ecPct }}%).
-          Для цикла действуют цели из рецепта.
+          {{ phaseTargets ? (phaseTargets.phaseLabel ?? 'Текущая фаза') : 'Активная фаза не загружена. Откройте цикл и проверьте его рецепт.' }}
         </div>
       </article>
 
@@ -72,18 +71,25 @@
           Досветка
         </div>
         <div class="ui-kpi-value !text-lg">
-          {{ lightingForm.luxDay }} лк
+          {{ lightingForm.enabled ? `${lightingForm.luxDay} лк` : 'Выключена' }}
         </div>
         <div class="ui-kpi-hint">
           {{ lightingForm.scheduleStart }}–{{ lightingForm.scheduleEnd }} · каждые {{ lightingForm.intervalMinutes }} мин
         </div>
       </article>
     </div>
+    <p class="mt-3 text-xs text-[color:var(--text-muted)]">
+      Условие полива: {{ irrigationStrategyLabel(waterForm.irrigationDecisionStrategy) }}.
+      Проверка каждые {{ waterForm.intervalMinutes }} мин, подача до {{ waterForm.durationSeconds }} сек.
+      {{ waterForm.correctionDuringIrrigation ? (waterForm.irrigationEcComponent === 'none' ? 'Во время полива корректируется только pH.' : 'Во время полива корректируются pH и выбранный компонент EC.') : 'Коррекция раствора во время полива выключена.' }}
+    </p>
   </section>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import type { RecipePhasePidTargets } from '@/composables/recipePhasePidTargets'
+import { irrigationStrategyLabel } from '@/utils/irrigationDecisionView'
 import Badge from '@/Components/Badge.vue'
 import Button from '@/Components/Button.vue'
 import type { LightingFormState, WaterFormState } from '@/composables/zoneAutomationTypes'
@@ -95,6 +101,7 @@ interface Props {
   waterForm: WaterFormState
   lightingForm: LightingFormState
   zoneClimateEnabled?: boolean
+  phaseTargets?: RecipePhasePidTargets | null
 }
 
 const props = defineProps<Props>()
@@ -104,21 +111,4 @@ defineEmits<{
   (e: 'edit'): void
 }>()
 
-const phPct = computed(() => {
-  const raw = Number(props.waterForm.phPct)
-  return Number.isFinite(raw) && raw > 0 ? raw : 5
-})
-
-const ecPct = computed(() => {
-  const raw = Number(props.waterForm.ecPct)
-  return Number.isFinite(raw) && raw > 0 ? raw : 10
-})
-
-const phToleranceAbs = computed(() => {
-  return props.waterForm.targetPh * phPct.value / 100
-})
-
-const ecToleranceAbs = computed(() => {
-  return props.waterForm.targetEc * ecPct.value / 100
-})
 </script>

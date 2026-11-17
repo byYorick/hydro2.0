@@ -30,7 +30,7 @@ class UpdateZoneAutomationPresetRequest extends FormRequest
 
             'config' => ['sometimes', 'array'],
             'config.irrigation' => ['sometimes', 'array'],
-            'config.irrigation.duration_sec' => ['sometimes', 'integer', 'min:10', 'max:86400'],
+            'config.irrigation.duration_sec' => ['sometimes', 'integer', 'min:1', 'max:3600'],
             'config.irrigation.interval_sec' => ['sometimes', 'integer', 'min:60', 'max:86400'],
             'config.irrigation.correction_during_irrigation' => ['sometimes', 'boolean'],
             'config.irrigation.irrigation_ec_component' => ['sometimes', 'string', 'in:none,calcium,npk'],
@@ -39,6 +39,11 @@ class UpdateZoneAutomationPresetRequest extends FormRequest
             'config.irrigation_decision' => ['sometimes', 'array'],
             'config.irrigation_decision.strategy' => ['sometimes', 'string', Rule::in(['task', 'smart_soil_v1'])],
             'config.irrigation_decision.config' => ['nullable', 'array'],
+            'config.irrigation_decision.config.lookback_sec' => ['nullable', 'integer', 'min:60', 'max:86400'],
+            'config.irrigation_decision.config.min_samples' => ['nullable', 'integer', 'min:1', 'max:100'],
+            'config.irrigation_decision.config.stale_after_sec' => ['nullable', 'integer', 'min:30', 'max:86400'],
+            'config.irrigation_decision.config.hysteresis_pct' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'config.irrigation_decision.config.spread_alert_threshold_pct' => ['nullable', 'numeric', 'min:0', 'max:100'],
 
             'config.startup' => ['sometimes', 'array'],
             'config.startup.clean_fill_timeout_sec' => ['sometimes', 'integer', 'min:60', 'max:7200'],

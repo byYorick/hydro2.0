@@ -158,6 +158,7 @@
                     Сохранённые настройки оборудования и полива этой зоны. Климат теплицы настраивается на её странице, цели pH и EC цикла — в рецепте.
                   </p>
                   <AutomationProfileCard
+                    :phase-targets="currentRecipePhaseTargets"
                     :can-configure-automation="canConfigureAutomation"
                     :telemetry-label="telemetryLabel"
                     :water-topology-label="waterTopologyLabel"

@@ -162,6 +162,7 @@ class ZoneAutomationObservabilityService
 
     public function __construct(
         private readonly ObservabilityThresholdRegistry $thresholds,
+        private readonly IrrigationDecisionReadModel $irrigationDecisions,
     ) {}
 
     /**
@@ -170,6 +171,7 @@ class ZoneAutomationObservabilityService
      */
     public function enrichPayload(int $zoneId, array $payload, bool $isStale = false): array
     {
+        $payload['irrigation_decision'] = $this->irrigationDecisions->forZone($zoneId);
         $rawObservability = is_array($payload['observability'] ?? null) ? $payload['observability'] : null;
         $fromAeLive = $rawObservability !== null
             && ! $isStale

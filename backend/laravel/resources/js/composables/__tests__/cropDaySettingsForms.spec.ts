@@ -158,22 +158,30 @@ describe('стратегия smart_soil_v1', () => {
     }
     const wrapper = mount(IrrigationSubview, { props: { waterForm } })
 
-    expect(wrapper.get('[data-testid="irrigation-strategy-caption"]').text()).toContain('без свежей влажности пропускает полив')
-    expect(wrapper.text()).toContain('не помечает задачу сбоем')
+    expect(wrapper.get('[data-testid="irrigation-strategy-caption"]').text()).toContain('без свежих корректных измерений')
+    expect(wrapper.text()).toContain('пропуском полива')
     expect(wrapper.find('[data-testid="irrigation-decision-lookback"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="irrigation-decision-stale"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="irrigation-decision-hysteresis"]').exists()).toBe(true)
   })
 
-  it('при task тоже показывает lookback, stale и hysteresis', () => {
+  it('скрывает неиспользуемые параметры влажности при task и сохраняет их при смене стратегии', async () => {
     const waterForm = {
       ...createDefaultWaterForm(FALLBACK_AUTOMATION_DEFAULTS),
       irrigationDecisionStrategy: 'task' as const,
     }
     const wrapper = mount(IrrigationSubview, { props: { waterForm } })
 
+    expect(wrapper.find('[data-testid="irrigation-decision-lookback"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="irrigation-decision-stale"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="irrigation-decision-hysteresis"]').exists()).toBe(false)
+    const strategy = wrapper.findAll('button').find(button => button.text() === 'По влажности субстрата')
+    if (!strategy) throw new Error('Нужен выбор стратегии по влажности')
+    await strategy.trigger('click')
+    const next = wrapper.emitted('update:waterForm')?.[0]?.[0] as typeof waterForm
+    expect(next).toBeDefined()
+    expect(next.irrigationDecisionLookbackSeconds).toBe(waterForm.irrigationDecisionLookbackSeconds)
+    await wrapper.setProps({ waterForm: { ...next, irrigationDecisionStrategy: 'smart_soil_v1' as const } })
     expect(wrapper.find('[data-testid="irrigation-decision-lookback"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="irrigation-decision-stale"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="irrigation-decision-hysteresis"]').exists()).toBe(true)
   })
 })

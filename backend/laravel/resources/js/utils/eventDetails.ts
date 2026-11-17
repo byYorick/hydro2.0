@@ -13,6 +13,7 @@ import {
   toPayloadRecord,
 } from '@/utils/eventPayload'
 import type { ZoneEvent } from '@/types/ZoneEvent'
+import { irrigationDecisionFacts, irrigationOutcomeLabel, irrigationReasonPresentation, irrigationStrategyLabel } from './irrigationDecisionView'
 
 export interface DetailRow {
   label: string
@@ -159,11 +160,11 @@ function appendIrrigationDecisionConfigRows(rows: DetailRow[], payload: Payload)
   const hysteresisPct = readNumber(config, 'hysteresis_pct')
   const spreadThresholdPct = readNumber(config, 'spread_alert_threshold_pct')
 
-  if (lookbackSec !== null) rows.push(row('Lookback', `${lookbackSec} с`))
-  if (minSamples !== null) rows.push(row('Min samples', String(minSamples)))
-  if (staleAfterSec !== null) rows.push(row('Stale after', `${staleAfterSec} с`))
-  if (hysteresisPct !== null) rows.push(row('Hysteresis', `${hysteresisPct}%`))
-  if (spreadThresholdPct !== null) rows.push(row('Spread alert', `${spreadThresholdPct}%`))
+  if (lookbackSec !== null) rows.push(row('История влажности', `${lookbackSec} с`))
+  if (minSamples !== null) rows.push(row('Желаемое число измерений', String(minSamples)))
+  if (staleAfterSec !== null) rows.push(row('Максимальный возраст измерения', `${staleAfterSec} с`))
+  if (hysteresisPct !== null) rows.push(row('Запас ниже нижней границы', `${hysteresisPct} п.п.`))
+  if (spreadThresholdPct !== null) rows.push(row('Допустимый разброс датчиков', `${spreadThresholdPct} п.п.`))
 }
 
 function buildIrrSnapshot(payload: Payload): Array<{ label: string, value: string }> {
@@ -526,7 +527,7 @@ export function buildEventDetails(event: ZoneEvent): DetailRow[] {
     if (stage) rows.push(row('Стадия', stage))
     if (trigger) rows.push(row('Триггер', trigger))
     if (decisionStrategy) rows.push(row('Strategy', decisionStrategy))
-    if (bundleRevision) rows.push(row('Bundle', bundleRevision.slice(0, 12)))
+    if (bundleRevision) rows.push(row('Версия настроек', bundleRevision.slice(0, 12)))
     appendIrrigationDecisionConfigRows(rows, payload)
   }
   else if (event.kind === 'IRRIGATION_DECISION_SNAPSHOT_LOCKED') {
@@ -536,9 +537,9 @@ export function buildEventDetails(event: ZoneEvent): DetailRow[] {
     const growCycleId = readNumber(payload, 'grow_cycle_id')
     const phaseName = readString(payload, 'phase_name')
     if (taskId !== null) rows.push(row('Задача ID', String(taskId)))
-    if (strategy) rows.push(row('Strategy', strategy))
-    if (bundleRevision) rows.push(row('Bundle', bundleRevision.slice(0, 12)))
-    if (growCycleId !== null) rows.push(row('Cycle ID', String(growCycleId)))
+    if (strategy) rows.push(row('Условие полива', irrigationStrategyLabel(strategy)))
+    if (bundleRevision) rows.push(row('Версия настроек', bundleRevision.slice(0, 12)))
+    if (growCycleId !== null) rows.push(row('Цикл', String(growCycleId)))
     if (phaseName) rows.push(row('Фаза', phaseName))
     appendIrrigationDecisionConfigRows(rows, payload)
   }
@@ -553,27 +554,20 @@ export function buildEventDetails(event: ZoneEvent): DetailRow[] {
       ? degradedValue
       : (typeof degradedValue === 'string' ? degradedValue.toLowerCase() === 'true' : null)
     const nested = toPayloadRecord(payload['details'])
-    const zoneAveragePct = nested ? readNumber(nested, 'zone_average_pct') : null
-    const sensorCount = nested ? readNumber(nested, 'sensor_count') : null
-    const samples = nested ? readNumber(nested, 'samples') : null
-    const spreadPct = nested ? readNumber(nested, 'spread_pct') : null
-    const targetProfile = nested ? readString(nested, 'target_profile') : null
-    const targetMode = nested ? readString(nested, 'target_mode') : null
-    const requestedDurationSec = nested ? readNumber(nested, 'requested_duration_sec') : null
-
     if (taskId !== null) rows.push(row('Задача ID', String(taskId)))
-    if (strategy) rows.push(row('Strategy', strategy))
-    if (outcome) rows.push(row('Решение', outcome))
-    if (reasonCode) rows.push(row('Причина', reasonCode))
-    if (degraded !== null) rows.push(row('Degraded', degraded ? 'да' : 'нет'))
-    if (bundleRevision) rows.push(row('Bundle', bundleRevision.slice(0, 12)))
-    if (zoneAveragePct !== null) rows.push(row('Средняя влажность', `${zoneAveragePct.toFixed(2)}%`))
-    if (sensorCount !== null) rows.push(row('Сенсоров', String(sensorCount)))
-    if (samples !== null) rows.push(row('Сэмплов', String(samples)))
-    if (spreadPct !== null) rows.push(row('Разброс', `${spreadPct.toFixed(2)}%`))
-    if (targetProfile) rows.push(row('Профиль', targetProfile))
-    if (targetMode) rows.push(row('Target mode', targetMode))
-    if (requestedDurationSec !== null) rows.push(row('Запрошено', `${requestedDurationSec} с`))
+    if (strategy) rows.push(row('Условие полива', irrigationStrategyLabel(strategy)))
+    if (outcome) rows.push(row('Решение', irrigationOutcomeLabel(outcome)))
+    if (reasonCode) {
+      const reason = irrigationReasonPresentation(reasonCode)
+      rows.push(row('Причина', reason.explanation))
+      if (reason.action) rows.push(row('Что сделать', reason.action))
+      rows.push(row('Код причины', reasonCode))
+    }
+    if (degraded !== null) rows.push(row('Пониженная достоверность', degraded ? 'да' : 'нет'))
+    if (bundleRevision) rows.push(row('Версия настроек', bundleRevision.slice(0, 12)))
+    for (const fact of irrigationDecisionFacts({ details: nested })) rows.push(row(fact.label, fact.value))
+    const targetMode = nested ? readString(nested, 'target_mode') : null
+    if (targetMode) rows.push(row('Способ выбора цели', targetMode))
   }
   else if (event.kind === 'AE_TASK_FAILED') {
     const taskId = readNumber(payload, 'task_id')

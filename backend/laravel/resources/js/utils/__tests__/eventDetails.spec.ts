@@ -27,11 +27,11 @@ describe('eventDetails', () => {
     })
 
     expect(rows).toEqual(expect.arrayContaining([
-      { label: 'Lookback', value: '1800 с', variant: 'default' },
-      { label: 'Min samples', value: '3', variant: 'default' },
-      { label: 'Stale after', value: '600 с', variant: 'default' },
-      { label: 'Hysteresis', value: '2%', variant: 'default' },
-      { label: 'Spread alert', value: '7%', variant: 'default' },
+      { label: 'История влажности', value: '1800 с', variant: 'default' },
+      { label: 'Желаемое число измерений', value: '3', variant: 'default' },
+      { label: 'Максимальный возраст измерения', value: '600 с', variant: 'default' },
+      { label: 'Запас ниже нижней границы', value: '2 п.п.', variant: 'default' },
+      { label: 'Допустимый разброс датчиков', value: '7 п.п.', variant: 'default' },
     ]))
   })
 

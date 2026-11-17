@@ -28,8 +28,8 @@ class RecipePhaseController extends Controller
             'targets.temp_air' => ['nullable', 'numeric'],
             'targets.humidity_air' => ['nullable', 'numeric', 'between:0,100'],
             'targets.light_hours' => ['nullable', 'integer', 'between:0,24'],
-            'targets.irrigation_interval_sec' => ['nullable', 'integer', 'min:1'],
-            'targets.irrigation_duration_sec' => ['nullable', 'integer', 'min:1'],
+            'targets.irrigation_interval_sec' => ['nullable', 'integer', 'min:1', 'max:86400'],
+            'targets.irrigation_duration_sec' => ['nullable', 'integer', 'min:1', 'max:3600'],
         ]);
         $phase = $this->recipeService->addPhase($recipe, $data);
 
@@ -50,8 +50,8 @@ class RecipePhaseController extends Controller
             'targets.temp_air' => ['nullable', 'numeric'],
             'targets.humidity_air' => ['nullable', 'numeric', 'between:0,100'],
             'targets.light_hours' => ['nullable', 'integer', 'between:0,24'],
-            'targets.irrigation_interval_sec' => ['nullable', 'integer', 'min:1'],
-            'targets.irrigation_duration_sec' => ['nullable', 'integer', 'min:1'],
+            'targets.irrigation_interval_sec' => ['nullable', 'integer', 'min:1', 'max:86400'],
+            'targets.irrigation_duration_sec' => ['nullable', 'integer', 'min:1', 'max:3600'],
         ]);
         $phase = $this->recipeService->updatePhase($recipePhase, $data);
 

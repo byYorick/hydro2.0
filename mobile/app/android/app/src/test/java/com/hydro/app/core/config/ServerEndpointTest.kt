@@ -3,9 +3,21 @@ package com.hydro.app.core.config
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertNotNull
 import org.junit.Test
 
 class ServerEndpointTest {
+    @Test
+    fun settingsFormRejectsAmbiguousAddressAndInvalidPortWithoutRewritingInput() {
+        assertNull(serverHostInputError("hydro.local"))
+        assertNull(serverHostInputError("192.168.1.20"))
+        assertNotNull(serverHostInputError("https://hydro.local:9443/api"))
+        assertNotNull(serverHostInputError("host name"))
+        assertNull(serverPortInputError("8080"))
+        assertNotNull(serverPortInputError("8x080"))
+        assertNotNull(serverPortInputError("65536"))
+    }
     @Test
     fun emulatorDefaultPointsAtHostLoopback() {
         val endpoint = ServerEndpoint.emulatorDefault

@@ -21,7 +21,7 @@ describe('SettingsFieldRow', () => {
     expect(wrapper.get('label').attributes('for')).toBe('field-due-grace')
   })
 
-  it('прячет описание в подсказку, а не в строку', () => {
+  it('показывает объяснение рядом с настройкой и оставляет подробную подсказку', () => {
     const wrapper = mount(SettingsFieldRow, {
       props: {
         label: 'Порог зависания задачи',
@@ -30,7 +30,7 @@ describe('SettingsFieldRow', () => {
       },
     })
 
-    expect(wrapper.text()).not.toContain('После этого времени планировщик закрывает зависшую задачу.')
+    expect(wrapper.text()).toContain('После этого времени планировщик закрывает зависшую задачу.')
     expect(wrapper.get('[data-testid="row-stale-help"]').exists()).toBe(true)
   })
 

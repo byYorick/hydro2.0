@@ -657,6 +657,16 @@ authority-документ `zone.logic_profile` через API `/api/automation-
   - `state_meta.source`: `live | cache`
   - `state_meta.is_stale`: `true` для cache fallback
   - `state_meta.served_at`: timestamp выдачи ответа Laravel
+  - `irrigation_decision`: optional read-only снимок последней задачи `irrigation_start`,
+    включая завершённый skip; `null`, если задач полива ещё не было:
+    - `task_id` (numeric), `task_status`, `current_stage`, `created_at`, `evaluated_at` (UTC ISO8601);
+    - `strategy`, `config`, `bundle_revision` — параметры, зафиксированные в задаче;
+    - `outcome`, `reason_code`, `degraded`, `details` — результат и измерения;
+    - `evaluated_at/details` берутся только из события той же зоны/задачи с
+      совпадающими outcome и reason, не ранее создания задачи. Без совпадения
+      остаются `null`; данные предыдущей задачи и live config не подставляются;
+    - `run` означает разрешение, а не подтверждение подачи воды. Историческое
+      решение не подтверждает текущее состояние оборудования; `state_meta` сохраняет смысл cache/live;
   - `observability.overall_health`: `idle | active | warning | critical`
   - `observability.runtime` (AE3 и/или Laravel DB):
     - `zone_id`, `task_id`, `task_status`, `task_is_active`

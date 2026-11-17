@@ -1,5 +1,8 @@
 // Константы для data-testid значений
 export const TEST_IDS = {
+  SYSTEM_SETTINGS_DISCARD: 'system-settings-discard',
+  SYSTEM_SETTINGS_ERROR: 'system-settings-error',
+  SYSTEM_SETTINGS_DIRTY_COUNT: 'system-settings-dirty-count',
   // Login
   LOGIN_FORM: 'login-form',
   LOGIN_EMAIL: 'login-email',

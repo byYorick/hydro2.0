@@ -6,10 +6,10 @@
     <div class="flex flex-wrap items-center justify-between gap-2">
       <div>
         <h4 class="text-[11px] uppercase tracking-[0.18em] text-[color:var(--text-dim)]">
-          Диагностика FSM
+          Состояние автоматики
         </h4>
         <p class="text-xs text-[color:var(--text-muted)] mt-0.5">
-          Точки риска зависания two-tank workflow и планировщика
+          Текущий этап, причины ожидания и действия при проблемах
         </p>
       </div>
       <Badge :variant="healthBadgeVariant">
@@ -31,7 +31,7 @@
         <dd>{{ stageElapsedLabel }}</dd>
       </div>
       <div class="diag-tile">
-        <dt>Дедлайн этапа</dt>
+        <dt>Срок завершения этапа</dt>
         <dd>{{ deadlineLabel }}</dd>
       </div>
       <div
@@ -40,19 +40,17 @@
       >
         <dt>Коррекция</dt>
         <dd class="font-mono text-[11px]">
-          {{ correctionStep }}
+          {{ correctionDosing?.corrStepLabel ?? stageDiagnosticLabel(correctionStep) }}
         </dd>
         <p class="mt-1 text-[10px] text-[color:var(--text-dim)] leading-relaxed">
-          Успех коррекции: <span class="font-medium">targets_in_tolerance</span> (±%);
-          переход <span class="font-mono">*_stop_to_ready</span>:
-          <span class="font-medium">workflow_ready</span> (explicit min/max).
+          Дозирование завершается, когда pH и EC укладываются в допуски. Готовность раствора к следующему этапу проверяется по границам рецепта.
         </p>
       </div>
       <div
         v-if="topologyLabel"
         class="diag-tile"
       >
-        <dt>Топология</dt>
+        <dt>Схема оборудования</dt>
         <dd class="font-mono text-[11px]">
           {{ topologyLabel }}
         </dd>
@@ -119,7 +117,7 @@
         </div>
         <div v-if="correctionDosing.cooldownLabel">
           <dt class="uppercase tracking-wide opacity-70">
-            Кулдаун / повтор
+            Ожидание до повтора
           </dt>
           <dd class="mt-0.5">
             через {{ correctionDosing.cooldownLabel }}
@@ -131,13 +129,13 @@
           </dt>
           <dd class="mt-0.5">
             <span v-if="correctionDosing.targetsInTolerance !== null">
-              ±%: {{ readinessBoolLabel(correctionDosing.targetsInTolerance) }}
+              В пределах допуска: {{ readinessBoolLabel(correctionDosing.targetsInTolerance) }}
             </span>
             <span
               v-if="correctionDosing.workflowReady !== null"
               :class="correctionDosing.targetsInTolerance !== null ? 'ml-2' : ''"
             >
-              ready: {{ readinessBoolLabel(correctionDosing.workflowReady) }}
+              Раствор готов: {{ readinessBoolLabel(correctionDosing.workflowReady) }}
             </span>
           </dd>
         </div>
@@ -150,7 +148,7 @@
       data-testid="automation-prepare-baseline"
     >
       <p class="font-semibold text-sm text-[color:var(--text-primary)]">
-        Sequential nutrient / baseline
+        Исходная вода и приготовление раствора
       </p>
       <dl
         v-if="prepareBaseline"
@@ -158,7 +156,7 @@
       >
         <div>
           <dt class="uppercase tracking-wide opacity-70">
-            Water EC / pH
+            EC и pH исходной воды
           </dt>
           <dd class="mt-0.5 font-mono">
             {{ formatNullableNumber(prepareBaseline.water_ec) }} /
@@ -167,7 +165,7 @@
         </div>
         <div>
           <dt class="uppercase tracking-wide opacity-70">
-            Budget / target EC
+            Добавка EC / целевая EC
           </dt>
           <dd class="mt-0.5 font-mono">
             {{ formatNullableNumber(prepareBaseline.nutrient_ec_budget) }} /
@@ -179,7 +177,7 @@
           class="col-span-2"
         >
           <dt class="uppercase tracking-wide opacity-70">
-            Ratios
+            Соотношение компонентов
           </dt>
           <dd class="mt-0.5 font-mono break-all">
             {{ ratioSummary }}
@@ -299,67 +297,14 @@
         v-if="failureDiagnostics.isHistoricalFailure"
         class="text-[10px] opacity-80"
       >
-        Активный policy-алерт подтверждён; ниже — данные последнего terminal failure из AE3/БД.
+        Активная тревога подтверждена оператором. Ниже показаны данные последнего завершившегося сбоя.
       </p>
     </div>
 
-    <div
-      v-if="decisionCard"
-      class="rounded-lg border border-[color:var(--border-muted)]/70 bg-[color:var(--bg-elevated)]/55 px-3 py-2.5 text-xs space-y-1.5"
-      data-testid="automation-decision-card"
-    >
-      <div class="flex flex-wrap items-center justify-between gap-2">
-        <p class="font-semibold text-sm text-[color:var(--text-primary)]">
-          Решение полива
-        </p>
-        <Badge
-          v-if="decisionCard.degraded"
-          variant="warning"
-        >
-          degraded
-        </Badge>
-      </div>
-      <dl class="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-[10px]">
-        <div v-if="decisionCard.outcome">
-          <dt class="uppercase tracking-wide text-[color:var(--text-dim)]">
-            Outcome
-          </dt>
-          <dd class="mt-0.5 font-mono text-[color:var(--text-primary)]">
-            {{ decisionCard.outcome }}
-          </dd>
-        </div>
-        <div v-if="decisionCard.strategy">
-          <dt class="uppercase tracking-wide text-[color:var(--text-dim)]">
-            Strategy
-          </dt>
-          <dd class="mt-0.5 font-mono text-[color:var(--text-primary)]">
-            {{ decisionCard.strategy }}
-          </dd>
-        </div>
-        <div
-          v-if="decisionCard.reasonCode"
-          class="sm:col-span-2"
-        >
-          <dt class="uppercase tracking-wide text-[color:var(--text-dim)]">
-            Reason
-          </dt>
-          <dd class="mt-0.5 font-mono text-[color:var(--text-primary)] break-all">
-            {{ decisionCard.reasonCode }}
-          </dd>
-        </div>
-        <div
-          v-if="decisionCard.bundleRevision"
-          class="sm:col-span-2"
-        >
-          <dt class="uppercase tracking-wide text-[color:var(--text-dim)]">
-            Bundle
-          </dt>
-          <dd class="mt-0.5 font-mono text-[10px] text-[color:var(--text-muted)] break-all">
-            {{ decisionCard.bundleRevision }}
-          </dd>
-        </div>
-      </dl>
-    </div>
+    <IrrigationDecisionCard
+      :decision="automationState?.irrigation_decision ?? automationState?.decision ?? null"
+      :is-stale="automationState?.state_meta?.is_stale"
+    />
 
     <div
       v-if="causalStrip"
@@ -482,6 +427,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { router } from '@inertiajs/vue3'
 import Badge from '@/Components/Badge.vue'
+import IrrigationDecisionCard from './IrrigationDecisionCard.vue'
 import SchedulerDispatchMetricsStrip from '@/Components/ZoneAutomation/SchedulerDispatchMetricsStrip.vue'
 import type { AutomationObservability, AutomationState } from '@/types/Automation'
 import {
@@ -530,30 +476,6 @@ const failureDiagnostics = computed(() => resolveAutomationFailureDiagnostics(
   props.automationState,
   observability.value,
 ))
-
-const decisionCard = computed(() => {
-  const decision = props.automationState?.decision
-  if (!decision || typeof decision !== 'object') {
-    return null
-  }
-  const outcome = typeof decision.outcome === 'string' && decision.outcome.trim() !== ''
-    ? decision.outcome.trim()
-    : null
-  const strategy = typeof decision.strategy === 'string' && decision.strategy.trim() !== ''
-    ? decision.strategy.trim()
-    : null
-  const reasonCode = typeof decision.reason_code === 'string' && decision.reason_code.trim() !== ''
-    ? decision.reason_code.trim()
-    : null
-  const bundleRevision = typeof decision.bundle_revision === 'string' && decision.bundle_revision.trim() !== ''
-    ? decision.bundle_revision.trim()
-    : null
-  const degraded = decision.degraded === true
-  if (!outcome && !strategy && !reasonCode && !bundleRevision && !degraded) {
-    return null
-  }
-  return { outcome, strategy, reasonCode, bundleRevision, degraded }
-})
 
 function toPositiveId(value: unknown): number | null {
   const parsed = typeof value === 'number' ? value : Number(value)
@@ -725,9 +647,9 @@ const taskStatusLabel = computed(() => {
     return runtime?.task_is_active ? 'активна' : 'нет активной задачи'
   }
   if (runtime.waiting_command) {
-    return `${runtime.task_status} (ожидание команды)`
+    return 'Ожидание подтверждения команды оборудованием'
   }
-  return runtime.task_status
+  return ({ pending: 'Ожидает запуска', claimed: 'Принята к выполнению', running: 'Выполняется', completed: 'Завершена', failed: 'Завершена с ошибкой', cancelled: 'Отменена' } as Record<string, string>)[runtime.task_status] ?? 'Статус неизвестен'
 })
 
 const stageElapsedLabel = computed(() => {
@@ -781,7 +703,10 @@ const topologyLabel = computed(() => {
   if (typeof topology !== 'string' || topology.trim() === '') {
     return null
   }
-  return topology.trim()
+  if (topology.startsWith('two_tank')) return 'Двухбаковая система'
+  if (topology.startsWith('single_tank')) return 'Однобаковая система'
+  if (topology.startsWith('three_tank')) return 'Трёхбаковая система'
+  return 'Схема не распознана'
 })
 
 const pendingManualStepLabel = computed(() => {
@@ -789,7 +714,7 @@ const pendingManualStepLabel = computed(() => {
   if (typeof step !== 'string' || step.trim() === '') {
     return null
   }
-  return step.trim()
+  return stageDiagnosticLabel(step.trim())
 })
 
 const taskIdLabel = computed(() => {

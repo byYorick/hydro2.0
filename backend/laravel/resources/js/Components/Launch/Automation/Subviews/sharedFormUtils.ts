@@ -30,7 +30,7 @@ export function createMetaResolver<T extends object>(
 
     return {
       ...base,
-      details: `${originalName}: ${base.details}`,
+      details: base.details,
     }
   }
 }

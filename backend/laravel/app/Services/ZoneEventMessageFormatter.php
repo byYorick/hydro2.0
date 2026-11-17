@@ -318,17 +318,17 @@ class ZoneEventMessageFormatter
 
     private function formatIrrigationDecisionSnapshotLocked(array $details): string
     {
-        $strategy = $this->toStringOrNull($details['strategy'] ?? null) ?? 'task';
+        $strategy = $this->irrigationStrategyLabel($this->toStringOrNull($details['strategy'] ?? null) ?? 'task');
         $bundleRevision = $this->toStringOrNull($details['bundle_revision'] ?? null);
         if ($bundleRevision !== null) {
             return sprintf(
-                'Снимок decision-controller полива зафиксирован: %s (%s)',
+                'Настройки полива зафиксированы: %s (%s)',
                 $strategy,
                 substr($bundleRevision, 0, 12)
             );
         }
 
-        return sprintf('Снимок decision-controller полива зафиксирован: %s', $strategy);
+        return sprintf('Настройки полива зафиксированы: %s', $strategy);
     }
 
     private function formatIrrigationDecisionEvaluated(array $details): string
@@ -338,24 +338,33 @@ class ZoneEventMessageFormatter
         $degraded = filter_var($details['degraded'] ?? false, FILTER_VALIDATE_BOOL);
 
         $base = match ($outcome) {
-            'skip' => 'Decision-controller полива: полив пропущен',
-            'degraded_run' => 'Decision-controller полива: разрешён деградированный полив',
-            'fail' => 'Decision-controller полива: решение завершилось fail-closed',
-            'run' => 'Decision-controller полива: полив разрешён',
-            default => 'Decision-controller полива: решение принято',
+            'skip' => 'Полив пропущен',
+            'degraded_run' => 'Полив разрешён с пониженной достоверностью данных',
+            'fail' => 'Полив не разрешён: ошибка проверки условий',
+            'run' => 'Полив разрешён',
+            default => 'Результат решения о поливе неизвестен',
         };
 
         $parts = [];
         if ($strategy !== null) {
-            $parts[] = $strategy;
+            $parts[] = $this->irrigationStrategyLabel($strategy);
         }
         if ($degraded && $outcome !== 'degraded_run') {
-            $parts[] = 'degraded';
+            $parts[] = 'пониженная достоверность данных';
         }
 
         return $parts !== []
             ? sprintf('%s (%s)', $base, implode(', ', $parts))
             : $base;
+    }
+
+    private function irrigationStrategyLabel(string $strategy): string
+    {
+        return match ($strategy) {
+            'task', 'schedule' => 'по расписанию',
+            'smart_soil_v1' => 'по влажности субстрата',
+            default => 'неизвестное условие полива',
+        };
     }
 
     private function formatAlertUpdated(array $details): string

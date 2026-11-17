@@ -261,6 +261,25 @@ export function validateForms(forms: Pick<ZoneAutomationForms, 'climateForm' | '
     return 'Укажите корректное время окна заполнения (формат HH:MM, 00:00–23:59).'
   }
 
+  const numericFields = [
+    ['intervalMinutes', 'Интервал полива', 1, 1440, true],
+    ['durationSeconds', 'Длительность полива', 1, 3600, true],
+    ...(waterForm.irrigationDecisionStrategy === 'smart_soil_v1' ? [
+      ['irrigationDecisionLookbackSeconds', 'История влажности', 60, 86400, true],
+      ['irrigationDecisionMinSamples', 'Желаемое число измерений', 1, 100, true],
+      ['irrigationDecisionStaleAfterSeconds', 'Максимальный возраст измерения', 30, 86400, true],
+      ['irrigationDecisionHysteresisPct', 'Запас ниже нижней границы влажности', 0, 100, false],
+      ['irrigationDecisionSpreadAlertThresholdPct', 'Допустимый разброс датчиков', 0, 100, false],
+    ] : []),
+  ] as Array<[keyof typeof waterForm, string, number, number, boolean]>
+  for (const [key, label, min, max, integer] of numericFields) {
+    const value = waterForm[key]
+    if (value === undefined) continue
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < min || value > max || (integer && !Number.isInteger(value))) {
+      return `${label}: введите ${integer ? 'целое число' : 'число'} от ${min} до ${max}.`
+    }
+  }
+
   return null
 }
 
@@ -278,7 +297,7 @@ export function buildGrowthCycleConfigPayload(
   const includeSystemType = options?.includeSystemType ?? true
   const includeClimateSubsystem = options?.includeClimateSubsystem ?? true
   const automationDefaults = options?.automationDefaults ?? FALLBACK_AUTOMATION_DEFAULTS
-  const irrigationIntervalMinutes = clamp(Math.round(waterForm.intervalMinutes), 5, 1440)
+  const irrigationIntervalMinutes = clamp(Math.round(waterForm.intervalMinutes), 1, 1440)
   const irrigationDurationSeconds = clamp(Math.round(waterForm.durationSeconds), 1, 3600)
   const climateIntervalSec = clamp(Math.round(climateForm.intervalMinutes * 60), 60, 86400)
   const lightingIntervalSec = clamp(Math.round(lightingForm.intervalMinutes * 60), 60, 86400)
@@ -532,9 +551,7 @@ export function buildGrowthCycleConfigPayload(
     irrigation_batch_l: clamp(Math.round(waterForm.irrigationBatchL), 1, 500),
     valve_switching_enabled: waterForm.valveSwitching,
     correction_during_irrigation: waterForm.correctionDuringIrrigation,
-    irrigation_ec_component: waterForm.correctionDuringIrrigation
-      ? (waterForm.irrigationEcComponent === 'npk' ? 'npk' : 'calcium')
-      : (waterForm.irrigationEcComponent ?? 'none'),
+    irrigation_ec_component: waterForm.irrigationEcComponent ?? 'none',
     fill_temperature_c: clamp(waterForm.fillTemperatureC, 5, 35),
     schedule: [
       {

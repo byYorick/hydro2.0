@@ -102,7 +102,21 @@ export interface AutomationState {
     is_stale?: boolean
     served_at?: string
   } | null
-  decision?: {
+  irrigation_decision?: IrrigationDecisionEvidence | null
+  decision?: IrrigationDecisionEvidence | null
+  /** Read-model суток. Клиент эти числа не пересчитывает. */
+  day_balance?: ZoneDayBalance | null
+  /** Снимок `greenhouse_automation_state.decision_factors`, если он уже вложен в состояние зоны. */
+  decision_factors?: Record<string, unknown> | null
+  observability?: AutomationObservability | null
+}
+
+export interface IrrigationDecisionEvidence {
+    task_id?: number | null
+    task_status?: string | null
+    current_stage?: string | null
+    created_at?: string | null
+    evaluated_at?: string | null
     outcome?: string | null
     reason_code?: string | null
     strategy?: string | null
@@ -111,12 +125,7 @@ export interface AutomationState {
     degraded?: boolean | null
     /** Уже посчитанные factors климатического тика, если они пришли в состоянии. */
     factors?: Record<string, unknown> | null
-  } | null
-  /** Read-model суток. Клиент эти числа не пересчитывает. */
-  day_balance?: ZoneDayBalance | null
-  /** Снимок `greenhouse_automation_state.decision_factors`, если он уже вложен в состояние зоны. */
-  decision_factors?: Record<string, unknown> | null
-  observability?: AutomationObservability | null
+    details?: Record<string, unknown> | null
 }
 
 export interface ZoneDayBalance {

@@ -118,9 +118,11 @@ watch(
 )
 
 const describedBy = computed(() => {
-  if (props.error) return errorId
-  if (props.hint) return hintId
-  return undefined
+  const ids = [
+    props.error ? errorId : (props.hint ? hintId : null),
+    typeof attrs['aria-describedby'] === 'string' ? attrs['aria-describedby'] : null,
+  ].filter(Boolean)
+  return ids.length ? ids.join(' ') : undefined
 })
 
 const rootClass = computed(() => [

@@ -17,7 +17,7 @@
           :variant="smart ? 'primary' : 'secondary'"
           @click="upd('irrigationDecisionStrategy', 'smart_soil_v1')"
         >
-          SMART soil v1
+          По влажности субстрата
         </Button>
       </div>
     </div>
@@ -26,7 +26,9 @@
       data-testid="irrigation-strategy-caption"
       class="m-0 text-xs leading-snug text-[var(--text-muted)]"
     >
-      task поливает по расписанию. smart_soil_v1 без свежей влажности пропускает полив и не помечает задачу сбоем.
+      {{ smart
+        ? 'По расписанию система проверяет влажность всех активных датчиков. Полив разрешается ниже порога из рецепта; без свежих корректных измерений проверка заканчивается пропуском полива.'
+        : 'Полив запускается по расписанию без проверки влажности субстрата. Аварийная остановка, ограничения уровня и температурная защита продолжают действовать.' }}
     </p>
 
     <div class="grid grid-cols-1 md:grid-cols-3 gap-2.5 items-center">
@@ -71,20 +73,29 @@
           :model-value="ecComponentSelectValue"
           @change="onEcComponentChange"
         >
+          <option value="none">
+            Только pH, без коррекции EC
+          </option>
           <option value="calcium">
-            Кальций (pump_b)
+            pH и кальций
           </option>
           <option value="npk">
-            NPK (pump_a)
+            pH и NPK
           </option>
         </SelectField>
       </Field>
     </div>
 
-    <div class="text-[10px] font-bold uppercase tracking-widest text-[var(--text-dim)] pb-1 border-b border-dashed border-[var(--border-muted)]">
-      Окно влажности
+    <div
+      v-if="smart"
+      class="text-[10px] font-bold uppercase tracking-widest text-[var(--text-dim)] pb-1 border-b border-dashed border-[var(--border-muted)]"
+    >
+      Данные влажности для решения
     </div>
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-2.5">
+    <div
+      v-if="smart"
+      class="grid grid-cols-1 md:grid-cols-3 gap-2.5"
+    >
       <Field
         :label="meta('irrigationDecisionLookbackSeconds').label"
         :hint="meta('irrigationDecisionLookbackSeconds').hint"
@@ -150,7 +161,7 @@
     </template>
 
     <div class="text-[10px] font-bold uppercase tracking-widest text-[var(--text-dim)] pb-1 border-b border-dashed border-[var(--border-muted)]">
-      Повторы setup
+      Повтор полива после подготовки раствора
     </div>
     <div class="grid grid-cols-1 md:grid-cols-3 gap-2.5 items-center">
       <Field
@@ -173,7 +184,7 @@
     </div>
 
     <Hint :show="showHints">
-      Коррекция на поливе — всегда pH и EC; для EC выбирается кальций или NPK.
+      При включённой коррекции pH проверяется всегда. Коррекцию EC можно отключить или выбрать кальций либо NPK.
     </Hint>
   </div>
 </template>
@@ -201,7 +212,7 @@ const smart = computed(
 
 const ecComponentSelectValue = computed(() => {
   const raw = props.waterForm.irrigationEcComponent
-  return raw === 'npk' ? 'npk' : 'calcium'
+  return raw === 'npk' || raw === 'calcium' ? raw : 'none'
 })
 
 const numAttrs = { type: 'number' }
@@ -218,49 +229,49 @@ const IRRIGATION_FIELD_META: Partial<Record<keyof WaterFormState, FieldMeta>> = 
     details: 'Сколько секунд длится один запуск полива.',
   },
   correctionDuringIrrigation: {
-    label: 'Коррекция pH+EC во время полива',
-    hint: 'pH и один EC-компонент',
-    details: 'Во время полива корректируются pH и EC. EC-компонент выбирается отдельно: кальций или NPK.',
+    label: 'Коррекция раствора во время полива',
+    hint: 'pH и, по выбору, EC',
+    details: 'Контролировать pH во время полива. Коррекция EC включается отдельно выбором кальция или NPK.',
   },
   irrigationEcComponent: {
     label: 'EC-компонент на поливе',
-    hint: 'calcium или npk',
-    details: 'Кальций (pump_b → T_ca) или NPK (pump_a → T_ca_mg_npk). pH корректируется всегда вместе с выбранным EC.',
+    hint: 'Только pH, кальций или NPK',
+    details: '«Только pH» сохраняет EC без коррекции. Для коррекции EC выберите кальций или NPK; pH проверяется в любом из этих режимов.',
   },
   irrigationAutoReplayAfterSetup: {
-    label: 'Автоповтор полива после setup',
+    label: 'Повторить полив после подготовки раствора',
     hint: 'Автовосстановление цикла',
-    details: 'После восстановления setup полив может автоматически повториться без ручного старта.',
+    details: 'После восстановления уровня и подготовки раствора полив может повториться автоматически в пределах заданного числа повторов.',
   },
   irrigationDecisionLookbackSeconds: {
-    label: 'Окно анализа SMART, сек',
+    label: 'История влажности, сек',
     hint: 'Глубина выборки датчиков',
-    details: 'За какой период SMART-algorithm анализирует данные влажности перед решением о поливе.',
+    details: 'За какой период брать корректные измерения влажности перед решением о поливе.',
   },
   irrigationDecisionMinSamples: {
-    label: 'Минимум измерений SMART',
+    label: 'Желаемое число измерений',
     hint: 'Порог качества данных',
-    details: 'Минимальное число валидных samples для принятия SMART-решения.',
+    details: 'Если корректных свежих измерений меньше этого числа, решение всё равно принимается, но с предупреждением о пониженной достоверности. Это не запрет полива.',
   },
   irrigationDecisionStaleAfterSeconds: {
-    label: 'Устаревание данных SMART, сек',
+    label: 'Максимальный возраст измерения, сек',
     hint: 'Макс. возраст данных',
-    details: 'После этого времени данные считаются устаревшими: smart_soil_v1 пропускает полив и не помечает задачу сбоем.',
+    details: 'Если у любого активного датчика нет свежих корректных данных, полив по влажности пропускается. Задача не считается аварийной.',
   },
   irrigationDecisionHysteresisPct: {
-    label: 'Гистерезис SMART, %',
+    label: 'Запас ниже нижней границы, п.п.',
     hint: 'Защита от дрожания решения',
-    details: 'Снижает частые переключения решения около порога влажности.',
+    details: 'Полив разрешается ниже нижней границы влажности минус этот запас. Например: граница 40%, запас 2 п.п. — разрешение при влажности ниже 38%.',
   },
   irrigationDecisionSpreadAlertThresholdPct: {
-    label: 'Порог разброса датчиков, %',
+    label: 'Допустимый разброс датчиков, п.п.',
     hint: 'Алерт на расхождение сенсоров',
-    details: 'Если разброс влажности между сенсорами выше порога, генерируется диагностический сигнал.',
+    details: 'Если разница между средними показаниями датчиков выше порога, появляется предупреждение. Само предупреждение не запрещает полив.',
   },
   irrigationMaxSetupReplays: {
-    label: 'Макс. повторов setup',
+    label: 'Максимум повторов полива после подготовки',
     hint: 'Лимит перезапуска подготовки',
-    details: 'Ограничивает число повторных setup-проходов до блокировки сценария.',
+    details: 'Сколько раз автоматически повторять полив после восстановления уровня и подготовки раствора.',
   },
 }
 const meta = createMetaResolver<WaterFormState>(IRRIGATION_FIELD_META, {
@@ -279,14 +290,14 @@ function onCorrectionToggle(enabled: boolean) {
     correctionDuringIrrigation: enabled,
   }
   if (enabled && next.irrigationEcComponent !== 'npk' && next.irrigationEcComponent !== 'calcium') {
-    next.irrigationEcComponent = 'calcium'
+    next.irrigationEcComponent = 'none'
   }
   emit('update:waterForm', next)
 }
 
 function onEcComponentChange(event: Event) {
   const value = (event.target as HTMLSelectElement).value
-  if (value === 'calcium' || value === 'npk') {
+  if (value === 'none' || value === 'calcium' || value === 'npk') {
     upd('irrigationEcComponent', value)
   }
 }

@@ -29,6 +29,52 @@ fun levelReading(samples: List<NodeTelemetrySample>): LevelReading? {
 
 enum class StatusTone { Ok, Warning, Critical, Offline, Unknown }
 
+fun operatorStatusLabel(raw: String?): String = when (raw?.trim()?.lowercase()) {
+    null, "", "—" -> "Нет данных"
+    "ok", "healthy", "normal" -> "Норма"
+    "online" -> "На связи"
+    "offline", "disconnected", "lost" -> "Нет связи"
+    "active" -> "Активно"
+    "running" -> "Выполняется"
+    "ready" -> "Готово"
+    "idle" -> "Ожидание"
+    "paused" -> "Пауза"
+    "stopped" -> "Остановлено"
+    "warning", "degraded" -> "Требует внимания"
+    "critical", "alarm", "alert" -> "Тревога"
+    "error", "failed" -> "Ошибка"
+    "estop", "emergency" -> "Аварийная остановка"
+    "auto" -> "Автоматический режим"
+    "semi" -> "Полуавтоматический режим"
+    "manual" -> "Ручной режим"
+    "info" -> "Информация"
+    "resolved", "closed" -> "Закрыто"
+    "pending" -> "Ожидает обработки"
+    "configured" -> "Настроено"
+    "configuring", "provisioning" -> "Настраивается"
+    "unprovisioned" -> "Не настроено"
+    "registered" -> "Зарегистрировано"
+    else -> if (raw.orEmpty().any { it in '\u0400'..'\u04ff' }) raw.orEmpty() else "Статус неизвестен"
+}
+
+fun operatorStageLabel(raw: String): String = when (raw.lowercase()) {
+    "idle" -> "Ожидание"
+    "ready", "complete_ready" -> "Готовность к поливу"
+    "startup", "preparing", "setup_pending" -> "Подготовка системы"
+    "clean_fill_start", "clean_fill", "clean_fill_check" -> "Набор чистой воды"
+    "solution_fill_start", "solution_fill", "solution_fill_check", "tank_filling" -> "Набор раствора"
+    "prepare_recirculation_start", "prepare_recirculation_check", "tank_recirc" -> "Перемешивание и подготовка раствора"
+    "await_ready" -> "Ожидание готовности раствора"
+    "decision_gate" -> "Проверка условий полива"
+    "irrigation_start", "irrigation_check", "irrigating" -> "Полив"
+    "irrigation_stop" -> "Остановка полива"
+    "irrigation_recovery_check", "irrig_recirc" -> "Восстановление после полива"
+    "completed_skip" -> "Полив пропущен"
+    "manual_hold" -> "Ожидание действия оператора"
+    "failed", "error" -> "Остановка из-за ошибки"
+    else -> if (raw.any { it in '\u0400'..'\u04ff' }) raw else "Этап не распознан"
+}
+
 fun statusTone(raw: String?): StatusTone {
     val value = raw?.trim()?.lowercase().orEmpty()
     return when (value) {

@@ -41,6 +41,21 @@ data class ServerEndpoint(
     }
 }
 
+/** Form validation keeps pasted input intact instead of guessing another address. */
+fun serverHostInputError(raw: String): String? {
+    val host = raw.trim()
+    if (host.isEmpty()) return "Укажите имя сервера или IPv4-адрес"
+    if (host.any { !it.isLetterOrDigit() && it !in "._-" }) {
+        return "Введите только домен или IPv4-адрес. Протокол и порт задаются отдельно."
+    }
+    return null
+}
+
+fun serverPortInputError(raw: String): String? {
+    val port = raw.trim().toIntOrNull() ?: return "Укажите целый номер порта"
+    return if (port in 1..65535) null else "Порт должен быть от 1 до 65535"
+}
+
 /**
  * Cleartext HTTP разрешён только в debug-сборке или при явном флаге `hydro.allowCleartext=true`.
  */
