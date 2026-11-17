@@ -45,16 +45,18 @@
       </SelectField>
     </div>
 
-    <div class="overflow-x-auto">
+    <p class="mb-2 text-xs text-[color:var(--text-muted)]">
+      Последние полученные запуски; поиск и фильтры действуют на эту выборку. Завершение без ошибки может означать штатный пропуск полива.
+    </p>
+    <div class="min-w-0">
       <div
-        class="grid min-w-[650px] rounded-t-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-main)]/20 px-2 py-1.5 text-[10px] uppercase tracking-[0.08em] text-[color:var(--text-muted)]"
-        :style="gridStyle"
+        class="runs-heading rounded-t-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-main)]/20 px-2 py-1.5 text-[10px] uppercase tracking-[0.08em] text-[color:var(--text-muted)]"
       >
         <span>ID</span>
         <span>Задача</span>
         <span>Решение</span>
         <span>Статус</span>
-        <span>Время</span>
+        <span>Время задачи, мин:сек</span>
         <span class="sr-only">Выбор</span>
       </div>
 
@@ -69,22 +71,24 @@
         v-for="run in visibleRuns"
         :key="run.execution_id"
         type="button"
-        class="row-hover grid min-w-[650px] w-full items-center gap-0 border-0 bg-transparent px-2 py-2 text-left text-[color:var(--text-primary)] transition-colors"
+        class="row-hover runs-row w-full items-center gap-0 border-0 bg-transparent px-2 py-2 text-left text-[color:var(--text-primary)] transition-colors"
         :class="run.execution_id === selectedId ? 'bg-[color:var(--status-info)]/10' : ''"
         :style="{
-          ...gridStyle,
           borderLeft: `3px solid ${railColor(run)}`,
         }"
         :data-testid="`scheduler-runs-row-${run.execution_id}`"
         :data-selected="run.execution_id === selectedId"
         @click="$emit('select', run.execution_id)"
       >
-        <span class="font-mono text-[11px] font-semibold">#{{ run.execution_id }}</span>
+        <span class="font-mono text-[11px] font-semibold">#{{ run.execution_id }}<span class="block text-[10px] font-normal text-[color:var(--text-muted)]">{{ formatDateTime(run.created_at ?? run.accepted_at) }}</span></span>
         <span class="truncate text-[11px] text-[color:var(--text-dim)]">
           {{ laneLabel(run.schedule_task_type ?? run.task_type) }}
         </span>
         <span class="min-w-0 text-[11px] font-medium">
-          <span class="block truncate">{{ decisionLabel(run) }}</span>
+          <span
+            class="block break-words"
+            :title="decisionLabel(run)"
+          >{{ decisionLabel(run) }}</span>
           <span
             v-if="chemistryLabel(run)"
             class="mt-0.5 block truncate text-[10px]"
@@ -112,7 +116,8 @@ import { computed, ref, watch } from 'vue'
 import Badge from '@/Components/Badge.vue'
 import TextField from '@/Components/TextField.vue'
 import SelectField from '@/Components/SelectField.vue'
-import { statusLabel } from '@/utils/schedulerLabels'
+import { statusLabel, formatDateTime } from '@/utils/schedulerLabels'
+import { executionDecisionLabel } from '@/utils/schedulerPresentation'
 import type { ExecutionRun } from '@/composables/zoneScheduleWorkspaceTypes'
 
 interface Props {
@@ -127,11 +132,7 @@ interface Props {
 const props = withDefaults(defineProps<Props>(), {
   selectedId: null,
   laneLabel: (value: string | null | undefined) => value ?? '—',
-  decisionLabel: (run: ExecutionRun) => {
-    const outcome = String(run.decision_outcome ?? run.status ?? '').toUpperCase()
-    const reason = run.decision_reason_code ? ` · ${run.decision_reason_code}` : ''
-    return outcome ? `${outcome}${reason}` : 'UNKNOWN'
-  },
+  decisionLabel: executionDecisionLabel,
   formatDuration: undefined,
   showFilters: false,
 })
@@ -146,32 +147,28 @@ const visibleRuns = computed(() => props.runs.filter(run => {
   if (!props.showFilters) return true
   const status = String(run.status).toLowerCase()
   if (statusFilter.value === 'active' && !run.is_active) return false
-  if (statusFilter.value === 'failed' && !['failed', 'fail', 'error'].includes(status)) return false
+  if (statusFilter.value === 'failed' && !['failed', 'fail', 'error', 'cancelled'].includes(status)) return false
   if (statusFilter.value === 'completed' && !['completed', 'complete', 'done'].includes(status)) return false
   const term = query.value.trim().toLocaleLowerCase('ru')
-  return !term || [run.execution_id, props.laneLabel(run.schedule_task_type ?? run.task_type), props.decisionLabel(run), run.error_code, run.human_error_message].some(value => String(value ?? '').toLocaleLowerCase('ru').includes(term))
+  return !term || [run.execution_id, props.laneLabel(run.schedule_task_type ?? run.task_type), props.decisionLabel(run), run.decision_reason_code, run.error_code, run.human_error_message].some(value => String(value ?? '').toLocaleLowerCase('ru').includes(term))
 }))
 watch(visibleRuns, runs => emit('visible-runs', runs), { immediate: true })
-
-const gridStyle = computed(() => ({
-  gridTemplateColumns: '80px 120px minmax(0, 1fr) 140px 60px 20px',
-}))
 
 function railColor(run: ExecutionRun): string {
   const status = String(run.status ?? '').toLowerCase()
   if (run.is_active || status === 'running') return 'var(--status-info)'
-  if (status === 'failed' || status === 'fail' || status === 'error') return 'var(--status-critical)'
-  if (run.chemistry_outcome === 'targets_not_achieved' || run.chemistry_outcome === 'unknown') return 'var(--status-warning)'
+  if (status === 'failed' || status === 'fail' || status === 'error' || status === 'cancelled') return 'var(--status-critical)'
+  if (run.chemistry_outcome === 'targets_not_achieved' || run.chemistry_outcome === 'unknown' || run.chemistry_outcome === 'failed') return 'var(--status-warning)'
   if (status === 'completed' || status === 'complete' || status === 'done') return 'var(--status-ok)'
   if (status === 'skipped' || status === 'skip') return 'var(--text-dim)'
   return 'var(--border-muted)'
 }
 
 function chemistryLabel(run: ExecutionRun): string {
-  if (run.chemistry_outcome === 'targets_achieved') return 'Химия: цели достигнуты'
-  if (run.chemistry_outcome === 'targets_not_achieved') return 'Химия: цели не достигнуты'
-  if (run.chemistry_outcome === 'unknown') return 'Химия: результат не подтверждён'
-  if (run.chemistry_outcome === 'failed') return 'Химия: ошибка коррекции'
+  if (run.chemistry_outcome === 'targets_achieved') return 'pH/EC: цели достигнуты'
+  if (run.chemistry_outcome === 'targets_not_achieved') return 'pH/EC: цели не достигнуты'
+  if (run.chemistry_outcome === 'unknown') return 'pH/EC: результат не подтверждён'
+  if (run.chemistry_outcome === 'failed') return 'pH/EC: ошибка коррекции'
   return ''
 }
 
@@ -184,7 +181,9 @@ function chemistryClass(run: ExecutionRun): string {
 function durationLabel(run: ExecutionRun): string {
   if (props.formatDuration) return props.formatDuration(run)
   const start = run.accepted_at ?? run.created_at
-  const end = run.completed_at ?? run.updated_at
+  if (run.is_active) return 'В работе'
+  const terminal = ['completed', 'failed', 'cancelled', 'skipped'].includes(String(run.status).toLowerCase())
+  const end = run.completed_at ?? (terminal ? run.updated_at : null)
   if (!start || !end) return '—'
   const diffMs = new Date(end).getTime() - new Date(start).getTime()
   if (!Number.isFinite(diffMs) || diffMs < 0) return '—'
@@ -197,7 +196,17 @@ function durationLabel(run: ExecutionRun): string {
 
 <style scoped>
 .recent-runs-card {
+  container: scheduler-history / inline-size;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.runs-heading { display: none; }
+.runs-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@container scheduler-history (min-width: 650px) {
+  .runs-heading, .runs-row {
+    display: grid;
+    grid-template-columns: 80px 120px minmax(0, 1fr) 140px 90px 20px;
+  }
 }
 
 .row-hover:hover {

@@ -46,7 +46,7 @@ describe('manualSchedulePreview', () => {
   it('rejects duration below backend minimum', () => {
     const errors = collectManualScheduleFormErrors({
       ...baseTimeForm,
-      payload: { duration_sec: 5 },
+      payload: { duration_sec: 0 },
     })
     expect(errors['payload.duration_sec']?.[0]).toContain(String(MANUAL_SCHEDULE_LIMITS.durationSec.min))
   })
@@ -92,4 +92,12 @@ describe('manualSchedulePreview', () => {
     })
     expect(triggers).toEqual([])
   })
+})
+
+it('rejects fractional seconds and durations outside executor bounds', () => {
+  for (const seconds of [1.5, 3601]) {
+    const errors = collectManualScheduleFormErrors({ task_type: 'irrigation', schedule_kind: 'time', time_at: '08:00', payload: { duration_sec: seconds } })
+    expect(errors['payload.duration_sec']).toBeDefined()
+  }
+  expect(collectManualScheduleFormErrors({ task_type: 'irrigation', schedule_kind: 'time', time_at: '08:00', payload: { duration_sec: 1 } })).toEqual({})
 })

@@ -1,3 +1,4 @@
+import { irrigationOutcomeLabel } from './irrigationDecisionView'
 import { formatRelativeUtc } from '@/utils/manualSchedulePreview'
 
 export function formatDateTime(value: string | null | undefined): string {
@@ -29,8 +30,9 @@ export function statusVariant(status: string | null | undefined): 'success' | 'w
 export function controlModeLabel(controlMode: string | null | undefined): string {
   const normalized = String(controlMode ?? '').trim().toLowerCase()
   if (normalized === 'manual') return 'ручной'
-  if (normalized === 'semi') return 'полуавто'
-  return 'авто'
+  if (normalized === 'semi') return 'полуавтоматический'
+  if (normalized === 'auto') return 'автоматический'
+  return 'режим неизвестен'
 }
 
 export function laneLabel(taskType: string | null | undefined): string {
@@ -41,16 +43,14 @@ export function laneLabel(taskType: string | null | undefined): string {
   if (normalized === 'solution_change') return 'Смена раствора'
   if (normalized === 'diagnostics') return 'Диагностика'
   if (normalized === 'mist') return 'Туман'
-  return normalized || '—'
+  const other: Record<string, string> = { irrigation_start: 'Полив', irrigation_tick: 'Полив', lighting_tick: 'Свет', cycle_start: 'Подготовка системы', solution_topup: 'Пополнение раствора', ph_correction: 'Коррекция pH', ec_correction: 'Коррекция EC' }
+  return other[normalized] ?? 'Тип задачи не распознан'
 }
 
 export function decisionLabel(outcome: string | null | undefined, degraded: boolean | null | undefined): string {
   const normalized = String(outcome ?? '').trim().toLowerCase()
-  if (normalized === 'skip') return 'Пропуск'
-  if (normalized === 'degraded_run' || (normalized === 'run' && degraded)) return 'Деградированный запуск'
-  if (normalized === 'run') return 'Запуск'
-  if (normalized === 'fail') return 'Сбой decision-controller'
-  return normalized || 'Decision'
+  const label = irrigationOutcomeLabel(normalized || null)
+  return degraded && normalized === 'run' ? `${label} · требуется проверка данных` : label
 }
 
 export function statusLabel(status: string | null | undefined): string {
@@ -61,14 +61,14 @@ export function statusLabel(status: string | null | undefined): string {
     failed: 'Ошибка',
     cancelled: 'Отменён',
     pending: 'Ожидает',
-    claimed: 'Занят',
-    waiting_command: 'Ожидает команды',
+    claimed: 'Принято исполнителем',
+    waiting_command: 'Ожидает ответа устройства',
     idle: 'Ожидание',
     accepted: 'Принят',
     skipped: 'Пропущен',
     unknown: 'Неизвестно',
   }
-  return labels[normalized] ?? status ?? '—'
+  return labels[normalized] ?? (normalized ? 'Статус не распознан' : 'Нет данных')
 }
 
 export function workflowStageLabel(stage: string | null | undefined): string | null {
@@ -83,7 +83,7 @@ export function workflowStageLabel(stage: string | null | undefined): string | n
     ready: 'Готов',
     complete_ready: 'Готовность',
     cycle_start: 'Запуск цикла',
-    decision_gate: 'Шлюз решения',
+    decision_gate: 'Проверка условий полива',
     apply: 'Применение',
     await_ready: 'Ожидание готовности',
     unknown: 'Неизвестно',
@@ -140,7 +140,7 @@ export function workflowStageLabel(stage: string | null | undefined): string | n
     drain: 'Слив',
     fill: 'Заполнение',
   }
-  return labels[normalized] ?? raw
+  return labels[normalized] ?? 'Этап не распознан'
 }
 
 export function asNonEmptyString(value: unknown): string | null {

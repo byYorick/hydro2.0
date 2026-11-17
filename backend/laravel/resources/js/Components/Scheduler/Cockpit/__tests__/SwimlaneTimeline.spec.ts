@@ -35,11 +35,11 @@ describe('SwimlaneTimeline.vue', () => {
       props: { lanes, horizon: '24h' },
     })
 
-    expect(wrapper.text()).toContain('Лента исполнений')
-    expect(wrapper.text()).toContain('irrigation')
-    expect(wrapper.text()).toContain('ph_correction')
+    expect(wrapper.text()).toContain('История и план')
+    expect(wrapper.text()).toContain('Полив')
+    expect(wrapper.text()).toContain('Коррекция pH')
     // «run»-точка шире, чем обычные: в компоненте задаётся `w-[18px]`.
-    const runDot = wrapper.findAll('div.w-\\[18px\\]')
+    const runDot = wrapper.findAll('button.w-\\[18px\\]')
     expect(runDot.length).toBeGreaterThan(0)
     expect(wrapper.findAll('.swim-point--planned').length).toBe(1)
   })
@@ -50,4 +50,12 @@ describe('SwimlaneTimeline.vue', () => {
     })
     expect(wrapper.text()).toContain('3.5д назад')
   })
+})
+
+it('opens a recorded execution through a keyboard-accessible timeline button', async () => {
+  const wrapper = mount(SwimlaneTimeline, { props: { horizon: '24h', lanes: [{ lane: 'irrigation', runs: [{ t: 45, s: 'ok', kind: 'executed', execution_id: '91', at: '2026-11-17T08:00:00Z' }] }] } })
+  const point = wrapper.get('button.swim-point')
+  expect(point.attributes('aria-label')).toContain('#91')
+  await point.trigger('click')
+  expect(wrapper.emitted('select')?.[0]).toEqual(['91'])
 })

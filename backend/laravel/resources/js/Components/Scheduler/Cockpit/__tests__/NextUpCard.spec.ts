@@ -21,7 +21,7 @@ function window(overrides: Partial<PlanWindow>): PlanWindow {
 describe('NextUpCard.vue', () => {
   it('рендерит пустое состояние, если окон нет', () => {
     const wrapper = mount(NextUpCard, { props: { windows: [] } })
-    expect(wrapper.text()).toContain('нет запланированных окон')
+    expect(wrapper.text()).toContain('будущих проверок не запланировано')
   })
 
   it('рендерит максимум `maxItems` окон и подсвечивает первое', () => {

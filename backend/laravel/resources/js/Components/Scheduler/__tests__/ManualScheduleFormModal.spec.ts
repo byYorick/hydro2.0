@@ -84,3 +84,12 @@ describe('ManualScheduleFormModal.vue', () => {
     expect((submit.element as HTMLButtonElement).disabled).toBe(true)
   })
 })
+
+it('does not promise to save task types rejected by the advertised dispatcher capabilities', async () => {
+  const wrapper = mount(ManualScheduleFormModal, { props: { open: true, initial: null, saving: false, executableTaskTypes: ['lighting'] }, global: { stubs: { Modal: modalStub } } })
+  expect(wrapper.get('[data-testid="manual-schedule-task-type-ventilation"]').attributes('disabled')).toBeDefined()
+  expect(wrapper.get('[data-testid="manual-schedule-submit"]').attributes('disabled')).toBeDefined()
+  await wrapper.get('[data-testid="manual-schedule-task-type-lighting"]').trigger('click')
+  expect(wrapper.get('[data-testid="manual-schedule-submit"]').attributes('disabled')).toBeUndefined()
+  wrapper.unmount()
+})

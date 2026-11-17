@@ -122,51 +122,57 @@ class ManualScheduleService
             ]);
         }
 
-        $previousRunAt = $schedule->run_at?->utc();
-        $normalized = $this->normalizeInput(array_merge($this->serialize($schedule), $data));
-        $normalized = $this->applyKindFieldExclusivity($normalized);
-        $this->assertKindShape($normalized, forUpdate: true);
-        $this->assertExecutableTaskTypeForZone($zone, (string) $normalized['task_type']);
-        $this->assertNoActiveDispatchConflict($schedule, $normalized);
-
         $resetOnceDispatchState = false;
-        if (
-            $normalized['schedule_kind'] === 'once'
-            && $normalized['run_at'] instanceof CarbonImmutable
-            && $normalized['run_at']->gt(SchedulerRuntimeHelper::nowUtc())
-        ) {
-            if ($previousRunAt === null || ! $normalized['run_at']->equalTo($previousRunAt)) {
-                $resetOnceDispatchState = true;
+        // A legacy rule must remain stoppable without rewriting its old parameters.
+        // Disabling changes no accepted task and never clears once-dispatch evidence.
+        if (count($data) === 1 && array_key_exists('enabled', $data) && in_array($data['enabled'], [false, 0, '0'], true)) {
+            $schedule->enabled = false;
+        } else {
+            $previousRunAt = $schedule->run_at?->utc();
+            $normalized = $this->normalizeInput(array_merge($this->serialize($schedule), $data));
+            $normalized = $this->applyKindFieldExclusivity($normalized);
+            $this->assertKindShape($normalized, forUpdate: true);
+            $this->assertExecutableTaskTypeForZone($zone, (string) $normalized['task_type']);
+            $this->assertNoActiveDispatchConflict($schedule, $normalized);
+
+            if (
+                $normalized['schedule_kind'] === 'once'
+                && $normalized['run_at'] instanceof CarbonImmutable
+                && $normalized['run_at']->gt(SchedulerRuntimeHelper::nowUtc())
+            ) {
+                if ($previousRunAt === null || ! $normalized['run_at']->equalTo($previousRunAt)) {
+                    $resetOnceDispatchState = true;
+                }
             }
-        }
 
-        if (
-            $normalized['schedule_kind'] === 'once'
-            && (bool) $normalized['enabled']
-            && $schedule->last_dispatched_at !== null
-            && ! $resetOnceDispatchState
-        ) {
-            throw ValidationException::withMessages([
-                'enabled' => 'Для повторного включения однократного расписания укажите новый run_at в будущем.',
+            if (
+                $normalized['schedule_kind'] === 'once'
+                && (bool) $normalized['enabled']
+                && $schedule->last_dispatched_at !== null
+                && ! $resetOnceDispatchState
+            ) {
+                throw ValidationException::withMessages([
+                    'enabled' => 'Для повторного включения однократного расписания укажите новый run_at в будущем.',
+                ]);
+            }
+
+            $schedule->fill([
+                'task_type' => $normalized['task_type'],
+                'schedule_kind' => $normalized['schedule_kind'],
+                'time_at' => $normalized['time_at'],
+                'interval_sec' => $normalized['interval_sec'],
+                'window_start' => $normalized['window_start'],
+                'window_end' => $normalized['window_end'],
+                'days_of_week' => $normalized['days_of_week'],
+                'run_at' => $normalized['run_at'],
+                'payload' => $normalized['payload'],
+                'label' => $normalized['label'],
+                'enabled' => $normalized['enabled'],
             ]);
-        }
 
-        $schedule->fill([
-            'task_type' => $normalized['task_type'],
-            'schedule_kind' => $normalized['schedule_kind'],
-            'time_at' => $normalized['time_at'],
-            'interval_sec' => $normalized['interval_sec'],
-            'window_start' => $normalized['window_start'],
-            'window_end' => $normalized['window_end'],
-            'days_of_week' => $normalized['days_of_week'],
-            'run_at' => $normalized['run_at'],
-            'payload' => $normalized['payload'],
-            'label' => $normalized['label'],
-            'enabled' => $normalized['enabled'],
-        ]);
-
-        if ($resetOnceDispatchState) {
-            $schedule->last_dispatched_at = null;
+            if ($resetOnceDispatchState) {
+                $schedule->last_dispatched_at = null;
+            }
         }
 
         $schedule->save();
@@ -331,9 +337,9 @@ class ManualScheduleService
             return [];
         }
 
-        if ($durationSec < 10 || $durationSec > 86400) {
+        if ($durationSec < 1 || $durationSec > 3600) {
             throw ValidationException::withMessages([
-                'payload.duration_sec' => 'duration_sec должен быть от 10 до 86400 секунд.',
+                'payload.duration_sec' => 'Длительность полива должна быть от 1 до 3600 секунд.',
             ]);
         }
 

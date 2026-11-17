@@ -55,7 +55,7 @@ describe('HeroCountdown.vue', () => {
       },
     })
 
-    expect(wrapper.text()).toContain('ИСПОЛНЯЕТСЯ')
+    expect(wrapper.text()).toContain('Выполняется')
     expect(wrapper.text()).toContain('#ex-2042')
     expect(wrapper.text()).toContain('02:14')
     expect(wrapper.text()).toContain('осталось до завершения')
@@ -85,4 +85,12 @@ describe('HeroCountdown.vue', () => {
     expect(deadline.exists()).toBe(true)
     expect(deadline.text()).toContain('Ожидалось до 30.04.2026, 21:00')
   })
+})
+
+it('shows elapsed admission time without claiming a completion deadline', () => {
+  const wrapper = mount(HeroCountdown, { props: { run: buildRun(), elapsedFrom: '2026-11-17T12:00:00Z', etaHint: 'с момента приёма задачи' } })
+  expect(wrapper.get('[data-testid="scheduler-hero-countdown-value"]').text()).toBe('00:55')
+  expect(wrapper.text()).toContain('с момента приёма')
+  expect(wrapper.text()).not.toContain('таймер истёк')
+  expect(wrapper.find('[data-testid="scheduler-hero-expected-deadline"]').exists()).toBe(false)
 })

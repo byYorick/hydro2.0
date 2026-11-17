@@ -81,6 +81,9 @@
         </div>
 
         <template v-else-if="diagnostics">
+          <p class="text-xs text-[color:var(--text-muted)]">
+            Показаны последние {{ diagnostics.dispatcher_tasks.length }} записей диспетчера этой зоны. Счётчики ниже относятся к этой выборке. Отсутствие записей не подтверждает отсутствие задач движка.
+          </p>
           <!-- Счётчики -->
           <div class="flex flex-wrap gap-1">
             <Badge
@@ -247,5 +250,5 @@ defineProps<{
   formatDateTime: (value: string | null) => string
 }>()
 
-const open = ref(false)
+const open = ref(true)
 </script>

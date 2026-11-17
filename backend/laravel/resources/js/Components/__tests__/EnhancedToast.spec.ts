@@ -51,7 +51,7 @@ describe('EnhancedToast', () => {
         }
       })
 
-      const toast = wrapper.findAll('div').find(el => el.text().includes('Test message') && el.classes().includes('min-w-[300px]'))
+      const toast = wrapper.findAll('div').find(el => el.text().includes('Test message') && el.classes().includes('backdrop-blur-sm'))
       expect(toast).toBeDefined()
       expect(toast?.classes()).toContain('bg-[color:var(--badge-success-bg)]')
     })
@@ -63,7 +63,7 @@ describe('EnhancedToast', () => {
         }
       })
 
-      const toast = wrapper.findAll('div').find(el => el.text().includes('Error message') && el.classes().includes('min-w-[300px]'))
+      const toast = wrapper.findAll('div').find(el => el.text().includes('Error message') && el.classes().includes('backdrop-blur-sm'))
       expect(toast).toBeDefined()
       expect(toast?.classes()).toContain('bg-[color:var(--badge-danger-bg)]')
     })

@@ -144,6 +144,7 @@ class SchedulerDiagnosticsService
 
             return $dueAt instanceof CarbonImmutable
                 && $dueAt->lt($now)
+                && in_array($task['status'] ?? '', ['pending', 'accepted', 'running', 'waiting_command', 'claimed'], true)
                 && empty($task['terminal_at']);
         }));
     }
@@ -158,6 +159,7 @@ class SchedulerDiagnosticsService
 
             return $expiresAt instanceof CarbonImmutable
                 && $expiresAt->lt($now)
+                && in_array($task['status'] ?? '', ['pending', 'accepted', 'running', 'waiting_command', 'claimed'], true)
                 && empty($task['terminal_at']);
         }));
     }

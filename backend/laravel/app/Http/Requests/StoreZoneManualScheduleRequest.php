@@ -43,6 +43,7 @@ class StoreZoneManualScheduleRequest extends FormRequest
      */
     protected function baseRules(bool $requireFutureRunAt = false): array
     {
+        $irrigation = $this->input('task_type') === 'irrigation';
         return [
             'task_type' => ['required', 'string', Rule::in(ManualScheduleService::ALLOWED_TASK_TYPES)],
             'schedule_kind' => ['required', 'string', Rule::in(ManualScheduleService::ALLOWED_SCHEDULE_KINDS)],
@@ -54,7 +55,7 @@ class StoreZoneManualScheduleRequest extends FormRequest
             'days_of_week.*' => ['integer', 'min:1', 'max:7'],
             'run_at' => ['nullable', 'date'],
             'payload' => ['nullable', 'array'],
-            'payload.duration_sec' => ['nullable', 'integer', 'min:10', 'max:86400'],
+            'payload.duration_sec' => ['nullable', 'integer', $irrigation ? 'min:1' : 'min:10', $irrigation ? 'max:3600' : 'max:86400'],
             'label' => ['nullable', 'string', 'max:255'],
             'enabled' => ['sometimes', 'boolean'],
         ];

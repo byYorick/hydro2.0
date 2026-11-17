@@ -13,6 +13,37 @@ class ZoneManualScheduleControllerTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_legacy_long_irrigation_can_be_disabled_without_silent_clamping_but_not_reenabled(): void
+    {
+        $zone = Zone::factory()->create();
+        $this->actingAs(User::factory()->create(['role' => 'agronomist']));
+        $schedule = ZoneManualSchedule::create([
+            'zone_id' => $zone->id, 'task_type' => 'irrigation', 'schedule_kind' => 'time',
+            'time_at' => '08:00', 'enabled' => true, 'payload' => ['duration_sec' => 86400],
+        ]);
+        $url = "/api/zones/{$zone->id}/manual-schedules/{$schedule->id}";
+        $this->putJson($url, ['enabled' => false])->assertOk()
+            ->assertJsonPath('data.enabled', false)->assertJsonPath('data.payload.duration_sec', 86400);
+        $this->putJson($url, ['enabled' => true])->assertUnprocessable();
+        $this->assertFalse($schedule->fresh()->enabled);
+        $this->putJson($url, ['enabled' => true, 'payload' => ['duration_sec' => 3600]])
+            ->assertOk()->assertJsonPath('data.enabled', true)->assertJsonPath('data.payload.duration_sec', 3600);
+    }
+
+    public function test_irrigation_bounds_match_runtime_and_partial_update_does_not_corrupt_schedule(): void
+    {
+        $zone = Zone::factory()->create();
+        $user = User::factory()->create(['role' => 'agronomist']);
+        $this->actingAs($user);
+        $url = "/api/zones/{$zone->id}/manual-schedules";
+        $data = ['task_type' => 'irrigation', 'schedule_kind' => 'time', 'time_at' => '08:30', 'payload' => ['duration_sec' => 1]];
+        $response = $this->postJson($url, $data)->assertCreated()->assertJsonPath('data.payload.duration_sec', 1);
+        $id = $response->json('data.id');
+        $this->putJson("{$url}/{$id}", ['payload' => ['duration_sec' => 3601]])->assertUnprocessable();
+        $this->assertEquals(1, ZoneManualSchedule::findOrFail($id)->payload['duration_sec']);
+        $this->putJson("{$url}/{$id}", ['payload' => ['duration_sec' => 3600]])->assertOk()->assertJsonPath('data.payload.duration_sec', 3600);
+    }
+
     public function test_agronomist_can_create_time_based_manual_schedule(): void
     {
         $zone = Zone::factory()->create();

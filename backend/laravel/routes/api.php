@@ -153,6 +153,7 @@ Route::middleware([
     'throttle:'.$apiThrottle, // Увеличен лимит для тестов и множественных компонентов
 ])->group(function () use ($apiThrottle) {
     // Read-only endpoints (viewer+)
+    Route::get('system/scheduler/observability', \App\Http\Controllers\SchedulerObservabilityController::class);
     Route::get('greenhouse-types', [GreenhouseTypeController::class, 'index']);
     Route::get('greenhouses', [GreenhouseController::class, 'index']);
     Route::get('greenhouses/{greenhouse}', [GreenhouseController::class, 'show']);

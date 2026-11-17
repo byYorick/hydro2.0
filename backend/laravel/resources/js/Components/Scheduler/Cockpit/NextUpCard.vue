@@ -5,7 +5,7 @@
   >
     <div class="flex items-center justify-between gap-2">
       <div class="text-[10px] font-bold tracking-[0.15em] text-[color:var(--text-dim)]">
-        ДАЛЬШЕ В ОЧЕРЕДИ
+        БЛИЖАЙШИЕ ЗАПЛАНИРОВАННЫЕ ПРОВЕРКИ
       </div>
       <span
         v-if="windows.length > 0"
@@ -15,11 +15,14 @@
       </span>
     </div>
 
+    <p class="mt-2 text-xs text-[color:var(--text-muted)]">
+      План может измениться. Наступление времени не гарантирует запуск: проверяются режим зоны, занятость и условия безопасности.
+    </p>
     <div
       v-if="windows.length === 0"
       class="mt-2 text-[11px] text-[color:var(--text-muted)]"
     >
-      В ближайшем горизонте нет запланированных окон.
+      На выбранный период будущих проверок не запланировано. Проверьте расписания и включение автоматики.
     </div>
 
     <div

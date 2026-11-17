@@ -13,7 +13,7 @@ function deferred<T>() {
   return { promise, resolve }
 }
 function workspace(zoneId = 1) {
-  return { zone_id: zoneId, execution: { recent_runs: [], active_run: null }, capabilities: { executable_task_types: ['irrigation'] }, plan: { lanes: [], windows: [] } }
+  return { control: { generated_at: '2026-11-03T09:00:00Z' }, zone_id: zoneId, execution: { recent_runs: [], active_run: null }, capabilities: { executable_task_types: ['irrigation'] }, plan: { lanes: [], windows: [] } }
 }
 function harness() {
   const props = reactive({ zoneId: 1, targets: {} } as ZoneAutomationTabProps)
@@ -83,7 +83,7 @@ describe('scheduler workspace lifecycle', () => {
   })
 
   it('считает весь горизонт, но показывает только три ближайших запуска', async () => {
-    api.scheduleWorkspace.mockResolvedValue({ ...workspace(), plan: { lanes: [], windows: Array.from({ length: 8 }, (_, index) => ({ task_type: 'irrigation', trigger_at: `2026-11-03T${String(17 - index).padStart(2, '0')}:00:00Z` })) } })
+    api.scheduleWorkspace.mockResolvedValue({ ...workspace(), plan: { lanes: [], windows: Array.from({ length: 8 }, (_, index) => ({ state: 'planned', task_type: 'irrigation', trigger_at: `2026-11-03T${String(17 - index).padStart(2, '0')}:00:00Z` })) } })
     const { state, wrapper } = harness()
     await flushPromises()
     expect(state.executableWindows.value).toHaveLength(8)
@@ -91,4 +91,38 @@ describe('scheduler workspace lifecycle', () => {
     expect(state.nextExecutableWindows.value[0].trigger_at).toBe('2026-11-03T10:00:00Z')
     wrapper.unmount()
   })
+})
+
+it('warns after silent detail failure while retaining last known details', async () => {
+  api.scheduleWorkspace.mockResolvedValue(workspace())
+  api.getState.mockResolvedValue({ state_label: 'Готово' })
+  api.getExecution.mockResolvedValueOnce({ execution_id: '42', status: 'running' }).mockRejectedValueOnce(new Error('fixture'))
+  const { state, wrapper } = harness(); await flushPromises()
+  await state.fetchExecution('42'); await state.fetchExecution('42', { silent: true })
+  expect(state.selectedExecution.value?.execution_id).toBe('42')
+  expect(state.detailError.value).toContain('устаревшими')
+  wrapper.unmount()
+})
+
+it('does not present past, suppressed or invalid timestamps as upcoming checks', async () => {
+  api.scheduleWorkspace.mockResolvedValue({ ...workspace(), plan: { lanes: [], windows: [
+    { state: 'planned', task_type: 'irrigation', trigger_at: '2026-11-03T08:00:00Z' },
+    { state: 'suppressed', task_type: 'irrigation', trigger_at: '2026-11-03T10:00:00Z' },
+    { state: 'planned', task_type: 'irrigation', trigger_at: 'invalid' },
+    { state: 'planned', task_type: 'irrigation', trigger_at: '2026-11-03T12:00:00Z' },
+  ] } })
+  api.getState.mockResolvedValue({})
+  const { state, wrapper } = harness(); await flushPromises()
+  expect(state.nextExecutableWindows.value.map(window => window.trigger_at)).toEqual(['2026-11-03T12:00:00Z'])
+  wrapper.unmount()
+})
+
+it('does not present stale process state as current after a silent refresh error', async () => {
+  api.scheduleWorkspace.mockResolvedValue(workspace())
+  api.getState.mockResolvedValueOnce({ state_label: 'Старое состояние' }).mockRejectedValueOnce(new Error('fixture'))
+  const { state, wrapper } = harness(); await flushPromises()
+  await state.fetchAutomationState({ silent: true })
+  expect(state.automationState.value).toBeNull()
+  expect(state.automationStateError.value).toContain('загружаются отдельно')
+  wrapper.unmount()
 })
