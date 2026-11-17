@@ -21,9 +21,9 @@
 
         <div class="flex shrink-0 flex-col items-start gap-2 lg:items-end">
           <StatusIndicator
-            :status="stateCode"
+            :status="stateLabel"
             :variant="stateVariant"
-            :pulse="isProcessActive"
+            :pulse="isProcessActive && !snapshotStale"
             :show-label="true"
           />
           <div class="flex flex-wrap items-center gap-2 text-sm">
@@ -66,7 +66,7 @@
         <div class="h-1.5 overflow-hidden rounded-full bg-[color:var(--surface-muted)]/70">
           <div
             class="h-full rounded-full bg-status-warning transition-all duration-500"
-            :style="{ width: `${Math.max(progressPercent, isProcessActive ? 8 : 0)}%` }"
+            :style="{ width: `${progressPercent}%` }"
           ></div>
         </div>
       </div>
@@ -85,23 +85,26 @@
       {{ warningMessage }}
     </p>
 
+    <p class="text-xs text-[color:var(--text-muted)]">
+      Положение в схеме определяется этапом задачи. Предыдущие этапы не являются отдельным подтверждением работы оборудования.
+    </p>
     <section class="rounded-xl border border-[color:var(--border-muted)]/60 bg-[color:var(--surface-card)]/40 p-3">
       <div class="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
         <h4 class="text-[11px] uppercase tracking-[0.18em] text-[color:var(--text-dim)]">
           Этапы
         </h4>
         <p class="text-xs text-[color:var(--text-muted)]">
-          Сейчас: <span class="text-[color:var(--text-primary)]">{{ currentWorkflowStageLabel }}</span>
+          {{ snapshotStale ? 'По последним данным:' : 'По данным задачи:' }} <span class="text-[color:var(--text-primary)]">{{ currentWorkflowStageLabel }}</span>
         </p>
       </div>
-      <ul class="mt-3 flex min-w-max items-stretch gap-1 overflow-x-auto pb-1">
+      <ul class="mt-3 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-2">
         <li
           v-for="(stage, index) in workflowStages"
           :key="stage.code"
-          class="flex items-center"
+          class="flex min-w-0 items-stretch"
         >
           <div
-            class="flex min-w-[9.5rem] max-w-[11rem] flex-col justify-between rounded-lg border px-2.5 py-2 transition-colors"
+            class="flex min-w-0 w-full flex-col justify-between rounded-lg border px-2.5 py-2 transition-colors"
             :class="stageCardClass(stage.status)"
           >
             <div class="flex items-start gap-2">
@@ -144,6 +147,7 @@ import type { AutomationStateType, WorkflowStageStatus, WorkflowStageView } from
 type PipelineStageVisualStatus = WorkflowStageStatus | 'manual' | 'canceled' | 'skipped'
 
 interface Props {
+  snapshotStale?: boolean
   stateCode: AutomationStateType
   stateLabel: string
   macroPhaseLabel: string
@@ -168,14 +172,19 @@ const props = defineProps<Props>()
 const displayElapsedLabel = computed(() =>
   formatAutomationDurationLabel(props.displayElapsedSec, props.progressBasis),
 )
-const displayRemainingLabel = computed(() => formatAutomationRemainingLabel(props.displayRemainingSec))
+const displayRemainingLabel = computed(() => {
+  if (props.displayRemainingSec == null) return ''
+  if (props.displayRemainingSec <= 0) return 'Предельный срок этапа наступил; выполнение не подтверждено'
+  const value = formatAutomationRemainingLabel(props.displayRemainingSec)
+  return value ? `До предельного срока: ${value}` : ''
+})
 const progressBarLabel = computed(() =>
-  props.progressBasis === 'irrigation_deadline' ? 'Ход полива' : 'Ход workflow',
+  props.progressBasis === 'irrigation_deadline' ? 'Ход этапа по времени' : 'Положение в процессе',
 )
 
 function workflowStageStatusLabel(status: PipelineStageVisualStatus): string {
   if (status === 'running') return 'Сейчас'
-  if (status === 'completed') return 'Готово'
+  if (status === 'completed') return 'Предыдущий'
   if (status === 'failed') return 'Ошибка'
   if (status === 'manual') return 'Ручной'
   if (status === 'canceled') return 'Отменено'
@@ -184,7 +193,7 @@ function workflowStageStatusLabel(status: PipelineStageVisualStatus): string {
 }
 
 function stageStatusIcon(status: PipelineStageVisualStatus): string {
-  if (status === 'completed') return '✓'
+  if (status === 'completed') return '·'
   if (status === 'failed') return '!'
   if (status === 'running') return '●'
   if (status === 'manual') return '▶'
@@ -197,9 +206,6 @@ function stageCardClass(status: PipelineStageVisualStatus): string {
   if (status === 'running') {
     return 'border-status-warning bg-status-warning-soft shadow-[0_0_0_1px_var(--status-warning)]'
   }
-  if (status === 'completed') {
-    return 'border-status-ok bg-status-ok-soft'
-  }
   if (status === 'failed') {
     return 'border-status-critical bg-status-critical-soft'
   }
@@ -209,9 +215,6 @@ function stageCardClass(status: PipelineStageVisualStatus): string {
 function stagePillClass(status: PipelineStageVisualStatus): string {
   if (status === 'running') {
     return 'bg-status-warning-soft text-status-warning border border-status-warning'
-  }
-  if (status === 'completed') {
-    return 'bg-status-ok-soft text-status-ok border border-status-ok'
   }
   if (status === 'failed') {
     return 'bg-status-critical-soft text-status-critical border border-status-critical'
@@ -227,7 +230,7 @@ function stagePillClass(status: PipelineStageVisualStatus): string {
 
 function stageDotClass(status: PipelineStageVisualStatus): string {
   if (status === 'running') return 'pipeline-stage-dot--running'
-  if (status === 'completed') return 'pipeline-stage-dot--completed'
+  if (status === 'completed') return 'pipeline-stage-dot--pending'
   if (status === 'failed') return 'pipeline-stage-dot--failed'
   if (status === 'manual') return 'pipeline-stage-dot--manual'
   if (status === 'canceled') return 'pipeline-stage-dot--canceled'
@@ -236,7 +239,7 @@ function stageDotClass(status: PipelineStageVisualStatus): string {
 }
 
 function connectorClass(status: PipelineStageVisualStatus): string {
-  if (status === 'completed') return 'pipeline-connector--active'
+  if (status === 'completed') return ''
   if (status === 'running') return 'pipeline-connector--running'
   return ''
 }

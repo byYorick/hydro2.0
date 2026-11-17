@@ -117,7 +117,7 @@ describe('useAutomationPanel hydration', () => {
     const wrapper = mountPanelHarness()
     await flushPromises()
 
-    expect(api.zones.getState).toHaveBeenCalledWith(42)
+    expect(api.zones.getState).toHaveBeenCalledWith(42, { skipErrorToast: true })
     expect(wrapper.text()).toContain('READY')
   })
   it('preserves frozen decision observations through bootstrap normalization', () => {

@@ -170,6 +170,7 @@ Breaking-change: обратная совместимость со старыми
 - для irrigation workflow endpoint обязан честно отражать `IRRIGATING` (и legacy `IRRIG_RECIRC` только как compat),
   а также last decision metadata (`strategy`, `config`, `bundle_revision`, `reason_code`, `degraded`) при наличии canonical `ae_task`.
 - `state_meta.source` (`live|cache`) и `state_meta.is_stale` обязательны; при cache fallback UI должен считать snapshot устаревшим.
+- `state_meta.served_at` — время выдачи текущего HTTP-ответа. Optional `state_meta.observed_at` — время последнего успешного получения исходного состояния Laravel; сохраняется при чтении кэша. Для старой записи кэша без времени наблюдения возвращается `null`. Это не время измерения каждого датчика и не heartbeat оборудования.
 - блок `observability` обогащается Laravel (`ZoneAutomationObservabilityService`): полная схема, hint-коды и merge-правила live/stale — `API_SPEC_FRONTEND_BACKEND_FULL.md` §3.5.7.
 - при `state_details.failed=true` terminal error скрывается, если нет ACTIVE policy-managed alert в зоне (post-ack UX); humanization через `ErrorCodeCatalogService` выполняется до этой фильтрации.
 - `last_terminal_failure` — read-only снимок последнего `ae_tasks.status=failed` из БД Laravel; **не** очищается post-ack (в отличие от `state_details.failed`); поля: `task_id`, `failed_at`, `error_code`, `error_message`, `human_error_message`.

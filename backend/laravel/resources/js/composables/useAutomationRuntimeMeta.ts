@@ -43,12 +43,13 @@ export function useAutomationRuntimeMeta(
   const isStale = computed(() => Boolean(automationState.value?.state_meta?.is_stale))
 
   const dataTimestamp = computed(() => {
-    const servedAt = automationState.value?.state_meta?.served_at
+    const servedAt = automationState.value?.state_meta?.observed_at
     if (!servedAt) {
       return null
     }
     try {
-      return new Date(servedAt).toLocaleTimeString('ru-RU', {
+      if (!Number.isFinite(Date.parse(servedAt))) return null
+      return new Date(servedAt).toLocaleString('ru-RU', {
         hour: '2-digit',
         minute: '2-digit',
         second: '2-digit',
@@ -62,7 +63,7 @@ export function useAutomationRuntimeMeta(
     if (!isStale.value) {
       return null
     }
-    const servedAt = automationState.value?.state_meta?.served_at
+    const servedAt = automationState.value?.state_meta?.observed_at
     if (!servedAt) {
       return null
     }

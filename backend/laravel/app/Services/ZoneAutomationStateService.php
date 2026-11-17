@@ -608,6 +608,8 @@ class ZoneAutomationStateService
             'source' => $source,
             'is_stale' => $isStale,
             'served_at' => now()->toIso8601String(),
+            // Capture time survives cache reads; serving a cache entry does not renew it.
+            'observed_at' => $isStale ? ($payload['state_meta']['observed_at'] ?? null) : now()->toIso8601String(),
         ];
 
         return $payload;
@@ -823,6 +825,7 @@ class ZoneAutomationStateService
      */
     public function cacheState(int $zoneId, array $payload): void
     {
+        $payload['state_meta'] = ['observed_at' => now()->toIso8601String()];
         Cache::put(
             $this->stateCacheKey($zoneId),
             $payload,

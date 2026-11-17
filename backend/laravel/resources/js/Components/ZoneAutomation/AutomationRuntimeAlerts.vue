@@ -35,7 +35,7 @@
         class="mt-1 text-[10px] opacity-75"
         :class="activeFailure ? 'text-status-critical' : 'text-status-warning'"
       >
-        Активный алерт подтверждён; показан последний terminal failure из БД.
+        Показан завершившийся сбой. Он не подтверждает текущую неисправность.
       </p>
     </div>
 
@@ -58,19 +58,19 @@
       class="flex flex-wrap items-center gap-2 text-xs text-status-warning"
     >
       <span class="rounded-full border border-status-warning bg-status-warning-soft px-2 py-0.5">
-        Данные из кэша
+        Актуальность данных не подтверждена
       </span>
       <span
         v-if="staleDuration"
         class="text-[color:var(--text-muted)]"
       >
-        устарели {{ staleDuration }} назад
+        последнее успешное получение {{ staleDuration }} назад
       </span>
       <span
         v-if="dataTimestamp"
         class="text-[color:var(--text-dim)]"
       >
-        снимок {{ dataTimestamp }}
+        данные получены {{ dataTimestamp }}
       </span>
     </div>
   </div>

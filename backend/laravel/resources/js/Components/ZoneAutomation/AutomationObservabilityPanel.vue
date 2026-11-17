@@ -17,9 +17,12 @@
       </Badge>
     </div>
 
+    <p class="text-xs text-[color:var(--text-muted)]">
+      Предельный срок — ограничение ожидания, а не прогноз завершения. Сведения относятся к полученному снимку.
+    </p>
     <dl class="grid grid-cols-2 gap-2 text-xs">
       <div class="diag-tile">
-        <dt>Этап AE3</dt>
+        <dt>Этап выполнения</dt>
         <dd>{{ stageLabel }}</dd>
       </div>
       <div class="diag-tile">
@@ -31,7 +34,7 @@
         <dd>{{ stageElapsedLabel }}</dd>
       </div>
       <div class="diag-tile">
-        <dt>Срок завершения этапа</dt>
+        <dt>До предельного срока этапа</dt>
         <dd>{{ deadlineLabel }}</dd>
       </div>
       <div
@@ -43,7 +46,7 @@
           {{ correctionDosing?.corrStepLabel ?? stageDiagnosticLabel(correctionStep) }}
         </dd>
         <p class="mt-1 text-[10px] text-[color:var(--text-dim)] leading-relaxed">
-          Дозирование завершается, когда pH и EC укладываются в допуски. Готовность раствора к следующему этапу проверяется по границам рецепта.
+          Условия завершения коррекции зависят от её режима и допусков. Готовность раствора к следующему этапу проверяется отдельно.
         </p>
       </div>
       <div
@@ -93,7 +96,7 @@
           data-testid="automation-correction-active-doses"
         >
           <dt class="uppercase tracking-wide opacity-70">
-            Активные насосы
+            Дозы по данным задачи
           </dt>
           <dd class="mt-0.5 font-mono">
             {{ activeDosesLabel }}
@@ -188,7 +191,7 @@
           class="col-span-2"
         >
           <dt class="uppercase tracking-wide opacity-70">
-            Cumulative T_*
+            Накопительные цели EC по компонентам
           </dt>
           <dd class="mt-0.5 font-mono break-all">
             {{ targetSummary }}
@@ -201,105 +204,28 @@
       >
         <div>
           <dt class="uppercase tracking-wide opacity-70">
-            Pipeline step
+            Этап приготовления
           </dt>
           <dd class="mt-0.5 font-mono">
-            {{ correctionPipeline.pipeline_phase || '—' }}
+            {{ stageDiagnosticLabel(correctionPipeline.pipeline_phase) }}
             <span v-if="correctionPipeline.active_component">
-              · {{ correctionPipeline.active_component }}
+              · {{ processComponentLabel(correctionPipeline.active_component) }}
             </span>
           </dd>
         </div>
         <div>
           <dt class="uppercase tracking-wide opacity-70">
-            Dilute / EC PID
+            Разбавление и регулятор EC
           </dt>
           <dd class="mt-0.5 font-mono">
-            attempts {{ correctionPipeline.dilute_attempts ?? 0 }}
-            · frozen {{ correctionPipeline.ec_pid_frozen ? 'да' : 'нет' }}
+            попыток: {{ correctionPipeline.dilute_attempts ?? '—' }}
+            · регулирование EC приостановлено: {{ correctionPipeline.ec_pid_frozen == null ? 'неизвестно' : correctionPipeline.ec_pid_frozen ? 'да' : 'нет' }}
           </dd>
         </div>
       </dl>
     </div>
 
-    <div
-      v-if="failureDiagnostics"
-      class="rounded-lg border px-3 py-2.5 text-xs space-y-2"
-      :class="failureDiagnostics.isActiveFailure
-        ? 'border-[color:var(--badge-danger-border)] bg-[color:var(--badge-danger-bg)] text-[color:var(--badge-danger-text)]'
-        : 'border-[color:var(--badge-warning-border)] bg-[color:var(--badge-warning-bg)] text-[color:var(--badge-warning-text)]'"
-      data-testid="automation-fsm-failure-details"
-    >
-      <p class="font-semibold text-sm">
-        {{ failureDiagnostics.title }}
-      </p>
-      <p
-        v-if="failureDiagnostics.summary"
-        class="leading-relaxed"
-      >
-        {{ failureDiagnostics.summary }}
-      </p>
-      <dl class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-        <div v-if="failureDiagnostics.errorCode">
-          <dt class="text-[10px] uppercase tracking-wide opacity-75">
-            Код ошибки
-          </dt>
-          <dd class="mt-0.5 font-mono text-[11px] break-all">
-            {{ failureDiagnostics.errorCode }}
-          </dd>
-        </div>
-        <div v-if="failureDiagnostics.failedStageLabel">
-          <dt class="text-[10px] uppercase tracking-wide opacity-75">
-            Этап сбоя
-          </dt>
-          <dd class="mt-0.5 font-medium">
-            {{ failureDiagnostics.failedStageLabel }}
-            <span
-              v-if="failureDiagnostics.failedStage"
-              class="block font-mono text-[10px] opacity-80"
-            >
-              {{ failureDiagnostics.failedStage }}
-            </span>
-          </dd>
-        </div>
-        <div v-if="failureDiagnostics.taskId">
-          <dt class="text-[10px] uppercase tracking-wide opacity-75">
-            Задача
-          </dt>
-          <dd class="mt-0.5 font-mono text-[11px]">
-            #{{ failureDiagnostics.taskId }}
-          </dd>
-        </div>
-        <div v-if="failureDiagnostics.failedAt">
-          <dt class="text-[10px] uppercase tracking-wide opacity-75">
-            Время сбоя
-          </dt>
-          <dd class="mt-0.5">
-            {{ formatFailureTimestamp(failureDiagnostics.failedAt) }}
-          </dd>
-        </div>
-        <div v-if="failureDiagnostics.workflowPhase">
-          <dt class="text-[10px] uppercase tracking-wide opacity-75">
-            Фаза workflow
-          </dt>
-          <dd class="mt-0.5 font-mono text-[11px]">
-            {{ failureDiagnostics.workflowPhase }}
-          </dd>
-        </div>
-      </dl>
-      <p
-        v-if="failureDiagnostics.technicalMessage"
-        class="font-mono text-[10px] leading-relaxed opacity-85 break-words"
-      >
-        {{ failureDiagnostics.technicalMessage }}
-      </p>
-      <p
-        v-if="failureDiagnostics.isHistoricalFailure"
-        class="text-[10px] opacity-80"
-      >
-        Активная тревога подтверждена оператором. Ниже показаны данные последнего завершившегося сбоя.
-      </p>
-    </div>
+    <AutomationFailureDetails :diagnostics="failureDiagnostics" />
 
     <IrrigationDecisionCard
       :decision="automationState?.irrigation_decision ?? automationState?.decision ?? null"
@@ -328,24 +254,26 @@
       <p class="font-mono text-[11px] text-[color:var(--text-primary)] leading-relaxed break-words">
         {{ causalStrip.summary }}
       </p>
-      <ul
-        v-if="causalStrip.details.length > 0"
-        class="space-y-0.5 font-mono text-[10px] text-[color:var(--text-dim)]"
-      >
-        <li
-          v-for="line in causalStrip.details"
-          :key="line"
+      <details v-if="causalStrip.details.length > 0">
+        <summary>Технические детали цепочки</summary>
+        <ul
+          class="space-y-0.5 font-mono text-[10px] text-[color:var(--text-dim)]"
         >
-          {{ line }}
-        </li>
-      </ul>
+          <li
+            v-for="line in causalStrip.details"
+            :key="line"
+          >
+            {{ line }}
+          </li>
+        </ul>
+      </details>
     </div>
 
     <div
       v-if="taskIdLabel && !failureDiagnostics && !causalStrip"
       class="diag-info-block"
     >
-      <span class="font-medium text-[color:var(--text-primary)]">Task:</span>
+      <span class="font-medium text-[color:var(--text-primary)]">Задача:</span>
       {{ taskIdLabel }}
     </div>
 
@@ -362,7 +290,7 @@
       class="rounded-lg border border-[color:var(--badge-warning-border)] bg-[color:var(--badge-warning-bg)] px-3 py-2 text-xs text-[color:var(--badge-warning-text)]"
     >
       <p class="font-medium">
-        Узлы offline / stale
+        Узлы без актуальной связи
       </p>
       <p class="mt-1 font-mono text-[11px] break-all">
         {{ offlineNodes.join(', ') }}
@@ -376,6 +304,18 @@
       Источник: {{ dataSourceLabel }}
     </p>
 
+    <details
+      v-if="automationState"
+      class="text-xs text-[color:var(--text-muted)]"
+    >
+      <summary>Данные задачи для диагностики</summary>
+      <dl class="mt-2 space-y-1 break-all">
+        <dt>Этап</dt><dd>{{ automationState.current_stage ?? observability?.runtime?.current_stage ?? '—' }}</dd>
+        <dt>Фаза</dt><dd>{{ automationState.workflow_phase ?? observability?.runtime?.workflow_phase ?? '—' }}</dd>
+        <dt>Этап приготовления</dt><dd>{{ correctionPipeline?.pipeline_phase ?? '—' }}</dd>
+        <dt>Источник</dt><dd>{{ observability?.runtime?.source ?? '—' }}</dd>
+      </dl>
+    </details>
     <SchedulerDispatchMetricsStrip />
 
     <ul
@@ -415,408 +355,24 @@
     </ul>
 
     <p
-      v-else-if="observability?.runtime?.task_is_active"
-      class="text-xs text-[color:var(--badge-success-text)]"
+      v-else-if="observability?.runtime?.task_is_active && !automationState?.state_meta?.is_stale && observability?.runtime?.source !== 'client_fallback'"
+      class="text-xs text-[color:var(--text-muted)]"
     >
-      Явных признаков зависания не обнаружено. Этап выполняется в пределах ожидаемых порогов.
+      В полученном снимке признаков задержки не обнаружено. Это не подтверждает текущую работу оборудования.
     </p>
   </section>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { router } from '@inertiajs/vue3'
 import Badge from '@/Components/Badge.vue'
 import IrrigationDecisionCard from './IrrigationDecisionCard.vue'
-import SchedulerDispatchMetricsStrip from '@/Components/ZoneAutomation/SchedulerDispatchMetricsStrip.vue'
-import type { AutomationObservability, AutomationState } from '@/types/Automation'
-import {
-  formatActiveDosesLabel,
-  formatObservabilityDuration,
-  observabilityHealthLabel,
-  isSkipStillBlocking,
-  resolveCorrectionDosingDiagnostics,
-  resolveObservability,
-  stageDiagnosticLabel,
-} from '@/utils/automationObservability'
-import { resolveAutomationFailureDiagnostics } from '@/utils/automationFailureDiagnostics'
-import { formatDateTime } from '@/utils/simulationFormatters'
-
-interface Props {
-  automationState: AutomationState | null
-}
-
-const tickMs = ref(Date.now())
-let tickTimer: ReturnType<typeof setInterval> | null = null
-
-onMounted(() => {
-  tickTimer = setInterval(() => {
-    tickMs.value = Date.now()
-  }, 1000)
-})
-
-onUnmounted(() => {
-  if (tickTimer) {
-    clearInterval(tickTimer)
-    tickTimer = null
-  }
-})
-
-function parseIsoMs(value: string | null | undefined): number | null {
-  if (!value) return null
-  const ms = Date.parse(value)
-  return Number.isFinite(ms) ? ms : null
-}
-
-const props = defineProps<Props>()
-
-const observability = computed<AutomationObservability | null>(() => resolveObservability(props.automationState))
-
-const failureDiagnostics = computed(() => resolveAutomationFailureDiagnostics(
-  props.automationState,
-  observability.value,
-))
-
-function toPositiveId(value: unknown): number | null {
-  const parsed = typeof value === 'number' ? value : Number(value)
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : null
-}
-
-const causalStrip = computed(() => {
-  const runtime = observability.value?.runtime
-  const correction = observability.value?.correction
-  const zoneId = toPositiveId(props.automationState?.zone_id ?? runtime?.zone_id)
-  const normalizedTaskId = toPositiveId(
-    runtime?.task_id
-    ?? props.automationState?.state_details?.failed_task_id
-    ?? props.automationState?.last_terminal_failure?.task_id,
-  )
-  const correctionStep = typeof runtime?.correction_step === 'string' && runtime.correction_step.trim() !== ''
-    ? runtime.correction_step.trim()
-    : null
-  const skipRaw = correction?.latest_skip ?? null
-  const skip = isSkipStillBlocking(skipRaw) ? skipRaw : null
-  const skipType = typeof skip?.event_type === 'string' ? skip.event_type : null
-  const skipEventId = toPositiveId(skip?.event_id)
-  const phNoEffect = correction?.last_dose?.ph?.no_effect_count
-  const ecNoEffect = correction?.last_dose?.ec?.no_effect_count
-  const waiting = runtime?.waiting_command === true
-  const taskStatus = typeof runtime?.task_status === 'string' ? runtime.task_status : null
-
-  const hasSignal = normalizedTaskId != null
-    || correctionStep != null
-    || skipType != null
-    || (typeof phNoEffect === 'number' && Number.isFinite(phNoEffect) && phNoEffect > 0)
-    || (typeof ecNoEffect === 'number' && Number.isFinite(ecNoEffect) && ecNoEffect > 0)
-  if (!hasSignal) {
-    return null
-  }
-
-  const chain: string[] = []
-  if (normalizedTaskId != null) {
-    chain.push(`task #${normalizedTaskId}`)
-  }
-  if (taskStatus) {
-    const alreadyWaiting = taskStatus === 'waiting_command'
-    chain.push(waiting && !alreadyWaiting ? `${taskStatus}+wait` : taskStatus)
-  }
-  if (correctionStep) {
-    chain.push(correctionStep)
-  }
-  if (skipType) {
-    chain.push(skipType)
-  }
-
-  const details: string[] = []
-  if (skipEventId != null) {
-    details.push(`skip_event_id=${skipEventId}`)
-  }
-  if (skip?.age_sec != null) {
-    details.push(`skip_age=${formatObservabilityDuration(skip.age_sec)}`)
-  }
-  if (typeof phNoEffect === 'number') {
-    details.push(`ph_no_effect=${phNoEffect}`)
-  }
-  if (typeof ecNoEffect === 'number') {
-    details.push(`ec_no_effect=${ecNoEffect}`)
-  }
-
-  return {
-    zoneId,
-    taskId: normalizedTaskId,
-    summary: chain.length > 0 ? chain.join(' → ') : 'Контекст коррекции',
-    details,
-  }
-})
-
-function openTaskEvents(zoneId: number, taskId: number): void {
-  router.visit(`/zones/${zoneId}?tab=events&task_id=${taskId}`)
-}
-
-const hangHints = computed(() => observability.value?.hang_hints ?? [])
-
-const correctionDosing = computed(() => resolveCorrectionDosingDiagnostics(
-  props.automationState,
-  observability.value,
-))
-
-const activeDosesLabel = computed(() => formatActiveDosesLabel(correctionDosing.value?.activeDoses))
-
-const prepareBaseline = computed(() => observability.value?.correction?.prepare_baseline ?? null)
-const correctionPipeline = computed(() => observability.value?.correction?.pipeline ?? null)
-
-const ratioSummary = computed(() => formatComponentMap(prepareBaseline.value?.ratios ?? null))
-const targetSummary = computed(() => {
-  const fromBaseline = formatComponentMap(prepareBaseline.value?.component_targets ?? null)
-  if (fromBaseline) {
-    return fromBaseline
-  }
-  return formatComponentMap(correctionPipeline.value?.component_targets ?? null)
-})
-
-function formatNullableNumber(value: number | null | undefined): string {
-  if (value == null || !Number.isFinite(value)) {
-    return '—'
-  }
-  return Number.isInteger(value) ? String(value) : value.toFixed(3)
-}
-
-function formatComponentMap(map: Record<string, number> | null | undefined): string | null {
-  if (!map) {
-    return null
-  }
-  const parts = Object.entries(map)
-    .filter(([, value]) => Number.isFinite(value))
-    .map(([key, value]) => `${key}=${Number(value).toFixed(3)}`)
-  return parts.length > 0 ? parts.join(' · ') : null
-}
-
-const correctionDosingClass = computed(() => {
-  const severity = correctionDosing.value?.severity ?? 'neutral'
-  if (severity === 'danger') {
-    return 'border-[color:var(--badge-danger-border)] bg-[color:var(--badge-danger-bg)] text-[color:var(--badge-danger-text)]'
-  }
-  if (severity === 'warning') {
-    return 'border-[color:var(--badge-warning-border)] bg-[color:var(--badge-warning-bg)] text-[color:var(--badge-warning-text)]'
-  }
-  if (severity === 'info') {
-    return 'border-[color:var(--badge-info-border)] bg-[color:var(--badge-info-bg)] text-[color:var(--badge-info-text)]'
-  }
-  return 'border-[color:var(--border-muted)]/70 bg-[color:var(--bg-elevated)]/55 text-[color:var(--text-primary)]'
-})
-
-const healthLabel = computed(() => {
-  if (failureDiagnostics.value) {
-    return failureDiagnostics.value.isActiveFailure ? 'Сбой' : 'Последний сбой'
-  }
-  return observabilityHealthLabel(observability.value?.overall_health)
-})
-
-const healthBadgeVariant = computed<'neutral' | 'info' | 'warning' | 'danger' | 'success'>(() => {
-  if (failureDiagnostics.value) {
-    return failureDiagnostics.value.isActiveFailure ? 'danger' : 'warning'
-  }
-  const health = observability.value?.overall_health
-  if (health === 'critical') return 'danger'
-  if (health === 'warning') return 'warning'
-  if (health === 'active') return 'info'
-  return 'neutral'
-})
-
-const stageLabel = computed(() => {
-  const runtime = observability.value?.runtime
-  if (runtime?.task_status === 'failed' && !runtime?.task_is_active) {
-    const failedStage = runtime.failed_stage
-      ?? props.automationState?.current_stage
-      ?? null
-    if (failedStage) {
-      return `${stageDiagnosticLabel(failedStage)} (сбой)`
-    }
-    return '—'
-  }
-  return stageDiagnosticLabel(
-    runtime?.current_stage
-    ?? props.automationState?.current_stage_label
-    ?? props.automationState?.current_stage,
-  )
-})
-
-const taskStatusLabel = computed(() => {
-  const runtime = observability.value?.runtime
-  if (!runtime?.task_status) {
-    return runtime?.task_is_active ? 'активна' : 'нет активной задачи'
-  }
-  if (runtime.waiting_command) {
-    return 'Ожидание подтверждения команды оборудованием'
-  }
-  return ({ pending: 'Ожидает запуска', claimed: 'Принята к выполнению', running: 'Выполняется', completed: 'Завершена', failed: 'Завершена с ошибкой', cancelled: 'Отменена' } as Record<string, string>)[runtime.task_status] ?? 'Статус неизвестен'
-})
-
-const stageElapsedLabel = computed(() => {
-  void tickMs.value
-  const runtime = observability.value?.runtime
-  if (runtime?.task_status === 'failed' || props.automationState?.state_details?.failed === true) {
-    const elapsed = runtime?.stage_elapsed_sec
-    return elapsed != null && elapsed > 0 ? formatObservabilityDuration(elapsed) : '—'
-  }
-  const enteredMs = parseIsoMs(runtime?.stage_entered_at ?? null)
-  if (enteredMs != null) {
-    const liveElapsed = Math.max(0, Math.floor((tickMs.value - enteredMs) / 1000))
-    return formatObservabilityDuration(liveElapsed)
-  }
-  return formatObservabilityDuration(runtime?.stage_elapsed_sec)
-})
-
-const deadlineLabel = computed(() => {
-  void tickMs.value
-  const runtime = observability.value?.runtime
-  if (runtime?.task_status === 'failed' || props.automationState?.state_details?.failed === true) {
-    return '—'
-  }
-  const deadlineMs = parseIsoMs(runtime?.stage_deadline_at ?? null)
-  if (deadlineMs != null) {
-    const remaining = Math.floor((deadlineMs - tickMs.value) / 1000)
-    if (remaining < 0) {
-      return `просрочен на ${formatObservabilityDuration(Math.abs(remaining))}`
-    }
-    return `осталось ${formatObservabilityDuration(remaining)}`
-  }
-  const remaining = runtime?.stage_deadline_remaining_sec
-  if (remaining === null || remaining === undefined) {
-    return '—'
-  }
-  if (remaining < 0) {
-    return `просрочен на ${formatObservabilityDuration(Math.abs(remaining))}`
-  }
-  return `осталось ${formatObservabilityDuration(remaining)}`
-})
-
-const correctionStep = computed(() => {
-  if (observability.value?.runtime?.task_status === 'failed') {
-    return null
-  }
-  return observability.value?.runtime?.correction_step ?? null
-})
-
-const topologyLabel = computed(() => {
-  const topology = observability.value?.runtime?.topology
-  if (typeof topology !== 'string' || topology.trim() === '') {
-    return null
-  }
-  if (topology.startsWith('two_tank')) return 'Двухбаковая система'
-  if (topology.startsWith('single_tank')) return 'Однобаковая система'
-  if (topology.startsWith('three_tank')) return 'Трёхбаковая система'
-  return 'Схема не распознана'
-})
-
-const pendingManualStepLabel = computed(() => {
-  const step = observability.value?.runtime?.pending_manual_step
-  if (typeof step !== 'string' || step.trim() === '') {
-    return null
-  }
-  return stageDiagnosticLabel(step.trim())
-})
-
-const taskIdLabel = computed(() => {
-  const taskId = observability.value?.runtime?.task_id
-  if (taskId === null || taskId === undefined) {
-    return null
-  }
-  return `#${taskId}`
-})
-
-const offlineNodes = computed(() => observability.value?.nodes?.offline_required ?? [])
-
-const dataSourceLabel = computed(() => {
-  if (props.automationState?.state_meta?.is_stale) {
-    return 'кэш Laravel (AE3 недоступен)'
-  }
-  const source = observability.value?.runtime?.source
-  if (source === 'laravel_db_fallback') {
-    return 'БД Laravel (fallback)'
-  }
-  if (source === 'client_fallback') {
-    return 'локальная оценка UI'
-  }
-  return 'AE3 live'
-})
-
-const schedulerSummary = computed(() => {
-  const scheduler = observability.value?.scheduler
-  if (!scheduler) {
-    return null
-  }
-  const pending = scheduler.pending_count ?? 0
-  const active = scheduler.active_count ?? 0
-  const latest = scheduler.latest_intent
-  if (active === 0 && pending === 0) {
-    return 'нет активных intent'
-  }
-  const parts = [`активных intent: ${active}`, `pending: ${pending}`]
-  if (latest?.intent_type) {
-    parts.push(`последний: ${latest.intent_type} (${latest.status ?? 'unknown'})`)
-  }
-  if (latest?.age_sec != null) {
-    parts.push(`возраст ${formatObservabilityDuration(latest.age_sec)}`)
-  }
-  return parts.join(' · ')
-})
-
-function formatFailureTimestamp(value: string): string {
-  return formatDateTime(value)
-}
-
-function readinessBoolLabel(value: boolean): string {
-  return value ? 'да' : 'нет'
-}
-
-function hintClass(severity: string): string {
-  if (severity === 'critical') {
-    return 'border-[color:var(--badge-danger-border)] bg-[color:var(--badge-danger-bg)] text-[color:var(--badge-danger-text)]'
-  }
-  return 'border-[color:var(--badge-warning-border)] bg-[color:var(--badge-warning-bg)] text-[color:var(--badge-warning-text)]'
-}
-
-function hintDetailLines(hint: { details?: Record<string, unknown> }): string[] {
-  const details = hint.details
-  if (!details || typeof details !== 'object') {
-    return []
-  }
-
-  const lines: string[] = []
-  if (details.intent_id != null) {
-    lines.push(`intent_id=${String(details.intent_id)}`)
-  }
-  if (typeof details.intent_type === 'string' && details.intent_type !== '') {
-    lines.push(`intent_type=${details.intent_type}`)
-  }
-  if (details.age_sec != null) {
-    lines.push(`age_sec=${String(details.age_sec)}`)
-  }
-  if (details.waiting_elapsed_sec != null) {
-    lines.push(`waiting_elapsed_sec=${String(details.waiting_elapsed_sec)}`)
-  }
-  if (typeof details.current_stage === 'string' && details.current_stage !== '') {
-    lines.push(`stage=${details.current_stage}`)
-  }
-  if (details.overdue_sec != null) {
-    lines.push(`overdue_sec=${String(details.overdue_sec)}`)
-  }
-  if (typeof details.task_status === 'string' && details.task_status !== '') {
-    lines.push(`task_status=${details.task_status}`)
-  }
-  if (typeof details.intent_status === 'string' && details.intent_status !== '') {
-    lines.push(`intent_status=${details.intent_status}`)
-  }
-  if (typeof details.idempotency_key === 'string' && details.idempotency_key !== '') {
-    lines.push(`idempotency_key=${details.idempotency_key}`)
-  }
-  if (Array.isArray(details.nodes) && details.nodes.length > 0) {
-    lines.push(`nodes=${details.nodes.map((n) => String(n)).join(',')}`)
-  }
-
-  return lines
-}
+import AutomationFailureDetails from './AutomationFailureDetails.vue'
+import SchedulerDispatchMetricsStrip from './SchedulerDispatchMetricsStrip.vue'
+import { useAutomationObservability } from '@/composables/useAutomationObservability'
+import { processStageLabel as stageDiagnosticLabel, processComponentLabel } from '@/utils/automationProcessLabels'
+import type { AutomationState } from '@/types/Automation'
+const props = defineProps<{ automationState: AutomationState | null }>()
+const { observability, failureDiagnostics, causalStrip, hangHints, correctionDosing, activeDosesLabel, prepareBaseline, correctionPipeline, ratioSummary, targetSummary, correctionDosingClass, healthLabel, healthBadgeVariant, stageLabel, taskStatusLabel, stageElapsedLabel, deadlineLabel, correctionStep, topologyLabel, pendingManualStepLabel, taskIdLabel, offlineNodes, dataSourceLabel, schedulerSummary, openTaskEvents, formatNullableNumber, readinessBoolLabel, hintClass, hintDetailLines } = useAutomationObservability(props)
 </script>
 
 <style scoped>

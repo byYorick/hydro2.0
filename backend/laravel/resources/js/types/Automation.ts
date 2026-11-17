@@ -76,8 +76,8 @@ export interface AutomationState {
     nutrient_tank_capacity_l: number | null
   }
   current_levels: {
-    clean_tank_level_percent: number
-    nutrient_tank_level_percent: number
+    clean_tank_level_percent: number | null
+    nutrient_tank_level_percent: number | null
     buffer_tank_level_percent?: number | null
     ph: number | null
     ec: number | null
@@ -97,9 +97,11 @@ export interface AutomationState {
   control_mode?: AutomationControlMode
   control_mode_available?: AutomationControlMode[]
   allowed_manual_steps?: AutomationManualStep[]
+  compatibility?: { source?: string } | null
   state_meta?: {
     source?: string
     is_stale?: boolean
+    observed_at?: string | null
     served_at?: string
   } | null
   irrigation_decision?: IrrigationDecisionEvidence | null

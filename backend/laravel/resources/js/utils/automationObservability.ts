@@ -77,6 +77,12 @@ function normalizeHangHint(raw: Record<string, unknown>): AutomationHangHint {
   }
 }
 
+function observedNumber(raw: unknown): number | undefined {
+  if (raw == null || typeof raw === 'boolean' || (typeof raw === 'string' && raw.trim() === '')) return undefined
+  const value = Number(raw)
+  return Number.isFinite(value) ? value : undefined
+}
+
 function normalizeRuntime(raw: unknown): AutomationObservability['runtime'] {
   if (!raw || typeof raw !== 'object') {
     return undefined
@@ -89,17 +95,17 @@ function normalizeRuntime(raw: unknown): AutomationObservability['runtime'] {
     })(),
     task_id: normalizePositiveId(source.task_id),
     task_status: typeof source.task_status === 'string' ? source.task_status : null,
-    task_is_active: Boolean(source.task_is_active),
+    task_is_active: typeof source.task_is_active === 'boolean' ? source.task_is_active : undefined,
     current_stage: typeof source.current_stage === 'string' ? source.current_stage : null,
     workflow_phase: typeof source.workflow_phase === 'string' ? source.workflow_phase : null,
     stage_entered_at: typeof source.stage_entered_at === 'string' ? source.stage_entered_at : null,
-    stage_elapsed_sec: Number(source.stage_elapsed_sec ?? 0),
+    stage_elapsed_sec: observedNumber(source.stage_elapsed_sec),
     stage_deadline_at: typeof source.stage_deadline_at === 'string' ? source.stage_deadline_at : null,
     stage_deadline_remaining_sec: source.stage_deadline_remaining_sec != null
       ? Number(source.stage_deadline_remaining_sec)
       : null,
     waiting_command: Boolean(source.waiting_command),
-    waiting_elapsed_sec: Number(source.waiting_elapsed_sec ?? 0),
+    waiting_elapsed_sec: observedNumber(source.waiting_elapsed_sec),
     task_updated_age_sec: source.task_updated_age_sec != null
       ? Number(source.task_updated_age_sec)
       : null,
@@ -154,8 +160,8 @@ function normalizeScheduler(raw: unknown): AutomationObservability['scheduler'] 
     : null
 
   return {
-    pending_count: Number(source.pending_count ?? 0),
-    active_count: Number(source.active_count ?? 0),
+    pending_count: observedNumber(source.pending_count),
+    active_count: observedNumber(source.active_count),
     latest_intent: latest
       ? {
           id: latest.id != null ? Number(latest.id) : undefined,
@@ -170,12 +176,12 @@ function normalizeScheduler(raw: unknown): AutomationObservability['scheduler'] 
   }
 }
 
-function normalizeHealth(raw: unknown): AutomationObservabilityHealth {
-  const value = String(raw ?? 'idle')
-  if (value === 'active' || value === 'warning' || value === 'critical') {
+function normalizeHealth(raw: unknown): AutomationObservabilityHealth | undefined {
+  const value = String(raw ?? '')
+  if (value === 'idle' || value === 'active' || value === 'warning' || value === 'critical') {
     return value
   }
-  return 'idle'
+  return undefined
 }
 
 function normalizeCorrection(raw: unknown): AutomationObservabilityCorrection | undefined {

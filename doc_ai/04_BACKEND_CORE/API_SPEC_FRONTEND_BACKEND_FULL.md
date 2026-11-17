@@ -1878,3 +1878,9 @@ level (info|warning|error)
 Агрегаты диспетчера для UI: `GET /api/system/scheduler/observability` (session/Sanctum, read-only, global).
 Поля и семантика наблюдений: [REST_API_REFERENCE](REST_API_REFERENCE.md#состояние-диспетчера-для-пользовательского-интерфейса).
 Мониторинговый scrape-token не передаётся в браузер.
+
+### Время наблюдения состояния автоматики (2026-11-17)
+
+`GET /api/zones/{id}/state` и Inertia bootstrap дополнены optional `state_meta.observed_at`: время последнего успешного получения исходного состояния Laravel. Чтение кэша не обновляет это время. Для старого кэша оно `null`; `served_at` по-прежнему означает выдачу ответа. DB-обогащение наблюдаемости может быть новее исходного снимка и не превращает его в live-состояние оборудования.
+
+Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0

@@ -19,14 +19,16 @@ vi.mock('@/Components/Badge.vue', () => ({
   },
 }))
 
-vi.mock('@/composables/useSchedulerDispatchMetrics', () => ({
+vi.mock('@/composables/useSchedulerDispatchMetrics', async () => {
+ const { ref } = await import('vue')
+ return ({
   useSchedulerDispatchMetrics: () => ({
-    metrics: { value: null },
-    loading: { value: false },
-    error: { value: null },
-    refreshedAt: { value: null },
+    metrics: ref(null),
+    loading: ref(false),
+    error: ref(null),
+    refreshedAt: ref(null),
   }),
-}))
+})})
 
 function buildState(overrides: Partial<AutomationState> = {}): AutomationState {
   return {
@@ -121,7 +123,7 @@ describe('AutomationObservabilityPanel', () => {
     expect(wrapper.text()).toContain('scheduler_intent_pending')
     expect(wrapper.text()).toContain('pump-node-1')
     expect(wrapper.find('[data-testid="automation-causal-strip"]').exists()).toBe(true)
-    expect(wrapper.text()).toContain('task #9001')
+    expect(wrapper.text()).toContain('Задача №9001')
     expect(wrapper.text()).toContain('intent_id=101')
     expect(wrapper.text()).toContain('age_sec=540')
     expect(wrapper.text()).toContain('Двухбаковая система')
@@ -189,7 +191,7 @@ describe('AutomationObservabilityPanel', () => {
 
     const strip = wrapper.find('[data-testid="automation-causal-strip"]')
     expect(strip.exists()).toBe(true)
-    expect(strip.text()).toContain('task #9001 → running → corr_check → CORRECTION_SKIPPED_COOLDOWN')
+    expect(strip.text()).toContain('Задача №9001 → Выполняется → Проверка условий коррекции → Коррекция отложена')
     expect(strip.text()).toContain('skip_event_id=55')
     expect(strip.text()).toContain('ph_no_effect=1')
 
@@ -205,7 +207,7 @@ describe('AutomationObservabilityPanel', () => {
     })
 
     expect(wrapper.find('[data-testid="automation-observability-panel"]').exists()).toBe(true)
-    expect(wrapper.text()).not.toContain('Явных признаков зависания не обнаружено')
+    expect(wrapper.text()).not.toContain('В полученном снимке признаков задержки не обнаружено')
   })
 
   it('shows healthy message when task is active without hints', () => {
@@ -225,7 +227,7 @@ describe('AutomationObservabilityPanel', () => {
       },
     })
 
-    expect(wrapper.text()).toContain('Явных признаков зависания не обнаружено')
+    expect(wrapper.text()).toContain('В полученном снимке признаков задержки не обнаружено')
     expect(wrapper.find('[data-testid="health-badge"]').attributes('data-variant')).toBe('info')
   })
 
@@ -256,7 +258,7 @@ describe('AutomationObservabilityPanel', () => {
       },
     })
 
-    expect(wrapper.text()).toContain('Срок завершения этапа')
+    expect(wrapper.text()).toContain('До предельного срока этапа')
     expect(wrapper.text()).not.toContain('осталось')
     expect(wrapper.text()).toContain('—')
   })
@@ -358,4 +360,23 @@ describe('AutomationObservabilityPanel', () => {
     expect(wrapper.text()).toContain('#3')
     expect(wrapper.find('[data-testid="health-badge"]').attributes('data-variant')).toBe('warning')
   })
+  it('does not grow elapsed time or show a deadline for a completed task', async () => {
+    vi.useFakeTimers()
+    const wrapper = mount(AutomationObservabilityPanel, { props: { automationState: buildState({ observability: { runtime: { task_is_active: false, task_status: 'completed', stage_elapsed_sec: 60, stage_entered_at: '2026-01-01T00:00:00Z', stage_deadline_at: '2026-01-01T00:00:30Z' } } }) } })
+    try {
+      expect(wrapper.text()).toContain('01:00')
+      await vi.advanceTimersByTimeAsync(10000)
+      expect(wrapper.text()).toContain('01:00')
+      expect(wrapper.text()).not.toContain('просрочен')
+    } finally { wrapper.unmount(); vi.useRealTimers() }
+  })
+
+  it('does not claim current execution or a live deadline from a stale snapshot', () => {
+    const wrapper = mount(AutomationObservabilityPanel, { props: { automationState: buildState({ state_meta: { source: 'cache', is_stale: true }, observability: { runtime: { task_is_active: true, task_status: 'running', stage_elapsed_sec: 12, stage_deadline_remaining_sec: 300 }, hang_hints: [] } }) } })
+    expect(wrapper.text()).toContain('Нет актуальных данных')
+    expect(wrapper.text()).not.toContain('В полученном снимке признаков задержки не обнаружено')
+    expect(wrapper.text()).toContain('00:12')
+    wrapper.unmount()
+  })
+
 })

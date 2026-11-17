@@ -40,7 +40,8 @@ describe('useAutomationRuntimeMeta', () => {
       state_meta: {
         source: 'cache',
         is_stale: true,
-        served_at: '2026-06-01T10:00:00.000Z',
+        served_at: '2026-06-01T10:01:00.000Z',
+        observed_at: '2026-06-01T10:00:00.000Z',
       },
     })
 

@@ -4,8 +4,6 @@ import type {
   AutomationState,
   AutomationStateType,
   AutomationTimelineEvent,
-  IrrNodeState,
-  IrrigationDecisionEvidence,
   WorkflowStageCode,
   WorkflowStageStatus,
   WorkflowStageView,
@@ -19,21 +17,12 @@ import { subscribeManagedChannelEvents } from '@/ws/managedChannelEvents'
 import { api } from '@/services/api'
 import { useZonesStore } from '@/stores/zones'
 import {
-  hasExplicitControlMode,
-  normalizeAutomationControlMode,
-  normalizeAutomationControlModes,
-  normalizeAutomationManualSteps,
-  resolveAllowedManualSteps,
-} from '@/composables/zoneAutomationUtils'
-import {
   buildProgressSummary,
   computeDisplayElapsedSec,
   resolveMacroPhaseLabel,
   resolveStageHeadline,
-  shouldShowProgressPercent,
 } from '@/utils/automationStatusDisplay'
-import { normalizeActiveDoses, normalizeObservability } from '@/utils/automationObservability'
-import { normalizeDayBalance, readOptionalSolutionTemp, readUnknownRecord } from '@/utils/cropDayView'
+import { clampPercent, normalizeAutomationPanelState } from '@/utils/automationPanelState'
 import { automationIndicatesActiveFailure } from '@/utils/automationFailureState'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -46,17 +35,17 @@ const WS_COMMAND_EVENT_NAMES = [
 ] as const
 
 const AUTOMATION_EVENT_LABELS: Record<string, string> = {
-  SCHEDULE_TASK_ACCEPTED: 'Scheduler: задача принята',
-  SCHEDULE_TASK_COMPLETED: 'Scheduler: задача завершена',
-  SCHEDULE_TASK_FAILED: 'Scheduler: задача с ошибкой',
-  SCHEDULE_TASK_EXECUTION_STARTED: 'Automation-engine: запуск выполнения',
-  SCHEDULE_TASK_EXECUTION_FINISHED: 'Automation-engine: выполнение завершено',
-  TASK_RECEIVED: 'Automation-engine: задача получена',
-  TASK_STARTED: 'Automation-engine: выполнение начато',
-  DECISION_MADE: 'Automation-engine: решение принято',
-  COMMAND_DISPATCHED: 'Команда отправлена узлу',
+  SCHEDULE_TASK_ACCEPTED: 'Планировщик: задача принята',
+  SCHEDULE_TASK_COMPLETED: 'Планировщик: задача завершена',
+  SCHEDULE_TASK_FAILED: 'Планировщик: задача с ошибкой',
+  SCHEDULE_TASK_EXECUTION_STARTED: 'Служба выполнения: запуск выполнения',
+  SCHEDULE_TASK_EXECUTION_FINISHED: 'Служба выполнения: выполнение завершено',
+  TASK_RECEIVED: 'Служба выполнения: задача получена',
+  TASK_STARTED: 'Служба выполнения: выполнение начато',
+  DECISION_MADE: 'Служба выполнения: решение принято',
+  COMMAND_DISPATCHED: 'Команда передана на отправку',
   COMMAND_FAILED: 'Ошибка отправки команды',
-  TASK_FINISHED: 'Automation-engine: задача завершена',
+  TASK_FINISHED: 'Служба выполнения: задача завершена',
   CLEAN_FILL_COMPLETED: 'Бак чистой воды заполнен',
   SOLUTION_FILL_COMPLETED: 'Бак рабочего раствора заполнен',
   CLEAN_FILL_RETRY_STARTED: 'Запущен повторный цикл clean-fill',
@@ -132,62 +121,6 @@ export interface AutomationPanelProps {
 }
 
 // ─── Helper functions ─────────────────────────────────────────────────────────
-
-function clampPercent(value: unknown): number {
-  const parsed = Number(value)
-  if (!Number.isFinite(parsed)) return 0
-  return Math.max(0, Math.min(100, parsed))
-}
-
-function toOptionalBoolean(value: unknown): boolean | null {
-  if (typeof value === 'boolean') return value
-  if (typeof value === 'number') {
-    if (value === 1) return true
-    if (value === 0) return false
-    return null
-  }
-  if (typeof value === 'string') {
-    const normalized = value.trim().toLowerCase()
-    if (normalized === '1' || normalized === 'true') return true
-    if (normalized === '0' || normalized === 'false') return false
-  }
-  return null
-}
-
-function normalizeIrrigationDecision(value: unknown): IrrigationDecisionEvidence | null {
-  const raw = readUnknownRecord(value)
-  if (!raw) return null
-  const text = (key: string) => typeof raw[key] === 'string' ? raw[key] as string : null
-  const taskId = raw.task_id == null ? null : Number(raw.task_id)
-  return {
-    task_id: taskId !== null && Number.isSafeInteger(taskId) && taskId > 0 ? taskId : null,
-    task_status: text('task_status'), current_stage: text('current_stage'),
-    created_at: text('created_at'), evaluated_at: text('evaluated_at'),
-    outcome: text('outcome'), reason_code: text('reason_code'), strategy: text('strategy'),
-    config: readUnknownRecord(raw.config), details: readUnknownRecord(raw.details),
-    bundle_revision: text('bundle_revision'), degraded: toOptionalBoolean(raw.degraded),
-    factors: readUnknownRecord(raw.factors),
-  }
-}
-
-function normalizeIrrNodeState(raw: unknown): IrrNodeState | null {
-  if (!raw || typeof raw !== 'object') return null
-  const state = raw as Record<string, unknown>
-
-  return {
-    clean_level_max: toOptionalBoolean(state.clean_level_max),
-    clean_level_min: toOptionalBoolean(state.clean_level_min),
-    solution_level_max: toOptionalBoolean(state.solution_level_max),
-    solution_level_min: toOptionalBoolean(state.solution_level_min),
-    valve_clean_fill: toOptionalBoolean(state.valve_clean_fill),
-    valve_clean_supply: toOptionalBoolean(state.valve_clean_supply),
-    valve_solution_fill: toOptionalBoolean(state.valve_solution_fill),
-    valve_solution_supply: toOptionalBoolean(state.valve_solution_supply),
-    valve_irrigation: toOptionalBoolean(state.valve_irrigation),
-    pump_main: toOptionalBoolean(state.pump_main),
-    updated_at: typeof state.updated_at === 'string' ? state.updated_at : null,
-  }
-}
 
 function normalizeReasonCode(reasonCode: string): string {
   return reasonCode.trim().toLowerCase().replace(/\s+/g, '_')
@@ -284,7 +217,7 @@ function deriveWorkflowStages(state: AutomationStateType, hasFailedState: boolea
 }
 
 function parseServedAtMs(state: AutomationState | null): number | null {
-  const raw = state?.state_meta?.served_at
+  const raw = state?.state_meta?.observed_at ?? state?.state_meta?.served_at
   if (!raw) return null
   const ms = Date.parse(raw)
   return Number.isFinite(ms) ? ms : null
@@ -314,7 +247,7 @@ function formatTimelineLabel(event: AutomationTimelineEvent): string {
   const sourceLabel = String(event.label ?? '').trim()
   const reasonFromLabel = extractReasonCodeFromEventLabel(sourceLabel)
   const baseFromLabel = sourceLabel.replace(/\s*\([^()]+\)\s*$/, '').trim()
-  const baseLabel = baseFromLabel || AUTOMATION_EVENT_LABELS[eventCode] || eventCode || 'Событие'
+  const baseLabel = AUTOMATION_EVENT_LABELS[eventCode] || baseFromLabel || eventCode || 'Событие'
   const reasonLabel = reasonFromLabel ? (AUTOMATION_REASON_LABELS[reasonFromLabel] ?? reasonFromLabel) : null
   const stagePrefix = stagePrefixForEvent(eventCode, reasonFromLabel)
   const suppressReasonForEvent =
@@ -358,6 +291,9 @@ export function useAutomationPanel(
   const flowOffset = ref(0)
   const elapsedTickMs = ref(Date.now())
 
+  let zoneGeneration = 0
+  let disposed = false
+  const lastReceivedAt = ref<string | null>(null)
   let fetchInFlight = false
   let fetchQueued = false
   let hasAppliedLiveFetch = false
@@ -374,128 +310,20 @@ export function useAutomationPanel(
 
   // ─── Normalize ────────────────────────────────────────────────────────────
 
-  function normalizeState(raw: unknown): AutomationState {
-    const source = (raw && typeof raw === 'object' ? raw : {}) as Partial<AutomationState>
-    const sourceAny = source as Record<string, unknown>
-    const state = String(source.state || 'IDLE') as AutomationStateType
-    const tanksRaw = Number(source.system_config?.tanks_count ?? props.fallbackTanksCount ?? 2)
-    const tanksCount: 2 | 3 = tanksRaw === 3 ? 3 : 2
-
-    const irrNodeStateRaw =
-      sourceAny.irr_node_state
-      ?? sourceAny.irrState
-      ?? sourceAny.irrigation_node_state
-      ?? (sourceAny.process_state && typeof sourceAny.process_state === 'object'
-        ? (sourceAny.process_state as Record<string, unknown>).irr_node_state
-        : undefined)
-    const irrNodeState = normalizeIrrNodeState(irrNodeStateRaw)
-
-
-    return {
-      zone_id: Number(source.zone_id ?? props.zoneId ?? 0),
-      state,
-      state_label: String(source.state_label || ''),
-      state_details: {
-        started_at: source.state_details?.started_at ?? null,
-        stage_entered_at: (source.state_details as Record<string, unknown> | undefined)?.stage_entered_at as string | null ?? null,
-        elapsed_sec: Number(source.state_details?.elapsed_sec ?? 0),
-        progress_percent: clampPercent(source.state_details?.progress_percent ?? 0),
-        progress_basis: (source.state_details as Record<string, unknown> | undefined)?.progress_basis as string | null ?? null,
-        stage_deadline_remaining_sec: (() => {
-          const raw = (source.state_details as Record<string, unknown> | undefined)?.stage_deadline_remaining_sec
-          return raw == null ? null : Number(raw)
-        })(),
-        failed: Boolean(source.state_details?.failed ?? false),
-        error_code: (source.state_details as Record<string, unknown> | undefined)?.error_code as string | null ?? null,
-        error_message: (source.state_details as Record<string, unknown> | undefined)?.error_message as string | null ?? null,
-        human_error_message: (source.state_details as Record<string, unknown> | undefined)?.human_error_message as string | null ?? null,
-        failed_task_id: (() => {
-          const raw = (source.state_details as Record<string, unknown> | undefined)?.failed_task_id
-          if (raw == null) return null
-          const parsed = Number(raw)
-          return Number.isFinite(parsed) && parsed > 0 ? parsed : null
-        })(),
-      },
-      last_terminal_failure: (() => {
-        const raw = sourceAny.last_terminal_failure
-        if (!raw || typeof raw !== 'object') return null
-        const record = raw as Record<string, unknown>
-        const taskIdRaw = record.task_id
-        const taskId = taskIdRaw == null ? null : Number(taskIdRaw)
-        return {
-          task_id: Number.isFinite(taskId) && taskId > 0 ? taskId : null,
-          failed_at: typeof record.failed_at === 'string' ? record.failed_at : null,
-          error_code: typeof record.error_code === 'string' ? record.error_code : null,
-          error_message: typeof record.error_message === 'string' ? record.error_message : null,
-          human_error_message: typeof record.human_error_message === 'string' ? record.human_error_message : null,
-        }
-      })(),
-      workflow_phase: (sourceAny.workflow_phase as string | null | undefined) ?? null,
-      current_stage: (sourceAny.current_stage as string | null | undefined) ?? null,
-      current_stage_label: (sourceAny.current_stage_label as string | null | undefined) ?? null,
-      system_config: {
-        tanks_count: tanksCount,
-        system_type: (source.system_config?.system_type as IrrigationSystem) || props.fallbackSystemType || 'drip',
-        clean_tank_capacity_l: source.system_config?.clean_tank_capacity_l ?? null,
-        nutrient_tank_capacity_l: source.system_config?.nutrient_tank_capacity_l ?? null,
-      },
-      current_levels: {
-        clean_tank_level_percent: clampPercent(source.current_levels?.clean_tank_level_percent ?? 0),
-        nutrient_tank_level_percent: clampPercent(source.current_levels?.nutrient_tank_level_percent ?? 0),
-        buffer_tank_level_percent: source.current_levels?.buffer_tank_level_percent ?? null,
-        ph: source.current_levels?.ph ?? null,
-        ec: source.current_levels?.ec ?? null,
-        solution_temp_c: readOptionalSolutionTemp(source.current_levels),
-      },
-      active_processes: {
-        pump_in: Boolean(source.active_processes?.pump_in),
-        circulation_pump: Boolean(source.active_processes?.circulation_pump),
-        ph_correction: Boolean(source.active_processes?.ph_correction),
-        ec_correction: Boolean(source.active_processes?.ec_correction),
-        active_doses: normalizeActiveDoses(source.active_processes?.active_doses),
-      },
-      timeline: Array.isArray(source.timeline) ? source.timeline : [],
-      next_state: source.next_state ?? null,
-      estimated_completion_sec: source.estimated_completion_sec ?? null,
-      irr_node_state: irrNodeState,
-      ...(hasExplicitControlMode(sourceAny.control_mode)
-        ? {
-            control_mode: normalizeAutomationControlMode(sourceAny.control_mode),
-            control_mode_available: normalizeAutomationControlModes(sourceAny.control_mode_available),
-            allowed_manual_steps: resolveAllowedManualSteps(
-              normalizeAutomationControlMode(sourceAny.control_mode),
-              (sourceAny.current_stage as string | null | undefined) ?? null,
-              normalizeAutomationManualSteps(sourceAny.allowed_manual_steps),
-            ),
-          }
-        : {}),
-      state_meta: sourceAny.state_meta && typeof sourceAny.state_meta === 'object'
-        ? {
-            source: String((sourceAny.state_meta as Record<string, unknown>).source ?? ''),
-            is_stale: Boolean((sourceAny.state_meta as Record<string, unknown>).is_stale),
-            served_at: String((sourceAny.state_meta as Record<string, unknown>).served_at ?? ''),
-          }
-        : null,
-      decision: normalizeIrrigationDecision(sourceAny.decision),
-      irrigation_decision: normalizeIrrigationDecision(sourceAny.irrigation_decision),
-      day_balance: normalizeDayBalance(sourceAny.day_balance),
-      decision_factors: readUnknownRecord(sourceAny.decision_factors),
-      observability: normalizeObservability(sourceAny.observability),
-    }
-  }
-
   function applyAutomationStateFromPage(raw: unknown): boolean {
     if (!isAutomationStatePayload(raw)) {
       return false
     }
 
-    const normalized = normalizeState(raw)
+    let normalized: AutomationState
+    try { normalized = normalizeAutomationPanelState(raw, props) } catch { return false }
     if (props.zoneId && normalized.zone_id > 0 && normalized.zone_id !== props.zoneId) {
       return false
     }
 
     const current = automationState.value
     if (current) {
+      if (hasAppliedLiveFetch && current.state_meta?.source === 'live' && normalized.state_meta?.source === 'cache') return false
       const incomingServed = parseServedAtMs(normalized)
       const currentServed = parseServedAtMs(current)
       if (
@@ -512,6 +340,7 @@ export function useAutomationPanel(
     }
 
     automationState.value = normalized
+    lastReceivedAt.value = new Date().toISOString()
     errorMessage.value = null
     connectivityWarning.value = null
     isAutomationStateLoading.value = false
@@ -555,7 +384,7 @@ export function useAutomationPanel(
   // ─── Fetch ────────────────────────────────────────────────────────────────
 
   async function fetchAutomationState(): Promise<void> {
-    if (!props.zoneId) return
+    if (disposed || !props.zoneId) return
 
     if (fetchInFlight) {
       fetchQueued = true
@@ -563,35 +392,35 @@ export function useAutomationPanel(
     }
 
     const requestedZoneId = props.zoneId
+    const requestedGeneration = zoneGeneration
     fetchInFlight = true
-    if (automationState.value === null) {
-      isAutomationStateLoading.value = true
-    }
+    isAutomationStateLoading.value = true
     try {
-      const response = await api.zones.getState<unknown>(requestedZoneId)
-      if (props.zoneId !== requestedZoneId) return
-      const normalized = normalizeState(response)
+      const response = await api.zones.getState<unknown>(requestedZoneId, { skipErrorToast: true })
+      if (disposed || requestedGeneration !== zoneGeneration || props.zoneId !== requestedZoneId) return
+      const normalized = normalizeAutomationPanelState(response, props)
       if (normalized.zone_id > 0 && normalized.zone_id !== requestedZoneId) {
         return
       }
       automationState.value = normalized
+      lastReceivedAt.value = new Date().toISOString()
       hasAppliedLiveFetch = true
       errorMessage.value = null
       connectivityWarning.value = null
     } catch (error) {
-      if (props.zoneId !== requestedZoneId) return
-      const message = error instanceof Error ? error.message : 'unknown_error'
+      if (disposed || requestedGeneration !== zoneGeneration || props.zoneId !== requestedZoneId) return
+      logger.warn('[AutomationProcessPanel] State refresh failed', { zoneId: requestedZoneId, error })
       if (automationState.value) {
         errorMessage.value = null
-        connectivityWarning.value = `Связь с automation-engine нестабильна (${message}). Показано последнее полученное состояние.`
+        connectivityWarning.value = 'Не удалось обновить состояние. Показаны ранее полученные данные; текущее выполнение не подтверждено.'
       } else {
         connectivityWarning.value = null
-        errorMessage.value = `Не удалось получить состояние автоматизации (${message}).`
+        errorMessage.value = 'Не удалось получить состояние автоматики. Проверьте соединение и повторите попытку.'
       }
     } finally {
       fetchInFlight = false
-      isAutomationStateLoading.value = false
-      if (fetchQueued) {
+      if (!disposed) isAutomationStateLoading.value = false
+      if (fetchQueued && !disposed) {
         fetchQueued = false
         void fetchAutomationState()
       }
@@ -617,7 +446,7 @@ export function useAutomationPanel(
   function startFallbackPolling(): void {
     if (fallbackPollingTimer !== null || !props.zoneId) return
     fallbackPollingTimer = setInterval(() => {
-      void fetchAutomationState()
+      if (document.visibilityState !== 'hidden') void fetchAutomationState()
     }, FALLBACK_POLL_INTERVAL_MS)
   }
 
@@ -684,6 +513,8 @@ export function useAutomationPanel(
 
   // ─── Computed ─────────────────────────────────────────────────────────────
 
+  const snapshotUnreliable = computed(() => Boolean(automationState.value?.state_meta?.is_stale || connectivityWarning.value || errorMessage.value))
+
   const stateCode = computed<AutomationStateType>(() => automationState.value?.state ?? 'IDLE')
 
   const fallbackStateLabel = computed(() => {
@@ -726,7 +557,7 @@ export function useAutomationPanel(
     return map[stateCode.value]
   })
 
-  const isProcessActive = computed(() => stateCode.value !== 'IDLE' && stateCode.value !== 'READY')
+  const isProcessActive = computed(() => Boolean(automationState.value) && !snapshotUnreliable.value && !automationIndicatesActiveFailure(automationState.value) && stateCode.value !== 'IDLE' && stateCode.value !== 'READY')
   const irrNodeState = computed(() => automationState.value?.irr_node_state ?? null)
   const cleanTankLevel = computed(() => {
     const state = irrNodeState.value
@@ -735,15 +566,15 @@ export function useAutomationPanel(
     // оба false — уровень ниже нижней отметки (бак пустой или почти пустой)
     if (state?.clean_level_max === false && state?.clean_level_min === false) return 0
     // min=true без max — выше нижней отметки, точное значение неизвестно; используем raw %
-    return automationState.value?.current_levels.clean_tank_level_percent ?? 0
+    return automationState.value?.current_levels.clean_tank_level_percent ?? null
   })
   const nutrientTankLevel = computed(() => {
     const state = irrNodeState.value
     if (state?.solution_level_max === true) return 100
     if (state?.solution_level_max === false && state?.solution_level_min === false) return 0
-    return automationState.value?.current_levels.nutrient_tank_level_percent ?? 0
+    return automationState.value?.current_levels.nutrient_tank_level_percent ?? null
   })
-  const bufferTankLevel = computed(() => clampPercent(automationState.value?.current_levels.buffer_tank_level_percent ?? 0))
+  const bufferTankLevel = computed(() => automationState.value?.current_levels.buffer_tank_level_percent ?? null)
   const isPumpInActive = computed(() => {
     const fromIrr = irrNodeState.value?.pump_main
     if (fromIrr !== null && fromIrr !== undefined) return fromIrr
@@ -865,7 +696,7 @@ export function useAutomationPanel(
 
   const displayElapsedSec = computed(() => {
     const serverElapsed = Number(automationState.value?.state_details.elapsed_sec ?? 0)
-    if (!isTaskActive.value) {
+    if (!isTaskActive.value || snapshotUnreliable.value) {
       return Math.max(0, serverElapsed)
     }
     return computeDisplayElapsedSec({
@@ -878,7 +709,7 @@ export function useAutomationPanel(
   })
 
   const displayRemainingSec = computed(() => {
-    if (!isTaskActive.value) {
+    if (!isTaskActive.value || snapshotUnreliable.value) {
       return null
     }
     let remaining: number | null = null
@@ -911,7 +742,7 @@ export function useAutomationPanel(
   const progressBasis = computed(() => automationState.value?.state_details.progress_basis ?? null)
 
   const showProgressPercent = computed(() =>
-    isTaskActive.value && shouldShowProgressPercent(progressPercent.value, isProcessActive.value),
+    !snapshotUnreliable.value && isTaskActive.value && progressPercent.value > 0,
   )
 
   const showElapsedMetrics = computed(() =>
@@ -922,7 +753,7 @@ export function useAutomationPanel(
     buildProgressSummary({
       progressPercent: progressPercent.value,
       elapsedSec: displayElapsedSec.value,
-      estimatedCompletionSec: automationState.value?.estimated_completion_sec,
+      estimatedCompletionSec: null,
       isProcessActive: isProcessActive.value,
     }),
   )
@@ -938,7 +769,7 @@ export function useAutomationPanel(
   // ─── Flow animation ───────────────────────────────────────────────────────
 
   function tickFlow(): void {
-    if (!isAnyFlowActive.value) return
+    if (disposed || snapshotUnreliable.value || !isAnyFlowActive.value || document.visibilityState === 'hidden') return
     flowOffset.value += 0.03
     if (flowOffset.value > 1) flowOffset.value = 0
   }
@@ -977,11 +808,13 @@ export function useAutomationPanel(
 
   watch(() => props.zoneId, (newZoneId, oldZoneId) => {
     if (newZoneId === oldZoneId) return
+    zoneGeneration++
 
     clearWsRefreshTimer()
     cleanupRealtimeChannels()
     stopFallbackPolling()
     hasAppliedLiveFetch = false
+    lastReceivedAt.value = null
     automationState.value = null
     errorMessage.value = null
     connectivityWarning.value = null
@@ -998,8 +831,8 @@ export function useAutomationPanel(
     if (wsEnabled) {
       const subscribed = subscribeRealtimeChannels()
       if (subscribed && getConnectionState().state === 'connected') {
-        stopFallbackPolling()
-        scheduleRealtimeRefresh()
+        startFallbackPolling()
+        if (!fetchInFlight) scheduleRealtimeRefresh()
         return
       }
     }
@@ -1010,22 +843,22 @@ export function useAutomationPanel(
   // ─── Lifecycle ────────────────────────────────────────────────────────────
 
   onMounted(() => {
-    if (automationState.value === null) {
+    if (automationState.value === null || automationState.value.state_meta?.is_stale) {
       void fetchAutomationState()
     }
 
     if (wsEnabled) {
       const subscribed = subscribeRealtimeChannels()
       if (subscribed && getConnectionState().state === 'connected') {
-        stopFallbackPolling()
-        scheduleRealtimeRefresh()
+        startFallbackPolling()
+        if (!fetchInFlight) scheduleRealtimeRefresh()
       } else {
         startFallbackPolling()
       }
 
       wsStateListenerCleanup = onWsStateChange((state) => {
         if (state === 'connected') {
-          stopFallbackPolling()
+          startFallbackPolling()
           scheduleRealtimeRefresh()
           return
         }
@@ -1049,6 +882,8 @@ export function useAutomationPanel(
   })
 
   onUnmounted(() => {
+    disposed = true
+    fetchQueued = false
     if (wsStateListenerCleanup) {
       wsStateListenerCleanup()
       wsStateListenerCleanup = null
@@ -1068,6 +903,9 @@ export function useAutomationPanel(
 
   return {
     automationState,
+    snapshotUnreliable,
+    lastReceivedAt,
+    refresh: fetchAutomationState,
     isAutomationStateLoading,
     errorMessage,
     connectivityWarning,

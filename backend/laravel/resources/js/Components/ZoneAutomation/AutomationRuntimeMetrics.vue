@@ -6,19 +6,19 @@
 
     <dl class="grid grid-cols-2 gap-2">
       <div class="metric-tile">
-        <dt>Чистая вода</dt>
-        <dd>{{ cleanTankLevel }}%</dd>
+        <dt>Уровень чистой воды</dt>
+        <dd>{{ levelLabel(cleanTankLevel, 'clean') }}</dd>
       </div>
       <div class="metric-tile">
-        <dt>Раствор</dt>
-        <dd>{{ nutrientTankLevel }}%</dd>
+        <dt>Уровень раствора</dt>
+        <dd>{{ levelLabel(nutrientTankLevel, 'solution') }}</dd>
       </div>
       <div
-        v-if="bufferTankLevel > 0"
+        v-if="bufferTankLevel !== null"
         class="metric-tile"
       >
         <dt>Буфер</dt>
-        <dd>{{ bufferTankLevel }}%</dd>
+        <dd>{{ levelLabel(bufferTankLevel) }}</dd>
       </div>
       <div class="metric-tile">
         <dt>pH</dt>
@@ -30,6 +30,9 @@
       </div>
     </dl>
 
+    <p class="text-xs text-[color:var(--text-muted)]">
+      Показания из полученного снимка. Признаки процесса ниже не являются измерением расхода.
+    </p>
     <div
       v-if="activeChips.length > 0"
       class="flex flex-wrap gap-1.5"
@@ -38,7 +41,7 @@
         v-for="chip in activeChips"
         :key="chip.key"
         class="rounded-full border px-2 py-0.5 text-[10px] font-medium"
-        :class="chip.active ? 'border-status-ok bg-status-ok-soft text-status-ok' : 'border-[color:var(--border-muted)]/50 text-[color:var(--text-dim)]'"
+        :class="chip.active ? 'border-[color:var(--border-muted)] text-[color:var(--text-muted)]' : 'border-[color:var(--border-muted)]/50 text-[color:var(--text-dim)]'"
       >
         {{ chip.label }}
       </span>
@@ -52,9 +55,9 @@ import type { AutomationState } from '@/types/Automation'
 
 interface Props {
   automationState: AutomationState | null
-  cleanTankLevel: number
-  nutrientTankLevel: number
-  bufferTankLevel: number
+  cleanTankLevel: number | null
+  nutrientTankLevel: number | null
+  bufferTankLevel: number | null
   isPumpInActive: boolean
   isCirculationActive: boolean
   isPhCorrectionActive: boolean
@@ -64,8 +67,8 @@ interface Props {
 
 const props = defineProps<Props>()
 
-const ph = computed(() => props.automationState?.current_levels.ph ?? null)
-const ec = computed(() => props.automationState?.current_levels.ec ?? null)
+const ph = computed(() => props.automationState?.current_levels?.ph ?? null)
+const ec = computed(() => props.automationState?.current_levels?.ec ?? null)
 
 const activeChips = computed(() => [
   { key: 'pump', label: 'Насос', active: props.isPumpInActive },
@@ -75,11 +78,21 @@ const activeChips = computed(() => [
   { key: 'irr', label: 'Полив', active: props.isIrrigationActive },
 ].filter((chip) => chip.active))
 
+function levelLabel(value: number | null, tank?: 'clean' | 'solution'): string {
+  const node = props.automationState?.irr_node_state
+  const max = tank === 'clean' ? node?.clean_level_max : tank === 'solution' ? node?.solution_level_max : null
+  const min = tank === 'clean' ? node?.clean_level_min : tank === 'solution' ? node?.solution_level_min : null
+  if (max === true) return 'Достигнута верхняя отметка'
+  if (max === false && min === false) return 'Ниже нижней отметки'
+  if (min === true) return 'Выше нижней отметки'
+  return value == null || !Number.isFinite(value) ? 'Нет данных' : `${new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 1 }).format(value)}%`
+}
+
 function formatMetric(value: number | null, suffix = ''): string {
-  if (value === null || value === undefined || !Number.isFinite(Number(value))) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
     return '—'
   }
-  return `${Number(value).toFixed(2)}${suffix}`
+  return `${new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 }).format(value)}${suffix}`
 }
 </script>
 

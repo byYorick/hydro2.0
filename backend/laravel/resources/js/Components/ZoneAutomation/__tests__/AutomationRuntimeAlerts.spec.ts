@@ -16,7 +16,7 @@ describe('AutomationRuntimeAlerts', () => {
 
     expect(wrapper.text()).toContain('Последний сбой автоматики')
     expect(wrapper.text()).toContain('irr_state_mismatch')
-    expect(wrapper.text()).toContain('Активный алерт подтверждён')
+    expect(wrapper.text()).toContain('Показан завершившийся сбой')
   })
 
   it('показывает активный сбой', () => {
@@ -31,6 +31,6 @@ describe('AutomationRuntimeAlerts', () => {
     })
 
     expect(wrapper.text()).toContain('Сбой автоматики')
-    expect(wrapper.text()).not.toContain('Активный алерт подтверждён')
+    expect(wrapper.text()).not.toContain('Показан завершившийся сбой')
   })
 })

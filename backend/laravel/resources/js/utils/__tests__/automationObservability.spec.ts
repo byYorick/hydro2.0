@@ -10,6 +10,14 @@ import {
 } from '@/utils/automationObservability'
 
 describe('automationObservability', () => {
+  it('keeps missing observations distinct from idle, false, and zero', () => {
+    const value = normalizeObservability({ overall_health: 'future_health', runtime: {}, scheduler: {} })
+    expect(value?.overall_health).toBeUndefined()
+    expect(value?.runtime?.task_is_active).toBeUndefined()
+    expect(value?.runtime?.stage_elapsed_sec).toBeUndefined()
+    expect(value?.scheduler?.pending_count).toBeUndefined()
+    expect(normalizeObservability({ runtime: { task_is_active: false, stage_elapsed_sec: 0 }, scheduler: { pending_count: 0 } })?.scheduler?.pending_count).toBe(0)
+  })
   it('normalizes hang hints and runtime block', () => {
     const result = normalizeObservability({
       overall_health: 'warning',
