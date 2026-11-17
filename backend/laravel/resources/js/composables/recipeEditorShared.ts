@@ -1,3 +1,6 @@
+import { toNullableNumber, nullableDraftNumber, nullableDraftInt, toNullableInt, normalizeTimeString } from './recipePhaseNumbers'
+export { toNullableNumber, nullableDraftNumber, nullableDraftInt, toNullableInt, normalizeTimeString } from './recipePhaseNumbers'
+export { getRecipePhaseTargetValidationError } from './recipePhaseValidation'
 import type { Recipe, RecipePhase, NutrientProduct } from '@/types'
 import { resolveRecipePhaseSystemType } from '@/composables/recipeSystemType'
 
@@ -87,61 +90,6 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   }
 
   return value as Record<string, unknown>
-}
-
-export function toNullableNumber(value: unknown, fallback: number | null = null): number | null {
-  if (value === null || value === undefined || value === '') {
-    return fallback
-  }
-
-  const parsed = Number(value)
-  return Number.isFinite(parsed) ? parsed : fallback
-}
-
-/** Пустая строка и пробелы — null. Number('') равен 0, для порогов культуры это включение контура. */
-export function nullableDraftNumber(value: unknown): number | null {
-  if (value === null || value === undefined) {
-    return null
-  }
-  if (typeof value === 'number') {
-    return Number.isFinite(value) ? value : null
-  }
-  const text = String(value).trim()
-  if (text === '') {
-    return null
-  }
-  const parsed = Number(text)
-  return Number.isFinite(parsed) ? parsed : null
-}
-
-export function nullableDraftInt(value: unknown): number | null {
-  const parsed = nullableDraftNumber(value)
-  if (parsed === null) {
-    return null
-  }
-  return Math.round(parsed)
-}
-
-export function toNullableInt(value: unknown, fallback: number | null = null): number | null {
-  const parsed = toNullableNumber(value, fallback)
-  if (parsed === null) {
-    return null
-  }
-
-  return Math.round(parsed)
-}
-
-export function normalizeTimeString(value: unknown, fallback = '06:00:00'): string {
-  const normalized = String(value ?? '').trim()
-  if (/^\d{2}:\d{2}:\d{2}$/.test(normalized)) {
-    return normalized
-  }
-
-  if (/^\d{2}:\d{2}$/.test(normalized)) {
-    return `${normalized}:00`
-  }
-
-  return fallback
 }
 
 function resolveIrrigationMode(systemType: RecipeSystemType, rawMode: unknown): RecipeIrrigationMode {
@@ -571,74 +519,6 @@ export function mapSimpleRecipePhaseToForm(phase: {
   form.day_night.humidity.night = phase.targets.humidity_air
   form.day_night.lighting.day_hours = phase.targets.light_hours
   return form
-}
-
-function validateBoundedTarget(
-  label: string,
-  target: number | null,
-  min: number | null,
-  max: number | null,
-): string | null {
-  if (target === null || min === null || max === null) {
-    return `${label}: заполните target, min и max`
-  }
-
-  if (min > max) {
-    return `${label}: нижняя граница не может быть больше верхней`
-  }
-
-  if (target < min || target > max) {
-    return `${label}: цель должна находиться между нижней и верхней границами`
-  }
-
-  return null
-}
-
-function cropDayPhaseError(phase: RecipePhaseFormState): string | null {
-  const min = nullableDraftNumber(phase.solution_temp_min)
-  const max = nullableDraftNumber(phase.solution_temp_max)
-  if (min !== null && max !== null && min > max) {
-    return 'Температура раствора: нижняя граница не может быть больше верхней'
-  }
-  if (phase.solution_health_required === true && (min === null || max === null)) {
-    return 'Для контроля температуры раствора заполните нижнюю и верхнюю границы'
-  }
-  return null
-}
-
-export function getRecipePhaseTargetValidationError(phase: RecipePhaseFormState): string | null {
-  for (const [label, value] of [
-    ['Длительность фазы', phase.duration_hours],
-    ['Интервал полива', phase.irrigation_interval_sec],
-    ['Длительность полива', phase.irrigation_duration_sec],
-  ] as Array<[string, number | null]>) {
-    if (value !== null && (!Number.isFinite(value) || !Number.isInteger(value) || value < 0)) {
-      return `${label}: проверьте формат времени и допустимые значения минут, секунд или часов`
-    }
-  }
-
-  for (const [profile, value] of Object.entries(phase.day_night.soil_moisture)) {
-    if (value !== null && (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 100)) {
-      return `Влажность субстрата (${profile === 'day' ? 'день' : 'ночь'}): укажите число от 0 до 100%`
-    }
-  }
-  if (phase.irrigation_duration_sec !== null && phase.irrigation_duration_sec > 3600) {
-    return 'Длительность полива: не более 60 минут (60:00) за один запуск'
-  }
-  if (phase.irrigation_interval_sec !== null && phase.irrigation_interval_sec > 86400) {
-    return 'Интервал полива: не более 24 часов (24:00)'
-  }
-  return validateBoundedTarget(
-    'pH',
-    toNullableNumber(phase.ph_target),
-    toNullableNumber(phase.ph_min),
-    toNullableNumber(phase.ph_max),
-  ) ?? validateBoundedTarget(
-    'EC',
-    toNullableNumber(phase.ec_target),
-    toNullableNumber(phase.ec_min),
-    toNullableNumber(phase.ec_max),
-  ) ?? cropDayPhaseError(phase)
 }
 
 export function filterProductsByComponent(products: NutrientProduct[], component: NutrientProduct['component']): NutrientProduct[] {
