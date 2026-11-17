@@ -4,210 +4,14 @@ namespace App\Services;
 
 use App\Support\Automation\FieldCatalogHelpBuilder;
 use App\Support\Automation\ObservabilityThresholdsCatalog;
+use App\Support\Automation\SystemAutomationFields;
 use InvalidArgumentException;
 
 class SystemAutomationSettingsCatalog
 {
-    private const FIELD_CATALOG = [
-        'pump_calibration' => [
-            [
-                'key' => 'pump_calibration',
-                'label' => 'Калибровка насосов',
-                'description' => 'Системные пороги ручной и runtime pump calibration.',
-                'fields' => [
-                    ['path' => 'ml_per_sec_min', 'label' => 'Min ml/sec', 'description' => 'Минимальная допустимая скорость насоса.', 'type' => 'number', 'min' => 0.001, 'max' => 1.0, 'step' => 0.001],
-                    ['path' => 'ml_per_sec_max', 'label' => 'Max ml/sec', 'description' => 'Максимальная допустимая скорость насоса.', 'type' => 'number', 'min' => 5.0, 'max' => 200.0, 'step' => 0.1],
-                    ['path' => 'min_dose_ms', 'label' => 'Min dose ms', 'description' => 'Минимальный эффективный импульс дозирования.', 'type' => 'integer', 'min' => 10, 'max' => 500],
-                    ['path' => 'max_dose_ms', 'label' => 'Max dose ms', 'description' => 'Максимальная длительность одной дозы AE3 (должна совпадать с NodeConfig safe_limits.max_duration_ms на ноде).', 'type' => 'integer', 'min' => 1000, 'max' => 300000],
-                    ['path' => 'calibration_duration_min_sec', 'label' => 'Calibration min sec', 'description' => 'Минимальная длительность pump run для калибровки.', 'type' => 'integer', 'min' => 1, 'max' => 10],
-                    ['path' => 'calibration_duration_max_sec', 'label' => 'Calibration max sec', 'description' => 'Максимальная длительность pump run для калибровки.', 'type' => 'integer', 'min' => 30, 'max' => 600],
-                    ['path' => 'quality_score_basic', 'label' => 'Quality basic', 'description' => 'Score для базовой калибровки без K.', 'type' => 'number', 'min' => 0.0, 'max' => 1.0, 'step' => 0.01],
-                    ['path' => 'quality_score_with_k', 'label' => 'Quality with K', 'description' => 'Score для калибровки с ΔEC/K.', 'type' => 'number', 'min' => 0.0, 'max' => 1.0, 'step' => 0.01],
-                    ['path' => 'quality_score_legacy', 'label' => 'Quality legacy', 'description' => 'Score для legacy backfill.', 'type' => 'number', 'min' => 0.0, 'max' => 1.0, 'step' => 0.01],
-                    ['path' => 'age_warning_days', 'label' => 'Age warning days', 'description' => 'Порог предупреждения по возрасту калибровки.', 'type' => 'integer', 'min' => 1, 'max' => 365],
-                    ['path' => 'age_critical_days', 'label' => 'Age critical days', 'description' => 'Критичный возраст калибровки.', 'type' => 'integer', 'min' => 7, 'max' => 365],
-                    ['path' => 'default_run_duration_sec', 'label' => 'Default run sec', 'description' => 'Длительность по умолчанию для UI.', 'type' => 'integer', 'min' => 5, 'max' => 60],
-                    ['path' => 'ml_per_sec_mismatch_pct', 'label' => 'ML/sec mismatch pct', 'description' => 'Порог расхождения DB pump_calibrations.ml_per_sec и NodeConfig ml_per_second для AE3 runtime check.', 'type' => 'number', 'min' => 0.1, 'max' => 100.0, 'step' => 0.1],
-                    ['path' => 'ml_per_sec_mismatch_fail_closed', 'label' => 'Mismatch fail-closed', 'description' => 'По умолчанию true: AE3 блокирует dose plan при расхождении dual calibration. false — только warning+metric (диагностика).', 'type' => 'boolean'],
-                ],
-            ],
-        ],
-        'sensor_calibration' => [
-            [
-                'key' => 'sensor_calibration',
-                'label' => 'Калибровка сенсоров',
-                'description' => 'Системные значения мастера pH/EC calibration.',
-                'fields' => [
-                    ['path' => 'ph_point_1_value', 'label' => 'pH point 1', 'description' => 'Рекомендуемый буфер для первой точки pH (Trema / iArduino: типично кислый, напр. 4.01).', 'type' => 'number', 'min' => 1.0, 'max' => 14.0, 'step' => 0.01],
-                    ['path' => 'ph_point_2_value', 'label' => 'pH point 2', 'description' => 'Рекомендуемый буфер для второй точки pH (Trema / iArduino: щелочной, напр. 9.18; точки должны заметно отличаться).', 'type' => 'number', 'min' => 1.0, 'max' => 14.0, 'step' => 0.01],
-                    ['path' => 'ec_point_1_tds', 'label' => 'EC point 1 ppm', 'description' => 'Рекомендуемый TDS для первой точки EC.', 'type' => 'integer', 'min' => 100, 'max' => 10000],
-                    ['path' => 'ec_point_2_tds', 'label' => 'EC point 2 ppm', 'description' => 'Рекомендуемый TDS для второй точки EC.', 'type' => 'integer', 'min' => 50, 'max' => 10000],
-                    ['path' => 'reminder_days', 'label' => 'Reminder days', 'description' => 'Через сколько дней показывать warning.', 'type' => 'integer', 'min' => 7, 'max' => 365],
-                    ['path' => 'critical_days', 'label' => 'Critical days', 'description' => 'Через сколько дней показывать critical.', 'type' => 'integer', 'min' => 14, 'max' => 365],
-                    ['path' => 'command_timeout_sec', 'label' => 'Command timeout sec', 'description' => 'Таймаут команды calibrate.', 'type' => 'integer', 'min' => 5, 'max' => 60],
-                    ['path' => 'ph_reference_min', 'label' => 'Min pH reference', 'description' => 'Минимально допустимое значение pH reference.', 'type' => 'number', 'min' => 0.0, 'max' => 6.0, 'step' => 0.01],
-                    ['path' => 'ph_reference_max', 'label' => 'Max pH reference', 'description' => 'Максимально допустимое значение pH reference.', 'type' => 'number', 'min' => 8.0, 'max' => 14.0, 'step' => 0.01],
-                    ['path' => 'ec_tds_reference_max', 'label' => 'Max EC TDS ref', 'description' => 'Максимальный допустимый reference для EC.', 'type' => 'integer', 'min' => 1000, 'max' => 20000],
-                ],
-            ],
-        ],
-        'process_calibration_defaults' => [
-            [
-                'key' => 'process_calibration_defaults',
-                'label' => 'Калибровка процесса',
-                'description' => 'Системные значения по умолчанию для process calibration UI.',
-                'fields' => [
-                    ['path' => 'transport_delay_sec', 'label' => 'Transport delay', 'description' => 'Время от дозы до ожидаемого отклика на датчике.', 'type' => 'integer', 'min' => 0, 'max' => 120],
-                    ['path' => 'settle_sec', 'label' => 'Settle sec', 'description' => 'Дополнительное окно для стабилизации измерений.', 'type' => 'integer', 'min' => 0, 'max' => 300],
-                    ['path' => 'ec_gain_per_ml', 'label' => 'EC gain', 'description' => 'Ожидаемый прирост EC на 1 мл nutrient dose.', 'type' => 'number', 'min' => 0.001, 'max' => 10.0, 'step' => 0.001],
-                    ['path' => 'ph_up_gain_per_ml', 'label' => 'pH up gain', 'description' => 'Ожидаемый отклик pH на 1 мл pH-up dose.', 'type' => 'number', 'min' => 0.001, 'max' => 5.0, 'step' => 0.001],
-                    ['path' => 'ph_down_gain_per_ml', 'label' => 'pH down gain', 'description' => 'Ожидаемый отклик pH на 1 мл pH-down dose.', 'type' => 'number', 'min' => 0.001, 'max' => 5.0, 'step' => 0.001],
-                    ['path' => 'ph_per_ec_ml', 'label' => 'pH from EC', 'description' => 'Cross-coupling pH <- EC на 1 мл EC-дозы.', 'type' => 'number', 'min' => -2.0, 'max' => 2.0, 'step' => 0.001],
-                    ['path' => 'ec_per_ph_ml', 'label' => 'EC from pH', 'description' => 'Cross-coupling EC <- pH на 1 мл pH-дозы.', 'type' => 'number', 'min' => -2.0, 'max' => 2.0, 'step' => 0.001],
-                    ['path' => 'confidence', 'label' => 'Confidence', 'description' => 'Начальная оценка доверия к системным рекомендованным значениям.', 'type' => 'number', 'min' => 0.0, 'max' => 1.0, 'step' => 0.01],
-                ],
-            ],
-        ],
-        'automation_defaults' => [
-            [
-                'key' => 'automation_profile_climate',
-                'label' => 'Automation profile: climate',
-                'description' => 'Рекомендуемые значения климатического профиля в UI автоматики.',
-                'fields' => [
-                    ['path' => 'climate_enabled', 'label' => 'Climate enabled', 'description' => 'Включать climate subsystem по умолчанию.', 'type' => 'boolean'],
-                    ['path' => 'climate_day_temp_c', 'label' => 'Climate day temp', 'description' => 'Дневная температура.', 'type' => 'number', 'min' => 10.0, 'max' => 35.0, 'step' => 0.1],
-                    ['path' => 'climate_night_temp_c', 'label' => 'Climate night temp', 'description' => 'Ночная температура.', 'type' => 'number', 'min' => 10.0, 'max' => 35.0, 'step' => 0.1],
-                    ['path' => 'climate_day_humidity_pct', 'label' => 'Climate day humidity', 'description' => 'Дневная влажность.', 'type' => 'number', 'min' => 30.0, 'max' => 90.0, 'step' => 0.1],
-                    ['path' => 'climate_night_humidity_pct', 'label' => 'Climate night humidity', 'description' => 'Ночная влажность.', 'type' => 'number', 'min' => 30.0, 'max' => 90.0, 'step' => 0.1],
-                    ['path' => 'climate_interval_min', 'label' => 'Climate interval min', 'description' => 'Период климатического шага.', 'type' => 'integer', 'min' => 1, 'max' => 1440],
-                    ['path' => 'climate_day_start_hhmm', 'label' => 'Climate day start', 'description' => 'Начало дневного режима.', 'type' => 'string'],
-                    ['path' => 'climate_night_start_hhmm', 'label' => 'Climate night start', 'description' => 'Начало ночного режима.', 'type' => 'string'],
-                    ['path' => 'climate_vent_min_pct', 'label' => 'Climate vent min', 'description' => 'Минимальное открытие форточек.', 'type' => 'integer', 'min' => 0, 'max' => 100],
-                    ['path' => 'climate_vent_max_pct', 'label' => 'Climate vent max', 'description' => 'Максимальное открытие форточек.', 'type' => 'integer', 'min' => 0, 'max' => 100],
-                    ['path' => 'climate_use_external_telemetry', 'label' => 'Climate external telemetry', 'description' => 'Использовать external guard.', 'type' => 'boolean'],
-                    ['path' => 'climate_outside_temp_min_c', 'label' => 'Climate outside temp min', 'description' => 'Нижний порог outside temperature.', 'type' => 'number', 'min' => -30.0, 'max' => 45.0, 'step' => 0.1],
-                    ['path' => 'climate_outside_temp_max_c', 'label' => 'Climate outside temp max', 'description' => 'Верхний порог outside temperature.', 'type' => 'number', 'min' => -30.0, 'max' => 45.0, 'step' => 0.1],
-                    ['path' => 'climate_outside_humidity_max_pct', 'label' => 'Climate outside humidity max', 'description' => 'Максимальная внешняя влажность.', 'type' => 'integer', 'min' => 20, 'max' => 100],
-                    ['path' => 'climate_manual_override_enabled', 'label' => 'Climate manual override', 'description' => 'Разрешать manual override.', 'type' => 'boolean'],
-                    ['path' => 'climate_manual_override_minutes', 'label' => 'Climate override minutes', 'description' => 'Длительность manual override.', 'type' => 'integer', 'min' => 5, 'max' => 120],
-                ],
-            ],
-            [
-                'key' => 'automation_profile_water',
-                'label' => 'Automation profile: water',
-                'description' => 'Рекомендуемые значения водного узла и automation runtime defaults.',
-                'fields' => [
-                    ['path' => 'water_system_type', 'label' => 'Water system type', 'description' => 'Тип irrigation system по умолчанию.', 'type' => 'string'],
-                    ['path' => 'water_tanks_count', 'label' => 'Water tanks count', 'description' => 'Количество баков по умолчанию.', 'type' => 'integer', 'min' => 2, 'max' => 3],
-                    ['path' => 'water_clean_tank_fill_l', 'label' => 'Clean tank fill L', 'description' => 'Объём чистого бака.', 'type' => 'integer', 'min' => 10, 'max' => 5000],
-                    ['path' => 'water_nutrient_tank_target_l', 'label' => 'Nutrient tank target L', 'description' => 'Целевой объём бака раствора.', 'type' => 'integer', 'min' => 10, 'max' => 5000],
-                    ['path' => 'water_irrigation_batch_l', 'label' => 'Irrigation batch L', 'description' => 'Объём одной порции полива.', 'type' => 'integer', 'min' => 1, 'max' => 500],
-                    ['path' => 'water_interval_min', 'label' => 'Water interval min', 'description' => 'Интервал между поливами.', 'type' => 'integer', 'min' => 1, 'max' => 1440],
-                    ['path' => 'water_duration_sec', 'label' => 'Water duration sec', 'description' => 'Длительность одного полива.', 'type' => 'integer', 'min' => 1, 'max' => 3600],
-                    ['path' => 'water_fill_temperature_c', 'label' => 'Water fill temp', 'description' => 'Целевая температура воды.', 'type' => 'number', 'min' => 5.0, 'max' => 35.0, 'step' => 0.1],
-                    ['path' => 'water_fill_window_start_hhmm', 'label' => 'Fill window start', 'description' => 'Начало окна набора.', 'type' => 'string'],
-                    ['path' => 'water_fill_window_end_hhmm', 'label' => 'Fill window end', 'description' => 'Конец окна набора.', 'type' => 'string'],
-                    ['path' => 'water_target_ph', 'label' => 'Target pH', 'description' => 'Целевой pH.', 'type' => 'number', 'min' => 4.0, 'max' => 9.0, 'step' => 0.01],
-                    ['path' => 'water_target_ec', 'label' => 'Target EC', 'description' => 'Целевой EC.', 'type' => 'number', 'min' => 0.1, 'max' => 10.0, 'step' => 0.01],
-                    ['path' => 'water_ph_pct', 'label' => 'pH pct', 'description' => 'Процент допуска по pH.', 'type' => 'number', 'min' => 1.0, 'max' => 50.0, 'step' => 0.1],
-                    ['path' => 'water_ec_pct', 'label' => 'EC pct', 'description' => 'Процент допуска по EC.', 'type' => 'number', 'min' => 1.0, 'max' => 50.0, 'step' => 0.1],
-                    ['path' => 'water_valve_switching_enabled', 'label' => 'Valve switching', 'description' => 'Разрешать переключение клапанов.', 'type' => 'boolean'],
-                    ['path' => 'water_correction_during_irrigation', 'label' => 'Correction during irrigation', 'description' => 'Разрешать inline-коррекцию во время полива (pH; опционально Ca или NPK).', 'type' => 'boolean'],
-                    ['path' => 'water_irrigation_ec_component', 'label' => 'Irrigation EC component', 'description' => 'EC на поливе вместе с pH: calcium (pump_b) или npk (pump_a). При включённой коррекции none coerce → calcium.', 'type' => 'string'],
-                    ['path' => 'water_drain_control_enabled', 'label' => 'Drain control enabled', 'description' => 'Включать drain control по умолчанию.', 'type' => 'boolean'],
-                    ['path' => 'water_drain_target_pct', 'label' => 'Drain target pct', 'description' => 'Целевой дренаж.', 'type' => 'integer', 'min' => 0, 'max' => 100],
-                    ['path' => 'water_diagnostics_enabled', 'label' => 'Diagnostics enabled', 'description' => 'Включать diagnostics subsystem.', 'type' => 'boolean'],
-                    ['path' => 'water_diagnostics_interval_min', 'label' => 'Diagnostics interval', 'description' => 'Период diagnostics workflow.', 'type' => 'integer', 'min' => 1, 'max' => 1440],
-                    ['path' => 'water_cycle_start_workflow_enabled', 'label' => 'Cycle-start workflow', 'description' => 'Включать startup/cycle_start workflow.', 'type' => 'boolean'],
-                    ['path' => 'water_diagnostics_workflow', 'label' => 'Diagnostics workflow', 'description' => 'Workflow по умолчанию: startup, cycle_start или diagnostics.', 'type' => 'string'],
-                    ['path' => 'water_clean_tank_full_threshold', 'label' => 'Clean tank full threshold', 'description' => 'Порог полного clean tank.', 'type' => 'number', 'min' => 0.05, 'max' => 1.0, 'step' => 0.01],
-                    ['path' => 'water_refill_duration_sec', 'label' => 'Refill duration', 'description' => 'Длительность refill.', 'type' => 'integer', 'min' => 1, 'max' => 3600],
-                    ['path' => 'water_refill_timeout_sec', 'label' => 'Refill timeout', 'description' => 'Таймаут refill.', 'type' => 'integer', 'min' => 30, 'max' => 86400],
-                    ['path' => 'water_startup_clean_fill_timeout_sec', 'label' => 'Startup clean fill timeout', 'description' => 'Таймаут clean_fill в startup.', 'type' => 'integer', 'min' => 30, 'max' => 86400],
-                    ['path' => 'water_startup_solution_fill_timeout_sec', 'label' => 'Startup solution fill timeout', 'description' => 'Таймаут solution_fill в startup.', 'type' => 'integer', 'min' => 30, 'max' => 86400],
-                    ['path' => 'water_startup_prepare_recirculation_timeout_sec', 'label' => 'Startup prepare recirculation timeout', 'description' => 'Таймаут prepare_recirculation.', 'type' => 'integer', 'min' => 30, 'max' => 86400],
-                    ['path' => 'water_startup_clean_fill_retry_cycles', 'label' => 'Startup clean fill retries', 'description' => 'Повторы clean_fill.', 'type' => 'integer', 'min' => 0, 'max' => 20],
-                    ['path' => 'water_startup_level_poll_interval_sec', 'label' => 'Startup level poll', 'description' => 'Интервал level polling в startup.', 'type' => 'integer', 'min' => 5, 'max' => 3600],
-                    ['path' => 'water_startup_level_switch_on_threshold', 'label' => 'Startup level threshold', 'description' => 'Порог level switch.', 'type' => 'number', 'min' => 0.0, 'max' => 1.0, 'step' => 0.01],
-                    ['path' => 'water_startup_clean_max_sensor_label', 'label' => 'Clean max sensor label', 'description' => 'Label верхнего датчика clean tank.', 'type' => 'string'],
-                    ['path' => 'water_startup_solution_max_sensor_label', 'label' => 'Solution max sensor label', 'description' => 'Label верхнего датчика solution tank.', 'type' => 'string'],
-                    ['path' => 'water_clean_fill_min_check_delay_ms', 'label' => 'Clean fill min check delay', 'description' => 'Задержка перед проверкой lower clean-level после старта clean_fill.', 'type' => 'integer', 'min' => 0, 'max' => 3600000],
-                    ['path' => 'water_solution_fill_clean_min_check_delay_ms', 'label' => 'Solution fill clean min check delay', 'description' => 'Задержка перед проверкой clean_min во время solution_fill.', 'type' => 'integer', 'min' => 0, 'max' => 3600000],
-                    ['path' => 'water_solution_fill_solution_min_check_delay_ms', 'label' => 'Solution fill solution min check delay', 'description' => 'Задержка перед leak-check по solution_min во время solution_fill.', 'type' => 'integer', 'min' => 0, 'max' => 3600000],
-                    ['path' => 'water_recirculation_stop_on_solution_min', 'label' => 'Recirculation stop on solution min', 'description' => 'Останавливать prepare recirculation при нижнем уровне раствора.', 'type' => 'boolean'],
-                    ['path' => 'water_estop_debounce_ms', 'label' => 'E-stop debounce', 'description' => 'Debounce физической кнопки аварийной остановки.', 'type' => 'integer', 'min' => 20, 'max' => 5000],
-                    ['path' => 'water_irrigation_decision_strategy', 'label' => 'Irrigation decision strategy', 'description' => 'Стратегия decision-controller: task или smart_soil_v1.', 'type' => 'string'],
-                    ['path' => 'water_irrigation_decision_lookback_sec', 'label' => 'Irrigation lookback sec', 'description' => 'Окно анализа soil telemetry.', 'type' => 'integer', 'min' => 60, 'max' => 86400],
-                    ['path' => 'water_irrigation_decision_min_samples', 'label' => 'Irrigation min samples', 'description' => 'Минимум soil samples для smart decision.', 'type' => 'integer', 'min' => 1, 'max' => 100],
-                    ['path' => 'water_irrigation_decision_stale_after_sec', 'label' => 'Irrigation stale after sec', 'description' => 'Через сколько секунд soil telemetry считается stale.', 'type' => 'integer', 'min' => 30, 'max' => 86400],
-                    ['path' => 'water_irrigation_decision_hysteresis_pct', 'label' => 'Irrigation hysteresis pct', 'description' => 'Гистерезис принятия решения по влажности.', 'type' => 'number', 'min' => 0.0, 'max' => 100.0, 'step' => 0.1],
-                    ['path' => 'water_irrigation_decision_spread_alert_threshold_pct', 'label' => 'Irrigation spread alert pct', 'description' => 'Порог алерта по разбегу soil sensors.', 'type' => 'number', 'min' => 0.0, 'max' => 100.0, 'step' => 0.1],
-                    ['path' => 'water_irrigation_stop_on_solution_min', 'label' => 'Stop on solution min', 'description' => 'Останавливать полив при нижнем уровне раствора.', 'type' => 'boolean'],
-                    ['path' => 'water_irrigation_auto_replay_after_setup', 'label' => 'Auto replay after setup', 'description' => 'Повторять полив после auto-setup.', 'type' => 'boolean'],
-                    ['path' => 'water_irrigation_max_setup_replays', 'label' => 'Max setup replays', 'description' => 'Максимум auto-replay после setup.', 'type' => 'integer', 'min' => 0, 'max' => 10],
-                    ['path' => 'water_prepare_tolerance_ec_pct', 'label' => 'Prepare tolerance EC', 'description' => 'EC tolerance в prepare.', 'type' => 'number', 'min' => 0.1, 'max' => 100.0, 'step' => 0.1],
-                    ['path' => 'water_prepare_tolerance_ph_pct', 'label' => 'Prepare tolerance pH', 'description' => 'pH tolerance в prepare.', 'type' => 'number', 'min' => 0.1, 'max' => 100.0, 'step' => 0.1],
-                    ['path' => 'water_correction_max_ec_attempts', 'label' => 'Correction max EC attempts', 'description' => 'Максимум EC correction attempts.', 'type' => 'integer', 'min' => 1, 'max' => 500],
-                    ['path' => 'water_correction_max_ph_attempts', 'label' => 'Correction max pH attempts', 'description' => 'Максимум pH correction attempts.', 'type' => 'integer', 'min' => 1, 'max' => 500],
-                    ['path' => 'water_correction_prepare_recirculation_max_attempts', 'label' => 'Correction prepare recirculation max attempts', 'description' => 'Количество окон recirculation.', 'type' => 'integer', 'min' => 1, 'max' => 50],
-                    ['path' => 'water_correction_prepare_recirculation_max_correction_attempts', 'label' => 'Correction prepare recirc cap', 'description' => 'Guard correction loop внутри одного окна.', 'type' => 'integer', 'min' => 1, 'max' => 500],
-                    ['path' => 'water_correction_stabilization_sec', 'label' => 'Correction stabilization', 'description' => 'Ожидание перед corr_check.', 'type' => 'integer', 'min' => 0, 'max' => 3600],
-                    ['path' => 'water_two_tank_irrigation_start_steps', 'label' => 'Irrigation start steps', 'description' => 'Количество relay steps для irrigation_start.', 'type' => 'integer', 'min' => 1, 'max' => 12],
-                    ['path' => 'water_two_tank_irrigation_stop_steps', 'label' => 'Irrigation stop steps', 'description' => 'Количество relay steps для irrigation_stop.', 'type' => 'integer', 'min' => 1, 'max' => 12],
-                    ['path' => 'water_two_tank_clean_fill_start_steps', 'label' => 'Clean fill start steps', 'description' => 'Количество relay steps для clean_fill_start.', 'type' => 'integer', 'min' => 1, 'max' => 12],
-                    ['path' => 'water_two_tank_clean_fill_stop_steps', 'label' => 'Clean fill stop steps', 'description' => 'Количество relay steps для clean_fill_stop.', 'type' => 'integer', 'min' => 1, 'max' => 12],
-                    ['path' => 'water_two_tank_solution_fill_start_steps', 'label' => 'Solution fill start steps', 'description' => 'Количество relay steps для solution_fill_start.', 'type' => 'integer', 'min' => 1, 'max' => 12],
-                    ['path' => 'water_two_tank_solution_fill_stop_steps', 'label' => 'Solution fill stop steps', 'description' => 'Количество relay steps для solution_fill_stop.', 'type' => 'integer', 'min' => 1, 'max' => 12],
-                    ['path' => 'water_two_tank_prepare_recirculation_start_steps', 'label' => 'Prepare recirculation start steps', 'description' => 'Количество relay steps для prepare_recirculation_start.', 'type' => 'integer', 'min' => 1, 'max' => 12],
-                    ['path' => 'water_two_tank_prepare_recirculation_stop_steps', 'label' => 'Prepare recirculation stop steps', 'description' => 'Количество relay steps для prepare_recirculation_stop.', 'type' => 'integer', 'min' => 1, 'max' => 12],
-                    ['path' => 'water_two_tank_irrigation_recovery_start_steps', 'label' => 'Irrigation recovery start steps', 'description' => 'Количество relay steps для irrigation_recovery_start.', 'type' => 'integer', 'min' => 1, 'max' => 12],
-                    ['path' => 'water_two_tank_irrigation_recovery_stop_steps', 'label' => 'Irrigation recovery stop steps', 'description' => 'Количество relay steps для irrigation_recovery_stop.', 'type' => 'integer', 'min' => 1, 'max' => 12],
-                    ['path' => 'water_refill_required_node_types_csv', 'label' => 'Refill required node types', 'description' => 'CSV список required node types.', 'type' => 'string'],
-                    ['path' => 'water_refill_preferred_channel', 'label' => 'Refill preferred channel', 'description' => 'Предпочтительный channel для refill.', 'type' => 'string'],
-                    ['path' => 'water_solution_change_enabled', 'label' => 'Solution change enabled', 'description' => 'Включать solution_change по умолчанию.', 'type' => 'boolean'],
-                    ['path' => 'water_solution_change_interval_min', 'label' => 'Solution change interval', 'description' => 'Интервал solution_change.', 'type' => 'integer', 'min' => 1, 'max' => 1440],
-                    ['path' => 'water_solution_change_duration_sec', 'label' => 'Solution change duration', 'description' => 'Длительность solution_change.', 'type' => 'integer', 'min' => 1, 'max' => 86400],
-                    ['path' => 'water_manual_irrigation_sec', 'label' => 'Manual irrigation sec', 'description' => 'Длительность ручного полива.', 'type' => 'integer', 'min' => 1, 'max' => 3600],
-                ],
-            ],
-            [
-                'key' => 'automation_profile_lighting',
-                'label' => 'Automation profile: lighting',
-                'description' => 'Рекомендуемые значения lighting profile в UI автоматики.',
-                'fields' => [
-                    ['path' => 'lighting_enabled', 'label' => 'Lighting enabled', 'description' => 'Включать lighting subsystem по умолчанию.', 'type' => 'boolean'],
-                    ['path' => 'lighting_lux_day', 'label' => 'Lighting lux day', 'description' => 'Дневной lux.', 'type' => 'integer', 'min' => 0, 'max' => 120000],
-                    ['path' => 'lighting_lux_night', 'label' => 'Lighting lux night', 'description' => 'Ночной lux.', 'type' => 'integer', 'min' => 0, 'max' => 120000],
-                    ['path' => 'lighting_hours_on', 'label' => 'Lighting hours on', 'description' => 'Длительность досветки.', 'type' => 'number', 'min' => 0.0, 'max' => 24.0, 'step' => 0.1],
-                    ['path' => 'lighting_interval_min', 'label' => 'Lighting interval', 'description' => 'Период lighting control.', 'type' => 'integer', 'min' => 1, 'max' => 1440],
-                    ['path' => 'lighting_schedule_start_hhmm', 'label' => 'Lighting start', 'description' => 'Начало фотопериода.', 'type' => 'string'],
-                    ['path' => 'lighting_schedule_end_hhmm', 'label' => 'Lighting end', 'description' => 'Конец фотопериода.', 'type' => 'string'],
-                    ['path' => 'lighting_manual_intensity_pct', 'label' => 'Lighting manual intensity', 'description' => 'Интенсивность manual override.', 'type' => 'integer', 'min' => 0, 'max' => 100],
-                    ['path' => 'lighting_manual_duration_hours', 'label' => 'Lighting manual duration', 'description' => 'Длительность manual override.', 'type' => 'number', 'min' => 0.5, 'max' => 24.0, 'step' => 0.5],
-                ],
-            ],
-        ],
-        'automation_command_templates' => [
-            [
-                'key' => 'automation_command_templates',
-                'label' => 'Automation command templates',
-                'description' => 'Шаблоны relay-команд two-tank automation runtime.',
-                'fields' => [
-                    ['path' => 'irrigation_start', 'label' => 'irrigation_start', 'description' => 'Команды запуска irrigation.', 'type' => 'json'],
-                    ['path' => 'irrigation_stop', 'label' => 'irrigation_stop', 'description' => 'Команды остановки irrigation.', 'type' => 'json'],
-                    ['path' => 'clean_fill_start', 'label' => 'clean_fill_start', 'description' => 'Команды запуска clean_fill.', 'type' => 'json'],
-                    ['path' => 'clean_fill_stop', 'label' => 'clean_fill_stop', 'description' => 'Команды остановки clean_fill.', 'type' => 'json'],
-                    ['path' => 'solution_fill_start', 'label' => 'solution_fill_start', 'description' => 'Команды запуска solution_fill.', 'type' => 'json'],
-                    ['path' => 'solution_fill_stop', 'label' => 'solution_fill_stop', 'description' => 'Команды остановки solution_fill.', 'type' => 'json'],
-                    ['path' => 'prepare_recirculation_start', 'label' => 'prepare_recirculation_start', 'description' => 'Команды запуска prepare_recirculation.', 'type' => 'json'],
-                    ['path' => 'prepare_recirculation_stop', 'label' => 'prepare_recirculation_stop', 'description' => 'Команды остановки prepare_recirculation.', 'type' => 'json'],
-                    ['path' => 'irrigation_recovery_start', 'label' => 'irrigation_recovery_start', 'description' => 'Команды запуска irrigation_recovery.', 'type' => 'json'],
-                    ['path' => 'irrigation_recovery_stop', 'label' => 'irrigation_recovery_stop', 'description' => 'Команды остановки irrigation_recovery.', 'type' => 'json'],
-                ],
-            ],
-        ],
-        'observability_thresholds' => [],
-    ];
+    private const FIELD_OPTIONS = SystemAutomationFields::OPTIONS;
+
+    private const FIELD_CATALOG = SystemAutomationFields::CATALOG;
 
     public static function allDefaults(): array
     {
@@ -433,7 +237,18 @@ class SystemAutomationSettingsCatalog
             throw new InvalidArgumentException("Unknown automation settings namespace: {$namespace}");
         }
 
-        return FieldCatalogHelpBuilder::attachHelp(self::FIELD_CATALOG[$namespace], $namespace);
+        $sections = self::FIELD_CATALOG[$namespace];
+        foreach ($sections as &$section) {
+            foreach ($section['fields'] as &$field) {
+                if (isset(self::FIELD_OPTIONS[$field['path']])) {
+                    $field['option_labels'] = self::FIELD_OPTIONS[$field['path']];
+                    $field['options'] = array_keys($field['option_labels']);
+                }
+            }
+        }
+        unset($section, $field);
+
+        return FieldCatalogHelpBuilder::attachHelp($sections, $namespace);
     }
 
     public static function flattenFields(string $namespace): array
@@ -494,6 +309,12 @@ class SystemAutomationSettingsCatalog
     {
         $path = (string) $field['path'];
         $type = (string) $field['type'];
+        if (isset($field['options']) && ! in_array($value, $field['options'], true)) {
+            throw new InvalidArgumentException('Параметр «'.$field['label'].'»: выберите допустимый вариант из списка.');
+        }
+        if (str_ends_with($path, '_hhmm') && (! is_string($value) || ! preg_match('/^(?:[01]\d|2[0-3]):[0-5]\d$/', $value))) {
+            throw new InvalidArgumentException('Параметр «'.$field['label'].'»: укажите время ЧЧ:ММ от 00:00 до 23:59.');
+        }
 
         if ($type === 'integer') {
             if (! is_int($value)) {

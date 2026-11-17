@@ -115,7 +115,7 @@ describe('AutomationObservabilityPanel', () => {
     })
 
     expect(wrapper.find('[data-testid="automation-observability-panel"]').exists()).toBe(true)
-    expect(wrapper.text()).toContain('Диагностика FSM')
+    expect(wrapper.text()).toContain('Состояние автоматики')
     expect(wrapper.text()).toContain('Задача ждёт ответ по команде слишком долго')
     expect(wrapper.text()).toContain('waiting_command_stuck')
     expect(wrapper.text()).toContain('scheduler_intent_pending')
@@ -124,8 +124,8 @@ describe('AutomationObservabilityPanel', () => {
     expect(wrapper.text()).toContain('task #9001')
     expect(wrapper.text()).toContain('intent_id=101')
     expect(wrapper.text()).toContain('age_sec=540')
-    expect(wrapper.text()).toContain('two_tank_drip_substrate_trays')
-    expect(wrapper.text()).toContain('prepare_recirculation_stop')
+    expect(wrapper.text()).toContain('Двухбаковая система')
+    expect(wrapper.text()).toContain('Остановка перемешивания раствора')
 
     const badge = wrapper.find('[data-testid="health-badge"]')
     expect(badge.attributes('data-variant')).toBe('danger')
@@ -256,7 +256,7 @@ describe('AutomationObservabilityPanel', () => {
       },
     })
 
-    expect(wrapper.text()).toContain('Дедлайн этапа')
+    expect(wrapper.text()).toContain('Срок завершения этапа')
     expect(wrapper.text()).not.toContain('осталось')
     expect(wrapper.text()).toContain('—')
   })
@@ -319,8 +319,8 @@ describe('AutomationObservabilityPanel', () => {
     expect(wrapper.find('[data-testid="automation-correction-dosing"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('Коррекция / дозирование')
     expect(wrapper.text()).toContain('Коррекция: кулдаун PID')
-    expect(wrapper.text()).toContain('±%: нет')
-    expect(wrapper.text()).toContain('ready: да')
+    expect(wrapper.text()).toContain('В пределах допуска: нет')
+    expect(wrapper.text()).toContain('Раствор готов: да')
   })
 
   it('renders detailed failure block for historical terminal failure', () => {

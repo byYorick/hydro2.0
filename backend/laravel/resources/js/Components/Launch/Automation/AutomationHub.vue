@@ -320,7 +320,7 @@ const tanksCount = computed(() => props.profile.waterForm.tanksCount)
 
 const irrigationSubtitle = computed(() => {
   const w = props.profile.waterForm
-  const mode = w.irrigationDecisionStrategy === 'smart_soil_v1' ? 'SMART' : 'По времени'
+  const mode = w.irrigationDecisionStrategy === 'smart_soil_v1' ? 'По влажности' : 'По расписанию'
   return `${mode} · ${w.intervalMinutes}м / ${w.durationSeconds}с`
 })
 

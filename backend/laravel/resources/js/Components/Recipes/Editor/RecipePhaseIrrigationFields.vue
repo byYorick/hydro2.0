@@ -93,10 +93,13 @@
             −
           </button>
           <input
-            v-model.number="phase.day_night.soil_moisture.day"
+            :value="phase.day_night.soil_moisture.day ?? ''"
             type="number"
+            min="0"
+            max="100"
             step="1"
             class="stepper__input"
+            @input="setMoisture('day', $event)"
           />
           <button
             type="button"
@@ -119,10 +122,13 @@
               −
             </button>
             <input
-              v-model.number="phase.day_night.soil_moisture.day"
+              :value="phase.day_night.soil_moisture.day ?? ''"
               type="number"
+              min="0"
+              max="100"
               step="1"
               class="stepper__input"
+              @input="setMoisture('day', $event)"
             />
             <button
               type="button"
@@ -144,10 +150,13 @@
               −
             </button>
             <input
-              v-model.number="phase.day_night.soil_moisture.night"
+              :value="phase.day_night.soil_moisture.night ?? ''"
               type="number"
+              min="0"
+              max="100"
               step="1"
               class="stepper__input"
+              @input="setMoisture('night', $event)"
             />
             <button
               type="button"
@@ -165,6 +174,7 @@
         <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">Интервал между поливами (ЧЧ:ММ)</label>
         <TextField
           :model-value="intervalDisplay(phase)"
+          :error="Number.isNaN(phase.irrigation_interval_sec) ? 'Укажите часы и минуты: ЧЧ:ММ, минуты от 00 до 59.' : ''"
           type="text"
           placeholder="00 : 00"
           class="!w-32"
@@ -179,6 +189,7 @@
         <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">Длительность полива (ММ:СС)</label>
         <TextField
           :model-value="durationIrrigDisplay(phase)"
+          :error="Number.isNaN(phase.irrigation_duration_sec) ? 'Укажите минуты и секунды: ММ:СС, секунды от 00 до 59.' : ''"
           type="text"
           placeholder="00 : 00"
           class="!w-28"
@@ -203,4 +214,9 @@ import type { RecipeIrrigationMode } from '@/composables/recipeEditorShared'
 import type { SubstrateOption } from '@/composables/useRecipeIrrigation'
 defineProps<{ isAdvanced: boolean; recipeIrrigationMode: RecipeIrrigationMode; substrateOptions: SubstrateOption[] }>()
 const emit = defineEmits<{ 'create-substrate': [] }>()
+function setMoisture(profile: 'day' | 'night', event: Event) {
+  const input = event.target as HTMLInputElement
+  phase.value.day_night.soil_moisture[profile] = input.validity.badInput
+    ? Number.NaN : input.value.trim() === '' ? null : Number(input.value)
+}
 </script>

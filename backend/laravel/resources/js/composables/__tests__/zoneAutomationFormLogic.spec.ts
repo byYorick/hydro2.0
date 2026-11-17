@@ -335,8 +335,8 @@ describe('zoneAutomationFormLogic', () => {
     expect(payload.subsystems.ec.targets).toBeUndefined()
     expect(payload.subsystems.diagnostics.execution.target_ph).toBeUndefined()
     expect(payload.subsystems.diagnostics.execution.target_ec).toBeUndefined()
-    expect(targets.interval_minutes).toBe(5)
-    expect(targets.interval_sec).toBe(300)
+    expect(targets.interval_minutes).toBe(2)
+    expect(targets.interval_sec).toBe(120)
     expect(targets.duration_seconds).toBe(3600)
     expect(targets.duration_sec).toBe(3600)
     expect(targets.correction_node.target_ph).toBeUndefined()
@@ -475,4 +475,21 @@ describe('zoneAutomationFormLogic', () => {
     expect(forms.climateForm.dayTemp).toBe(23)
     expect(forms.lightingForm.hoursOn).toBe(16)
   })
+  it('preserves explicit pH-only irrigation in the submitted profile', () => {
+    const forms = createForms()
+    forms.waterForm.correctionDuringIrrigation = true
+    forms.waterForm.irrigationEcComponent = 'none'
+    const payload = buildGrowthCycleConfigPayload(forms, {
+      automationCommandTemplates: FALLBACK_AUTOMATION_COMMAND_TEMPLATES,
+    })
+    expect(JSON.stringify(payload)).toContain('"irrigation_ec_component":"none"')
+  })
+
+  it.each([0, -1, 101, Number.NaN, Number.POSITIVE_INFINITY, 1.5])('rejects invalid observation count: %s', value => {
+    const forms = createForms()
+    forms.waterForm.irrigationDecisionStrategy = 'smart_soil_v1'
+    forms.waterForm.irrigationDecisionMinSamples = value
+    expect(validateForms(forms)).toContain('Желаемое число измерений')
+  })
+
 })

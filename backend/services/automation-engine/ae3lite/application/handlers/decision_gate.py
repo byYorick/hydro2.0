@@ -301,13 +301,24 @@ class DecisionGateHandler(BaseStageHandler):
         )
         if verdict is None:
             return decision
+        temperature_details = {
+            **dict(getattr(verdict, "details", {}) or {}),
+            "reason_code": verdict.reason_code,
+            "blocks_irrigation": bool(verdict.blocks_irrigation),
+        }
+        decision_with_temperature = IrrigationDecision(
+            outcome=decision.outcome,
+            reason_code=decision.reason_code,
+            degraded=decision.degraded,
+            details={**dict(decision.details or {}), "solution_temp": temperature_details},
+        )
         if verdict.reason_code == REASON_SOLUTION_TEMP_UNAVAILABLE:
             await self._emit_solution_sensor_alert(task=task, verdict=verdict)
-            return decision
+            return decision_with_temperature
         if verdict.reason_code in {REASON_SOLUTION_TEMP_HOT_WARN, REASON_SOLUTION_TEMP_HOT_STOP}:
             await self._emit_solution_hot_alert(task=task, verdict=verdict)
         if not verdict.blocks_irrigation:
-            return decision
+            return decision_with_temperature
         budget = await self._load_temp_skip_budget(task=task, runtime=runtime, now=now)
         if budget is not None and budget.exceeded:
             await self._emit_temp_block_too_long_alert(task=task, verdict=verdict, budget=budget)
@@ -315,7 +326,13 @@ class DecisionGateHandler(BaseStageHandler):
             outcome="skip",
             reason_code=verdict.reason_code,
             degraded=False,
-            details=verdict.details,
+            details={
+                **dict(decision.details or {}),
+                **verdict.details,
+                "soil_samples": (decision.details or {}).get("samples"),
+                "soil_decision": {"outcome": decision.outcome, "reason_code": decision.reason_code},
+                "solution_temp": temperature_details,
+            },
         )
 
     async def _load_temp_skip_budget(self, *, task: Any, runtime: Any, now: datetime):

@@ -135,7 +135,7 @@ function sanitizeWaterForm(
     cleanTankFillL: clamp(toRoundedNumber(raw?.cleanTankFillL, fallback.cleanTankFillL), 10, 5000),
     nutrientTankTargetL: clamp(toRoundedNumber(raw?.nutrientTankTargetL, fallback.nutrientTankTargetL), 10, 5000),
     irrigationBatchL: clamp(toRoundedNumber(raw?.irrigationBatchL, fallback.irrigationBatchL), 1, 500),
-    intervalMinutes: clamp(toRoundedNumber(raw?.intervalMinutes, fallback.intervalMinutes), 5, 1440),
+    intervalMinutes: clamp(toRoundedNumber(raw?.intervalMinutes, fallback.intervalMinutes), 1, 1440),
     durationSeconds: clamp(toRoundedNumber(raw?.durationSeconds, fallback.durationSeconds), 1, 3600),
     fillTemperatureC: clamp(toNumber(raw?.fillTemperatureC, fallback.fillTemperatureC), 5, 35),
     fillWindowStart: toTimeHHmm(raw?.fillWindowStart, fallback.fillWindowStart),

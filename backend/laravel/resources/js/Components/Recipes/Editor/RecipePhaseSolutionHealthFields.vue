@@ -8,10 +8,10 @@
         v-model="phase.solution_health_required"
         type="checkbox"
       />
-      Температура раствора обязательна
+      Контролировать температуру перед поливом
     </label>
     <p class="text-[12px] text-[color:var(--text-muted)] m-0 leading-snug">
-      Включается только вместе с min и max. Непрерывный выход за границы дольше удержания пропускает новый полив и не помечает задачу сбоем.
+      Укажите обе границы температуры. Подтверждённое измерениями переохлаждение или достижение аварийного верхнего порога в течение выдержки пропускает новый полив. Уже начатая подача завершается в пределах установленной длительности.
     </p>
     <div class="grid grid-cols-1 md:grid-cols-2 gap-3 max-w-xl">
       <div>
@@ -24,7 +24,7 @@
         />
       </div>
       <div>
-        <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">Макс. температура раствора, °C</label>
+        <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">Верхняя граница комфорта, °C</label>
         <TextField
           type="number"
           step="0.1"
@@ -33,7 +33,7 @@
         />
       </div>
       <div>
-        <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">Удержание выхода за пределы, сек</label>
+        <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">Выдержка перед пропуском полива, сек</label>
         <TextField
           type="number"
           step="1"
@@ -61,7 +61,7 @@
       </div>
     </div>
     <p class="text-[12px] text-[color:var(--text-muted)] m-0 leading-snug">
-      Пустое поле выключает порог и уходит как пустое, не как ноль.
+      Верхняя граница комфорта сама по себе не запрещает полив: для перегрева используется отдельный аварийный порог. Если датчик отсутствует или устарел, система предупреждает и принимает решение по остальным условиям. Пустое поле не заменяется нулём.
     </p>
   </div>
 </template>

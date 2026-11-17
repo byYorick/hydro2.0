@@ -47,7 +47,7 @@ function mountPanelHarness(zoneId = 42) {
             void event
           }) as (e: 'state-change', state: string) => void,
         )
-        return () => h('div', { 'data-testid': 'panel' }, panel.stateCode.value)
+        return () => h('div', { 'data-testid': 'panel' }, [panel.stateCode.value, h('pre', JSON.stringify(panel.automationState.value?.irrigation_decision))])
       },
     }),
   )
@@ -120,4 +120,19 @@ describe('useAutomationPanel hydration', () => {
     expect(api.zones.getState).toHaveBeenCalledWith(42)
     expect(wrapper.text()).toContain('READY')
   })
+  it('preserves frozen decision observations through bootstrap normalization', () => {
+    pageProps.automationStateBootstrap = {
+      zone_id: 42, state: 'READY', current_levels: {}, active_processes: {},
+      irrigation_decision: {
+        task_id: 123, outcome: 'run', strategy: 'smart_soil_v1',
+        config: { hysteresis_pct: 2 }, details: { zone_average_pct: 35, run_below_pct: 38 },
+      },
+    }
+    const wrapper = mountPanelHarness()
+    const decision = JSON.parse(wrapper.get('pre').text())
+    expect(decision.task_id).toBe(123)
+    expect(decision.details.zone_average_pct).toBe(35)
+    expect(decision.config.hysteresis_pct).toBe(2)
+  })
+
 })

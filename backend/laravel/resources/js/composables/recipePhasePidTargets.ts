@@ -5,6 +5,9 @@ export interface RecipePhasePidTargets {
 }
 
 function toFiniteNumber(value: unknown): number | null {
+  if (value == null || typeof value === 'boolean' || (typeof value === 'string' && value.trim() === '')) {
+    return null
+  }
   const normalized = Number(value)
   return Number.isFinite(normalized) ? normalized : null
 }

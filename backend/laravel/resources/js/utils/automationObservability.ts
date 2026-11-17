@@ -14,24 +14,30 @@ import { translateEventKind } from '@/utils/i18n'
 const HEALTH_LABELS: Record<AutomationObservabilityHealth, string> = {
   idle: 'Ожидание',
   active: 'Выполняется',
-  warning: 'Возможное зависание',
+  warning: 'Требует внимания',
   critical: 'Критично',
 }
 
 const STAGE_LABELS: Record<string, string> = {
   startup: 'Инициализация',
-  clean_fill_start: 'Запуск clean fill',
+  clean_fill_start: 'Начало набора чистой воды',
   clean_fill_check: 'Наполнение чистой водой',
-  solution_fill_start: 'Запуск solution fill',
+  solution_fill_start: 'Начало набора раствора',
   solution_fill_check: 'Наполнение раствором',
   prepare_recirculation_start: 'Запуск рециркуляции',
   prepare_recirculation_check: 'Подготовка рециркуляции',
   irrigation_start: 'Запуск полива',
   irrigation_check: 'Полив',
-  irrigation_recovery_check: 'Recovery после полива',
+  irrigation_recovery_check: 'Восстановление после полива',
   complete_ready: 'Готов к поливу',
   await_ready: 'Ожидание готовности',
   decision_gate: 'Решение о поливе',
+  completed_skip: 'Завершено: полив пропущен',
+  irrigation_stop: 'Остановка полива',
+  irrigation_recovery_stop: 'Остановка восстановления полива',
+  clean_fill_stop: 'Остановка набора чистой воды',
+  solution_fill_stop: 'Остановка набора раствора',
+  prepare_recirculation_stop: 'Остановка перемешивания раствора',
 }
 
 export function normalizeObservability(raw: unknown): AutomationObservability | null {
@@ -604,9 +610,9 @@ export function resolveCorrectionDosingDiagnostics(
 
 export function observabilityHealthLabel(health: AutomationObservabilityHealth | null | undefined): string {
   if (!health) {
-    return HEALTH_LABELS.idle
+    return 'Статус не получен'
   }
-  return HEALTH_LABELS[health] ?? HEALTH_LABELS.idle
+  return HEALTH_LABELS[health] ?? 'Статус неизвестен'
 }
 
 export function stageDiagnosticLabel(stage: string | null | undefined): string {

@@ -10,12 +10,12 @@
             class="inline-block w-1.5 h-1.5 rounded-full"
             :class="irrigNodeOnline ? 'bg-[color:var(--status-ok)]' : 'bg-[color:var(--status-critical)]'"
           ></span>
-          <span class="text-[10px] font-medium text-[color:var(--text-primary)]">IRR</span>
+          <span class="text-[10px] font-medium text-[color:var(--text-primary)]">Узел полива</span>
           <span
             class="text-[10px]"
             :class="irrigNodeOnline ? 'text-[color:var(--status-ok)]' : 'text-[color:var(--status-critical)]'"
           >
-            {{ irrigNodeOnline ? 'online' : 'offline' }}
+            {{ irrigNodeOnline ? 'на связи' : 'нет связи' }}
           </span>
         </div>
       </div>
@@ -146,7 +146,7 @@ const phaseDotClass = computed(() => {
   if (['error', 'failed', 'degraded'].includes(code)) {
     return 'bg-[color:var(--status-critical)]'
   }
-  return 'bg-[color:var(--status-ok)]'
+  return 'bg-[color:var(--text-dim)]'
 })
 
 const irrigNodeOnline = computed(() => Boolean(props.irrigNodeOnline))

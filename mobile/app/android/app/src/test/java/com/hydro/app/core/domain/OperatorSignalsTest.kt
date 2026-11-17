@@ -6,6 +6,15 @@ import org.junit.Test
 
 class OperatorSignalsTest {
     @Test
+    fun labelsExplainStatusAndKeepUnknownStateDistinctFromNormal() {
+        assertEquals("На связи", operatorStatusLabel("online"))
+        assertEquals("Ручной режим", operatorStatusLabel("manual"))
+        assertEquals("Нет данных", operatorStatusLabel(null))
+        assertEquals("Статус неизвестен", operatorStatusLabel("future_status"))
+        assertEquals(StatusTone.Unknown, statusTone("future_status"))
+        assertEquals("Полив пропущен", operatorStageLabel("completed_skip"))
+    }
+    @Test
     fun levelSwitchIsNotTreatedAsContinuousLevel() {
         val reading = levelReading(
             listOf(

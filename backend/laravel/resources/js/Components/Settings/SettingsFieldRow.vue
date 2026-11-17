@@ -5,41 +5,50 @@
     :data-testid="testId"
   >
     <div class="settings-row__main">
-      <label
-        v-if="fieldId"
-        :for="fieldId"
-        class="settings-row__label"
-        :title="description || undefined"
+      <div class="flex flex-wrap items-center gap-1.5">
+        <label
+          v-if="fieldId"
+          :for="fieldId"
+          class="settings-row__label"
+          :title="description || undefined"
+        >
+          {{ label }}
+        </label>
+        <span
+          v-else
+          class="settings-row__label"
+          :title="description || undefined"
+        >
+          {{ label }}
+        </span>
+        <span
+          v-if="unit"
+          class="settings-row__unit"
+        >
+          {{ unit }}
+        </span>
+        <SettingsFieldHelp
+          v-if="description || help"
+          :title="label"
+          :summary="description"
+          :help="help"
+          :test-id="helpTestId || `${testId}-help`"
+        />
+        <span
+          v-if="changed"
+          class="settings-row__changed"
+          :data-testid="`${testId}-changed`"
+        >
+          изменено
+        </span>
+      </div>
+      <p
+        v-if="description"
+        :id="fieldId ? `${fieldId}-description` : undefined"
+        class="m-0 text-xs text-[color:var(--text-muted)] leading-relaxed"
       >
-        {{ label }}
-      </label>
-      <span
-        v-else
-        class="settings-row__label"
-        :title="description || undefined"
-      >
-        {{ label }}
-      </span>
-      <span
-        v-if="unit"
-        class="settings-row__unit"
-      >
-        {{ unit }}
-      </span>
-      <SettingsFieldHelp
-        v-if="description || help"
-        :title="label"
-        :summary="description"
-        :help="help"
-        :test-id="helpTestId || `${testId}-help`"
-      />
-      <span
-        v-if="changed"
-        class="settings-row__changed"
-        :data-testid="`${testId}-changed`"
-      >
-        изменено
-      </span>
+        {{ description }}
+      </p>
     </div>
 
     <div class="settings-row__control">

@@ -282,8 +282,8 @@ describe('ZoneDashboardCard', () => {
 
     expect(wrapper.text()).toContain('Нет данных')
     expect(wrapper.text()).not.toContain('Ожидание')
-    expect(wrapper.text()).toContain('IRR')
-    expect(wrapper.text()).toContain('online')
+    expect(wrapper.text()).toContain('Узел полива')
+    expect(wrapper.text()).toContain('на связи')
   })
 
   it('показывает статус IRR-ноды и адаптирует баки под одно-баковую топологию', () => {
@@ -303,8 +303,8 @@ describe('ZoneDashboardCard', () => {
       },
     })
 
-    expect(wrapper.text()).toContain('IRR')
-    expect(wrapper.text()).toContain('online')
+    expect(wrapper.text()).toContain('Узел полива')
+    expect(wrapper.text()).toContain('на связи')
     expect(wrapper.text()).toContain('Бак')
     expect(wrapper.text()).not.toContain('Чистая вода')
     expect(wrapper.text()).not.toContain('Раствор')

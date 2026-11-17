@@ -18,6 +18,7 @@
           <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">Длительность (дни:часы)</label>
           <TextField
             :model-value="durationDisplay(phase)"
+            :error="Number.isNaN(phase.duration_hours) ? 'Укажите дни и часы: ДД:ЧЧ, часы от 00 до 23.' : ''"
             :data-testid="`phase-duration-input-${index}`"
             type="text"
             placeholder="0 : 00"

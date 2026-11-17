@@ -45,6 +45,8 @@ import com.hydro.app.core.domain.StatusTone
 import com.hydro.app.core.domain.Zone
 import com.hydro.app.core.domain.levelReading
 import com.hydro.app.core.domain.statusTone
+import com.hydro.app.core.domain.operatorStatusLabel
+import com.hydro.app.core.domain.operatorStageLabel
 import com.hydro.app.features.operator.NodeOperatorViewModel
 import com.hydro.app.features.operator.OperatorAlertsViewModel
 import com.hydro.app.features.operator.OverviewViewModel
@@ -97,7 +99,7 @@ fun GreenhousesScreen(
             if (state.loading) {
                 item { CircularProgressIndicator() }
             }
-            state.error?.let { message -> item { Text(message, color = MaterialTheme.colorScheme.error) } }
+            state.error?.let { message -> item { Text(message, color = MaterialTheme.colorScheme.error); Text("Обновление недоступно. Показанные ранее данные могут быть устаревшими.", color = MaterialTheme.colorScheme.onSurfaceVariant) } }
             if (!state.loading && state.greenhouses.isEmpty() && state.error == null) {
                 item { Text("Теплиц нет. Проверьте учётную запись и доступ к зонам.") }
             }
@@ -106,7 +108,7 @@ fun GreenhousesScreen(
             }
             item {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = onProvisioning) { Text("Provisioning") }
+                    OutlinedButton(onClick = onProvisioning) { Text("Подключить устройство") }
                     OutlinedButton(onClick = onLogout) { Text("Выйти") }
                 }
             }
@@ -162,7 +164,7 @@ fun ZonesScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             if (state.loading) item { CircularProgressIndicator() }
-            state.error?.let { message -> item { Text(message, color = MaterialTheme.colorScheme.error) } }
+            state.error?.let { message -> item { Text(message, color = MaterialTheme.colorScheme.error); Text("Обновление недоступно. Показанные ранее данные могут быть устаревшими.", color = MaterialTheme.colorScheme.onSurfaceVariant) } }
             if (!state.loading && state.zones.isEmpty()) item { Text("В этой теплице нет зон.") }
             items(state.zones, key = { it.id }) { zone ->
                 ZoneCard(zone, onClick = { onOpenZone(zone.id) })
@@ -178,7 +180,7 @@ private fun ZoneCard(zone: Zone, onClick: () -> Unit) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Text(zone.name.ifBlank { "Зона ${zone.id}" }, style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
-                StatusChip(zone.status ?: zone.healthStatus ?: "—", tone)
+                StatusChip(operatorStatusLabel(zone.healthStatus ?: zone.status), tone)
             }
             Text(
                 listOfNotNull(
@@ -229,13 +231,13 @@ fun ZoneDetailsScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             if (state.loading && state.zone == null) item { CircularProgressIndicator() }
-            state.error?.let { message -> item { Text(message, color = MaterialTheme.colorScheme.error) } }
+            state.error?.let { message -> item { Text(message, color = MaterialTheme.colorScheme.error); Text("Обновление недоступно. Показанные ранее данные могут быть устаревшими.", color = MaterialTheme.colorScheme.onSurfaceVariant) } }
             item {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    StatusChip(state.zone?.status ?: "статус", statusTone(state.zone?.status))
-                    StatusChip(mode ?: "режим", if (manual) StatusTone.Warning else statusTone(mode))
+                    StatusChip(operatorStatusLabel(state.zone?.status), statusTone(state.zone?.status))
+                    StatusChip(operatorStatusLabel(mode), if (manual) StatusTone.Warning else statusTone(mode))
                 }
-                state.stage?.let { Text("Стадия: $it", modifier = Modifier.padding(top = 8.dp)) }
+                state.stage?.let { Text("Этап: ${operatorStageLabel(it)}", modifier = Modifier.padding(top = 8.dp)) }
                 state.controlModeNote?.let {
                     Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
                 }
@@ -243,12 +245,12 @@ fun ZoneDetailsScreen(
             item {
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text("E-STOP", fontWeight = FontWeight.Bold, color = if (manual) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
+                        Text("Остановка и ручное управление", fontWeight = FontWeight.Bold, color = if (manual) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
                         Text(
                             if (manual) {
-                                "Зона в ручном режиме: автоматика не командует поливом. Физическая кнопка E-STOP на узле держит актуаторы выключенными. Отдельной REST-команды E-STOP backend не публикует."
+                                "Автоматика отключена: зона в ручном режиме. Физическая аварийная кнопка на устройстве останавливает исполнительные механизмы. Смена режима сама по себе не подтверждает их физическую остановку."
                             } else {
-                                "Физический E-STOP обрабатывает узел. С телефона аварийное действие — перевод control_mode в manual с указанием причины (роль operator)."
+                                "Аварийная кнопка на устройстве останавливает исполнительные механизмы. С телефона можно перевести зону в ручной режим и отключить автоматическое управление, указав причину."
                             },
                         )
                     }
@@ -286,7 +288,7 @@ fun ZoneDetailsScreen(
                     enabled = !state.busy && !manual,
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                 ) {
-                    Text(if (manual) "Уже ручной режим" else "Аварийно в ручной режим")
+                    Text(if (manual) "Уже ручной режим" else "Перевести в ручной режим")
                 }
                 state.message?.let { Text(it, modifier = Modifier.padding(top = 8.dp)) }
             }
@@ -302,7 +304,7 @@ fun ZoneDetailsScreen(
     if (irrigate) {
         ConfirmActionDialog(
             title = "Запустить полив?",
-            body = "На зону уйдёт FORCE_IRRIGATION на 30 секунд. Команда проходит через Laravel в automation-engine.",
+            body = "Будет запрошен полив на 30 секунд без проверки влажности субстрата. Температурные ограничения, контроль уровня и аварийная остановка продолжают действовать. Принятие запроса ещё не подтверждает подачу воды.",
             confirmLabel = "Запустить",
             destructive = true,
             onDismiss = { irrigate = false },
@@ -314,8 +316,8 @@ fun ZoneDetailsScreen(
     }
     if (estop) {
         ConfirmActionDialog(
-            title = "Аварийный перевод в manual",
-            body = "Оператор может перевести зону из auto/semi в manual. Автоматика остановит управление. Причина обязательна.",
+            title = "Переключить в ручной режим?",
+            body = "Автоматическое управление зоной будет отключено. Укажите причину. Для физической аварийной остановки используйте кнопку на устройстве.",
             confirmLabel = "Перевести",
             destructive = true,
             reasonLabel = "Причина",
@@ -336,7 +338,7 @@ private fun NodeRow(node: Node, onClick: () -> Unit) {
                 Text(node.name.ifBlank { node.uid }, fontWeight = FontWeight.SemiBold)
                 Text("${node.type.ifBlank { "узел" }} · ${node.uid}", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            StatusChip(node.status ?: "—", statusTone(node.status))
+            StatusChip(operatorStatusLabel(node.status), statusTone(node.status))
         }
     }
 }
@@ -371,12 +373,12 @@ fun NodeDetailsScreen(
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             if (state.loading && state.node == null) item { CircularProgressIndicator() }
-            state.error?.let { message -> item { Text(message, color = MaterialTheme.colorScheme.error) } }
+            state.error?.let { message -> item { Text(message, color = MaterialTheme.colorScheme.error); Text("Обновление недоступно. Показанные ранее данные могут быть устаревшими.", color = MaterialTheme.colorScheme.onSurfaceVariant) } }
             item {
                 val node = state.node
                 Text("${node?.type.orEmpty()}  ${node?.uid.orEmpty()}")
-                Text("Статус: ${node?.status ?: "—"} · lifecycle: ${node?.lifecycleState ?: "—"}")
-                Text("Прошивка: ${node?.firmware ?: "—"} · RSSI: ${node?.rssi?.toString() ?: "—"}")
+                Text("Статус: ${operatorStatusLabel(node?.status)} · настройка: ${operatorStatusLabel(node?.lifecycleState)}")
+                Text("Прошивка: ${node?.firmware ?: "—"} · сигнал Wi-Fi, дБм: ${node?.rssi?.toString() ?: "—"}")
                 Text("Был на связи: ${node?.lastSeenAt ?: "—"}")
                 level?.let { Text("${it.label}: ${it.valueText} (${it.metric})") }
             }
@@ -466,9 +468,9 @@ fun AlertsScreen(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            item { Text("Показаны ACTIVE. Подтверждение вызывает PATCH /api/alerts/{id}/ack и переводит алерт в resolved.") }
+            item { Text("Показаны активные тревоги. Подтверждение закрывает запись о тревоге; причину неисправности нужно устранить отдельно.") }
             if (state.loading) item { CircularProgressIndicator() }
-            state.error?.let { message -> item { Text(message, color = MaterialTheme.colorScheme.error) } }
+            state.error?.let { message -> item { Text(message, color = MaterialTheme.colorScheme.error); Text("Обновление недоступно. Показанные ранее данные могут быть устаревшими.", color = MaterialTheme.colorScheme.onSurfaceVariant) } }
             state.message?.let { message -> item { Text(message) } }
             if (!state.loading && state.alerts.isEmpty()) item { Text("Активных алертов нет.") }
             items(state.alerts, key = { it.id }) { alert ->
@@ -485,7 +487,7 @@ private fun AlertCard(alert: Alert, pending: Boolean, onAck: () -> Unit) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text(alert.title ?: alert.code ?: alert.type, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                StatusChip(alert.displayLevel, tone)
+                StatusChip(operatorStatusLabel(alert.displayLevel), tone)
             }
             Text(alert.displayMessage)
             Text(

@@ -5,6 +5,7 @@ import type {
   AutomationStateType,
   AutomationTimelineEvent,
   IrrNodeState,
+  IrrigationDecisionEvidence,
   WorkflowStageCode,
   WorkflowStageStatus,
   WorkflowStageView,
@@ -151,6 +152,22 @@ function toOptionalBoolean(value: unknown): boolean | null {
     if (normalized === '0' || normalized === 'false') return false
   }
   return null
+}
+
+function normalizeIrrigationDecision(value: unknown): IrrigationDecisionEvidence | null {
+  const raw = readUnknownRecord(value)
+  if (!raw) return null
+  const text = (key: string) => typeof raw[key] === 'string' ? raw[key] as string : null
+  const taskId = raw.task_id == null ? null : Number(raw.task_id)
+  return {
+    task_id: taskId !== null && Number.isSafeInteger(taskId) && taskId > 0 ? taskId : null,
+    task_status: text('task_status'), current_stage: text('current_stage'),
+    created_at: text('created_at'), evaluated_at: text('evaluated_at'),
+    outcome: text('outcome'), reason_code: text('reason_code'), strategy: text('strategy'),
+    config: readUnknownRecord(raw.config), details: readUnknownRecord(raw.details),
+    bundle_revision: text('bundle_revision'), degraded: toOptionalBoolean(raw.degraded),
+    factors: readUnknownRecord(raw.factors),
+  }
 }
 
 function normalizeIrrNodeState(raw: unknown): IrrNodeState | null {
@@ -373,9 +390,6 @@ export function useAutomationPanel(
         : undefined)
     const irrNodeState = normalizeIrrNodeState(irrNodeStateRaw)
 
-    const rawDecision = sourceAny.decision && typeof sourceAny.decision === 'object'
-      ? sourceAny.decision as Record<string, unknown>
-      : null
 
     return {
       zone_id: Number(source.zone_id ?? props.zoneId ?? 0),
@@ -462,17 +476,8 @@ export function useAutomationPanel(
             served_at: String((sourceAny.state_meta as Record<string, unknown>).served_at ?? ''),
           }
         : null,
-      decision: rawDecision
-        ? {
-            outcome: (rawDecision.outcome as string | null | undefined) ?? null,
-            reason_code: (rawDecision.reason_code as string | null | undefined) ?? null,
-            strategy: (rawDecision.strategy as string | null | undefined) ?? null,
-            config: (rawDecision.config as Record<string, unknown> | null | undefined) ?? null,
-            bundle_revision: (rawDecision.bundle_revision as string | null | undefined) ?? null,
-            degraded: (rawDecision.degraded as boolean | null | undefined) ?? null,
-            factors: readUnknownRecord(rawDecision.factors),
-          }
-        : null,
+      decision: normalizeIrrigationDecision(sourceAny.decision),
+      irrigation_decision: normalizeIrrigationDecision(sourceAny.irrigation_decision),
       day_balance: normalizeDayBalance(sourceAny.day_balance),
       decision_factors: readUnknownRecord(sourceAny.decision_factors),
       observability: normalizeObservability(sourceAny.observability),

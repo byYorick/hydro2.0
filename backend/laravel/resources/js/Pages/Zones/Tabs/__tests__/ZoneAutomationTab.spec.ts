@@ -282,6 +282,7 @@ describe('ZoneAutomationTab.vue', () => {
     const wrapper = mount(ZoneAutomationTab, {
       props: {
         zoneId: 42,
+        currentRecipePhase: { ph_target: 5.9, ec_target: 1.7, name: 'Активная фаза' },
         telemetry: { temperature: 24, humidity: 58 } as any,
         targets: {
           ph: { min: 5.6, max: 6.0, target: 5.9 },
@@ -341,7 +342,7 @@ describe('ZoneAutomationTab.vue', () => {
     expect(vm.lightingForm.scheduleStart).toBe('05:30')
     expect(vm.lightingForm.scheduleEnd).toBe('20:30')
     await openTechnicalDetails(wrapper)
-    expect(wrapper.text()).toContain('pH ±0.29 (5%)')
+    expect(wrapper.text()).toContain('pH 5.90')
     expect(wrapper.text()).not.toContain('Задачи автоматики')
     expect(wrapper.text()).not.toContain('Процесс AE3')
   })

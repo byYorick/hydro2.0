@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildRecipePhasePayload, createDefaultRecipePhase } from '../recipeEditorShared'
+import { buildRecipePhasePayload, createDefaultRecipePhase, getRecipePhaseTargetValidationError } from '../recipeEditorShared'
 import {
   durationDisplay, setDurationFromString, intervalDisplay, setIntervalFromString,
   durationIrrigDisplay, setDurationIrrigFromString, cropDayInputValue, setCropDayNumber,
@@ -21,14 +21,15 @@ describe('recipe phase field edits', () => {
     })
   })
 
-  it('retains the existing subunit clamps and blank-input behavior', () => {
+  it('rejects malformed time rather than silently changing it; keeps explicit blank behavior', () => {
     const phase = createDefaultRecipePhase(0)
     setDurationFromString(phase, '1:99')
     setIntervalFromString(phase, '-2:99')
     setDurationIrrigFromString(phase, '1:99')
-    expect(phase.duration_hours).toBe(47)
-    expect(phase.irrigation_interval_sec).toBe(3540)
-    expect(phase.irrigation_duration_sec).toBe(119)
+    expect(phase.duration_hours).toBeNaN()
+    expect(phase.irrigation_interval_sec).toBeNaN()
+    expect(phase.irrigation_duration_sec).toBeNaN()
+    expect(getRecipePhaseTargetValidationError(phase)).toContain('проверьте формат времени')
     setDurationFromString(phase, '')
     setIntervalFromString(phase, '')
     setDurationIrrigFromString(phase, '')

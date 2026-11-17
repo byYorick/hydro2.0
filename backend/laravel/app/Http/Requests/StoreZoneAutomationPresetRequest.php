@@ -30,7 +30,7 @@ class StoreZoneAutomationPresetRequest extends FormRequest
 
             'config' => ['required', 'array'],
             'config.irrigation' => ['required', 'array'],
-            'config.irrigation.duration_sec' => ['required', 'integer', 'min:10', 'max:86400'],
+            'config.irrigation.duration_sec' => ['required', 'integer', 'min:1', 'max:3600'],
             'config.irrigation.interval_sec' => ['required', 'integer', 'min:60', 'max:86400'],
             'config.irrigation.correction_during_irrigation' => ['required', 'boolean'],
             'config.irrigation.irrigation_ec_component' => ['sometimes', 'string', 'in:none,calcium,npk'],
@@ -41,8 +41,8 @@ class StoreZoneAutomationPresetRequest extends FormRequest
             'config.irrigation_decision.config' => ['nullable', 'array'],
             'config.irrigation_decision.config.lookback_sec' => ['nullable', 'integer', 'min:60', 'max:86400'],
             'config.irrigation_decision.config.min_samples' => ['nullable', 'integer', 'min:1', 'max:100'],
-            'config.irrigation_decision.config.stale_after_sec' => ['nullable', 'integer', 'min:60', 'max:86400'],
-            'config.irrigation_decision.config.hysteresis_pct' => ['nullable', 'numeric', 'min:0', 'max:50'],
+            'config.irrigation_decision.config.stale_after_sec' => ['nullable', 'integer', 'min:30', 'max:86400'],
+            'config.irrigation_decision.config.hysteresis_pct' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'config.irrigation_decision.config.spread_alert_threshold_pct' => ['nullable', 'numeric', 'min:0', 'max:100'],
 
             'config.startup' => ['required', 'array'],

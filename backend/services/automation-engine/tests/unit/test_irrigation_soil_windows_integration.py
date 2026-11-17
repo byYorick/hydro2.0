@@ -37,6 +37,53 @@ async def latest(sensor_id, now, *, quality='GOOD', value=30):
 
 
 @pytest.mark.asyncio
+async def test_replays_dry_wet_stale_and_recovered_windows_without_future_leakage():
+    prefix = 'irrig-replay-' + uuid4().hex[:10]
+    start = datetime.now(timezone.utc).replace(tzinfo=None, microsecond=0) - timedelta(hours=1)
+    checkpoints = [start, start + timedelta(minutes=10), start + timedelta(minutes=15), start + timedelta(minutes=16)]
+    try:
+        gh = await _insert_greenhouse(prefix)
+        zone = await _insert_zone(prefix, greenhouse_id=gh)
+        sid = await sensor(gh, zone, label='replay-soil')
+        # Persist the entire recorded sequence first. Each checkpoint restores
+        # the last-value snapshot that existed then, without future knowledge.
+        for checkpoint, value in [(checkpoints[0], 30), (checkpoints[1], 70), (checkpoints[3], 25)]:
+            for seconds in [30, 20, 10]:
+                await execute(
+                    """INSERT INTO telemetry_samples (sensor_id,zone_id,ts,value,quality,created_at)
+                    VALUES ($1,$2,$3,$4,'GOOD',NOW())""",
+                    sid, zone, checkpoint - timedelta(seconds=seconds), value,
+                )
+        await latest(sid, start - timedelta(seconds=10))
+        runtime = make_runtime_plan(
+            irrigation_decision={'strategy': 'smart_soil_v1', 'config': {
+                'lookback_sec': 60, 'stale_after_sec': 60, 'min_samples': 3, 'hysteresis_pct': 2,
+            }},
+            soil_moisture_target={'min': 40, 'max': 50},
+        )
+        outcomes = []
+        for index, checkpoint in enumerate(checkpoints):
+            if index != 2:
+                value = [30, 70, None, 25][index]
+                await execute(
+                    "UPDATE telemetry_last SET last_value=$2,last_ts=$3 WHERE sensor_id=$1",
+                    sid, value, checkpoint - timedelta(seconds=10),
+                )
+            decision = await IrrigationDecisionController().evaluate(
+                zone_id=zone, runtime_monitor=PgZoneRuntimeMonitor(), runtime=runtime,
+                mode='normal', requested_duration_sec=120, now=checkpoint,
+            )
+            outcomes.append(decision.outcome)
+            if index == 0:
+                assert decision.details['zone_average_pct'] == 30
+            if index == 2:
+                assert decision.reason_code == 'smart_soil_telemetry_missing_or_stale'
+        assert outcomes == ['run', 'skip', 'skip', 'run']
+    finally:
+        await _cleanup(prefix)
+
+
+@pytest.mark.asyncio
 async def test_sql_filters_quality_future_and_stub_before_latest_sample_limit():
     prefix = 'irrig-audit-' + uuid4().hex[:10]
     now = datetime.now(timezone.utc).replace(tzinfo=None, microsecond=0)
@@ -80,6 +127,7 @@ async def test_sql_filters_quality_future_and_stub_before_latest_sample_limit():
         )
         assert decision.outcome == 'skip'
         assert decision.reason_code.endswith('above_max')
+        assert decision.details['max_sensor_sample_age_sec'] == 20
     finally:
         await _cleanup(prefix)
 

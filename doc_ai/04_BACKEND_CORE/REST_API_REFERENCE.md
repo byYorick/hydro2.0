@@ -682,7 +682,7 @@ Laravel публикует `ExecutionChainUpdated` на приватный ка�
 - endpoint принимает `source`, `idempotency_key`, `mode`, `requested_duration_sec`;
 - `mode=normal` проходит через configured irrigation decision strategy (`task|smart_soil_v1`);
 - неизвестная irrigation decision strategy считается ошибкой конфигурации, завершает task fail-closed с `irrigation_decision_strategy_unknown` и поднимает `biz_irrigation_decision_fail`;
-- `mode=force` пропускает decision-gate, но остаётся canonical `ae_task`;
+- `mode=force` обходит выбор почвенной стратегии, но сохраняет температурный guard и проверки исполнения canonical `ae_task`;
 - при `decision=skip` runtime завершает task успешно без device-command publish;
 - если во время irrigation `solution_min` перестал подтверждать наличие раствора
   (`is_triggered=false`), runtime обязан остановить irrigation path, вернуть зону
@@ -873,5 +873,27 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 Они сохраняются как error_code задачи и имеют русские сообщения в общем каталоге.
 HTTP ingress и поля запроса не меняются; force обходит выбор стратегии, а
 проверки исполнения и температурный guard остаются в canonical workflow.
+
+`GET /api/zones/{id}/state` дополнен optional `irrigation_decision` — снимком
+последней задачи полива, включая завершённый пропуск. Он содержит task id/status,
+стратегию, полный config snapshot, outcome/reason/degraded, версию настроек и
+`details` соответствующего `IRRIGATION_DECISION_EVALUATED`. Совпадение события
+проверяется по зоне, задаче, outcome и reason; поиск ограничен временем создания
+задачи. Даты возвращаются в UTC ISO8601. У pending-задачи без решения нет
+измерений или даты решения предыдущей задачи. `run` — разрешение, не доставка
+воды; cache/live состояние оборудования по-прежнему определяется `state_meta`.
+
+В системном `field_catalog` string-поля с фиксированным выбором могут содержать
+`options[]` и `option_labels{value:label}`. Передаются прежние машинные значения;
+человеческие подписи не являются значениями API. Неизвестный вариант и неверное
+время `*_hhmm` отклоняются при сохранении. `none` для EC сохраняет режим только pH.
+
+Диапазоны форм/пресетов согласованы с исполнителем: подача 1–3600 сек,
+интервал 1–1440 целых минут в профиле; для почвенного решения lookback 60–86400 сек,
+min_samples 1–100, stale_after 30–86400 сек, hysteresis/spread 0–100 п.п.
+Проверка вложенных параметров действует как при создании, так и при обновлении
+пресета. Верхние границы времени фазы рецепта — 3600 сек подачи и 86400 сек
+интервала; прежняя nullable/min:0 семантика хранения рецепта не расширяет
+допуски исполняемого RuntimePlan.
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0

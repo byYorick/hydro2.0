@@ -181,7 +181,7 @@ class ZoneEventMessageFormatterTest extends TestCase
         ]);
 
         $this->assertSame(
-            'Снимок decision-controller полива зафиксирован: schedule (1234567890ab)',
+            'Настройки полива зафиксированы: по расписанию (1234567890ab)',
             $message
         );
     }
@@ -196,7 +196,7 @@ class ZoneEventMessageFormatterTest extends TestCase
         ]);
 
         $this->assertSame(
-            'Decision-controller полива: разрешён деградированный полив (smart_soil_v1)',
+            'Полив разрешён с пониженной достоверностью данных (по влажности субстрата)',
             $message
         );
     }

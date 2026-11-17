@@ -1,3 +1,6 @@
+import { toNullableNumber, nullableDraftNumber, nullableDraftInt, toNullableInt, normalizeTimeString } from './recipePhaseNumbers'
+export { toNullableNumber, nullableDraftNumber, nullableDraftInt, toNullableInt, normalizeTimeString } from './recipePhaseNumbers'
+export { getRecipePhaseTargetValidationError } from './recipePhaseValidation'
 import type { Recipe, RecipePhase, NutrientProduct } from '@/types'
 import { resolveRecipePhaseSystemType } from '@/composables/recipeSystemType'
 
@@ -87,61 +90,6 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   }
 
   return value as Record<string, unknown>
-}
-
-export function toNullableNumber(value: unknown, fallback: number | null = null): number | null {
-  if (value === null || value === undefined || value === '') {
-    return fallback
-  }
-
-  const parsed = Number(value)
-  return Number.isFinite(parsed) ? parsed : fallback
-}
-
-/** Пустая строка и пробелы — null. Number('') равен 0, для порогов культуры это включение контура. */
-export function nullableDraftNumber(value: unknown): number | null {
-  if (value === null || value === undefined) {
-    return null
-  }
-  if (typeof value === 'number') {
-    return Number.isFinite(value) ? value : null
-  }
-  const text = String(value).trim()
-  if (text === '') {
-    return null
-  }
-  const parsed = Number(text)
-  return Number.isFinite(parsed) ? parsed : null
-}
-
-export function nullableDraftInt(value: unknown): number | null {
-  const parsed = nullableDraftNumber(value)
-  if (parsed === null) {
-    return null
-  }
-  return Math.round(parsed)
-}
-
-export function toNullableInt(value: unknown, fallback: number | null = null): number | null {
-  const parsed = toNullableNumber(value, fallback)
-  if (parsed === null) {
-    return null
-  }
-
-  return Math.round(parsed)
-}
-
-export function normalizeTimeString(value: unknown, fallback = '06:00:00'): string {
-  const normalized = String(value ?? '').trim()
-  if (/^\d{2}:\d{2}:\d{2}$/.test(normalized)) {
-    return normalized
-  }
-
-  if (/^\d{2}:\d{2}$/.test(normalized)) {
-    return `${normalized}:00`
-  }
-
-  return fallback
 }
 
 function resolveIrrigationMode(systemType: RecipeSystemType, rawMode: unknown): RecipeIrrigationMode {
@@ -571,53 +519,6 @@ export function mapSimpleRecipePhaseToForm(phase: {
   form.day_night.humidity.night = phase.targets.humidity_air
   form.day_night.lighting.day_hours = phase.targets.light_hours
   return form
-}
-
-function validateBoundedTarget(
-  label: string,
-  target: number | null,
-  min: number | null,
-  max: number | null,
-): string | null {
-  if (target === null || min === null || max === null) {
-    return `${label}: заполните target, min и max`
-  }
-
-  if (min > max) {
-    return `${label}: min не может быть больше max`
-  }
-
-  if (target < min || target > max) {
-    return `${label}: target должен быть в диапазоне min..max`
-  }
-
-  return null
-}
-
-function cropDayPhaseError(phase: RecipePhaseFormState): string | null {
-  const min = nullableDraftNumber(phase.solution_temp_min)
-  const max = nullableDraftNumber(phase.solution_temp_max)
-  if (min !== null && max !== null && min > max) {
-    return 'Температура раствора: min не может быть больше max'
-  }
-  if (phase.solution_health_required === true && (min === null || max === null)) {
-    return 'Обязательная температура раствора задаётся только вместе с min и max'
-  }
-  return null
-}
-
-export function getRecipePhaseTargetValidationError(phase: RecipePhaseFormState): string | null {
-  return validateBoundedTarget(
-    'pH',
-    toNullableNumber(phase.ph_target),
-    toNullableNumber(phase.ph_min),
-    toNullableNumber(phase.ph_max),
-  ) ?? validateBoundedTarget(
-    'EC',
-    toNullableNumber(phase.ec_target),
-    toNullableNumber(phase.ec_min),
-    toNullableNumber(phase.ec_max),
-  ) ?? cropDayPhaseError(phase)
 }
 
 export function filterProductsByComponent(products: NutrientProduct[], component: NutrientProduct['component']): NutrientProduct[] {

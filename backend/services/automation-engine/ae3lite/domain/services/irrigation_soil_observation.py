@@ -30,6 +30,7 @@ class SoilObservation:
     missing_sensors: int
     rejected_samples: int
     stale: bool
+    sample_ages_sec: tuple[float, ...] = ()
 
     @property
     def available(self) -> bool:
@@ -42,6 +43,7 @@ class SoilObservation:
             "active_sensor_count": self.sensors,
             "missing_sensor_count": self.missing_sensors,
             "rejected_samples": self.rejected_samples,
+            "max_sensor_sample_age_sec": max(0, max(self.sample_ages_sec)) if self.sample_ages_sec else None,
         }
 
 
@@ -50,12 +52,16 @@ def observe_soil_windows(data: Mapping[str, Any]) -> SoilObservation:
     windows = windows if isinstance(windows, (list, tuple)) else ()
     means: list[float] = []
     count = missing = rejected = 0
+    ages: list[float] = []
     stale = bool(data.get("is_stale"))
     for window in windows:
         if not isinstance(window, Mapping):
             missing += 1
             continue
         stale = stale or bool(window.get("is_stale"))
+        age = window.get("sample_age_sec")
+        if isinstance(age, (int, float)) and not isinstance(age, bool) and math.isfinite(age):
+            ages.append(float(age))
         samples = window.get("samples")
         samples = samples if isinstance(samples, (list, tuple)) else ()
         values = [soil_percentage(sample.get("value")) if isinstance(sample, Mapping) else None for sample in samples]
@@ -66,4 +72,4 @@ def observe_soil_windows(data: Mapping[str, Any]) -> SoilObservation:
             means.append(float(mean(valid)))
         else:
             missing += 1
-    return SoilObservation(tuple(means), count, len(windows), missing, rejected, stale)
+    return SoilObservation(tuple(means), count, len(windows), missing, rejected, stale, tuple(ages))

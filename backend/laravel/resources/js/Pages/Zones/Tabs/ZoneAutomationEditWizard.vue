@@ -322,7 +322,6 @@ function syncDraftFromProps(): void {
 
 function emitApply(): void {
   if (props.isApplying) return
-  normalizeWaterRuntimeFields(draftWaterForm)
   syncWorkflowByTopology(draftWaterForm)
 
   const validationError = validateForms({ climateForm: draftClimateForm, waterForm: draftWaterForm })
