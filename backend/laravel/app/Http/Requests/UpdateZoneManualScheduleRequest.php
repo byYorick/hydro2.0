@@ -18,6 +18,8 @@ class UpdateZoneManualScheduleRequest extends FormRequest
      */
     public function rules(): array
     {
+        $schedule = $this->route('manualSchedule');
+        $irrigation = $this->input('task_type', $schedule instanceof \App\Models\ZoneManualSchedule ? $schedule->task_type : null) === 'irrigation';
         return [
             'task_type' => ['sometimes', 'string', Rule::in(ManualScheduleService::ALLOWED_TASK_TYPES)],
             'schedule_kind' => ['sometimes', 'string', Rule::in(ManualScheduleService::ALLOWED_SCHEDULE_KINDS)],
@@ -29,7 +31,7 @@ class UpdateZoneManualScheduleRequest extends FormRequest
             'days_of_week.*' => ['integer', 'min:1', 'max:7'],
             'run_at' => ['nullable', 'date'],
             'payload' => ['nullable', 'array'],
-            'payload.duration_sec' => ['nullable', 'integer', 'min:10', 'max:86400'],
+            'payload.duration_sec' => ['nullable', 'integer', $irrigation ? 'min:1' : 'min:10', $irrigation ? 'max:3600' : 'max:86400'],
             'label' => ['nullable', 'string', 'max:255'],
             'enabled' => ['sometimes', 'boolean'],
         ];

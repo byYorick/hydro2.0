@@ -13,7 +13,7 @@ vi.mock('@/Components/Badge.vue', () => ({
 
 function buildRun(overrides: Partial<ExecutionRun> = {}): ExecutionRun {
   return {
-    execution_id: 'ex-2042',
+    execution_id: '2042',
     task_id: 't-551',
     zone_id: 12,
     task_type: 'ph_correction',
@@ -26,7 +26,7 @@ function buildRun(overrides: Partial<ExecutionRun> = {}): ExecutionRun {
       { step: 'DECISION', at: '2026-02-10T12:33:55Z', ref: 'cw-118', detail: 'DOSE_ACID 2.3 ml', status: 'ok' },
       { step: 'TASK', at: '2026-02-10T12:33:56Z', ref: 'T-551', detail: 'ae_task → dosing', status: 'ok' },
       { step: 'DISPATCH', at: '2026-02-10T12:34:07Z', ref: 'cmd-9931', detail: 'history-logger → MQTT', status: 'ok' },
-      { step: 'RUNNING', at: '2026-02-10T12:34:08Z', ref: 'ex-2042', detail: 'pump_acid активен', status: 'run', live: true },
+      { step: 'RUNNING', at: '2026-02-10T12:34:08Z', ref: '2042', detail: 'pump_acid активен', status: 'run', live: true },
     ],
     ...overrides,
   }
@@ -54,7 +54,7 @@ describe('CausalChainPanel.vue', () => {
       ],
     })
     const wrapper = mount(CausalChainPanel, {
-      props: { run, errorText: 'pump_acid не ответил 3000ms' },
+      props: { canRequestRetry: true, run, errorText: 'pump_acid не ответил 3000ms' },
     })
     expect(wrapper.find('[data-testid="scheduler-chain-error"]').text()).toContain('ACT_TIMEOUT')
     expect(wrapper.find('[data-testid="scheduler-chain-error"]').text()).toContain('pump_acid не ответил 3000ms')
@@ -71,7 +71,7 @@ describe('CausalChainPanel.vue', () => {
         { step: 'DECISION', at: null, ref: 'cw-116', detail: 'SKIP · в пределах target', status: 'skip' },
       ],
     })
-    const wrapper = mount(CausalChainPanel, { props: { run } })
+    const wrapper = mount(CausalChainPanel, { props: { canRequestRetry: true, run } })
     expect(wrapper.findAll('[data-testid^="scheduler-chain-step-"]')).toHaveLength(2)
     expect(wrapper.find('[data-testid="scheduler-chain-retry"]').exists()).toBe(false)
   })
@@ -101,7 +101,7 @@ describe('CausalChainPanel.vue', () => {
     expect(warning.text()).toContain('целевые pH/EC не достигнуты')
     expect(warning.text()).toContain('pH 6.7265 → 5.8 ±0.04')
     expect(warning.text()).toContain('EC 0.532 → 1.4 ±0.06')
-    expect(wrapper.text()).toContain('DONE · CHEM WARN')
+    expect(wrapper.text()).toContain('Завершён')
   })
 
   it('эмитит события close/retry/open-events', async () => {
@@ -111,15 +111,36 @@ describe('CausalChainPanel.vue', () => {
       task_type: 'irrigation_start',
       error_code: 'ACT_TIMEOUT',
     })
-    const wrapper = mount(CausalChainPanel, { props: { run } })
+    const wrapper = mount(CausalChainPanel, { props: { canRequestRetry: true, run } })
 
     await wrapper.find('[data-testid="scheduler-chain-close"]').trigger('click')
     expect(wrapper.emitted('close')).toBeTruthy()
 
     await wrapper.find('[data-testid="scheduler-chain-retry"]').trigger('click')
-    expect(wrapper.emitted('retry')?.[0]).toEqual(['ex-2042'])
+    expect(wrapper.emitted('retry')?.[0]).toEqual(['2042'])
 
     await wrapper.find('[data-testid="scheduler-chain-open-events"]').trigger('click')
-    expect(wrapper.emitted('open-events')?.[0]).toEqual(['ex-2042'])
+    expect(wrapper.emitted('open-events')?.[0]).toEqual(['2042'])
   })
+})
+
+it('offers retry for a real irrigation task with a public schedule alias, only with permission', () => {
+  const run = buildRun({ execution_id: '82', task_type: 'irrigation_start', schedule_task_type: 'irrigation', status: 'failed', is_active: false })
+  const denied = mount(CausalChainPanel, { props: { run } })
+  expect(denied.find('[data-testid="scheduler-chain-retry"]').exists()).toBe(false)
+  const allowed = mount(CausalChainPanel, { props: { run, canRequestRetry: true, retrying: true } })
+  expect(allowed.get('[data-testid="scheduler-chain-retry"]').attributes('disabled')).toBeDefined()
+  expect(allowed.text()).toContain('Создание запроса')
+})
+it('does not turn null chemistry into zero or unknown status into success', () => {
+  const wrapper = mount(CausalChainPanel, { props: { run: buildRun({ status: 'future', chemistry_outcome: 'unknown', chemistry_diagnostics: { current_ph: null, target_ph: null } }) } })
+  expect(wrapper.text()).not.toContain('pH 0')
+  expect(wrapper.text()).toContain('Статус не распознан')
+})
+
+it('does not turn an unconfirmed chemistry result of a skipped task into completed watering', () => {
+  const wrapper = mount(CausalChainPanel, { props: { run: buildRun({ status: 'completed', is_active: false, decision_outcome: 'skip', chemistry_outcome: 'unknown' }) } })
+  expect(wrapper.text()).toContain('Штатный пропуск полива')
+  expect(wrapper.text()).not.toContain('Полив завершён')
+  expect(wrapper.text()).toContain('Итоговые pH/EC не подтверждены')
 })

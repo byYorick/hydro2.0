@@ -14,7 +14,7 @@ describe('KpiRow.vue', () => {
     })
 
     expect(wrapper.find('[data-testid="scheduler-kpi-active"]').text()).toContain('1')
-    expect(wrapper.find('[data-testid="scheduler-kpi-active"]').text()).toContain('runtime=ae3')
+    expect(wrapper.find('[data-testid="scheduler-kpi-active"]').text()).toContain('не подтверждение работы насосов')
     expect(wrapper.find('[data-testid="scheduler-kpi-completed"]').text()).toContain('47')
     expect(wrapper.find('[data-testid="scheduler-kpi-failed"]').text()).toContain('2')
     expect(wrapper.find('[data-testid="scheduler-kpi-windows"]').text()).toContain('8')

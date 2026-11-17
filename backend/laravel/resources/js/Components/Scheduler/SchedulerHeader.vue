@@ -23,16 +23,16 @@
             size="sm"
           >
             <span class="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-[color:var(--status-info)] shadow-[0_0_0_3px_color-mix(in_srgb,var(--status-info)_20%,transparent)]"></span>
-            {{ error ? 'Нет связи' : loading ? 'Обновление' : updatedLabel ? `Обновлено: ${updatedLabel}` : 'Ожидание данных' }}
+            {{ error ? 'Обновление недоступно' : loading ? 'Обновление' : updatedLabel ? `Обновлено: ${updatedLabel}` : 'Ожидание данных' }}
           </Badge>
           <Badge
-            :variant="statusVariant(hasActiveRun ? 'running' : 'accepted')"
+            :variant="controlMode === 'manual' ? 'warning' : controlMode === 'auto' ? 'info' : 'secondary'"
             size="sm"
           >
             {{ controlModeLabel(controlMode) }}
           </Badge>
           <span class="text-[11px] text-[color:var(--text-dim)]">
-            {{ hasActiveRun ? 'идёт активное исполнение' : 'ожидаем ближайшее окно' }}
+            {{ !hasData ? 'состояние задач ещё не получено' : hasActiveRun ? 'есть задача в работе' : 'активных задач нет' }}
           </span>
         </div>
       </div>
@@ -61,6 +61,7 @@
           variant="outline"
           class="h-8 px-2.5 text-[11px]"
           :disabled="loading"
+          aria-label="Обновить данные планировщика"
           @click="$emit('refresh')"
         >
           <span class="md:hidden">{{ loading ? '...' : '↻' }}</span>
@@ -81,7 +82,7 @@
       v-if="error"
       class="mt-2 rounded-lg border border-status-critical bg-status-critical-soft px-2.5 py-1.5 text-[11px] text-status-critical dark:border-status-critical dark:bg-status-critical-soft dark:text-status-critical"
     >
-      {{ error }}
+      {{ error }} <span v-if="updatedLabel">Показанные данные получены ранее и могут быть устаревшими.</span>
     </p>
   </section>
 </template>
@@ -95,6 +96,7 @@ defineProps<{
   horizon: '24h' | '7d'
   loading: boolean
   error: string | null
+  hasData?: boolean
   hasActiveRun: boolean
   controlMode: string | null | undefined
   controlModeLabel: (controlMode: string | null | undefined) => string

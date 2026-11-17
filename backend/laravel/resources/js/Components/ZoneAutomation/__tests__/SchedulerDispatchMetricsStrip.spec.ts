@@ -21,8 +21,8 @@ describe('SchedulerDispatchMetricsStrip', () => {
     const wrapper = mount(SchedulerDispatchMetricsStrip)
 
     expect(wrapper.find('[data-testid="scheduler-dispatch-metrics-strip"]').exists()).toBe(true)
-    expect(wrapper.text()).toContain('pending_intents=3')
-    expect(wrapper.text()).toContain('oldest_pending_age_sec=120')
-    expect(wrapper.text()).toContain('cycle_overrun_sec=1.5')
+    expect(wrapper.text()).toContain('Запросов, ожидающих приёма в работу')
+    expect(wrapper.text()).toContain('120 сек')
+    expect(wrapper.text()).toContain('1,5 сек')
   })
 })

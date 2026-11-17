@@ -41,13 +41,14 @@ function laneKey(run: ExecutionRun): string {
 function runStatusToHistoryStatus(run: ExecutionRun): LaneHistoryStatus {
   const normalized = String(run.status ?? '').toLowerCase()
   if (run.is_active || normalized === 'running' || normalized === 'claimed') return 'run'
-  if (normalized === 'failed' || normalized === 'fail' || normalized === 'error') return 'err'
+  if (normalized === 'failed' || normalized === 'fail' || normalized === 'error' || normalized === 'cancelled') return 'err'
   if (normalized === 'skipped' || normalized === 'skip') return 'skip'
   const decision = String(run.decision_outcome ?? '').toLowerCase()
   if (decision === 'skip') return 'skip'
   if (decision === 'fail') return 'err'
   if (run.decision_degraded) return 'warn'
-  return 'ok'
+  if (run.chemistry_outcome && run.chemistry_outcome !== 'targets_achieved') return 'warn'
+  return normalized === 'completed' ? 'ok' : 'warn'
 }
 
 /**
@@ -105,6 +106,7 @@ export function deriveLaneHistory(
   }
 
   for (const window of options.windows ?? []) {
+    if (window.state !== 'planned') continue
     const triggerAt = new Date(window.trigger_at)
     if (Number.isNaN(triggerAt.getTime())) continue
     const atMs = triggerAt.getTime()

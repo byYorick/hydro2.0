@@ -2,7 +2,7 @@
   <TransitionGroup
     name="toast-group"
     tag="div"
-    class="fixed z-[10000] pointer-events-none space-y-2 left-4 right-4 bottom-[calc(env(safe-area-inset-bottom,0px)+4.5rem)] sm:left-auto sm:right-4 sm:bottom-auto sm:top-4"
+    class="fixed z-[10000] pointer-events-none space-y-2 left-4 right-4 bottom-[calc(env(safe-area-inset-bottom,0px)+4.5rem)] max-w-[calc(100vw-2rem)] sm:left-auto sm:right-4 sm:bottom-auto sm:top-4"
   >
     <div
       v-for="toast in toasts"
@@ -12,7 +12,7 @@
     >
       <div
         :class="[
-          'min-w-[300px] max-w-md rounded-lg border p-4 shadow-[var(--shadow-card)] backdrop-blur-sm',
+          'w-full min-w-0 sm:min-w-[300px] max-w-md rounded-lg border p-4 shadow-[var(--shadow-card)] backdrop-blur-sm',
           variantClasses[toast.variant ?? 'info'],
           toast.grouped && 'border-l-4'
         ]"

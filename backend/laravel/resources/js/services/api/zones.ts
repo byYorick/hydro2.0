@@ -1,3 +1,4 @@
+import type { AxiosRequestConfig } from 'axios'
 /**
  * Zones domain API client.
  *
@@ -227,12 +228,12 @@ export const zonesApi = {
   },
 
   // ─── Scheduler workspace ─────────────────────────────────────────────────
-  scheduleWorkspace<T = unknown>(zoneId: number, params?: Record<string, unknown>): Promise<T> {
-    return apiGet<T>(`/zones/${zoneId}/schedule-workspace`, { params })
+  scheduleWorkspace<T = unknown>(zoneId: number, params?: Record<string, unknown>, config?: AxiosRequestConfig): Promise<T> {
+    return apiGet<T>(`/zones/${zoneId}/schedule-workspace`, { ...config, params })
   },
 
-  getState<T = unknown>(zoneId: number): Promise<T> {
-    return apiGet<T>(`/zones/${zoneId}/state`)
+  getState<T = unknown>(zoneId: number, config?: AxiosRequestConfig): Promise<T> {
+    return apiGet<T>(`/zones/${zoneId}/state`, config)
   },
 
   getHealth<T = unknown>(zoneId: number): Promise<T> {
@@ -261,16 +262,16 @@ export const zonesApi = {
     return apiPost<ZoneEstopApplyResult>(`/zones/${zoneId}/estop`, payload)
   },
 
-  getExecution<T = unknown>(zoneId: number, executionId: string): Promise<T> {
-    return apiGet<T>(`/zones/${zoneId}/executions/${encodeURIComponent(executionId)}`)
+  getExecution<T = unknown>(zoneId: number, executionId: string, config?: AxiosRequestConfig): Promise<T> {
+    return apiGet<T>(`/zones/${zoneId}/executions/${encodeURIComponent(executionId)}`, config)
   },
 
   retryExecution<T = unknown>(zoneId: number, executionId: string): Promise<T> {
-    return apiPost<T>(`/zones/${zoneId}/executions/${encodeURIComponent(executionId)}/retry`, {})
+    return apiPost<T>(`/zones/${zoneId}/executions/${encodeURIComponent(executionId)}/retry`, {}, { skipErrorToast: true })
   },
 
-  schedulerDiagnostics<T = unknown>(zoneId: number): Promise<T> {
-    return apiGet<T>(`/zones/${zoneId}/scheduler-diagnostics`)
+  schedulerDiagnostics<T = unknown>(zoneId: number, config?: AxiosRequestConfig): Promise<T> {
+    return apiGet<T>(`/zones/${zoneId}/scheduler-diagnostics`, config)
   },
 
   createManualSchedule<T = unknown>(

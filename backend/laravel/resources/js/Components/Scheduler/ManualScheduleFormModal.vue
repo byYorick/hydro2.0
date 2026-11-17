@@ -27,6 +27,7 @@
               class="rounded-xl border px-3 py-2.5 text-left transition motion-reduce:transition-none"
               :class="taskCardClass(option)"
               :aria-pressed="form.task_type === option.value"
+              :disabled="!isTaskExecutableOnAe3(option.value, executableTaskTypes)"
               :data-testid="`manual-schedule-task-type-${option.value}`"
               @click="form.task_type = option.value"
             >
@@ -50,7 +51,7 @@
           v-if="showNonExecutableWarning"
           class="rounded-xl border border-status-warning bg-status-warning-soft px-3 py-2 text-xs text-status-warning"
         >
-          На AE3 этот тип появится в плане, но без автоматического запуска.
+          Автоматический запуск этого типа задач для зоны не поддерживается. Выберите доступный тип задачи.
         </div>
 
         <div>
@@ -58,7 +59,7 @@
             Вид расписания
           </div>
           <div
-            class="inline-flex rounded-xl bg-[color:var(--bg-main)]/40 p-0.5"
+            class="inline-flex flex-wrap gap-1 rounded-xl bg-[color:var(--bg-main)]/40 p-0.5"
             role="group"
             aria-label="Вид расписания"
           >
@@ -409,15 +410,17 @@ const localErrors = ref<Record<string, string[]>>({})
 
 const selectedDays = computed(() => form.days_of_week ?? [])
 
-const mergedErrors = computed(() => ({ ...localErrors.value, ...(props.serverErrors ?? {}) }))
+const isCreate = computed(() => !props.initial?.id)
+
+const mergedErrors = computed(() => ({ ...collectManualScheduleFormErrors(form, { isCreate: isCreate.value }), ...localErrors.value, ...(props.serverErrors ?? {}) }))
 
 const generalError = computed(() => mergedErrors.value.general?.[0] ?? null)
 
-const isCreate = computed(() => !props.initial?.id)
 
-const isValid = computed(() => isManualScheduleFormValid(form, { isCreate: isCreate.value }))
+const isValid = computed(() => isTaskExecutableOnAe3(form.task_type, props.executableTaskTypes) && isManualScheduleFormValid(form, { isCreate: isCreate.value }))
 
 const validationHint = computed(() => {
+  if (!isTaskExecutableOnAe3(form.task_type, props.executableTaskTypes)) return 'Выберите поддерживаемый тип задачи.'
   const errors = collectManualScheduleFormErrors(form, { isCreate: isCreate.value })
   const messages = Object.values(errors).flat()
   return messages[0] ?? null
@@ -460,15 +463,8 @@ watch(intervalUnit, syncIntervalSec)
 
 watch([durationValue, durationUnit], () => {
   const multiplier = durationUnit.value === 'minutes' ? 60 : 1
-  const raw = Math.round(durationValue.value * multiplier)
-  if (!Number.isFinite(raw)) {
-    return
-  }
-  const clamped = Math.min(
-    MANUAL_SCHEDULE_LIMITS.durationSec.max,
-    Math.max(MANUAL_SCHEDULE_LIMITS.durationSec.min, raw),
-  )
-  form.payload = { ...(form.payload ?? {}), duration_sec: clamped }
+  const raw = Number(durationValue.value) * multiplier
+  form.payload = { ...(form.payload ?? {}), duration_sec: raw }
 })
 
 watch(runAtLocal, (value) => {
@@ -489,15 +485,7 @@ function toDatetimeLocalUtc(iso?: string | null): string {
 
 function syncIntervalSec(): void {
   const multiplier = intervalUnit.value === 'hours' ? 3600 : 60
-  const raw = Math.round(intervalValue.value * multiplier)
-  if (!Number.isFinite(raw)) {
-    form.interval_sec = MANUAL_SCHEDULE_LIMITS.intervalSec.min
-    return
-  }
-  form.interval_sec = Math.min(
-    MANUAL_SCHEDULE_LIMITS.intervalSec.max,
-    Math.max(MANUAL_SCHEDULE_LIMITS.intervalSec.min, raw),
-  )
+  form.interval_sec = Number(intervalValue.value) * multiplier
 }
 
 function fieldError(key: string): string | null {
@@ -610,6 +598,7 @@ watch(
 
 function submit(): void {
   const errors = collectManualScheduleFormErrors(form, { isCreate: isCreate.value })
+  if (!isTaskExecutableOnAe3(form.task_type, props.executableTaskTypes)) errors.task_type = ['Выберите поддерживаемый тип задачи.']
   if (Object.keys(errors).length > 0) {
     localErrors.value = errors
     return

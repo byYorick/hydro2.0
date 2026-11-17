@@ -7,7 +7,7 @@ import type {
 const DAY_MS = 86_400_000
 
 export const MANUAL_SCHEDULE_LIMITS = {
-  durationSec: { min: 10, max: 86_400 },
+  durationSec: { min: 1, max: 3600 },
   intervalSec: { min: 60, max: 86_400 },
 } as const
 
@@ -178,7 +178,7 @@ export function collectManualScheduleFormErrors(
 
   if (form.schedule_kind === 'interval') {
     const interval = Number(form.interval_sec ?? 0)
-    if (!Number.isFinite(interval)) {
+    if ((!Number.isFinite(interval) || !Number.isInteger(interval))) {
       errors.interval_sec = ['Укажите корректный интервал.']
     } else if (interval < MANUAL_SCHEDULE_LIMITS.intervalSec.min) {
       errors.interval_sec = [`Интервал не меньше ${MANUAL_SCHEDULE_LIMITS.intervalSec.min} с.`]
@@ -194,6 +194,8 @@ export function collectManualScheduleFormErrors(
   if (form.schedule_kind === 'once') {
     if (!form.run_at) {
       errors.run_at = ['Укажите дату и время.']
+    } else if (!Number.isFinite(Date.parse(form.run_at))) {
+      errors.run_at = ['Укажите корректную дату и время.']
     } else if (options?.isCreate && new Date(form.run_at).getTime() <= Date.now()) {
       errors.run_at = ['Для разового расписания укажите время в будущем (UTC).']
     }
@@ -201,7 +203,7 @@ export function collectManualScheduleFormErrors(
 
   if (form.task_type === 'irrigation') {
     const duration = Number(form.payload?.duration_sec ?? 0)
-    if (!Number.isFinite(duration)) {
+    if ((!Number.isFinite(duration) || !Number.isInteger(duration))) {
       errors['payload.duration_sec'] = ['Укажите корректную длительность.']
     } else if (duration < MANUAL_SCHEDULE_LIMITS.durationSec.min || duration > MANUAL_SCHEDULE_LIMITS.durationSec.max) {
       errors['payload.duration_sec'] = [

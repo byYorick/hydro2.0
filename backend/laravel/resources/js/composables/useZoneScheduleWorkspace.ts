@@ -1,6 +1,6 @@
+import { useSchedulerAttention } from './useSchedulerAttention'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { logger } from '@/utils/logger'
-import { resolveHumanErrorMessage } from '@/utils/errorCatalog'
 import { subscribeManagedChannelEvents } from '@/ws/managedChannelEvents'
 import { api } from '@/services/api'
 import type { ZoneAutomationTabProps } from '@/composables/zoneAutomationTypes'
@@ -16,12 +16,13 @@ import type {
   ScheduleWorkspace,
   ScheduleWorkspaceResponse,
 } from '@/composables/zoneScheduleWorkspaceTypes'
-import { asNonEmptyString, formatDateTime, formatRelativeTrigger, statusVariant, controlModeLabel, laneLabel, decisionLabel, statusLabel, workflowStageLabel } from '@/utils/schedulerLabels'
+import { formatDateTime, formatRelativeTrigger, statusVariant, controlModeLabel, laneLabel, decisionLabel, statusLabel, workflowStageLabel } from '@/utils/schedulerLabels'
 
 export function useZoneScheduleWorkspace(props: ZoneAutomationTabProps) {
   const horizon = ref<'24h' | '7d'>('24h')
   const workspace = ref<ScheduleWorkspace | null>(null)
   const automationState = ref<AutomationState | null>(null)
+  const automationStateError = ref<string | null>(null)
   const selectedExecution = ref<ExecutionRun | null>(null)
   const selectedExecutionId = ref<string | null>(null)
   const detailError = ref<string | null>(null)
@@ -76,99 +77,13 @@ export function useZoneScheduleWorkspace(props: ZoneAutomationTabProps) {
       .filter((window) => executable.has(String(window.task_type ?? '').trim()))
       .sort((a, b) => Date.parse(a.trigger_at) - Date.parse(b.trigger_at))
   })
-  const nextExecutableWindows = computed(() => executableWindows.value.slice(0, 3))
+  const nextExecutableWindows = computed(() => {
+    const since = Date.parse(workspace.value?.control?.generated_at ?? updatedAt.value ?? '')
+    return executableWindows.value.filter(window => window.state === 'planned' && Number.isFinite(Date.parse(window.trigger_at)) && (!Number.isFinite(since) || Date.parse(window.trigger_at) >= since)).slice(0, 3)
+  })
   const configOnlyLanes = computed<PlanLane[]>(() => lanes.value.filter((lane) => !lane.executable))
   const manualSchedules = computed(() => workspace.value?.manual_schedules ?? [])
-  type AttentionEntry = { tone: 'danger' | 'warning' | 'info', title: string, detail: string | null }
-
-  const attentionAlerts = computed((): AttentionEntry[] => {
-    const items: AttentionEntry[] = []
-
-    if (latestFailure.value) {
-      const failureMessage = resolveHumanErrorMessage({
-        code: latestFailure.value.error_code,
-        message: latestFailure.value.error_message,
-        humanMessage: latestFailure.value.human_error_message,
-      }, 'Неизвестная ошибка') || 'Неизвестная ошибка'
-      const failureDetail = latestFailure.value.at
-        ? `Зафиксировано ${formatDateTime(latestFailure.value.at)}`
-        : null
-      items.push({
-        tone: 'danger',
-        title: `Последняя ошибка: ${laneLabel(latestFailure.value.task_type)} · ${failureMessage}`,
-        detail: failureDetail,
-      })
-    }
-
-    const runtime = String(workspace.value?.control?.automation_runtime ?? '').trim().toLowerCase()
-    if (runtime === 'ae3') {
-      const caps = workspace.value?.capabilities
-      const nonExecRaw = caps?.non_executable_planned_task_types
-      const hasTypedList = Array.isArray(nonExecRaw)
-      const nonExec = hasTypedList ? nonExecRaw : []
-      const showLimit = (hasTypedList && nonExec.length > 0) || (!hasTypedList && configOnlyLanes.value.length > 0)
-
-      if (showLimit) {
-        const typesHint = nonExec.length > 0 ? nonExec.join(', ') : null
-        const autoHint = executableTaskTypes.value.length > 0
-          ? `Сейчас автодиспатч scheduler покрывает: ${executableTaskTypes.value.join(', ')}.`
-          : ''
-        items.push({
-          tone: 'warning',
-          title: 'Не все типы расписания запускаются автоматически (AE3)',
-          detail: typesHint
-            ? `${autoHint ? `${autoHint} ` : ''}Не диспатчатся из scheduler: ${typesHint}. Окна в графике отражают конфигурацию effective targets.`.trim()
-            : `${autoHint ? `${autoHint} ` : ''}Часть дорожек в графике относится к подсистемам без автоматического dispatch из этого планировщика (см. подписи дорожек).`.trim(),
-        })
-      }
-    }
-
-    if (executionCounters.value.failed_24h > 0) {
-      const latestFailureCode = asNonEmptyString(latestFailure.value?.error_code)
-      items.push({
-        tone: latestFailure.value ? 'warning' : 'danger',
-        title: `Ошибок за 24ч: ${executionCounters.value.failed_24h}`,
-        detail: latestFailureCode === 'start_cycle_zone_busy'
-          ? 'Повторные старты полива отклоняются, пока зона занята активным intent.'
-          : 'Есть неуспешные scheduler/AE исполнения, которые требуют внимания.',
-      })
-    }
-
-    if (activeRun.value && automationState.value?.state_label) {
-      const st = automationState.value.state_details
-      const failed = Boolean(st?.failed)
-      if (failed) {
-        const headline = asNonEmptyString(st?.human_error_message)
-          ?? asNonEmptyString(st?.error_message)
-          ?? automationState.value.state_label
-        items.push({
-          tone: 'danger',
-          title: `Сбой автоматики: ${headline}`,
-          detail: activeRun.value.current_stage || automationState.value.current_stage || null,
-        })
-      }
-    }
-
-    return items.slice(0, 4)
-  })
-
-  const attentionStatus = computed((): AttentionEntry[] => {
-    if (!activeRun.value || !automationState.value?.state_label) {
-      return []
-    }
-    const st = automationState.value.state_details
-    const failed = Boolean(st?.failed)
-    if (failed) {
-      return []
-    }
-    return [
-      {
-        tone: 'info',
-        title: `Сейчас выполняется: ${automationState.value.state_label}`,
-        detail: activeRun.value.current_stage || automationState.value.current_stage || null,
-      },
-    ]
-  })
+  const { attentionAlerts, attentionStatus } = useSchedulerAttention(workspace, automationState)
   async function fetchWorkspace(): Promise<void> {
     if (!props.zoneId) {
       workspace.value = null
@@ -187,6 +102,7 @@ export function useZoneScheduleWorkspace(props: ZoneAutomationTabProps) {
       const response = await api.zones.scheduleWorkspace<ScheduleWorkspace | ScheduleWorkspaceResponse>(
         requestedZoneId,
         { horizon: horizon.value },
+        { skipErrorToast: true },
       )
       if (disposed || requestSeq !== workspaceRequestSeq || props.zoneId !== requestedZoneId) {
         return
@@ -203,7 +119,7 @@ export function useZoneScheduleWorkspace(props: ZoneAutomationTabProps) {
         return
       }
       logger.warn('[ZoneSchedulerTab] Failed to fetch schedule workspace', { fetchError, zoneId: requestedZoneId })
-      error.value = 'Не удалось получить workspace планировщика.'
+      error.value = 'Не удалось обновить план и историю задач. Повторите попытку.'
     } finally {
       if (requestSeq === workspaceRequestSeq && props.zoneId === requestedZoneId) {
         loading.value = false
@@ -232,12 +148,15 @@ export function useZoneScheduleWorkspace(props: ZoneAutomationTabProps) {
     }
 
     try {
-      const response = await api.zones.getState<AutomationState | { data?: AutomationState }>(zoneId)
+      const response = await api.zones.getState<AutomationState | { data?: AutomationState }>(zoneId, { skipErrorToast: true })
       if (disposed || zoneId !== props.zoneId || request !== requests.state) return
       automationState.value = unwrapEnvelope<AutomationState>(response)
+      automationStateError.value = null
     } catch (fetchError) {
       if (disposed || zoneId !== props.zoneId || request !== requests.state) return
       logger.warn('[ZoneSchedulerTab] Failed to fetch automation state', { fetchError, zoneId: props.zoneId })
+      automationState.value = null
+      automationStateError.value = 'Не удалось обновить состояние процесса. План и история задач загружаются отдельно.'
       if (!options?.silent && !error.value) {
         error.value = 'Не удалось получить состояние зоны.'
       }
@@ -260,16 +179,14 @@ export function useZoneScheduleWorkspace(props: ZoneAutomationTabProps) {
     }
 
     try {
-      const response = await api.zones.getExecution<ExecutionRun | ExecutionResponse>(zoneId, normalizedExecutionId)
+      const response = await api.zones.getExecution<ExecutionRun | ExecutionResponse>(zoneId, normalizedExecutionId, { skipErrorToast: true })
       if (disposed || zoneId !== props.zoneId || request !== requests.execution) return
       selectedExecution.value = unwrapEnvelope<ExecutionRun>(response)
       detailError.value = null
     } catch (fetchError) {
       if (disposed || zoneId !== props.zoneId || request !== requests.execution) return
       logger.warn('[ZoneSchedulerTab] Failed to fetch execution detail', { fetchError, zoneId: props.zoneId, executionId: normalizedExecutionId })
-      if (!options?.silent) {
-        detailError.value = 'Не удалось получить детали выполнения.'
-      }
+      detailError.value = 'Не удалось обновить детали выполнения. Ранее полученные детали могут быть устаревшими.'
     } finally {
       if (!disposed && request === requests.execution) {
         detailLoading.value = false
@@ -294,7 +211,7 @@ export function useZoneScheduleWorkspace(props: ZoneAutomationTabProps) {
     diagnosticsError.value = null
 
     try {
-      const response = await api.zones.schedulerDiagnostics<SchedulerDiagnostics | SchedulerDiagnosticsResponse>(zoneId)
+      const response = await api.zones.schedulerDiagnostics<SchedulerDiagnostics | SchedulerDiagnosticsResponse>(zoneId, { skipErrorToast: true })
       if (disposed || zoneId !== props.zoneId || request !== requests.diagnostics) return
       diagnostics.value = unwrapEnvelope<SchedulerDiagnostics>(response)
     } catch (fetchError) {
@@ -418,6 +335,7 @@ export function useZoneScheduleWorkspace(props: ZoneAutomationTabProps) {
       selectedExecution.value = null
       detailError.value = null
       automationState.value = null
+      automationStateError.value = null
       error.value = null
       startControlModeEventSubscription()
       void refreshWorkspace()
@@ -428,6 +346,7 @@ export function useZoneScheduleWorkspace(props: ZoneAutomationTabProps) {
     horizon,
     workspace,
     automationState,
+    automationStateError,
     selectedExecution,
     selectedExecutionId,
     detailError,

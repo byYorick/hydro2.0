@@ -312,9 +312,9 @@ test.describe('Scheduler workspace lifecycle на вкладке Планиро�
     const chain = page.getByTestId('scheduler-causal-chain')
     await expect(chain).toBeVisible()
     await expect(chain.getByText('ЦЕПОЧКА РЕШЕНИЙ')).toBeVisible()
-    await expect(chain.getByText('SNAPSHOT')).toBeVisible()
+    await expect(chain.getByText('Снимок данных', { exact: true })).toBeVisible()
     await expect(chain.getByTestId('scheduler-chain-step-COMPLETE')).toBeVisible()
-    await expect(chain.getByText('done').first()).toBeVisible()
+    await expect(chain.getByText('Задача завершена.', { exact: false }).first()).toBeVisible()
   })
 
   test('разделяет обзор, расписания и историю с фильтром ошибок', async ({ page }) => {
@@ -335,10 +335,10 @@ test.describe('Scheduler workspace lifecycle на вкладке Планиро�
 
     const chain = page.getByTestId('scheduler-causal-chain')
     await expect(chain).toBeVisible()
-    await expect(chain.getByText('RUNNING')).toBeVisible()
-    await expect(chain.getByText('clean_fill').first()).toBeVisible()
-    await expect(chain.getByText('DISPATCH')).toBeVisible()
-    await expect(chain.getByText('pump_start').first()).toBeVisible()
+    await expect(chain.getByText('Выполнение', { exact: true })).toBeVisible()
+    await expect(chain.getByText('Задача в работе;', { exact: false })).toBeVisible()
+    await expect(chain.getByText('Передача команды', { exact: true })).toBeVisible()
+    await expect(chain.getByText('Записан этап передачи команды.', { exact: false })).toBeVisible()
   })
 
   test('показывает failed run с reason и error code', async ({ page }) => {

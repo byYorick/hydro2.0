@@ -17,7 +17,7 @@
               v-if="kpi.live"
               class="inline-block h-1.5 w-1.5 rounded-full bg-[color:var(--scheduler-kpi-accent)] shadow-[0_0_0_3px_color-mix(in_srgb,var(--scheduler-kpi-accent)_18%,transparent)]"
             ></span>
-            <span class="truncate">{{ kpi.label }}</span>
+            <span class="break-words">{{ kpi.label }}</span>
           </div>
           <div
             class="mt-1 tabular-nums text-2xl font-bold leading-tight md:text-[28px]"
@@ -32,12 +32,6 @@
         ></span>
       </div>
 
-      <div class="mt-2 h-1.5 overflow-hidden rounded-full bg-[color:var(--border-muted)]/45">
-        <span
-          class="block h-full rounded-full bg-[color:var(--scheduler-kpi-accent)] transition-all duration-300"
-          :style="{ width: `${kpi.meter}%` }"
-        ></span>
-      </div>
       <div class="mt-1.5 text-[10px] text-[color:var(--text-muted)]">
         {{ kpi.sub }}
       </div>
@@ -93,11 +87,6 @@ const failureRatio = computed<number | null>(() => {
   return props.counters.failed_24h / total
 })
 
-function meter(value: number, max: number): number {
-  if (!Number.isFinite(value) || value <= 0) return 0
-  return Math.min(100, Math.max(12, Math.round((value / max) * 100)))
-}
-
 const kpis = computed(() => {
   const total = totalAttempts24h.value
   const totalNote = total > 0 ? `всего ${total} за 24ч` : 'нет попыток за 24ч'
@@ -111,19 +100,17 @@ const kpis = computed(() => {
       key: 'active',
       label: 'Активные',
       value: props.counters.active,
-      sub: props.runtime ? `runtime=${props.runtime}` : 'runtime=—',
+      sub: 'Задачи, принятые движком; не подтверждение работы насосов',
       color: 'var(--status-info)',
       live: props.counters.active > 0,
-      meter: meter(props.counters.active, 3),
     },
     {
       key: 'completed',
-      label: 'Успешные за 24ч',
+      label: 'Завершены за 24 часа',
       value: props.counters.completed_24h,
-      sub: `${sloPercent.value} SLO · ${totalNote}`,
+      sub: `${sloPercent.value} без ошибки исполнения · включая штатные пропуски`,
       color: 'var(--status-ok)',
       live: false,
-      meter: meter(props.counters.completed_24h, Math.max(4, props.counters.completed_24h + props.counters.failed_24h)),
     },
     {
       key: 'failed',
@@ -135,16 +122,14 @@ const kpis = computed(() => {
           : `${failPercent.value} · ${totalNote}`,
       color: 'var(--status-critical)',
       live: false,
-      meter: meter(props.counters.failed_24h, Math.max(4, props.counters.completed_24h + props.counters.failed_24h)),
     },
     {
       key: 'windows',
-      label: 'Окна на горизонте',
+      label: 'Проверки в плане',
       value: props.executableWindowsCount,
       sub: props.windowTypeCount > 0 ? `${props.windowTypeCount} типа` : '—',
       color: 'var(--status-warning)',
       live: false,
-      meter: meter(props.executableWindowsCount, 6),
     },
   ]
 })

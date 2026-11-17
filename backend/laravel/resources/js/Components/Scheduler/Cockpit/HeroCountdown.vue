@@ -8,7 +8,7 @@
         <div class="min-w-0">
           <div class="flex items-center gap-1.5 text-[10px] font-bold tracking-[0.15em] text-[color:var(--status-info)]">
             <span class="hero-dot"></span>
-            <span>ИСПОЛНЯЕТСЯ</span>
+            <span>{{ statusLabel(run.status) }}</span>
             <span
               v-if="run.execution_id"
               class="font-mono text-[11px] font-semibold"
@@ -54,7 +54,7 @@
             variant="warning"
             size="sm"
           >
-            расчётный ETA
+            расчётное время
           </Badge>
           <span class="text-[11px] text-[color:var(--text-dim)]">· этап</span>
           <span class="text-[11px] font-semibold text-[color:var(--text-primary)]">{{ stageLabel ?? 'этап не определён' }}</span>
@@ -92,6 +92,8 @@
             Технические детали
           </summary>
           <div class="mt-1.5 space-y-1 font-mono text-[10px] leading-snug break-all">
+            <p>Тип: {{ run.task_type }} · статус: {{ run.status }}</p>
+            <p>Этап: {{ run.current_stage ?? run.workflow_phase ?? '—' }}</p>
             <p v-if="run.decision_strategy">
               <span class="text-[color:var(--text-dim)]">strategy</span> {{ run.decision_strategy }}
             </p>
@@ -116,7 +118,7 @@
           ИСПОЛНЕНИЙ СЕЙЧАС НЕТ
         </span>
         <span class="text-[11px] text-[color:var(--text-muted)]">
-          Ожидание ближайшего окна
+          Расписания показаны ниже. Наступление времени ещё не подтверждает запуск.
         </span>
       </div>
     </template>
@@ -124,8 +126,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, toRef } from 'vue'
+import { computed } from 'vue'
 import Badge from '@/Components/Badge.vue'
+import { statusLabel } from '@/utils/schedulerLabels'
 import type { ExecutionRun } from '@/composables/zoneScheduleWorkspaceTypes'
 import { useRafCountdown } from '@/composables/useRafCountdown'
 
@@ -142,6 +145,7 @@ interface Props {
    * обновляет таймер в реальном времени через `useRafCountdown`,
    * игнорируя `etaLabel`.
    */
+  elapsedFrom?: string | null
   endAt?: string | Date | null
   /** Отображение крайнего срока при просрочке (из родителя). */
   formatDateTime?: (value: string | null | undefined) => string
@@ -154,10 +158,11 @@ const props = withDefaults(defineProps<Props>(), {
   etaHint: 'осталось до завершения',
   etaEstimated: false,
   endAt: null,
+  elapsedFrom: null,
   formatDateTime: undefined,
 })
 
-const endAtRef = toRef(props, 'endAt')
+const endAtRef = computed(() => props.elapsedFrom ?? props.endAt)
 const { label: liveLabel, remainingSeconds } = useRafCountdown(endAtRef)
 
 function formatOverdue(totalSeconds: number): string {
@@ -174,6 +179,10 @@ function formatOverdue(totalSeconds: number): string {
 }
 
 const displayLabel = computed<string>(() => {
+  if (props.elapsedFrom) {
+    const seconds = remainingSeconds.value
+    return seconds == null ? '—' : formatOverdue(Math.min(0, seconds)).replace(/^\+/, '')
+  }
   if (props.endAt) {
     const remaining = remainingSeconds.value
     if (remaining !== null && remaining <= 0) {
@@ -185,7 +194,7 @@ const displayLabel = computed<string>(() => {
 })
 
 const isExpired = computed<boolean>(() => {
-  if (!props.endAt) return false
+  if (props.elapsedFrom || !props.endAt) return false
   const remaining = remainingSeconds.value
   return remaining !== null && remaining <= 0
 })
@@ -211,7 +220,7 @@ const expectedDeadlineLabel = computed<string | null>(() => {
 const hasTechnicalDetails = computed<boolean>(() => {
   const run = props.run
   if (!run) return false
-  return Boolean(run.decision_strategy || run.decision_bundle_revision || run.correlation_id)
+  return Boolean(run.task_type || run.current_stage || run.decision_strategy || run.decision_bundle_revision || run.correlation_id)
 })
 
 const progressSteps = computed<string[]>(() => {

@@ -7,7 +7,7 @@
       <div class="flex flex-wrap items-center justify-between gap-2">
         <div class="flex items-center gap-2">
           <h4 class="m-0 text-[13px] font-semibold text-[color:var(--text-primary)]">
-            Лента исполнений
+            История и план
           </h4>
           <Badge
             variant="neutral"
@@ -18,27 +18,27 @@
         </div>
         <div class="flex flex-wrap items-center justify-end gap-1">
           <span class="swim-pill">
-            <span class="swim-dot bg-[color:var(--status-ok)]"></span> OK
+            <span class="swim-dot bg-[color:var(--status-ok)]"></span> Завершено
           </span>
           <span class="swim-pill">
-            <span class="swim-dot bg-[color:var(--status-critical)]"></span> FAIL
+            <span class="swim-dot bg-[color:var(--status-critical)]"></span> Ошибка
           </span>
           <span class="swim-pill">
-            <span class="swim-dot bg-[color:var(--text-dim)]"></span> SKIP
+            <span class="swim-dot bg-[color:var(--text-dim)]"></span> Пропуск
           </span>
           <span class="swim-pill">
-            <span class="swim-dot bg-[color:var(--status-info)]"></span> RUN
+            <span class="swim-dot bg-[color:var(--status-info)]"></span> В работе
           </span>
           <span class="swim-pill">
-            <span class="swim-dot bg-[color:var(--status-warning)]"></span> WARN
+            <span class="swim-dot bg-[color:var(--status-warning)]"></span> Внимание
           </span>
           <span class="swim-pill">
-            <span class="swim-plan-diamond bg-[color:var(--status-warning)]"></span> PLAN
+            <span class="swim-plan-diamond bg-[color:var(--status-warning)]"></span> План
           </span>
         </div>
       </div>
       <p class="m-0 text-[9px] leading-snug text-[color:var(--text-muted)]">
-        Ромб — окно плана без факта исполнения; янтарная полоска — деградация; широкая бирюзовая — активный run.
+        Ромб — окно плана без факта исполнения; янтарная полоска — требуется проверка; широкая бирюзовая — задача в работе. Ось показывает половину периода до текущего момента и половину после него.
       </p>
     </header>
 
@@ -56,12 +56,11 @@
       <div
         v-for="lane in lanes"
         :key="lane.lane"
-        class="grid items-center gap-3"
-        :style="{ gridTemplateColumns: '128px minmax(0,1fr)' }"
+        class="grid items-center gap-2 grid-cols-[90px_minmax(0,1fr)] md:grid-cols-[128px_minmax(0,1fr)]"
       >
         <div class="min-w-0">
           <span class="block truncate text-[11px] font-semibold text-[color:var(--text-primary)]">
-            {{ lane.lane }}
+            {{ laneLabel(lane.lane) }}
           </span>
           <span class="text-[9px] text-[color:var(--text-muted)]">{{ lane.runs.length }} событий</span>
         </div>
@@ -73,14 +72,18 @@
           <div
             class="absolute left-1/2 top-1/2 z-10 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[color:var(--status-info)]"
           ></div>
-          <div
+          <button
             v-for="(point, index) in lane.runs"
             :key="`${lane.lane}-${index}`"
             class="swim-point absolute top-1/2 z-[11] rounded-[4px]"
             :class="pointClass(point)"
             :style="pointStyle(point)"
-            :title="pointTitle(lane.lane, point)"
-          ></div>
+            :title="pointTitle(laneLabel(lane.lane), point)"
+            type="button"
+            :aria-label="pointTitle(laneLabel(lane.lane), point)"
+            :disabled="!point.execution_id"
+            @click="point.execution_id && $emit('select', point.execution_id)"
+          ></button>
         </div>
       </div>
     </div>
@@ -104,6 +107,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import Badge from '@/Components/Badge.vue'
+import { laneLabel } from '@/utils/schedulerLabels'
+defineEmits<{ select: [executionId: string] }>()
 import type { LaneHistory, LaneHistoryPoint, LaneHistoryStatus } from '@/composables/zoneScheduleWorkspaceTypes'
 
 interface Props {
@@ -147,7 +152,7 @@ function statusRu(point: LaneHistoryPoint): string {
     err: 'ошибка',
     skip: 'пропуск',
     run: 'выполняется',
-    warn: 'деградация',
+    warn: 'требует проверки',
   }
   return labels[point.s] ?? point.s
 }

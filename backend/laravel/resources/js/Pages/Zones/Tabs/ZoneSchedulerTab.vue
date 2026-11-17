@@ -9,6 +9,7 @@
       :loading="loading"
       :error="error"
       :has-active-run="Boolean(activeRun)"
+      :has-data="Boolean(workspace)"
       :control-mode="workspace?.control?.control_mode"
       :control-mode-label="controlModeLabel"
       :status-variant="statusVariant"
@@ -24,13 +25,37 @@
       list-role="group"
       aria-label="Разделы планировщика"
     />
+    <SkeletonBlock
+      v-if="loading && !workspace"
+      class="h-52 w-full"
+    />
+    <EmptyState
+      v-else-if="!workspace"
+      title="Данные планировщика ещё не получены"
+      description="Обновите страницу данных. Отсутствие ответа не означает отсутствие задач или ошибок."
+    />
+    <p
+      v-if="workspace"
+      class="text-xs text-[color:var(--text-muted)]"
+    >
+      Время событий: {{ displayTimezone }}. Часовой пояс расписания рецепта: {{ workspace.control.timezone ?? 'не указан' }}. Ручные расписания задаются в UTC.
+    </p>
+    <p
+      v-if="automationStateError"
+      role="alert"
+      class="text-sm text-status-warning"
+    >
+      {{ automationStateError }}
+    </p>
+    <SchedulerDispatchMetricsStrip />
     <KpiRow
+      v-if="workspace"
       :counters="executionCounters"
       :executable-windows-count="executableWindows.length"
       :runtime="workspace?.control?.automation_runtime"
       :window-type-count="windowTypeCount"
     />
-    <CockpitLayout>
+    <CockpitLayout v-if="workspace">
       <template #left>
         <HeroCountdown
           :run="activeRun"
@@ -39,7 +64,7 @@
           :eta-label="etaLabel"
           :eta-hint="etaHint"
           :eta-estimated="activeEtaEstimated"
-          :end-at="activeEndAt"
+          :elapsed-from="activeStartedAt"
           :format-date-time="formatDateTime"
         />
         <NextUpCard
@@ -57,6 +82,7 @@
           :lanes="lanesHistory"
           :horizon="horizon"
           :format-date-time="formatDateTime"
+          @select="selectExecution"
         />
         <ManualSchedulesSection
           v-show="activeView === 'schedules'"
@@ -115,6 +141,8 @@
           :error-text="selectedExecutionErrorMessage"
           :format-date-time="formatDateTime"
           :lane-label="laneLabel"
+          :can-request-retry="canRequestRetry"
+          :retrying="retryingExecutionId !== null"
           @close="clearSelectedExecution"
           @retry="handleRetry"
           @open-events="handleOpenEvents"
@@ -172,7 +200,10 @@ import ManualSchedulesSection from '@/Components/Scheduler/ManualSchedulesSectio
 import { api } from '@/services/api'
 import Tabs from '@/Components/Tabs.vue'
 import Button from '@/Components/Button.vue'
-import { deriveRunEndAt, readRunDurationSec } from '@/utils/schedulerRunTime'
+import { executionDecisionLabel } from '@/utils/schedulerPresentation'
+import SchedulerDispatchMetricsStrip from '@/Components/ZoneAutomation/SchedulerDispatchMetricsStrip.vue'
+import EmptyState from '@/Components/EmptyState.vue'
+import SkeletonBlock from '@/Components/SkeletonBlock.vue'
 
 const props = defineProps<ZoneAutomationTabProps>()
 
@@ -181,6 +212,7 @@ const { canDiagnose, role } = useRole()
 const {
   horizon,
   workspace,
+  automationStateError,
   selectedExecution,
   selectedExecutionId,
   detailError,
@@ -213,7 +245,6 @@ const {
   controlModeLabel,
   laneLabel,
   workflowStageLabel,
-  decisionLabel,
 } = useZoneScheduleWorkspace(props)
 
 useSchedulerExecutionChain(() => props.zoneId, selectedExecution, workspace)
@@ -275,29 +306,13 @@ const activeStageLabel = computed<string | null>(() => {
   )
 })
 
-const activeEndAt = computed<string | null>(() => {
-  const run = activeRun.value
-  if (!run) return null
-  const endAt = deriveRunEndAt(run)
-  return endAt ? endAt.toISOString() : null
-})
-
-const etaLabel = computed<string>(() => {
-  const endAt = activeEndAt.value
-  if (!endAt) return '—'
-  return formatRelativeTrigger(endAt)
-})
-
-const etaHint = computed<string>(() => {
-  return activeEndAt.value ? 'осталось до завершения' : 'длительность не задана'
-})
-
-const activeEtaEstimated = computed<boolean>(() => {
-  const run = activeRun.value
-  if (!run || !activeEndAt.value) return false
-  // Duration-based ETA is always estimated; expires_at is authoritative when used.
-  return readRunDurationSec(run) !== null
-})
+const displayTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone
+const activeStartedAt = computed(() => activeRun.value?.accepted_at ?? activeRun.value?.created_at ?? null)
+const etaLabel = computed(() => '—')
+const etaHint = computed(() => `${activeRun.value?.accepted_at ? 'с момента приёма' : 'с момента регистрации'} задачи; время завершения не определено`)
+const activeEtaEstimated = computed(() => false)
+const retryingExecutionId = ref<string | null>(null)
+const canRequestRetry = computed(() => ['operator', 'admin', 'agronomist', 'engineer'].includes(role.value))
 
 const selectedExecutionErrorMessage = computed<string | null>(() =>
   resolveHumanErrorMessage({
@@ -308,12 +323,15 @@ const selectedExecutionErrorMessage = computed<string | null>(() =>
 )
 
 function decisionLabelForRun(run: ExecutionRun): string {
-  const outcome = decisionLabel(run.decision_outcome, run.decision_degraded)
-  const reason = run.decision_reason_code ? ` · ${run.decision_reason_code}` : ''
-  return outcome ? `${outcome}${reason}` : (run.status ?? 'UNKNOWN')
+  return executionDecisionLabel(run)
 }
 
 async function handleRetry(executionId: string): Promise<void> {
+  if (!canRequestRetry.value || retryingExecutionId.value) return
+  const forced = selectedExecution.value?.irrigation_mode === 'force'
+  const message = forced ? 'Создать повторный запрос принудительного полива? Проверка влажности будет обойдена; остальные ограничения безопасности сохраняются.' : 'Создать повторный запрос полива? Новая задача заново проверит условия; если они разрешают полив, начнётся подача воды.'
+  if (!window.confirm(message)) return
+  retryingExecutionId.value = executionId
   try {
     const response = await api.zones.retryExecution<{ intent_id?: number; data?: { intent_id?: number } }>(
       Number(props.zoneId),
@@ -322,8 +340,8 @@ async function handleRetry(executionId: string): Promise<void> {
     const intentId = response?.intent_id ?? response?.data?.intent_id
     showToast(
       intentId
-        ? `Повтор исполнения #${executionId} создан (intent #${intentId}).`
-        : `Повтор исполнения #${executionId} принят.`,
+        ? `Повторный запрос полива №${intentId} создан. Его выполнение ещё не подтверждено.`
+        : 'Повторный запрос полива принят. Его выполнение ещё не подтверждено.',
       'success',
     )
     await refreshWorkspace()
@@ -334,7 +352,7 @@ async function handleRetry(executionId: string): Promise<void> {
       humanMessage: null,
     }) ?? 'Не удалось запустить повтор исполнения.'
     showToast(message, 'error')
-  }
+  } finally { retryingExecutionId.value = null }
 }
 
 function handleOpenEvents(executionId: string): void {

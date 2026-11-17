@@ -21,13 +21,13 @@
         </div>
         <div class="mt-1 text-[11px] text-[color:var(--text-dim)]">
           {{ laneLabel(run.schedule_task_type ?? run.task_type) }}
-          <span v-if="run.decision_bundle_revision"> · bundle {{ run.decision_bundle_revision }}</span>
+          <span v-if="run.decision_bundle_revision"> · версия настроек {{ run.decision_bundle_revision }}</span>
         </div>
         <div
           v-if="run.correlation_id"
-          class="mt-0.5 font-mono text-[10px] text-[color:var(--text-muted)]"
+          class="mt-0.5 break-all font-mono text-[10px] text-[color:var(--text-muted)]"
         >
-          correction_window: {{ run.correlation_id }}
+          Связь событий: {{ run.correlation_id }}
         </div>
       </div>
       <button
@@ -36,7 +36,7 @@
         data-testid="scheduler-chain-close"
         @click="$emit('close')"
       >
-        ✕
+        <span aria-hidden="true">✕</span><span class="sr-only">Закрыть детали запуска</span>
       </button>
     </header>
 
@@ -53,7 +53,7 @@
       </div>
       <div
         v-if="run.error_code"
-        class="mt-0.5 font-mono text-[10px] text-[color:var(--status-critical)]"
+        class="mt-0.5 break-all font-mono text-[10px] text-[color:var(--status-critical)]"
       >
         {{ run.error_code }}
       </div>
@@ -83,7 +83,7 @@
       v-if="steps.length === 0"
       class="mt-2 text-[11px] text-[color:var(--text-muted)]"
     >
-      Нет шагов цепочки — возможно, execution ещё в очереди.
+      Записанных событий для этого запуска пока нет. Проверьте статус задачи и обновление данных.
     </div>
 
     <ol
@@ -116,7 +116,7 @@
               variant="neutral"
               size="xs"
             >
-              {{ step.step }}
+              {{ chainStepLabel(step.step) }}
             </Badge>
             <span class="font-mono text-[10px] text-[color:var(--text-muted)]">
               {{ step.ref }}
@@ -132,21 +132,42 @@
               ? 'font-semibold text-[color:var(--status-info)]'
               : 'text-[color:var(--text-primary)]'"
           >
-            {{ step.detail }}
+            {{ chainStepExplanation(step.step, step.status) }}
+            <details class="mt-1 text-[color:var(--text-muted)]">
+              <summary>Технические сведения события</summary><p class="break-all">
+                {{ step.detail }} · {{ step.ref }}
+              </p>
+            </details>
           </div>
         </div>
       </li>
     </ol>
 
+    <details class="mt-3 text-xs text-[color:var(--text-muted)]">
+      <summary>Технические данные задачи</summary>
+      <dl class="mt-2 space-y-1 font-mono break-all">
+        <div>Тип: {{ run.task_type }} · статус: {{ run.status }}</div>
+        <div>Этап: {{ run.current_stage ?? run.workflow_phase ?? '—' }}</div>
+        <div>Условие полива: {{ run.decision_strategy ?? '—' }} · причина: {{ run.decision_reason_code ?? '—' }}</div>
+        <div>Режим полива: {{ run.irrigation_mode ?? '—' }}</div>
+      </dl>
+    </details>
+    <p
+      v-if="isFailed && !canRetry"
+      class="mt-2 text-xs text-[color:var(--text-muted)]"
+    >
+      {{ canRequestRetry ? 'Повтор из этой карточки доступен только для задач полива. Проверьте причину ошибки в журнале.' : 'Ваша роль позволяет просматривать запуск. Для повторного запуска обратитесь к оператору или агроному.' }}
+    </p>
     <footer class="mt-3 flex gap-1.5">
       <button
         v-if="canRetry"
+        :disabled="retrying"
         type="button"
         class="flex-1 rounded-lg border border-[color:var(--status-critical)]/35 bg-[color:var(--status-critical)]/10 px-2 py-1.5 text-[11px] font-semibold text-[color:var(--text-primary)] hover:bg-[color:var(--status-critical)]/15"
         data-testid="scheduler-chain-retry"
         @click="$emit('retry', run.execution_id)"
       >
-        Повторить
+        {{ retrying ? 'Создание запроса…' : 'Запросить повтор полива' }}
       </button>
       <button
         type="button"
@@ -154,7 +175,7 @@
         data-testid="scheduler-chain-open-events"
         @click="$emit('open-events', run.execution_id)"
       >
-        В Events →
+        Открыть журнал событий
       </button>
       <button
         v-if="run.correlation_id"
@@ -173,6 +194,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import Badge from '@/Components/Badge.vue'
+import { statusLabel, statusVariant } from '@/utils/schedulerLabels'
+import { chainStepLabel, chainStepExplanation } from '@/utils/schedulerPresentation'
 import type {
   ChainStep,
   ChainStepStatus,
@@ -181,12 +204,16 @@ import type {
 
 interface Props {
   run: ExecutionRun
+  canRequestRetry?: boolean
+  retrying?: boolean
   errorText?: string | null
   formatDateTime?: (value: string | null | undefined) => string
   laneLabel?: (taskType: string | null | undefined) => string
 }
 
 const props = withDefaults(defineProps<Props>(), {
+  canRequestRetry: false,
+  retrying: false,
   errorText: null,
   formatDateTime: undefined,
   laneLabel: (value: string | null | undefined) => value ?? '—',
@@ -213,7 +240,6 @@ const isFailed = computed(() => {
   return status === 'failed' || status === 'fail' || status === 'cancelled' || Boolean(props.run.error_code)
 })
 
-const isCancelled = computed(() => String(props.run.status ?? '').toLowerCase() === 'cancelled')
 
 const hasChemistryWarning = computed(() => (
   props.run.chemistry_outcome === 'targets_not_achieved'
@@ -223,10 +249,10 @@ const hasChemistryWarning = computed(() => (
 
 const chemistryWarningTitle = computed(() => {
   if (props.run.chemistry_outcome === 'targets_not_achieved') {
-    return 'Полив завершён, но целевые pH/EC не достигнуты'
+    return 'Коррекция: целевые pH/EC не достигнуты'
   }
   if (props.run.chemistry_outcome === 'failed') return 'Химическая коррекция завершилась ошибкой'
-  return 'Полив завершён, итоговые pH/EC не подтверждены'
+  return 'Итоговые pH/EC не подтверждены'
 })
 
 const chemistryValues = computed(() => {
@@ -234,7 +260,8 @@ const chemistryValues = computed(() => {
   if (!details) return ''
   const parts: string[] = []
   const format = (value: unknown): string | null => {
-    const numeric = Number(value)
+    if (typeof value !== 'number' || !Number.isFinite(value)) return null
+    const numeric = value
     return Number.isFinite(numeric) ? numeric.toFixed(4).replace(/0+$/, '').replace(/\.$/, '') : null
   }
   const append = (label: string, currentKey: string, targetKey: string, deadbandKey: string, allowKey: string): void => {
@@ -251,29 +278,13 @@ const chemistryValues = computed(() => {
 })
 
 const canRetry = computed(() => {
-  if (!isFailed.value && !isCancelled.value) return false
-  const taskType = String(props.run.schedule_task_type ?? props.run.task_type ?? '').toLowerCase()
+  if (!props.canRequestRetry || !['failed', 'cancelled'].includes(String(props.run.status).toLowerCase()) || !/^\d+$/.test(props.run.execution_id)) return false
+  const taskType = String(props.run.task_type ?? '').toLowerCase()
   return taskType === 'irrigation_start'
 })
 
-const headerBadgeLabel = computed<string>(() => {
-  if (isCancelled.value) return 'CANCELLED'
-  if (isFailed.value) return 'FAIL'
-  const outcome = String(props.run.decision_outcome ?? '').toLowerCase()
-  if (outcome === 'skip') return 'SKIP'
-  if (props.run.is_active) return 'RUN'
-  if (hasChemistryWarning.value) return 'DONE · CHEM WARN'
-  return String(props.run.status ?? '').toUpperCase() || '—'
-})
-
-const headerBadgeVariant = computed<'info' | 'success' | 'warning' | 'danger' | 'secondary'>(() => {
-  if (isFailed.value || isCancelled.value) return 'danger'
-  if (props.run.is_active) return 'info'
-  if (hasChemistryWarning.value) return 'warning'
-  const outcome = String(props.run.decision_outcome ?? '').toLowerCase()
-  if (outcome === 'skip') return 'secondary'
-  return 'success'
-})
+const headerBadgeLabel = computed(() => props.run.decision_outcome === 'skip' ? 'Штатный пропуск полива' : statusLabel(props.run.status))
+const headerBadgeVariant = computed(() => hasChemistryWarning.value ? 'warning' : statusVariant(props.run.status))
 
 function formatAt(value: string | null | undefined): string {
   if (!value) return ''
@@ -285,7 +296,7 @@ function copyCorrelation(): void {
   const id = props.run.correlation_id
   if (!id) return
   if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
-    void navigator.clipboard.writeText(id)
+    void navigator.clipboard.writeText(id).catch(() => undefined)
   }
 }
 </script>
