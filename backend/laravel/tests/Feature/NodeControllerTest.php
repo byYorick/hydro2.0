@@ -284,7 +284,9 @@ class NodeControllerTest extends TestCase
             'source' => 'manual_calibration',
             'quality_score' => 0.8,
             'sample_count' => 1,
-            'valid_from' => now(),
+            // PostgreSQL NOW() is fixed at the test transaction's start.
+            // Keep this active fixture in the past across PHP/DB clock boundaries.
+            'valid_from' => now()->subMinute(),
             'is_active' => true,
             'created_at' => now(),
             'updated_at' => now(),
