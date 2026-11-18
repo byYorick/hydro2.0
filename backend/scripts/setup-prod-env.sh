@@ -1,28 +1,22 @@
 #!/usr/bin/env bash
 # Генерирует backend/.env.prod и MQTT passwords.txt для production compose.
 set -euo pipefail
+umask 077
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BACKEND_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 ENV_FILE="${BACKEND_DIR}/.env.prod"
-EXAMPLE_FILE="${BACKEND_DIR}/.env.prod.example"
-PASSWORDS_FILE="${BACKEND_DIR}/services/mqtt-bridge/passwords.txt"
 FORCE=0
 PUBLIC_HOST="${PUBLIC_HOST:-}"
-
-ensure_passwords_file_path() {
-    if [ -d "${PASSWORDS_FILE}" ]; then
-        echo "Внимание: ${PASSWORDS_FILE} — каталог (часто из-за Docker bind-mount). Удаляю..." >&2
-        rm -rf "${PASSWORDS_FILE}"
-    fi
-}
+INVENTORY=""
 
 usage() {
     cat <<'EOF'
-Usage: setup-prod-env.sh [--force] [--host HOST]
+Usage: setup-prod-env.sh [--force] [--host HOST] [--inventory FILE]
 
   --force       перезаписать существующий backend/.env.prod
   --host HOST   PUBLIC_HOST (домен или IP без схемы)
+  --inventory FILE   JSON со списком username, node_uid и hardware_id (по умолчанию только сервисы)
 
 Переменные окружения (опционально):
   PUBLIC_SCHEME, APP_URL, PUBLIC_WS_PORT, PUBLIC_WS_TLS
@@ -34,6 +28,7 @@ EOF
 while [ $# -gt 0 ]; do
     case "$1" in
         --force) FORCE=1; shift ;;
+        --inventory) INVENTORY="${2:?укажите inventory JSON}"; shift 2 ;;
         --host)
             PUBLIC_HOST="${2:-}"
             shift 2
@@ -111,7 +106,22 @@ ALERTMANAGER_WEBHOOK_SECRET="$(rand_hex)"
 REVERB_ALLOWED_ORIGINS="${APP_URL}"
 SANCTUM_STATEFUL_DOMAINS="${PUBLIC_HOST}"
 
-cat > "${ENV_FILE}" <<EOF
+staging=$(mktemp -d "${BACKEND_DIR}/.prod-setup-XXXXXXXX")
+trap 'rm -rf "$staging"' EXIT
+if [ -z "$INVENTORY" ]; then
+    INVENTORY="$staging/inventory.json"
+    echo '[]' > "$INVENTORY"
+fi
+bundle_parent="${BACKEND_DIR}/.mqtt-bundles"
+bundle_name="credentials-${staging##*.prod-setup-}"
+printf '{"history_logger":"%s","mqtt_bridge":"%s"}\n' \
+    "$MQTT_HISTORY_LOGGER_PASS" "$MQTT_MQTT_BRIDGE_PASS" > "$staging/services.json"
+python3 "${BACKEND_DIR}/../tools/mqtt/prepare_node_credentials.py" \
+    "$INVENTORY" "$staging/services.json" "$bundle_parent/$bundle_name"
+# Mosquitto reads the bind-mounted ACL after dropping privileges.
+chmod 644 "$bundle_parent/$bundle_name/production.acl"
+
+cat > "$staging/env" <<EOF
 # Сгенерировано backend/scripts/setup-prod-env.sh — $(date -Iseconds)
 # Не коммитьте этот файл.
 
@@ -143,6 +153,12 @@ LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN}
 HISTORY_LOGGER_API_TOKEN=${HISTORY_LOGGER_API_TOKEN}
 HISTORY_LOGGER_AE_TOKEN=${HISTORY_LOGGER_AE_TOKEN}
 
+MQTT_PRODUCTION_PASSWORD_FILE=./.mqtt-bundles/${bundle_name}/passwords
+MQTT_PRODUCTION_ACL_FILE=./.mqtt-bundles/${bundle_name}/production.acl
+MQTT_NODE_PASSWORDS_FILE=./.mqtt-bundles/${bundle_name}/node_passwords.json
+MQTT_TLS=1
+MQTT_PORT=8883
+MQTT_PLAINTEXT_ENABLED=0
 MQTT_MQTT_BRIDGE_PASS=${MQTT_MQTT_BRIDGE_PASS}
 MQTT_AUTOMATION_ENGINE_PASS=${MQTT_AUTOMATION_ENGINE_PASS}
 MQTT_HISTORY_LOGGER_PASS=${MQTT_HISTORY_LOGGER_PASS}
@@ -154,21 +170,8 @@ GRAFANA_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
 ALERTMANAGER_WEBHOOK_SECRET=${ALERTMANAGER_WEBHOOK_SECRET}
 EOF
 
-chmod 600 "${ENV_FILE}"
-
-echo "Записано ${ENV_FILE}"
-
-ensure_passwords_file_path
-
-MQTT_MQTT_BRIDGE_PASS="${MQTT_MQTT_BRIDGE_PASS}" \
-MQTT_AUTOMATION_ENGINE_PASS="${MQTT_AUTOMATION_ENGINE_PASS}" \
-MQTT_HISTORY_LOGGER_PASS="${MQTT_HISTORY_LOGGER_PASS}" \
-MQTT_ESP32_NODE_PASS="${MQTT_ESP32_NODE_PASS}" \
-    bash "${BACKEND_DIR}/services/mqtt-bridge/generate_passwords.sh" "${PASSWORDS_FILE}"
-
-chmod 600 "${PASSWORDS_FILE}" 2>/dev/null || true
-
-echo ""
+mv "$staging/env" "${ENV_FILE}"
+echo "Записано ${ENV_FILE} и MQTT bundle ${bundle_name}."
 echo "Production env готов. Дальше:"
 echo "  1. Проверьте домены в ${ENV_FILE} (REVERB_ALLOWED_ORIGINS, SANCTUM_STATEFUL_DOMAINS)"
 echo "  2. make prod-check"
@@ -176,4 +179,5 @@ echo "  3. make prod-up"
 echo "  4. make prod-migrate"
 echo "  5. make prod-seed   # первый админ (StartUsersSeeder)"
 echo ""
-echo "ESP32: MQTT broker на порту 1883, user esp32_node, пароль — MQTT_ESP32_NODE_PASS в .env.prod"
+echo "До prod-check подготовьте CA и сертификат брокера с SAN для mqtt и адреса устройств."
+echo "Индивидуальные MQTT credentials узлов находятся в закрытом файле ${bundle_parent}/${bundle_name}/node_credentials.json."

@@ -89,9 +89,17 @@ class Settings:
     telemetry_max_pg_retries: int = int(os.getenv("TELEMETRY_MAX_PG_RETRIES", "3"))
 
 
+def get_database_settings() -> Settings:
+    """Validate only the credentials needed to access PostgreSQL."""
+    settings = Settings()
+    if os.getenv("APP_ENV", "").strip().lower() in ("production", "prod") and not settings.pg_pass:
+        raise ValueError("PG_PASS or POSTGRES_PASSWORD must be set in production environment")
+    return settings
+
+
 def get_settings() -> Settings:
     """Получить настройки с проверкой обязательных параметров безопасности."""
-    settings = Settings()
+    settings = get_database_settings()
     
     # Проверка обязательных паролей в продакшене
     # Проверяем явно production, игнорируя пустые значения и dev/local окружения
@@ -103,10 +111,6 @@ def get_settings() -> Settings:
         if not settings.mqtt_pass:
             raise ValueError(
                 "MQTT_PASS or MQTT_PASSWORD must be set in production environment"
-            )
-        if not settings.pg_pass:
-            raise ValueError(
-                "PG_PASS or POSTGRES_PASSWORD must be set in production environment"
             )
         if not settings.bridge_api_token:
             raise ValueError(

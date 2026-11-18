@@ -24,6 +24,10 @@ class RuntimeDatabaseRolesTest extends TestCase
         $this->assertFalse($this->allowed('ae', 'commands', 'INSERT'));
         $this->assertTrue($this->allowed('ae', 'ae_tasks', 'UPDATE'));
         $this->assertFalse($this->allowed('hl', 'ae_tasks', 'UPDATE'));
+        $this->assertTrue($this->allowed('aggregator', 'sensors', 'SELECT'));
+        $this->assertTrue($this->allowed('aggregator', 'zone_simulations', 'SELECT'));
+        $this->assertTrue($this->allowed('aggregator', 'simulation_events', 'INSERT'));
+        $this->assertFalse($this->allowed('aggregator', 'sensors', 'UPDATE'));
         $this->assertTrue($this->allowed('aggregator', 'telemetry_samples', 'DELETE'));
         $this->assertFalse($this->allowed('aggregator', 'telemetry_samples', 'UPDATE'));
         foreach (array_keys(RuntimeRoleGrants::PROFILES) as $profile) {

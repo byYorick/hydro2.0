@@ -6,9 +6,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BACKEND_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 ENV_FILE="${BACKEND_DIR}/.env.prod"
 COMPOSE_FILE="${BACKEND_DIR}/docker-compose.prod.yml"
-PASSWORDS_FILE="${BACKEND_DIR}/services/mqtt-bridge/passwords.txt"
-ACL_FILE="${BACKEND_DIR}/services/mqtt-bridge/acl"
-
 DOCKER_COMPOSE="${DOCKER_COMPOSE:-$(command -v docker-compose >/dev/null 2>&1 && echo docker-compose || echo "docker compose")}"
 
 errors=0
@@ -33,13 +30,6 @@ require_file() {
 }
 
 require_file "${ENV_FILE}" "backend/.env.prod"
-require_file "${PASSWORDS_FILE}" "MQTT passwords.txt"
-require_file "${ACL_FILE}" "MQTT acl"
-
-if [ -d "${PASSWORDS_FILE}" ]; then
-    fail "passwords.txt — каталог, а не файл. Удалите: rm -rf ${PASSWORDS_FILE} && make prod-setup"
-fi
-
 # shellcheck disable=SC1090
 set -a
 source "${ENV_FILE}"
@@ -117,34 +107,30 @@ else
 fi
 
 echo ""
-echo "Проверка volume backups_data в compose..."
-if ${DOCKER_COMPOSE} --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" config 2>/dev/null | grep -q 'backups_data:/backups'; then
-    ok "laravel монтирует backups_data:/backups"
-else
-    fail "laravel не монтирует backups_data:/backups"
+echo "Проверка mounts и project name в production Compose..."
+if ! ${DOCKER_COMPOSE} --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" config --format json | python3 -c '
+import json, sys
+from pathlib import Path
+config = json.load(sys.stdin)
+if config["name"] != "hydro-prod":
+    sys.exit("Неверное имя Compose-проекта")
+def mount(service, target):
+    return next(v for v in config["services"][service]["volumes"] if v["target"] == target)
+if mount("laravel", "/backups")["source"] != "backups_data":
+    sys.exit("Отсутствует том backups_data")
+for service, target in [("mqtt", "/mosquitto/config/passwords"), ("mqtt", "/mosquitto/config/acl"),
+                        ("history-logger", "/run/secrets/mqtt_node_passwords.json")]:
+    path = Path(mount(service, target)["source"])
+    if not path.is_file() or not path.stat().st_size:
+        sys.exit(f"Проверьте файл для {service} {target}")
+if config["services"]["mqtt"]["environment"]["MQTT_PLAINTEXT_ENABLED"] == "0" or config["services"]["history-logger"]["environment"]["MQTT_TLS"] == "1":
+    certs = Path(mount("mqtt", "/mosquitto/certs")["source"])
+    for name in ("server.crt", "server.key", "ca.crt"):
+        if not (certs / name).is_file():
+            sys.exit(f"Отсутствует MQTT {name}")
+'; then
+    fail "Production Compose не прошёл проверку"
 fi
-
-if ! command -v docker >/dev/null 2>&1; then
-    fail "docker не установлен"
-else
-    ok "docker доступен"
-fi
-
-echo ""
-echo "Проверка docker compose config..."
-COMPOSE_CONFIG_OUT="$(mktemp)"
-if ${DOCKER_COMPOSE} --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" config >"${COMPOSE_CONFIG_OUT}" 2>/tmp/hydro-prod-compose-err; then
-    ok "docker compose config валиден"
-    if grep -qE '^name:[[:space:]]*hydro-prod[[:space:]]*$' "${COMPOSE_CONFIG_OUT}"; then
-        ok "compose project name = hydro-prod (изолирован от dev)"
-    else
-        fail "ожидался project name hydro-prod в docker-compose.prod.yml"
-    fi
-else
-    fail "docker compose config — ошибка (см. вывод ниже)"
-    tail -20 /tmp/hydro-prod-compose-err >&2 || true
-fi
-rm -f "${COMPOSE_CONFIG_OUT}"
 
 echo ""
 if [ "${errors}" -gt 0 ]; then

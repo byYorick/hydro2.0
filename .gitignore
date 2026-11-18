@@ -75,3 +75,5 @@ service_credentials.json
 # Android local SDK paths and Gradle state
 mobile/app/android/local.properties
 .gradle/
+/backend/.mqtt-bundles/
+/backend/.prod-setup-*/

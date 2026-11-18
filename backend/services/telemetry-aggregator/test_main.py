@@ -1,8 +1,8 @@
 """Tests for telemetry-aggregator."""
 import pytest
-from unittest.mock import AsyncMock, patch, Mock
-from datetime import datetime, timedelta
-from common.utils.time import utcnow
+from unittest.mock import AsyncMock, patch
+from datetime import timedelta
+from common.utils.time import utcnow_naive
 from main import (
     get_last_ts,
     update_last_ts,
@@ -15,7 +15,7 @@ from main import (
 @pytest.mark.asyncio
 async def test_get_last_ts_exists():
     """Test getting last timestamp when it exists."""
-    last_ts = utcnow() - timedelta(hours=1)
+    last_ts = utcnow_naive() - timedelta(hours=1)
     
     with patch("main.fetch") as mock_fetch:
         mock_fetch.return_value = [{"last_ts": last_ts}]
@@ -56,7 +56,7 @@ async def test_get_last_ts_no_record():
 @pytest.mark.asyncio
 async def test_update_last_ts():
     """Test updating last timestamp."""
-    last_ts = utcnow()
+    last_ts = utcnow_naive()
     
     with patch("main.execute") as mock_execute:
         await update_last_ts("1m", last_ts)
@@ -71,8 +71,8 @@ async def test_update_last_ts():
 @pytest.mark.asyncio
 async def test_aggregate_1m_success(mock_simulation_events):
     """Test aggregating 1m telemetry."""
-    last_ts = utcnow() - timedelta(hours=1)
-    new_ts = utcnow()
+    last_ts = utcnow_naive() - timedelta(hours=1)
+    new_ts = utcnow_naive()
     
     mock_rows = [
         {"zone_id": 1, "ts": new_ts - timedelta(minutes=5)},
@@ -97,7 +97,7 @@ async def test_aggregate_1m_success(mock_simulation_events):
 @pytest.mark.asyncio
 async def test_aggregate_1m_no_data():
     """Test aggregating 1m when no new data."""
-    last_ts = utcnow() - timedelta(hours=1)
+    last_ts = utcnow_naive() - timedelta(hours=1)
     
     with patch("main.get_last_ts") as mock_get_ts, \
          patch("main.fetch") as mock_fetch, \
@@ -114,8 +114,8 @@ async def test_aggregate_1m_no_data():
 @pytest.mark.asyncio
 async def test_aggregate_1m_with_time_bucket_fallback():
     """Test aggregating 1m with date_trunc fallback when time_bucket fails."""
-    last_ts = utcnow() - timedelta(hours=1)
-    new_ts = utcnow()
+    last_ts = utcnow_naive() - timedelta(hours=1)
+    new_ts = utcnow_naive()
     
     mock_rows = [{"zone_id": 1, "ts": new_ts}]
     
@@ -134,8 +134,8 @@ async def test_aggregate_1m_with_time_bucket_fallback():
 @pytest.mark.asyncio
 async def test_aggregate_1h_success():
     """Test aggregating 1h telemetry."""
-    last_ts = utcnow() - timedelta(days=1)
-    new_ts = utcnow()
+    last_ts = utcnow_naive() - timedelta(days=1)
+    new_ts = utcnow_naive()
     
     mock_rows = [
         {"zone_id": 1, "ts": new_ts - timedelta(hours=2)},
@@ -158,7 +158,7 @@ async def test_aggregate_1h_success():
 @pytest.mark.asyncio
 async def test_aggregate_1h_no_data():
     """Test aggregating 1h when no new data."""
-    last_ts = utcnow() - timedelta(days=1)
+    last_ts = utcnow_naive() - timedelta(days=1)
     
     with patch("main.get_last_ts") as mock_get_ts, \
          patch("main.fetch") as mock_fetch, \
@@ -175,8 +175,8 @@ async def test_aggregate_1h_no_data():
 @pytest.mark.asyncio
 async def test_aggregate_daily_success():
     """Test aggregating daily telemetry."""
-    last_ts = utcnow() - timedelta(days=7)
-    new_date = utcnow().date()
+    last_ts = utcnow_naive() - timedelta(days=7)
+    new_date = utcnow_naive().date()
     
     mock_rows = [
         {"zone_id": 1, "date": new_date - timedelta(days=2)},
@@ -199,7 +199,7 @@ async def test_aggregate_daily_success():
 @pytest.mark.asyncio
 async def test_aggregate_daily_no_data():
     """Test aggregating daily when no new data."""
-    last_ts = utcnow() - timedelta(days=7)
+    last_ts = utcnow_naive() - timedelta(days=7)
     
     with patch("main.get_last_ts") as mock_get_ts, \
          patch("main.fetch") as mock_fetch, \
@@ -216,7 +216,7 @@ async def test_aggregate_daily_no_data():
 @pytest.mark.asyncio
 async def test_aggregate_1m_error_handling():
     """Test aggregate_1m error handling."""
-    last_ts = utcnow() - timedelta(hours=1)
+    last_ts = utcnow_naive() - timedelta(hours=1)
     
     with patch("main.get_last_ts") as mock_get_ts, \
          patch("main.fetch") as mock_fetch:

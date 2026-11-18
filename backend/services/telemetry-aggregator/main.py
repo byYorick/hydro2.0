@@ -9,7 +9,7 @@ import os
 from typing import Optional, Dict, Any
 from datetime import datetime, timedelta
 from common.utils.time import utcnow, utcnow_naive
-from common.env import get_settings
+from common.env import get_database_settings
 from common.db import fetch, execute
 from common.simulation_events import record_simulation_event
 from prometheus_client import Counter, Histogram, start_http_server
@@ -218,7 +218,7 @@ def _build_agg_1m_query(*, bucket_expr: str) -> str:
         {bucket_expr} AS ts
     FROM telemetry_samples ts
     LEFT JOIN sensors s ON s.id = ts.sensor_id
-    WHERE ts.ts > $1 AND ts.ts <= NOW()
+    WHERE ts.ts >= $1 AND ts.ts <= (NOW() AT TIME ZONE 'UTC')
     GROUP BY
         ts.zone_id,
         s.node_id,
@@ -226,6 +226,7 @@ def _build_agg_1m_query(*, bucket_expr: str) -> str:
         s.type::text,
         {bucket_expr}
     ON CONFLICT (zone_id, node_id, channel, metric_type, ts)
+    WHERE zone_id IS NULL OR node_id IS NULL OR channel IS NULL
     DO UPDATE SET
         value_avg     = EXCLUDED.value_avg,
         value_min     = EXCLUDED.value_min,
@@ -276,9 +277,10 @@ def _build_agg_1h_query(*, bucket_expr: str) -> str:
         {AGG_VERSION_CURRENT} AS agg_version,
         {bucket_expr} AS ts
     FROM telemetry_agg_1m
-    WHERE ts > $1 AND ts <= NOW()
+    WHERE ts >= $1 AND ts <= (NOW() AT TIME ZONE 'UTC')
     GROUP BY zone_id, node_id, channel, metric_type, {bucket_expr}
     ON CONFLICT (zone_id, node_id, channel, metric_type, ts)
+    WHERE zone_id IS NULL OR node_id IS NULL OR channel IS NULL
     DO UPDATE SET
         value_avg     = EXCLUDED.value_avg,
         value_min     = EXCLUDED.value_min,
@@ -293,6 +295,14 @@ def _build_agg_1h_query(*, bucket_expr: str) -> str:
         agg_version   = EXCLUDED.agg_version
     RETURNING zone_id, ts
     """
+
+
+def _window_start(cursor: Optional[datetime], initial_window: timedelta) -> datetime:
+    now = utcnow_naive()
+    if cursor is None:
+        return now - initial_window
+    # Revisit the last hour for delayed samples; an older cursor catches up after downtime.
+    return min(cursor, now - timedelta(hours=1))
 
 
 async def aggregate_1m() -> int:
@@ -313,8 +323,7 @@ async def aggregate_1m() -> int:
             # Если нет последней метки, берём последний час.
             # utcnow_naive(), потому что telemetry_samples.ts — TIMESTAMP WITHOUT TIME ZONE;
             # asyncpg не кодирует aware datetime для naive колонки.
-            if last_ts is None:
-                last_ts = utcnow_naive() - timedelta(hours=1)
+            last_ts = _window_start(last_ts, timedelta(hours=1)).replace(second=0, microsecond=0)
 
             # Агрегируем данные из telemetry_samples.
             # ML-поля (value_std, p10, p90, slope_per_min) считаются только по GOOD-записям
@@ -395,8 +404,7 @@ async def aggregate_1h() -> int:
 
             # Если нет последней метки, берём последние 24 часа.
             # utcnow_naive() — см. комментарий в aggregate_1m.
-            if last_ts is None:
-                last_ts = utcnow_naive() - timedelta(hours=24)
+            last_ts = _window_start(last_ts, timedelta(hours=24)).replace(minute=0, second=0, microsecond=0)
 
             # Агрегируем из telemetry_agg_1m (не из raw).
             # ML-поля берём с оговорками — см. _build_agg_1h_query.
@@ -474,8 +482,7 @@ async def aggregate_daily() -> int:
 
             # Если нет последней метки, берём последние 7 дней.
             # utcnow_naive() — см. комментарий в aggregate_1m.
-            if last_ts is None:
-                last_ts = utcnow_naive() - timedelta(days=7)
+            last_ts = _window_start(last_ts, timedelta(days=7)).replace(hour=0, minute=0, second=0, microsecond=0)
 
             # Агрегируем данные из telemetry_agg_1h
             rows = await fetch(
@@ -496,9 +503,10 @@ async def aggregate_daily() -> int:
                     SUM(sample_count)::int as sample_count,
                     DATE(ts) as date
                 FROM telemetry_agg_1h
-                WHERE ts > $1 AND ts <= NOW()
+                WHERE ts >= $1 AND ts <= (NOW() AT TIME ZONE 'UTC')
                 GROUP BY zone_id, node_id, channel, metric_type, DATE(ts)
                 ON CONFLICT (zone_id, node_id, channel, metric_type, date) 
+                WHERE zone_id IS NULL OR node_id IS NULL OR channel IS NULL
                 DO UPDATE SET
                     value_avg = EXCLUDED.value_avg,
                     value_min = EXCLUDED.value_min,
@@ -570,7 +578,7 @@ async def run_aggregation():
         
         # Агрегируем daily только если есть новые данные в 1h
         if count_1h > 0:
-            count_daily = await aggregate_daily()
+            await aggregate_daily()
             AGGREGATION_RUNS.labels(type="daily").inc()
     
     logger.info("Telemetry aggregation completed")
@@ -589,16 +597,16 @@ async def cleanup_old_data():
     with CLEANUP_LAT.time():
         try:
             CLEANUP_RUNS.inc()
-            s = get_settings()
             
             # Retention periods (в днях)
             retention_samples_days = int(os.getenv('RETENTION_SAMPLES_DAYS', '30'))
             retention_1m_days = int(os.getenv('RETENTION_1M_DAYS', '30'))
             retention_1h_days = int(os.getenv('RETENTION_1H_DAYS', '365'))
             
-            cutoff_samples = utcnow() - timedelta(days=retention_samples_days)
-            cutoff_1m = utcnow() - timedelta(days=retention_1m_days)
-            cutoff_1h = utcnow() - timedelta(days=retention_1h_days)
+            cutoff_base = utcnow_naive()
+            cutoff_samples = cutoff_base - timedelta(days=retention_samples_days)
+            cutoff_1m = cutoff_base - timedelta(days=retention_1m_days)
+            cutoff_1h = cutoff_base - timedelta(days=retention_1h_days)
             
             # Удаляем старые raw samples
             deleted_samples = await execute(
@@ -660,7 +668,7 @@ async def cleanup_old_data():
 
 async def main():
     """Главный цикл агрегатора."""
-    s = get_settings()
+    get_database_settings()
     
     # Запускаем Prometheus metrics сервер
     start_http_server(9404)  # Prometheus metrics
@@ -682,11 +690,9 @@ async def main():
             # Периодически запускаем очистку старых данных
             now = utcnow()
             if (now - last_cleanup).total_seconds() >= cleanup_interval_seconds:
-                await cleanup_old_data()
-                last_cleanup = now
+                if await cleanup_old_data() is not None:
+                    last_cleanup = now
             
-            # Сбрасываем счетчик ошибок при успешном цикле
-            await _record_success()
         except Exception as e:
             await _record_error()
             logger.error(

@@ -21,3 +21,5 @@ Dockerfile.test
 .idea
 .vscode
 .cursor
+mqtt-bridge/certs
+mqtt-bridge/passwords.txt

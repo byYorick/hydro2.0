@@ -10,7 +10,7 @@ from typing import Any, Optional, Dict, Mapping
 
 import asyncpg
 
-from .env import get_settings
+from .env import get_database_settings
 from .utils.time import utcnow
 
 logger = logging.getLogger(__name__)
@@ -101,7 +101,7 @@ async def get_pool() -> asyncpg.pool.Pool:
         if pool is not None:
             return pool
 
-        s = get_settings()
+        s = get_database_settings()
         pool_min_size = max(1, int(getattr(s, "pg_pool_min_size", 1)))
         pool_max_size = max(pool_min_size, int(getattr(s, "pg_pool_max_size", 5)))
         # В тестах Pytest может создавать несколько event loop в рамках одного прогона,
@@ -161,7 +161,7 @@ async def _expire_pool_connections(pool: asyncpg.pool.Pool) -> None:
 def _pool_acquire_kwargs() -> dict[str, float]:
     if os.getenv("PYTEST_CURRENT_TEST"):
         return {}
-    s = get_settings()
+    s = get_database_settings()
     timeout = float(getattr(s, "pg_pool_acquire_timeout_sec", 5.0))
     return {"timeout": timeout}
 

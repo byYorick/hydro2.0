@@ -2,12 +2,10 @@
 Tests for telemetry-aggregator retention policy.
 """
 import pytest
-import asyncio
 from datetime import datetime, timedelta
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
-from main import cleanup_old_data, get_last_ts, update_last_ts
-from common.db import fetch, execute
+from main import cleanup_old_data
 
 
 @pytest.mark.asyncio
@@ -60,6 +58,7 @@ async def test_cleanup_old_data_uses_retention_periods():
     """Test that cleanup_old_data uses correct retention periods from env."""
     import os
     with patch('main.execute') as mock_execute, \
+         patch('main.utcnow_naive', return_value=datetime(2026, 1, 1)), \
          patch.dict(os.environ, {
              'RETENTION_SAMPLES_DAYS': '60',
              'RETENTION_1M_DAYS': '20',
@@ -71,7 +70,9 @@ async def test_cleanup_old_data_uses_retention_periods():
         
         # Проверяем, что были вызваны DELETE с правильными датами
         calls = mock_execute.call_args_list
-        assert len(calls) >= 3  # samples, 1m, 1h
+        assert [call.args[1] for call in calls] == [
+            datetime(2026, 1, 1) - timedelta(days=days) for days in (60, 20, 180)
+        ]
 
 
 @pytest.mark.asyncio
@@ -94,14 +95,10 @@ async def test_cleanup_metrics_incremented():
         mock_execute.return_value = "DELETE 5"
         
         initial_runs = CLEANUP_RUNS._value.get()
-        
+        deleted = CLEANUP_DELETED.labels(table="telemetry_samples")
+        initial_deleted = deleted._value.get()
+
         await cleanup_old_data()
-        
-        # Проверяем, что метрика была увеличена
-        # (в реальности нужно использовать mock для prometheus_client)
-        assert True  # Placeholder - в реальности проверяем метрики
 
-
-if __name__ == '__main__':
-    pytest.main([__file__, '-v'])
-
+        assert CLEANUP_RUNS._value.get() == initial_runs + 1
+        assert deleted._value.get() == initial_deleted + 5

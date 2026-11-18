@@ -25,7 +25,7 @@ mkdir -p "$OUT"
 TMP=$(mktemp)
 trap 'rm -f "$TMP"' EXIT
 
-SAN="DNS:${CN},DNS:localhost,IP:127.0.0.1"
+SAN="DNS:${CN},DNS:mqtt,DNS:localhost,IP:127.0.0.1"
 if [ -n "$EXTRA_SAN" ]; then
     SAN="${SAN},${EXTRA_SAN}"
 fi
