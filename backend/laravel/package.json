@@ -2,6 +2,8 @@
     "private": true,
     "type": "module",
     "scripts": {
+        "postinstall": "node scripts/picomatch-guard.mjs",
+        "audit:dependencies": "node scripts/audit-dependencies.mjs",
         "dev": "vite",
         "vendor:swagger-ui": "node scripts/vendor-swagger-ui.mjs",
         "build": "npm run vendor:swagger-ui && vite build",

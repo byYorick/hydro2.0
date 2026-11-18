@@ -29,6 +29,7 @@ FROM node:20-bookworm-slim AS frontend
 WORKDIR /app
 
 COPY package.json package-lock.json* ./
+COPY scripts/picomatch-guard.mjs scripts/
 RUN npm ci --legacy-peer-deps
 
 COPY --from=vendor /app/vendor /app/vendor
