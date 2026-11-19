@@ -49,12 +49,17 @@ log "Начало создания бэкапа MQTT конфигураций...
 
 # Match the broker bind mounts, including credentials and TLS material.
 mkdir -p "${TEMP_DIR}/mqtt-bridge"
-for required in passwords.txt acl; do
-    if [ ! -f "${MQTT_CONFIG_DIR}/${required}" ]; then
+credentials_dir="${BACKUP_MQTT_CREDENTIALS_DIR:-$MQTT_CONFIG_DIR}"
+required_files=(passwords.txt acl)
+if [ -n "${BACKUP_MQTT_CREDENTIALS_DIR:-}" ]; then
+    required_files+=(node_passwords.json)
+fi
+for required in "${required_files[@]}"; do
+    if [ ! -f "${credentials_dir}/${required}" ]; then
         error "Required MQTT source is missing: ${required}"
         exit 1
     fi
-    cp "${MQTT_CONFIG_DIR}/${required}" "${TEMP_DIR}/mqtt-bridge/"
+    cp "${credentials_dir}/${required}" "${TEMP_DIR}/mqtt-bridge/"
 done
 config_found=false
 for config_name in mosquitto.dev.conf mosquitto.prod.conf; do

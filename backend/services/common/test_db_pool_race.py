@@ -33,7 +33,7 @@ async def test_get_pool_creates_single_pool_under_concurrency():
 
     create_pool = AsyncMock(return_value=fake_pool)
 
-    with patch.object(db, "get_settings", return_value=fake_settings), \
+    with patch.object(db, "get_database_settings", return_value=fake_settings), \
          patch.object(db.asyncpg, "create_pool", create_pool):
         pools = await asyncio.gather(*[db.get_pool() for _ in range(25)])
 
@@ -60,7 +60,7 @@ async def test_get_pool_uses_separate_pools_for_different_event_loops():
 
     create_pool = AsyncMock(side_effect=[main_loop_pool, thread_loop_pool])
 
-    with patch.object(db, "get_settings", return_value=fake_settings), \
+    with patch.object(db, "get_database_settings", return_value=fake_settings), \
          patch.object(db.asyncpg, "create_pool", create_pool):
         first = await db.get_pool()
         assert first is main_loop_pool

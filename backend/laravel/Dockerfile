@@ -26,6 +26,7 @@ EXPOSE 80
 # Copy dependency files first for better caching
 COPY composer.json composer.lock* ./
 COPY package.json package-lock.json* ./
+COPY scripts/picomatch-guard.mjs scripts/
 
 # Install Composer dependencies (without scripts to avoid artisan requirement)
 # Use ARG to control dev dependencies installation

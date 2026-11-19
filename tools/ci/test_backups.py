@@ -81,6 +81,19 @@ exit 1
                 path = Path(component['file'])
                 self.assertEqual(stat.S_IMODE(path.stat().st_mode) & 0o077, 0)
 
+    def test_production_backup_uses_deployed_credentials(self):
+        bundle = self.root / 'deployed'
+        bundle.mkdir()
+        for name in ['passwords.txt', 'acl', 'node_passwords.json']:
+            (bundle / name).write_text('deployed-' + name)
+        self.env['BACKUP_MQTT_CREDENTIALS_DIR'] = str(bundle)
+        result = self.run_backup()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        component = next(c for c in self.manifest()['components'] if c['component'] == 'mqtt')
+        with zipfile.ZipFile(component['file']) as archive:
+            for path in bundle.iterdir():
+                self.assertEqual(archive.read('mqtt-bridge/' + path.name), path.read_bytes())
+
     def test_missing_mqtt_credentials_fails_instead_of_reporting_complete_backup(self):
         (self.mqtt / 'passwords.txt').unlink()
         result = self.run_backup()

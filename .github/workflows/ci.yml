@@ -311,7 +311,9 @@ jobs:
       - name: Lint (ESLint)
         run: npm run lint
       - name: NPM audit (all dependencies)
-        run: npm audit --audit-level=high
+        run: |
+          node --test scripts/dependency-security.test.mjs
+          npm run audit:dependencies
       - name: Unit tests (vitest)
         run: |
           mkdir -p test-results
@@ -562,7 +564,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [history-logger, mqtt-bridge, common]
+        service: [history-logger, mqtt-bridge, common, telemetry-aggregator]
     services:
       postgres:
         image: timescale/timescaledb:2.28.2-pg16
@@ -608,6 +610,23 @@ jobs:
       - name: Test service
         working-directory: backend/services/${{ matrix.service }}
         run: pytest -ra --junitxml=test-results.xml
+      - name: Start the production aggregator with database credentials
+        if: matrix.service == 'telemetry-aggregator'
+        run: |
+          docker build -t hydro-aggregator-ci -f backend/services/telemetry-aggregator/Dockerfile backend/services
+          docker run -d --name aggregator-ci --network host -e APP_ENV=production \
+            -e PG_HOST -e PG_PORT -e PG_USER -e PG_PASS -e PG_DB hydro-aggregator-ci
+          trap 'docker rm -f aggregator-ci >/dev/null' EXIT
+          for attempt in {1..30}; do
+            if curl -fsS http://127.0.0.1:9404/metrics -o /tmp/aggregator.metrics &&
+               grep -q '^aggregation_runs_total{type="1m"} [1-9]' /tmp/aggregator.metrics; then
+              if grep -q '^aggregation_errors_total{.*} [1-9]' /tmp/aggregator.metrics; then break; fi
+              exit 0
+            fi
+            sleep 1
+          done
+          docker exec aggregator-ci tail -60 /var/log/supervisor/telemetry-aggregator.log
+          exit 1
       - uses: actions/upload-artifact@v4
         if: always()
         with:

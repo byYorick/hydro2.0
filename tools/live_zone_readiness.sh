@@ -15,30 +15,37 @@ check_http() {
   fi
 }
 
-check_http "Laravel" "http://localhost:8080/api/system/health"
-check_http "history-logger" "http://localhost:9300/health"
-check_http "automation-engine" "http://localhost:9405/health/live"
+check_http "Laravel" "${LARAVEL_URL:-http://localhost:8080}/api/system/health"
+check_http "history-logger" "${HISTORY_LOGGER_URL:-http://localhost:9300}/health/ready"
+check_http "automation-engine" "${AUTOMATION_ENGINE_URL:-http://localhost:9405}/health/ready"
 
-if command -v psql >/dev/null 2>&1; then
-  ae3=$(PGPASSWORD="${PGPASSWORD:-hydro}" psql -h localhost -U hydro -d hydro_dev -w -Atqc \
-    "SELECT count(*) FROM zones WHERE automation_runtime = 'ae3'" 2>/dev/null || echo 0)
-  if [ "${ae3:-0}" -gt 0 ]; then
-    ok "zones.automation_runtime=ae3 count=$ae3"
-  else
-    bad "нет зон с automation_runtime=ae3"
-  fi
-  fresh=$(PGPASSWORD="${PGPASSWORD:-hydro}" psql -h localhost -U hydro -d hydro_dev -w -Atqc \
-    "SELECT count(*) FROM telemetry_last WHERE ts > NOW() - interval '10 minutes'" 2>/dev/null || echo 0)
-  if [ "${fresh:-0}" -gt 0 ]; then
-    ok "telemetry_last за 10 мин: $fresh"
-  else
-    bad "нет свежей telemetry_last (нужны живые ноды или node-sim)"
-  fi
+# ZONE_ID selects the pilot zone. Auto-select only when precisely one AE3 zone exists.
+if result=$(PGPASSWORD="${PGPASSWORD:-hydro}" psql -X -w -Atq -v ON_ERROR_STOP=1 \
+    -h "${PGHOST:-localhost}" -p "${PGPORT:-5432}" -U "${PGUSER:-hydro}" -d "${PGDATABASE:-hydro_dev}" \
+    -v zone_id="${ZONE_ID:-}" <<'SQL'
+WITH selected AS (
+  SELECT id FROM zones WHERE automation_runtime = 'ae3'
+    AND (NULLIF(:'zone_id', '') IS NULL OR id = NULLIF(:'zone_id', '')::bigint)
+)
+SELECT CASE
+  WHEN (SELECT count(*) FROM selected) <> 1 THEN 'укажите ZONE_ID одной существующей AE3-зоны'
+  WHEN count(s.id) = 0 THEN 'в зоне нет активных датчиков'
+  WHEN count(s.id) FILTER (WHERE t.last_quality = 'GOOD' AND
+    t.last_ts BETWEEN (now() AT TIME ZONE 'UTC') - interval '10 minutes' AND (now() AT TIME ZONE 'UTC')) <> count(s.id)
+    THEN 'у активных датчиков зоны отсутствуют свежие качественные показания'
+  ELSE 'ready' END
+FROM selected JOIN sensors s ON s.zone_id = selected.id AND s.is_active
+LEFT JOIN telemetry_last t ON t.sensor_id = s.id;
+SQL
+); then
+  if [ "$result" = ready ]; then ok "телеметрия выбранной AE3-зоны"; else bad "$result"; fi
 else
-  bad "psql не найден"
+  bad "не удалось проверить зону в PostgreSQL"
 fi
 
-if docker compose -f backend/docker-compose.dev.yml exec -T laravel php artisan tinker --execute="echo app(\\App\\Services\\TelegramAlertNotifier::class)->isConfigured() ? '1' : '0';" 2>/dev/null | tail -1 | grep -qx 1; then
+compose=(docker compose -f "${COMPOSE_FILE:-backend/docker-compose.dev.yml}")
+if [ -n "${COMPOSE_ENV_FILE:-}" ]; then compose+=(--env-file "$COMPOSE_ENV_FILE"); fi
+if "${compose[@]}" exec -T laravel php artisan tinker --execute="echo app(\\App\\Services\\TelegramAlertNotifier::class)->isConfigured() ? '1' : '0';" | grep -qx 1; then
   ok "Telegram настроен"
 else
   bad "Telegram не настроен (TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_IDS)"

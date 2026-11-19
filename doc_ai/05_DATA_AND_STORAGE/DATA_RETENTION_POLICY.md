@@ -101,6 +101,7 @@ telemetry_last — одна последняя запись на sensor_id; во
 | `telemetry_daily` | **без авто-retention** (cold archive — planned) |
 
 > **Реализация агрегации (один непрерывный writer):**
+> - При повторном расчёте минутных, часовых и суточных интервалов начало интервала включается. Записи с пустым zone_id, node_id или channel образуют одну строку на группу и интервал. Агрегатор повторно обрабатывает последний час для запоздавших измерений.
 > - Непрерывный writer в dev/prod compose: Python `telemetry-aggregator` — фоновый цикл, `ON CONFLICT DO UPDATE SET`.
 > - Laravel `telemetry:aggregate` **не** в Schedule. Команда оставлена для seed/backfill (`TelemetrySeeder`, ручной `--from/--to`). Использует `ON CONFLICT DO NOTHING`.
 > - Laravel `telemetry:cleanup-raw` остаётся в Schedule (ежедневно 02:00) — retention raw samples, не агрегация.

@@ -21,8 +21,9 @@ final class RuntimeRoleGrants
         ],
         'bridge' => ['read' => 'pending_alerts pending_alerts_dlq zone_events', 'write' => 'pending_alerts pending_alerts_dlq zone_events'],
         'aggregator' => [
-            'read' => 'aggregator_state telemetry_agg_1h telemetry_agg_1m telemetry_daily telemetry_samples',
+            'read' => 'sensors zone_simulations aggregator_state telemetry_agg_1h telemetry_agg_1m telemetry_daily telemetry_samples',
             'write' => 'aggregator_state telemetry_agg_1h telemetry_agg_1m telemetry_daily pending_alerts pending_alerts_dlq zone_events',
+            'insert' => 'simulation_events',
             'delete' => 'telemetry_samples',
         ],
     ];
@@ -41,7 +42,7 @@ final class RuntimeRoleGrants
     {
         $config = self::PROFILES[$profile];
         $permissions = [];
-        foreach (['read' => ['SELECT'], 'write' => ['SELECT', 'INSERT', 'UPDATE', 'DELETE'], 'update' => ['UPDATE'], 'delete' => ['DELETE']] as $key => $privileges) {
+        foreach (['read' => ['SELECT'], 'write' => ['SELECT', 'INSERT', 'UPDATE', 'DELETE'], 'insert' => ['INSERT'], 'update' => ['UPDATE'], 'delete' => ['DELETE']] as $key => $privileges) {
             foreach (array_filter(explode(' ', $config[$key] ?? '')) as $table) {
                 $permissions[$table] = array_values(array_unique(array_merge($permissions[$table] ?? [], $privileges)));
             }

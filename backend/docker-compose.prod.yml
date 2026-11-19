@@ -187,7 +187,7 @@ services:
       - APP_KEY=${APP_KEY:?APP_KEY must be set}
       - APP_URL=${APP_URL:?APP_URL must be set}
       - SESSION_DRIVER=redis
-      - CACHE_DRIVER=redis
+      - CACHE_STORE=redis
       - LOG_CHANNEL=stderr
       - LOG_LEVEL=info
       - BROADCAST_CONNECTION=reverb
@@ -251,6 +251,7 @@ services:
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
       - TELEGRAM_CHAT_IDS=${TELEGRAM_CHAT_IDS:-}
       - BACKUP_DIR=/backups
+      - BACKUP_MQTT_CREDENTIALS_DIR=/backup-sources/mqtt-credentials
       - BACKUP_SOURCE_ROOT=/backup-sources
       - BACKUP_ENV_FILE=/backup-sources/compose.env
       - BACKUP_COMPOSE_FILE=/backup-sources/docker-compose.yml
@@ -262,6 +263,9 @@ services:
       - ../schemas:/schemas:ro
       - backups_data:/backups
       - ./scripts/backup:/scripts/backup:ro
+      - ${MQTT_PRODUCTION_PASSWORD_FILE:?Set prepared production MQTT password file}:/backup-sources/mqtt-credentials/passwords.txt:ro
+      - ${MQTT_PRODUCTION_ACL_FILE:?Generate per-node ACL before production rollout}:/backup-sources/mqtt-credentials/acl:ro
+      - ${MQTT_NODE_PASSWORDS_FILE:?Set node-specific wrapping credentials file}:/backup-sources/mqtt-credentials/node_passwords.json:ro
       - ./services:/backup-sources/services:ro
       - ./configs:/backup-sources/configs:ro
       - ./.env.prod:/backup-sources/compose.env:ro
