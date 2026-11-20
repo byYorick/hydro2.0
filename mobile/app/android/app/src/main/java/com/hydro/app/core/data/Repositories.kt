@@ -252,8 +252,8 @@ class AlertsRepository @Inject constructor(
                 val alert = response.data
                 db.alertDao().acknowledge(
                     id = alert.id,
-                    status = alert.status ?: "RESOLVED",
-                    acknowledgedAt = alert.resolvedAt ?: alert.acknowledgedAt ?: ""
+                    status = alert.status ?: "ACTIVE",
+                    acknowledgedAt = alert.acknowledgedAt ?: alert.resolvedAt ?: ""
                 )
                 Result.success(alert)
             } else {
@@ -367,7 +367,7 @@ private fun Alert.toEntity(): AlertEntity {
         message = displayMessage,
         timestamp = displayTime.ifBlank { "" },
         status = status,
-        acknowledgedAt = resolvedAt ?: acknowledgedAt
+        acknowledgedAt = acknowledgedAt ?: resolvedAt
     )
 }
 

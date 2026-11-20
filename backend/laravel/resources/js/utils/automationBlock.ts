@@ -21,12 +21,21 @@ export const POLICY_MANAGED_CODES = [
   'biz_zone_recipe_phase_targets_missing',
 ] as const
 
+/**
+ * Синхронизировано с App\Services\SafetyCriticalAlertCodes.
+ * Ручное закрытие этих кодов запрещено, пока статус ACTIVE.
+ */
 export const SAFETY_CRITICAL_CODES = [
+  'biz_dry_run',
   'biz_no_flow',
   'biz_overcurrent',
-  'biz_dry_run',
   'biz_pump_stuck_on',
   'biz_flow_stop_failed_hardware_may_be_active',
+  'biz_node_offline',
+  'biz_solution_temp_high',
+  'solution_temp_out_of_band',
+  'emergency_stop_activated',
+  'biz_irrigation_estop',
 ] as const
 
 export type ProcessStoppingKind = 'automation_block' | 'safety'

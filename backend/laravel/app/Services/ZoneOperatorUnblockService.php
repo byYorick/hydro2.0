@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Exceptions\ManualAlertResolveRefusedException;
 use App\Models\Alert;
 use App\Models\User;
 use App\Models\Zone;
@@ -119,14 +120,17 @@ class ZoneOperatorUnblockService
                 continue;
             }
             try {
-                $this->alerts->acknowledge($alert, [
+                $this->alerts->resolveManually($alert, [
+                    'resolved_by' => 'operator_unblock',
+                    'resolved_via' => 'manual',
+                    'resolved_by_user_id' => $user->id,
                     'actor_id' => $user->id,
                     'actor_role' => (string) ($user->role ?? ''),
                     'reason' => $reason,
                     'source' => 'operator_unblock',
                 ]);
                 $acked[] = (int) $alert->id;
-            } catch (\DomainException) {
+            } catch (ManualAlertResolveRefusedException|\DomainException) {
                 continue;
             }
         }

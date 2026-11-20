@@ -110,6 +110,8 @@ class AlertStreamController extends Controller
                             'message' => $a->message ?? null,
                             'created_at' => $a->created_at?->toIso8601String(),
                             'resolved_at' => $a->resolved_at?->toIso8601String(),
+                            'acknowledged_at' => $a->acknowledged_at?->toIso8601String(),
+                            'acknowledged_by' => $a->acknowledged_by,
                             // Исключаем details, так как там могут быть чувствительные данные
                             // Если нужны details, их можно вернуть, но отфильтровав чувствительные поля
                         ];

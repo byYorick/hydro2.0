@@ -340,6 +340,7 @@ Route::middleware([
 
         // Alerts (operator+)
         Route::patch('alerts/{alert}/ack', [AlertController::class, 'ack']);
+        Route::patch('alerts/{alert}/resolve', [AlertController::class, 'resolve']);
         Route::post('alerts/dlq/{id}/replay', [AlertController::class, 'replayDlq']);
 
         Route::post('setup-wizard/validate-devices', [SetupWizardController::class, 'validateDevices']);

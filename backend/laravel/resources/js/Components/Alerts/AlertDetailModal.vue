@@ -95,6 +95,14 @@
             <span class="text-[color:var(--text-dim)] whitespace-nowrap">решён</span>
             <span class="font-sans text-[color:var(--text-primary)]">{{ formatAlertDate(alert.resolved_at) }}</span>
           </template>
+
+          <template v-else-if="alert.acknowledged_at">
+            <span class="text-[color:var(--text-dim)] whitespace-nowrap">подтверждён</span>
+            <span
+              class="font-sans text-[color:var(--text-primary)]"
+              data-testid="alert-acknowledged-active"
+            >Подтверждён, условие активно · {{ formatAlertDate(alert.acknowledged_at) }}</span>
+          </template>
         </div>
       </div>
 
@@ -187,7 +195,17 @@
 
     <template #footer>
       <Button
-        v-if="alert && canResolve"
+        v-if="showAcknowledge"
+        variant="secondary"
+        size="sm"
+        :disabled="resolveLoading"
+        data-testid="zone-alert-ack-button"
+        @click="$emit('acknowledge')"
+      >
+        {{ resolveLoading ? 'Подтверждаем...' : 'Подтвердить' }}
+      </Button>
+      <Button
+        v-if="showResolve"
         variant="success"
         size="sm"
         :disabled="resolveLoading"
@@ -219,6 +237,7 @@ import {
 } from '@/utils/alertMeta'
 import {
   alertProcessStoppingKind,
+  isSafetyCriticalCode,
   PROCESS_STOPPING_BADGE_LABEL,
   type ProcessStoppingKind,
 } from '@/utils/automationBlock'
@@ -238,16 +257,20 @@ const props = defineProps<{
 defineEmits<{
   close: []
   resolve: []
+  acknowledge: []
 }>()
 
 const { canResolveAlerts } = useRole()
-const canResolve = computed(() => {
+const canAct = computed(() => {
   const alert = props.alert
   if (!alert) {
     return false
   }
   return normalizeAlertStatus(alert.status) !== 'RESOLVED' && canResolveAlerts.value
 })
+const safetyCritical = computed(() => isSafetyCriticalCode(props.alert?.code))
+const showResolve = computed(() => canAct.value && !safetyCritical.value)
+const showAcknowledge = computed(() => canAct.value && safetyCritical.value)
 const processStoppingKind = computed<ProcessStoppingKind | null>(() => (
   props.alert ? alertProcessStoppingKind(props.alert.code) : null
 ))

@@ -160,7 +160,9 @@ CREATE TABLE alerts (
  first_seen_at TIMESTAMP(0) WITH TIME ZONE DEFAULT now(),
  last_seen_at TIMESTAMP(0) WITH TIME ZONE DEFAULT now(),
  created_at TIMESTAMP(0) WITH TIME ZONE DEFAULT now(),
- resolved_at TIMESTAMP(0) WITH TIME ZONE
+ resolved_at TIMESTAMP(0) WITH TIME ZONE,
+ acknowledged_at TIMESTAMP(0) WITH TIME ZONE NULL,
+ acknowledged_by BIGINT NULL REFERENCES users(id) ON DELETE SET NULL
 );
 ```
 
@@ -176,7 +178,8 @@ CREATE TABLE alerts (
 - `node_uid` / `hardware_id` — scoped identity оборудования;
 - `error_count` / `first_seen_at` / `last_seen_at` — счётчики и timestamps дедупликации;
 - `created_at` — время создания алерта;
-- `resolved_at` — время закрытия алерта (если закрыт).
+- `resolved_at` — время закрытия алерта (если закрыт);
+- `acknowledged_at` / `acknowledged_by` — подтверждение оператором без смены `status`.
 
 Для scoped incident canonical lookup key:
 
@@ -394,22 +397,27 @@ def ensure_alert(zone, type, details):
 
 **Варианты:**
 
-1. **Ручное закрытие пользователем (рекомендуемый стандарт):**
- - в UI пользователь нажимает «Закрыть/Принять»;
- - Laravel выставляет:
- ```sql
- status = 'RESOLVED',
- resolved_at = now()
- ```
- - создаётся событие `ALERT_RESOLVED`.
+1. **Подтверждение (acknowledge):**
+ - `PATCH /api/alerts/{id}/ack`;
+ - пишутся `acknowledged_at` и `acknowledged_by`;
+ - `status` остаётся `ACTIVE`, `resolved_at` не ставится;
+ - событие `ALERT_ACKNOWLEDGED`;
+ - AE3 и pump-safety продолжают видеть алерт как блокирующий, потому что читают только `status = 'ACTIVE'`.
 
-2. **Автоматическое закрытие (опционально):**
- - при возврате параметра в безопасную зону,
- - Python‑сервис может автоматически изменить статус `RESOLVED`.
+2. **Ручное закрытие некритичного алерта:**
+ - `PATCH /api/alerts/{id}/resolve`;
+ - `status = 'RESOLVED'`, `resolved_at = now()`;
+ - событие `ALERT_RESOLVED`.
 
-Рекомендуемый подход 2.0: 
-**по умолчанию алерты закрывает пользователь** 
-(для лучшей трассировки инцидентов).
+3. **Ручное закрытие safety-кода при ещё активном условии запрещено:**
+ - список кодов — `App\Services\SafetyCriticalAlertCodes` (E-STOP, node offline, dry-run / pump interlock, перегрев раствора);
+ - ответ `409` с `code=alert_manual_resolve_refused`;
+ - audit: `zone_events.type=ALERT_MANUAL_RESOLVE_REFUSED` и warning-лог;
+ - условие считается активным, пока строка `ACTIVE`. Снимает его только автоматический resolve, когда источник зафиксировал исчезновение условия.
+
+4. **Автоматическое закрытие:**
+ - при возврате параметра в безопасную зону Python/Alertmanager вызывают `resolveByCode` / `resolveExisting` с `resolved_via=auto`;
+ - safety-коды закрываются этим путём и перестают блокировать AE3.
 
 ---
 

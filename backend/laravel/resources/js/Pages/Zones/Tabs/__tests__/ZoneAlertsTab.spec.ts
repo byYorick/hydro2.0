@@ -1,13 +1,14 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it, beforeEach, vi } from 'vitest'
 
-const acknowledgeMock = vi.hoisted(() => vi.fn())
+const resolveMock = vi.hoisted(() => vi.fn())
 const showToastMock = vi.hoisted(() => vi.fn())
 
 vi.mock('@/services/api', () => ({
   api: {
     alerts: {
-      acknowledge: (alertId: number) => acknowledgeMock(alertId),
+      acknowledge: (alertId: number) => resolveMock(alertId),
+      resolve: (alertId: number) => resolveMock(alertId),
     },
   },
 }))
@@ -50,7 +51,7 @@ function makeAlert(overrides: Record<string, unknown> = {}) {
 
 describe('ZoneAlertsTab.vue', () => {
   beforeEach(() => {
-    acknowledgeMock.mockReset()
+    resolveMock.mockReset()
     showToastMock.mockReset()
   })
 
@@ -84,7 +85,7 @@ describe('ZoneAlertsTab.vue', () => {
   })
 
   it('закрывает алерт по кнопке Решить', async () => {
-    acknowledgeMock.mockResolvedValue(makeAlert({
+    resolveMock.mockResolvedValue(makeAlert({
       status: 'resolved',
       resolved_at: '2026-03-29T08:10:00Z',
     }))
@@ -111,7 +112,7 @@ describe('ZoneAlertsTab.vue', () => {
     await wrapper.get('[data-testid="zone-alert-row-11"]').trigger('click')
     await wrapper.get('[data-testid="zone-alert-resolve-button"]').trigger('click')
 
-    expect(acknowledgeMock).toHaveBeenCalledWith(11)
+    expect(resolveMock).toHaveBeenCalledWith(11)
     expect(showToastMock).toHaveBeenCalledWith('Алерт помечен как решённый', 'success', 3000)
     expect(wrapper.find('[data-testid="zone-alert-details-modal"]').exists()).toBe(false)
 

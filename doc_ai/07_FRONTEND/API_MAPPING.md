@@ -29,7 +29,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 | Агрегаты Dashboard | [telemetry.ts](../../backend/laravel/resources/js/services/api/telemetry.ts) | `GET /api/telemetry/aggregates` |
 | Климат теплицы | [greenhouses.ts](../../backend/laravel/resources/js/services/api/greenhouses.ts) | `GET /api/greenhouses/{id}/climate/state`; `POST /climate/control-mode`, `POST/DELETE /climate/manual-override` под тем же greenhouse prefix |
 | Authority документы | [automationConfigs.ts](../../backend/laravel/resources/js/services/api/automationConfigs.ts), [automationBundles.ts](../../backend/laravel/resources/js/services/api/automationBundles.ts) | `/api/automation-configs/{scopeType}/{scopeId}/{namespace}`, `/api/automation-bundles/{scopeType}/{scopeId}` |
-| Алерты | [alerts.ts](../../backend/laravel/resources/js/services/api/alerts.ts) | `GET /api/alerts`, `PATCH /api/alerts/{id}/ack` |
+| Алерты | [alerts.ts](../../backend/laravel/resources/js/services/api/alerts.ts) | `GET /api/alerts`, `PATCH /api/alerts/{id}/ack` (статус остаётся ACTIVE), `PATCH /api/alerts/{id}/resolve` |
 
 Поиск, `telemetry/aggregates`, Echo и scheduler workspace уже реализованы. Списки «недостающих endpoints для волн» из прежнего документа не являются текущими требованиями. `scheduler-tasks`, `attach-recipe` и `automation/manual-resume` не используются как канонический production flow.
 

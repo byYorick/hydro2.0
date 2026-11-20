@@ -40,4 +40,6 @@ export interface Alert {
   created_at: string
   updated_at?: string
   resolved_at?: string
+  acknowledged_at?: string | null
+  acknowledged_by?: number | null
 }

@@ -31,12 +31,15 @@ class Alert extends Model
         'last_seen_at',
         'created_at',
         'resolved_at',
+        'acknowledged_at',
+        'acknowledged_by',
     ];
 
     protected $casts = [
         'details' => 'array',
         'created_at' => 'datetime',
         'resolved_at' => 'datetime',
+        'acknowledged_at' => 'datetime',
         'first_seen_at' => 'datetime',
         'last_seen_at' => 'datetime',
     ];
@@ -51,6 +54,11 @@ class Alert extends Model
     public function zone(): BelongsTo
     {
         return $this->belongsTo(Zone::class);
+    }
+
+    public function acknowledgedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'acknowledged_by');
     }
 
     protected function code(): Attribute

@@ -22,7 +22,7 @@ Zone details отправляет `FORCE_IRRIGATION` с длительность
 
 Node details отправляет `restart` и `set_relay` для выбранного channel. Поддержку команды, binding, active lease и роль проверяет backend. Успешный HTTP-ответ не заменяет terminal device outcome.
 
-Ack алерта вызывает `PATCH /api/alerts/{id}/ack`; backend переводит его в `RESOLVED`, после обновления он исчезает из списка ACTIVE. Статуса `acknowledged` в контракте нет.
+Ack алерта вызывает `PATCH /api/alerts/{id}/ack`. Backend пишет `acknowledged_at` / `acknowledged_by` и оставляет `status=ACTIVE`, поэтому подтверждённый алерт остаётся в списке ACTIVE («подтверждён, но активен»). Статуса `acknowledged` нет. Ручное закрытие некритичных алертов — `PATCH /api/alerts/{id}/resolve`.
 
 ## Границы текущих экранов
 

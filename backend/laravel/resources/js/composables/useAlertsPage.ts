@@ -599,7 +599,7 @@ export function useAlertsPage() {
     confirm.value.loading = true
 
     try {
-      const updated = await api.alerts.acknowledge(confirm.value.alertId) as AlertRecord
+      const updated = await api.alerts.resolve(confirm.value.alertId) as AlertRecord
       applyResolved(confirm.value.alertId, updated)
     } catch (err) {
       logger.error('[Alerts] Failed to resolve alert', err)
@@ -608,6 +608,19 @@ export function useAlertsPage() {
       }
     } finally {
       closeConfirm()
+    }
+  }
+
+  const acknowledgeAlert = async (alert: AlertRecord): Promise<void> => {
+    try {
+      const updated = await api.alerts.acknowledge(alert.id) as AlertRecord
+      alertsStore.upsert(updated as Alert)
+      showToast('Алерт подтверждён. Условие остаётся активным.', 'success', TOAST_TIMEOUT.NORMAL)
+    } catch (err) {
+      logger.error('[Alerts] Failed to acknowledge alert', err)
+      if (!(err as { response?: unknown })?.response) {
+        showToast(`Не удалось подтвердить алерт: ${extractHumanErrorMessage(err, 'Ошибка подтверждения')}`, 'error', TOAST_TIMEOUT.NORMAL)
+      }
     }
   }
 
@@ -620,8 +633,20 @@ export function useAlertsPage() {
 
     bulkConfirm.value.loading = true
     try {
-      await Promise.all(ids.map(async (id) => {
-        const updated = await api.alerts.acknowledge(id) as AlertRecord
+      const resolvableIds = ids.filter((id) => {
+        const alert = alertsStore.alertById(id)
+        return !isSafetyCriticalCode(alert?.code)
+      })
+      const skipped = ids.length - resolvableIds.length
+      if (skipped > 0) {
+        showToast(
+          'Safety-алерты нельзя закрыть вручную, пока условие активно. Их можно только подтвердить.',
+          'warning',
+          TOAST_TIMEOUT.LONG,
+        )
+      }
+      await Promise.all(resolvableIds.map(async (id) => {
+        const updated = await api.alerts.resolve(id) as AlertRecord
         applyResolved(id, updated)
       }))
     } catch (err) {
@@ -900,6 +925,7 @@ export function useAlertsPage() {
     openResolve,
     closeConfirm,
     doResolve,
+    acknowledgeAlert,
     resolveSelected,
     // side panel
     selectedAlertId,

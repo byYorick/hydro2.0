@@ -47,22 +47,28 @@ class AlertServiceTest extends TestCase
 
     public function test_acknowledge_alert(): void
     {
-        $alert = Alert::factory()->create(['status' => 'active']);
-
-        $acknowledged = $this->service->acknowledge($alert, [
-            'resolved_by' => 'unit_test',
-            'resolved_via' => 'manual',
-            'resolved_by_user_id' => 99,
+        $user = \App\Models\User::factory()->create();
+        $alert = Alert::factory()->create([
+            'status' => 'ACTIVE',
+            'code' => 'biz_dry_run',
         ]);
 
-        $this->assertEquals('RESOLVED', $acknowledged->status);
-        $this->assertNotNull($acknowledged->resolved_at);
-        $this->assertEquals('unit_test', $acknowledged->details['resolved_by'] ?? null);
-        $this->assertEquals('manual', $acknowledged->details['resolved_via'] ?? null);
-        $this->assertEquals(99, $acknowledged->details['resolved_by_user_id'] ?? null);
+        $acknowledged = $this->service->acknowledge($alert, [
+            'acknowledged_by' => $user->id,
+            'acknowledged_via' => 'unit_test',
+            'acknowledged_by_user_name' => 'Unit Operator',
+        ]);
+
+        $this->assertSame('ACTIVE', $acknowledged->status);
+        $this->assertNull($acknowledged->resolved_at);
+        $this->assertNotNull($acknowledged->acknowledged_at);
+        $this->assertSame($user->id, $acknowledged->acknowledged_by);
+        $this->assertSame('unit_test', $acknowledged->details['acknowledged_via'] ?? null);
+        $this->assertSame('Unit Operator', $acknowledged->details['acknowledged_by_user_name'] ?? null);
         $this->assertDatabaseHas('alerts', [
             'id' => $alert->id,
-            'status' => 'RESOLVED',
+            'status' => 'ACTIVE',
+            'acknowledged_by' => $user->id,
         ]);
     }
 
